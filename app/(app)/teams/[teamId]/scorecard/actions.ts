@@ -54,7 +54,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     .limit(1)
     .maybeSingle();
 
-  await supabase.from("scorecard_metrics").insert({
+  const { error } = await supabase.from("scorecard_metrics").insert({
     team_id: teamId,
     name,
     unit,
@@ -63,6 +63,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     owner_id: ownerId,
     sort_order: (existing?.sort_order ?? 0) + 1,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/teams/${teamId}/scorecard`);
 }

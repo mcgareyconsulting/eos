@@ -18,13 +18,14 @@ export async function addHeadline(teamId: string, formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  await supabase.from("headlines").insert({
+  const { error } = await supabase.from("headlines").insert({
     team_id: teamId,
     title,
     body,
     kind,
     created_by: user?.id ?? null,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/teams/${teamId}/headlines`);
 }

@@ -15,13 +15,14 @@ export async function addTodo(teamId: string, formData: FormData) {
   if (!title) throw new Error("Title required");
 
   const supabase = await createClient();
-  await supabase.from("todos").insert({
+  const { error } = await supabase.from("todos").insert({
     team_id: teamId,
     title,
     owner_id,
     due_date,
     visibility,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath("/my90");

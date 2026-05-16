@@ -14,7 +14,7 @@ export async function addIssue(teamId: string, formData: FormData) {
   if (!title) throw new Error("Title required");
 
   const supabase = await createClient();
-  await supabase.from("issues").insert({
+  const { error } = await supabase.from("issues").insert({
     team_id: teamId,
     title,
     description,
@@ -22,6 +22,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     priority,
     type,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/teams/${teamId}/issues`);
 }

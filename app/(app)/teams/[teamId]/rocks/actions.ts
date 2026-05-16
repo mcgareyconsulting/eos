@@ -16,7 +16,7 @@ export async function addRock(teamId: string, formData: FormData) {
   if (!title || !quarter) throw new Error("Title and quarter required");
 
   const supabase = await createClient();
-  await supabase.from("rocks").insert({
+  const { error } = await supabase.from("rocks").insert({
     team_id: teamId,
     title,
     quarter,
@@ -24,6 +24,7 @@ export async function addRock(teamId: string, formData: FormData) {
     owner_id,
     description,
   });
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/teams/${teamId}/rocks`);
 }

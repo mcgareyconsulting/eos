@@ -7,6 +7,11 @@ export async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Self-heal: if the auth trigger missed (which has happened on hosted),
+  // make sure this user has a profile + team membership. Idempotent.
+  await supabase.rpc("ensure_user_provisioned");
+
   return { user, supabase };
 }
 

@@ -11,16 +11,29 @@ import {
 import { signOut } from "@/app/(app)/sign-out-action";
 
 type Team = { id: string; name: string };
+type Profile = {
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+} | null;
 
 export function AppShell({
   user,
+  profile,
   team,
   children,
 }: {
   user: { email?: string | null };
+  profile: Profile;
   team: Team | null;
   children: React.ReactNode;
 }) {
+  const displayName =
+    profile?.full_name?.trim() ||
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
+    user.email ||
+    "";
   const teamPath = team ? `/teams/${team.id}` : null;
 
   const teamNav = teamPath
@@ -66,11 +79,13 @@ export function AppShell({
         )}
 
         <div className="absolute bottom-0 w-60 border-t border-zinc-200 bg-white px-4 py-3">
-          <div className="text-xs text-zinc-500 truncate">{user.email}</div>
+          <div className="text-sm font-medium text-zinc-900 truncate">
+            {displayName}
+          </div>
           <form action={signOut} className="mt-1">
             <button
               type="submit"
-              className="text-xs text-zinc-700 hover:text-zinc-900 underline-offset-2 hover:underline"
+              className="text-xs text-zinc-500 hover:text-zinc-900 underline-offset-2 hover:underline"
             >
               Sign out
             </button>

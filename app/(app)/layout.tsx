@@ -6,11 +6,11 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, teams } = await getUserTeams();
+  const { user, profile, teams } = await getUserTeams();
   const team = teams[0] ?? null;
 
   return (
-    <AppShell user={user} team={team}>
+    <AppShell user={user} profile={profile} team={team}>
       {children}
     </AppShell>
   );

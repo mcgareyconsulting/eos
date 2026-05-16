@@ -10,12 +10,28 @@ export async function requireUser() {
   return { user, supabase };
 }
 
+export type Profile = {
+  id: string;
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+};
+
 export async function getUserTeams() {
   const { user, supabase } = await requireUser();
-  const { data: memberships } = await supabase
-    .from("team_members")
-    .select("team_id, role, teams(id, name)")
-    .eq("user_id", user.id);
+
+  const [profileRes, membershipsRes] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, full_name, first_name, last_name, email")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("team_members")
+      .select("team_id, role, teams(id, name)")
+      .eq("user_id", user.id),
+  ]);
 
   type Row = {
     team_id: string;
@@ -23,9 +39,11 @@ export async function getUserTeams() {
     teams: { id: string; name: string } | null;
   };
 
-  const teams = ((memberships ?? []) as unknown as Row[])
+  const teams = ((membershipsRes.data ?? []) as unknown as Row[])
     .filter((m) => m.teams)
     .map((m) => ({ id: m.teams!.id, name: m.teams!.name, role: m.role }));
 
-  return { user, supabase, teams };
+  const profile: Profile | null = profileRes.data ?? null;
+
+  return { user, supabase, profile, teams };
 }

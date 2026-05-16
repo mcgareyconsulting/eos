@@ -1,42 +1,59 @@
 "use server";
 
-import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type LoginState = {
-  error?: string;
-  sent?: boolean;
-  email?: string;
-} | null;
+export type LoginState = { error?: string } | null;
 
-export async function sendMagicLink(
+function safeNext(raw: unknown): string {
+  const value = typeof raw === "string" ? raw : "";
+  return value.startsWith("/") && !value.startsWith("//") ? value : "/my90";
+}
+
+export async function signIn(
   _prev: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const next = String(formData.get("next") ?? "/my90");
+  const password = String(formData.get("password") ?? "");
+  const next = safeNext(formData.get("next"));
 
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return { error: "Please enter a valid email address." };
+  if (!email || !password) {
+    return { error: "Email and password are required." };
   }
 
   const supabase = await createClient();
-  const h = await headers();
-  const origin =
-    h.get("origin") ?? `https://${h.get("host") ?? "localhost:3000"}`;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+  if (error) return { error: error.message };
+  redirect(next);
+}
 
-  const { error } = await supabase.auth.signInWithOtp({
+export async function signUp(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const next = safeNext(formData.get("next"));
+
+  if (!email || !password) {
+    return { error: "Email and password are required." };
+  }
+  if (password.length < 6) {
+    return { error: "Password must be at least 6 characters." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signUp({
     email,
+    password,
     options: {
-      emailRedirectTo: redirectTo,
+      data: fullName ? { full_name: fullName } : undefined,
     },
   });
 
-  if (error) {
-    return { error: error.message };
-  }
-
-  return { sent: true, email };
+  if (error) return { error: error.message };
+  redirect(next);
 }

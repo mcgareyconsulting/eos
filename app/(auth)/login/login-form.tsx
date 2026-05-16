@@ -67,13 +67,24 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="next" value={next} />
-      <Field
-        id="full_name"
-        name="full_name"
-        type="text"
-        label="Full name"
-        autoComplete="name"
-      />
+      <div className="grid grid-cols-2 gap-3">
+        <Field
+          id="first_name"
+          name="first_name"
+          type="text"
+          label="First name"
+          autoComplete="given-name"
+          required
+        />
+        <Field
+          id="last_name"
+          name="last_name"
+          type="text"
+          label="Last name"
+          autoComplete="family-name"
+          required
+        />
+      </div>
       <Field
         id="email"
         name="email"

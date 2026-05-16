@@ -35,22 +35,28 @@ export async function signUp(
 ): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const fullName = String(formData.get("full_name") ?? "").trim();
+  const firstName = String(formData.get("first_name") ?? "").trim();
+  const lastName = String(formData.get("last_name") ?? "").trim();
   const next = safeNext(formData.get("next"));
 
   if (!email || !password) {
     return { error: "Email and password are required." };
   }
+  if (!firstName || !lastName) {
+    return { error: "First and last name are required." };
+  }
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters." };
   }
+
+  const fullName = `${firstName} ${lastName}`;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: fullName ? { full_name: fullName } : undefined,
+      data: { full_name: fullName, first_name: firstName, last_name: lastName },
     },
   });
 

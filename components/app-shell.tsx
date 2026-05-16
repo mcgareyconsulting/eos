@@ -52,7 +52,7 @@ export function AppShell({
       <aside className="relative w-60 shrink-0 border-r border-zinc-200 bg-white">
         <div className="px-4 py-5 border-b border-zinc-200">
           <Link href="/my90" className="text-lg font-semibold tracking-tight">
-            EOS
+            High Plains Bank
           </Link>
         </div>
 

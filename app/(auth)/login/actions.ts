@@ -3,7 +3,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export type LoginState = { error?: string } | null;
+export type LoginState =
+  | { error?: string; needsConfirmation?: boolean; alreadyRegistered?: boolean }
+  | null;
 
 function safeNext(raw: unknown): string {
   const value = typeof raw === "string" ? raw : "";
@@ -52,7 +54,7 @@ export async function signUp(
   const fullName = `${firstName} ${lastName}`;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -60,6 +62,23 @@ export async function signUp(
     },
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("already") || msg.includes("registered")) {
+      return { error: "An account with that email already exists. Sign in instead.", alreadyRegistered: true };
+    }
+    return { error: error.message };
+  }
+
+  // Email confirmation is required on the project: user is created but no
+  // session is returned. We don't redirect — surface a message instead.
+  if (!data.session) {
+    return {
+      needsConfirmation: true,
+      error:
+        "Email confirmation is on for this project. Disable it in Supabase (Authentication → Sign In/Up → Email → Confirm email = off), or check your inbox for the confirmation link.",
+    };
+  }
+
   redirect(next);
 }

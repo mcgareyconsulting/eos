@@ -64,6 +64,24 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
     signUp,
     null,
   );
+
+  if (state?.needsConfirmation) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {state.error}
+        </div>
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="w-full rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50"
+        >
+          Back to sign in
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="next" value={next} />
@@ -101,7 +119,20 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
         autoComplete="new-password"
         required
       />
-      {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {state?.error && (
+        <div className="text-sm text-red-600 space-y-1">
+          <p>{state.error}</p>
+          {state.alreadyRegistered && (
+            <button
+              type="button"
+              onClick={onSwitch}
+              className="text-zinc-900 font-medium underline"
+            >
+              Sign in instead
+            </button>
+          )}
+        </div>
+      )}
       <button
         type="submit"
         disabled={pending}

@@ -3,9 +3,16 @@ import { LoginForm } from "./login-form";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{
+    next?: string;
+    error?: string;
+    error_code?: string;
+    error_description?: string;
+  }>;
 }) {
-  const { next } = await searchParams;
+  const sp = await searchParams;
+  const next = sp.next ?? "/my90";
+  const urlError = sp.error_description || sp.error;
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
@@ -16,7 +23,18 @@ export default async function LoginPage({
             Sign in or create an account to continue.
           </p>
         </div>
-        <LoginForm next={next ?? "/my90"} />
+        {urlError && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <div className="font-medium">{urlError.replace(/\+/g, " ")}</div>
+            {sp.error_code === "otp_expired" && (
+              <div className="mt-1 text-xs">
+                Email confirmation is still enabled on the project. Turn it off
+                in the Supabase dashboard so signup logs you in immediately.
+              </div>
+            )}
+          </div>
+        )}
+        <LoginForm next={next} />
       </div>
     </div>
   );

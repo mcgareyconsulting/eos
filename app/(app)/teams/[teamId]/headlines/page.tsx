@@ -34,7 +34,7 @@ export default async function HeadlinesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
-        <p className="mt-1 text-sm text-zinc-500">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
       </header>
 
       <Section title={`This week (${thisWeek.length})`}>
@@ -76,10 +76,10 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mb-2">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
         {title}
       </h2>
-      <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
         {children}
       </div>
     </section>
@@ -87,7 +87,7 @@ function Section({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-6 text-sm text-zinc-500">{children}</div>;
+  return <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>;
 }
 
 function HeadlineRow({
@@ -113,8 +113,8 @@ function HeadlineRow({
   const Icon = headline.kind === "customer" ? Users : UserCircle2;
   const tagColor =
     headline.kind === "customer"
-      ? "text-blue-600 bg-blue-50"
-      : "text-purple-600 bg-purple-50";
+      ? "text-blue-600 dark:text-blue-300 bg-blue-50"
+      : "text-purple-600 dark:text-purple-300 bg-purple-50";
 
   return (
     <div className="group flex items-start gap-3 px-4 py-3 text-sm">
@@ -128,16 +128,16 @@ function HeadlineRow({
           className="font-medium"
         />
         {headline.body && (
-          <div className="text-sm text-zinc-600 mt-0.5">{headline.body}</div>
+          <div className="text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">{headline.body}</div>
         )}
-        <div className="text-xs text-zinc-400 mt-1">
+        <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
           {authorName} · {new Date(headline.created_at).toLocaleString()}
         </div>
       </div>
       <form action={remove}>
         <button
           type="submit"
-          className="text-xs text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+          className="text-xs text-zinc-300 dark:text-zinc-600 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100"
         >
           Delete
         </button>
@@ -154,18 +154,18 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 bg-white p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"
         placeholder="Headline (e.g. New customer signed)"
         required
-        className="md:col-span-4 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-4 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="kind"
         defaultValue="customer"
-        className="md:col-span-2 rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="md:col-span-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="customer">Customer</option>
         <option value="employee">Employee</option>
@@ -174,11 +174,11 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
         name="body"
         placeholder="Details (optional)"
         rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add headline
       </button>

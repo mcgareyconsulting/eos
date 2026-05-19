@@ -49,12 +49,12 @@ export function ValueCell({
 
   const colorClass =
     savedValue === ""
-      ? "text-zinc-400"
+      ? "text-zinc-400 dark:text-zinc-500"
       : onTrack === true
         ? "text-emerald-700"
         : onTrack === false
           ? "text-red-600"
-          : "text-zinc-700";
+          : "text-zinc-700 dark:text-zinc-300";
 
   if (readOnly) {
     return (
@@ -83,7 +83,7 @@ export function ValueCell({
             setEditing(false);
           }
         }}
-        className="w-full text-right tabular-nums text-sm rounded-sm border border-zinc-300 px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+        className="w-full text-right tabular-nums text-sm rounded-sm border border-zinc-300 dark:border-zinc-700 px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-900"
         disabled={pending}
       />
     );
@@ -94,7 +94,7 @@ export function ValueCell({
       type="button"
       onClick={() => setEditing(true)}
       className={cn(
-        "w-full text-right tabular-nums text-sm py-1 px-1 rounded-sm hover:bg-zinc-100",
+        "w-full text-right tabular-nums text-sm py-1 px-1 rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800",
         colorClass,
       )}
     >

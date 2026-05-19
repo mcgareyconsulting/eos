@@ -5,10 +5,10 @@ import { setRockStatus } from "./actions";
 import { cn } from "@/lib/utils";
 
 const STYLES: Record<string, string> = {
-  on_track: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  off_track: "bg-amber-50 text-amber-700 ring-amber-200",
-  done: "bg-zinc-100 text-zinc-700 ring-zinc-200",
-  cancelled: "bg-zinc-50 text-zinc-500 ring-zinc-200",
+  on_track: "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200",
+  off_track: "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
+  done: "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 ring-zinc-200",
+  cancelled: "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 ring-zinc-200",
 };
 
 export function StatusSelect({

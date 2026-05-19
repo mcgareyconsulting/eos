@@ -59,16 +59,16 @@ function SignInPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="w-full rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200 disabled:opacity-50"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
-      <p className="text-sm text-zinc-500 text-center">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
         No account?{" "}
         <button
           type="button"
           onClick={onSwitch}
-          className="text-zinc-900 font-medium hover:underline"
+          className="text-zinc-900 dark:text-zinc-100 font-medium hover:underline"
         >
           Create one
         </button>
@@ -86,13 +86,13 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
   if (state?.needsConfirmation) {
     return (
       <div className="space-y-3">
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm text-amber-900">
           {state.error}
         </div>
         <button
           type="button"
           onClick={onSwitch}
-          className="w-full rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50"
+          className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 px-4 py-2 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-900"
         >
           Back to sign in
         </button>
@@ -138,13 +138,13 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
         required
       />
       {state?.error && (
-        <div className="text-sm text-red-600 space-y-1">
+        <div className="text-sm text-red-600 dark:text-red-400 space-y-1">
           <p>{state.error}</p>
           {state.alreadyRegistered && (
             <button
               type="button"
               onClick={onSwitch}
-              className="text-zinc-900 font-medium underline"
+              className="text-zinc-900 dark:text-zinc-100 font-medium underline"
             >
               Sign in instead
             </button>
@@ -154,16 +154,16 @@ function SignUpPanel({ next, onSwitch }: { next: string; onSwitch: () => void })
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="w-full rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200 disabled:opacity-50"
       >
         {pending ? "Creating account…" : "Create account"}
       </button>
-      <p className="text-sm text-zinc-500 text-center">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
         Already have one?{" "}
         <button
           type="button"
           onClick={onSwitch}
-          className="text-zinc-900 font-medium hover:underline"
+          className="text-zinc-900 dark:text-zinc-100 font-medium hover:underline"
         >
           Sign in
         </button>
@@ -176,14 +176,14 @@ function Field(props: React.InputHTMLAttributes<HTMLInputElement> & { label: str
   const { label, id, className, ...rest } = props;
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-zinc-700">
+      <label htmlFor={id} className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
         {label}
       </label>
       <input
         id={id}
         {...rest}
         className={
-          "mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 " +
+          "mt-1 block w-full rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 dark:focus:border-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100 " +
           (className ?? "")
         }
       />

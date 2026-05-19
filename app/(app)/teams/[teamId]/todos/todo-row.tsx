@@ -60,7 +60,7 @@ export function TodoRow({
       <button
         type="button"
         onClick={toggle}
-        className="text-zinc-400 hover:text-zinc-700"
+        className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
         aria-label={completed ? "Mark incomplete" : "Mark complete"}
       >
         {completed ? (
@@ -73,20 +73,20 @@ export function TodoRow({
         <div
           className={cn(
             "flex-1 min-w-0 truncate",
-            completed && "text-zinc-400 line-through",
+            completed && "text-zinc-400 dark:text-zinc-500 line-through",
           )}
         >
           <EditableText value={todo.title} onSave={onRename} />
         </div>
         {todo.visibility === "private" && (
-          <Lock className="shrink-0 w-3 h-3 text-zinc-400" />
+          <Lock className="shrink-0 w-3 h-3 text-zinc-400 dark:text-zinc-500" />
         )}
       </div>
-      <div className="text-xs text-zinc-500 whitespace-nowrap">{ownerName}</div>
+      <div className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">{ownerName}</div>
       <div
         className={cn(
           "text-xs whitespace-nowrap w-24 text-right",
-          overdue ? "text-red-600" : "text-zinc-500",
+          overdue ? "text-red-600" : "text-zinc-500 dark:text-zinc-400",
         )}
       >
         {todo.due_date
@@ -96,7 +96,7 @@ export function TodoRow({
       <button
         type="button"
         onClick={remove}
-        className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+        className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100"
         aria-label="Delete"
       >
         <Trash2 className="w-4 h-4" />

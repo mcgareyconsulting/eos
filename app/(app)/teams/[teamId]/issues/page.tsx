@@ -46,16 +46,16 @@ export default async function IssuesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
-        <p className="mt-1 text-sm text-zinc-500">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
       </header>
 
       <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mb-2">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
           Open ({open.length})
         </h2>
-        <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
           {open.length === 0 && (
-            <div className="px-4 py-6 text-sm text-zinc-500">
+            <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
               Nothing open. Add an issue below.
             </div>
           )}
@@ -75,10 +75,10 @@ export default async function IssuesPage({
 
       {solved.length > 0 && (
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mb-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
             Solved ({solved.length})
           </h2>
-          <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
             {solved.map((i) => (
               <SolvedRow
                 key={i.id}
@@ -129,15 +129,15 @@ function IssueRow({
           className="font-medium"
         />
         {issue.description && (
-          <div className="text-xs text-zinc-500 mt-0.5 line-clamp-2">
+          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
             {issue.description}
           </div>
         )}
-        <div className="text-xs text-zinc-400 mt-0.5">
+        <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
           {issue.type === "long" ? "Long-term" : "Short-term"}
         </div>
       </div>
-      <div className="col-span-2 text-zinc-600">{ownerName}</div>
+      <div className="col-span-2 text-zinc-600 dark:text-zinc-400">{ownerName}</div>
       <div className="col-span-1">
         <PrioritySelect
           teamId={teamId}
@@ -189,11 +189,11 @@ function SolvedRow({
   }
   return (
     <div className="grid grid-cols-12 gap-3 px-4 py-2.5 items-center text-sm">
-      <div className="col-span-7 text-zinc-500 line-through truncate">
+      <div className="col-span-7 text-zinc-500 dark:text-zinc-400 line-through truncate">
         {issue.title}
       </div>
-      <div className="col-span-2 text-xs text-zinc-500">{ownerName}</div>
-      <div className="col-span-1 text-xs text-zinc-400">
+      <div className="col-span-2 text-xs text-zinc-500 dark:text-zinc-400">{ownerName}</div>
+      <div className="col-span-1 text-xs text-zinc-400 dark:text-zinc-500">
         {issue.resolved_at
           ? new Date(issue.resolved_at).toLocaleDateString()
           : "—"}
@@ -202,7 +202,7 @@ function SolvedRow({
         <form action={reopen}>
           <button
             type="submit"
-            className="text-xs text-zinc-500 hover:text-zinc-900"
+            className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             Reopen
           </button>
@@ -210,7 +210,7 @@ function SolvedRow({
         <form action={remove}>
           <button
             type="submit"
-            className="text-xs text-zinc-400 hover:text-red-600"
+            className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-red-600"
           >
             Delete
           </button>
@@ -234,18 +234,18 @@ function AddIssueForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 bg-white p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"
         placeholder="Issue title"
         required
-        className="md:col-span-3 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="owner_id"
         defaultValue=""
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="">— owner —</option>
         {members.map((m) => (
@@ -257,7 +257,7 @@ function AddIssueForm({
       <select
         name="priority"
         defaultValue="3"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         {[5, 4, 3, 2, 1].map((n) => (
           <option key={n} value={n}>
@@ -268,7 +268,7 @@ function AddIssueForm({
       <select
         name="type"
         defaultValue="short"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="short">Short-term</option>
         <option value="long">Long-term</option>
@@ -277,11 +277,11 @@ function AddIssueForm({
         name="description"
         placeholder="Notes (optional)"
         rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add issue
       </button>

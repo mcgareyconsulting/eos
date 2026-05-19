@@ -41,27 +41,27 @@ export default async function ScorecardPage({
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Scorecard</h1>
-          <p className="mt-1 text-sm text-zinc-500">{team.name}</p>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
         </div>
       </header>
 
-      <div className="rounded-xl border border-zinc-200 bg-white overflow-x-auto">
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50">
-              <th className="text-left font-medium text-zinc-600 px-4 py-2 sticky left-0 bg-zinc-50">
+            <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+              <th className="text-left font-medium text-zinc-600 dark:text-zinc-400 px-4 py-2 sticky left-0 bg-zinc-50 dark:bg-zinc-900">
                 Metric
               </th>
-              <th className="text-left font-medium text-zinc-600 px-3 py-2">
+              <th className="text-left font-medium text-zinc-600 dark:text-zinc-400 px-3 py-2">
                 Owner
               </th>
-              <th className="text-right font-medium text-zinc-600 px-3 py-2">
+              <th className="text-right font-medium text-zinc-600 dark:text-zinc-400 px-3 py-2">
                 Goal
               </th>
               {weeks.map((w) => (
                 <th
                   key={w}
-                  className="text-right font-medium text-zinc-500 px-2 py-2 whitespace-nowrap"
+                  className="text-right font-medium text-zinc-500 dark:text-zinc-400 px-2 py-2 whitespace-nowrap"
                 >
                   {formatWeek(w)}
                 </th>
@@ -73,13 +73,13 @@ export default async function ScorecardPage({
               const remove = deleteMetric.bind(null, teamId, m.id);
               return (
               <tr key={m.id} className="group border-b border-zinc-100 last:border-0">
-                <td className="px-4 py-2 sticky left-0 bg-white font-medium">
+                <td className="px-4 py-2 sticky left-0 bg-white dark:bg-zinc-900 font-medium">
                   <div className="flex items-center gap-2">
                     <span className="flex-1">{m.name}</span>
                     <form action={remove}>
                       <button
                         type="submit"
-                        className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                        className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100"
                         aria-label="Delete metric"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -87,10 +87,10 @@ export default async function ScorecardPage({
                     </form>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-zinc-600">
+                <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
                   {ownerName(m.owner_id)}
                 </td>
-                <td className="px-3 py-2 text-right text-zinc-600 tabular-nums">
+                <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
                   {formatGoal(m.goal, m.direction, m.unit)}
                 </td>
                 {weeks.map((w, i) => {
@@ -117,7 +117,7 @@ export default async function ScorecardPage({
               <tr>
                 <td
                   colSpan={3 + weeks.length}
-                  className="px-4 py-8 text-center text-zinc-500"
+                  className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400"
                 >
                   No metrics yet. Add one below.
                 </td>
@@ -163,18 +163,18 @@ function AddMetricForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 bg-white p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="name"
         placeholder="Metric name"
         required
-        className="md:col-span-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="unit"
         defaultValue="number"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="number">Number</option>
         <option value="currency">Currency</option>
@@ -185,7 +185,7 @@ function AddMetricForm({
       <select
         name="direction"
         defaultValue="gte"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="gte">≥ goal</option>
         <option value="lte">≤ goal</option>
@@ -196,12 +196,12 @@ function AddMetricForm({
         type="number"
         step="any"
         placeholder="Goal"
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="owner_id"
         defaultValue=""
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="">— owner —</option>
         {members.map((m) => (
@@ -212,7 +212,7 @@ function AddMetricForm({
       </select>
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add metric
       </button>

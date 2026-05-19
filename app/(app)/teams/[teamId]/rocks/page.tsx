@@ -36,15 +36,15 @@ export default async function RocksPage({
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             {team.name} · current quarter {quarter}
           </p>
         </div>
       </header>
 
-      <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
         {(rocks ?? []).length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500">
+          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
             No rocks yet. Add one below.
           </div>
         )}
@@ -63,16 +63,16 @@ export default async function RocksPage({
                 className="font-medium"
               />
               {r.description && (
-                <div className="text-xs text-zinc-500 mt-0.5 line-clamp-1">
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
                   {r.description}
                 </div>
               )}
-              <div className="text-xs text-zinc-400 mt-0.5">{r.quarter}</div>
+              <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{r.quarter}</div>
             </div>
-            <div className="col-span-3 text-zinc-600">
+            <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
               {ownerName(r.owner_id)}
             </div>
-            <div className="col-span-1 text-zinc-500 text-xs">
+            <div className="col-span-1 text-zinc-500 dark:text-zinc-400 text-xs">
               {r.due_date
                 ? new Date(r.due_date).toLocaleDateString()
                 : "—"}
@@ -86,7 +86,7 @@ export default async function RocksPage({
               <form action={remove}>
                 <button
                   type="submit"
-                  className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                  className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100"
                   aria-label="Delete rock"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -119,29 +119,29 @@ function AddRockForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 bg-white p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"
         placeholder="Rock title"
         required
-        className="md:col-span-3 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <input
         name="quarter"
         defaultValue={quarter}
         required
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <input
         name="due_date"
         type="date"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       />
       <select
         name="owner_id"
         defaultValue=""
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="">— owner —</option>
         {members.map((m) => (
@@ -154,11 +154,11 @@ function AddRockForm({
         name="description"
         placeholder="What does done look like? (optional)"
         rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add rock
       </button>

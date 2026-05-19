@@ -25,7 +25,7 @@ export function SolveButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50"
       >
         <CheckCheck className="w-4 h-4" />
         Solve
@@ -43,9 +43,9 @@ export function SolveButton({
           setOpen(false);
         });
       }}
-      className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-3"
+      className="flex flex-col gap-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3"
     >
-      <label className="text-xs font-medium text-zinc-700">
+      <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
         New to-do (due in 7 days):
       </label>
       <input
@@ -53,12 +53,12 @@ export function SolveButton({
         defaultValue={`Follow up: ${defaultTitle}`}
         autoFocus
         required
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
       />
       <select
         name="todo_owner_id"
         defaultValue={currentUserId}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
       >
         <option value="">— owner —</option>
         {members.map((m) => (
@@ -71,14 +71,14 @@ export function SolveButton({
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-xs text-zinc-500 hover:text-zinc-900"
+          className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="rounded-md bg-emerald-600 dark:bg-emerald-500 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 dark:hover:bg-emerald-400 disabled:opacity-50"
         >
           {pending ? "Solving…" : "Solve & create to-do"}
         </button>

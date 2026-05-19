@@ -9,6 +9,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type Team = { id: string; name: string };
 type Profile = {
@@ -49,8 +50,8 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
-      <aside className="relative w-60 shrink-0 border-r border-zinc-200 bg-white">
-        <div className="px-4 py-5 border-b border-zinc-200">
+      <aside className="relative w-60 shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <div className="px-4 py-5 border-b border-zinc-200 dark:border-zinc-800">
           <Link href="/my90" className="text-lg font-semibold tracking-tight">
             High Plains Bank
           </Link>
@@ -61,8 +62,8 @@ export function AppShell({
         </nav>
 
         {team && (
-          <div className="px-2 py-3 border-t border-zinc-200">
-            <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <div className="px-2 py-3 border-t border-zinc-200 dark:border-zinc-800">
+            <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
               {team.name}
             </div>
             <div className="space-y-0.5">
@@ -78,18 +79,23 @@ export function AppShell({
           </div>
         )}
 
-        <div className="absolute bottom-0 w-60 border-t border-zinc-200 bg-white px-4 py-3">
-          <div className="text-sm font-medium text-zinc-900 truncate">
-            {displayName}
+        <div className="absolute bottom-0 w-60 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {displayName}
+              </div>
+              <form action={signOut} className="mt-0.5">
+                <button
+                  type="submit"
+                  className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline"
+                >
+                  Sign out
+                </button>
+              </form>
+            </div>
+            <ThemeToggle />
           </div>
-          <form action={signOut} className="mt-1">
-            <button
-              type="submit"
-              className="text-xs text-zinc-500 hover:text-zinc-900 underline-offset-2 hover:underline"
-            >
-              Sign out
-            </button>
-          </form>
         </div>
       </aside>
 
@@ -112,9 +118,9 @@ function NavLink({
   return (
     <Link
       href={href}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 hover:bg-zinc-100"
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
     >
-      <Icon className="w-4 h-4 text-zinc-500" />
+      <Icon className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
       <span>{label}</span>
     </Link>
   );

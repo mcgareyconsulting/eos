@@ -46,7 +46,7 @@ export function VoteButton({
         "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs disabled:opacity-50",
         optimistic.voted
           ? "bg-zinc-900 text-white"
-          : "text-zinc-600 hover:bg-zinc-100",
+          : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800",
       )}
       title={optimistic.voted ? "Remove your vote" : "Upvote (max 3 per team)"}
     >

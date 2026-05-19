@@ -49,8 +49,8 @@ export function EditableText({
           setEditing(true);
         }}
         className={cn(
-          "text-left w-full rounded-sm hover:bg-zinc-100 px-1 -mx-1",
-          !value && "text-zinc-400 italic",
+          "text-left w-full rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 px-1 -mx-1",
+          !value && "text-zinc-400 dark:text-zinc-500 italic",
           className,
         )}
         title="Click to edit"
@@ -79,7 +79,7 @@ export function EditableText({
       }
     },
     className: cn(
-      "block w-full rounded-sm border border-zinc-300 px-1 -mx-1 bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900",
+      "block w-full rounded-sm border border-zinc-300 dark:border-zinc-700 px-1 -mx-1 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900",
       className,
     ),
   };

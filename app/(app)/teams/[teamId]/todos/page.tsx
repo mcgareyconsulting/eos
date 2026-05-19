@@ -31,7 +31,7 @@ export default async function TodosPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
-        <p className="mt-1 text-sm text-zinc-500">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
       </header>
 
       <Section title={`Open (${open.length})`}>
@@ -75,10 +75,10 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mb-2">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
         {title}
       </h2>
-      <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
         {children}
       </div>
     </section>
@@ -86,7 +86,7 @@ function Section({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-6 text-sm text-zinc-500">{children}</div>;
+  return <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>;
 }
 
 function AddTodoForm({
@@ -105,18 +105,18 @@ function AddTodoForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 bg-white p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"
         placeholder="What needs to get done?"
         required
-        className="md:col-span-3 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="owner_id"
         defaultValue={currentUserId}
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="">— owner —</option>
         {members.map((m) => (
@@ -128,19 +128,19 @@ function AddTodoForm({
       <input
         name="due_date"
         type="date"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       />
       <select
         name="visibility"
         defaultValue="team"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
       </select>
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add to-do
       </button>

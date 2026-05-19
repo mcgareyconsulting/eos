@@ -1,7 +1,8 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 
-export async function requireTeamAccess(teamId: string) {
+export const requireTeamAccess = cache(async (teamId: string) => {
   const { user, supabase } = await requireUser();
 
   const { data: team, error } = await supabase
@@ -12,7 +13,7 @@ export async function requireTeamAccess(teamId: string) {
 
   if (error || !team) notFound();
   return { user, supabase, team };
-}
+});
 
 export type TeamMember = {
   user_id: string;
@@ -20,26 +21,28 @@ export type TeamMember = {
   email: string;
 };
 
-export async function getTeamMembers(teamId: string): Promise<TeamMember[]> {
-  const { supabase } = await requireUser();
-  const { data } = await supabase
-    .from("team_members")
-    .select("user_id, profiles(full_name, email)")
-    .eq("team_id", teamId);
+export const getTeamMembers = cache(
+  async (teamId: string): Promise<TeamMember[]> => {
+    const { supabase } = await requireUser();
+    const { data } = await supabase
+      .from("team_members")
+      .select("user_id, profiles(full_name, email)")
+      .eq("team_id", teamId);
 
-  type Row = {
-    user_id: string;
-    profiles: { full_name: string; email: string } | null;
-  };
+    type Row = {
+      user_id: string;
+      profiles: { full_name: string; email: string } | null;
+    };
 
-  return ((data ?? []) as unknown as Row[])
-    .filter((r) => r.profiles)
-    .map((r) => ({
-      user_id: r.user_id,
-      full_name: r.profiles!.full_name,
-      email: r.profiles!.email,
-    }));
-}
+    return ((data ?? []) as unknown as Row[])
+      .filter((r) => r.profiles)
+      .map((r) => ({
+        user_id: r.user_id,
+        full_name: r.profiles!.full_name,
+        email: r.profiles!.email,
+      }));
+  },
+);
 
 export function onTrack(
   value: number | null,

@@ -1,19 +1,6 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
-export async function requireUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  // Self-heal: if the auth trigger missed (which has happened on hosted),
-  // make sure this user has a profile + team membership. Idempotent.
-  await supabase.rpc("ensure_user_provisioned");
-
-  return { user, supabase };
-}
 
 export type Profile = {
   id: string;
@@ -23,20 +10,42 @@ export type Profile = {
   email: string;
 };
 
-export async function getUserTeams() {
+// Lightweight: just resolve auth.uid(). De-duped per request via React cache so
+// repeated calls within the same render (layout + page) share one round-trip.
+export const requireUser = cache(async () => {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  return { user, supabase };
+});
+
+// Single profile + memberships fetch per request. Self-heals if the profile
+// row is missing — but only then, so the common case is just one query pair.
+export const getUserTeams = cache(async () => {
   const { user, supabase } = await requireUser();
 
-  const [profileRes, membershipsRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, full_name, first_name, last_name, email")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("team_members")
-      .select("team_id, role, teams(id, name)")
-      .eq("user_id", user.id),
-  ]);
+  const fetchProfileAndTeams = () =>
+    Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, full_name, first_name, last_name, email")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("team_members")
+        .select("team_id, role, teams(id, name)")
+        .eq("user_id", user.id),
+    ]);
+
+  let [profileRes, membershipsRes] = await fetchProfileAndTeams();
+
+  if (!profileRes.data) {
+    // First visit / trigger missed — provision and retry once.
+    await supabase.rpc("ensure_user_provisioned");
+    [profileRes, membershipsRes] = await fetchProfileAndTeams();
+  }
 
   type Row = {
     team_id: string;
@@ -51,4 +60,4 @@ export async function getUserTeams() {
   const profile: Profile | null = profileRes.data ?? null;
 
   return { user, supabase, profile, teams };
-}
+});

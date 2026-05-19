@@ -1,5 +1,6 @@
 import { requireTeamAccess, getTeamMembers, onTrack } from "@/lib/teams";
-import { lastNMondays, toDateString } from "@/lib/dates";
+import { lastNMondays, toDateString, formatWeekLabel } from "@/lib/dates";
+import { formatGoal } from "@/lib/scorecard";
 import { ValueCell } from "./value-cell";
 import { addMetric, deleteMetric } from "./actions";
 import { Trash2 } from "lucide-react";
@@ -63,7 +64,7 @@ export default async function ScorecardPage({
                   key={w}
                   className="text-right font-medium text-zinc-500 dark:text-zinc-400 px-2 py-2 whitespace-nowrap"
                 >
-                  {formatWeek(w)}
+                  {formatWeekLabel(w)}
                 </th>
               ))}
             </tr>
@@ -130,23 +131,6 @@ export default async function ScorecardPage({
       <AddMetricForm teamId={teamId} members={members} />
     </div>
   );
-}
-
-function formatWeek(d: string): string {
-  const date = new Date(d + "T00:00:00");
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-function formatGoal(
-  goal: number | null,
-  direction: string,
-  unit: string,
-): string {
-  if (goal == null) return "—";
-  const arrow = direction === "gte" ? "≥" : direction === "lte" ? "≤" : "=";
-  if (unit === "currency") return `${arrow} $${goal.toLocaleString()}`;
-  if (unit === "percent") return `${arrow} ${goal}%`;
-  return `${arrow} ${goal.toLocaleString()}`;
 }
 
 function AddMetricForm({

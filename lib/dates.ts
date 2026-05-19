@@ -39,3 +39,19 @@ export function addDays(d: Date, days: number): Date {
   out.setDate(out.getDate() + days);
   return out;
 }
+
+// "2026-05-18" or Date → "5/18"
+export function formatWeekLabel(d: string | Date): string {
+  const date = typeof d === "string" ? new Date(d + "T00:00:00") : d;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+export function durationMinutes(
+  startedAt: string,
+  endedAt: string | null,
+): number {
+  if (!endedAt) return 0;
+  return Math.round(
+    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60000,
+  );
+}

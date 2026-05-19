@@ -3,6 +3,7 @@ import { Play, Calendar } from "lucide-react";
 import { requireTeamAccess } from "@/lib/teams";
 import { startMeeting } from "./actions";
 import { SEGMENT_LABELS, type Segment } from "@/lib/l10/segments";
+import { durationMinutes } from "@/lib/dates";
 
 export default async function MeetingsListPage({
   params,
@@ -103,9 +104,3 @@ export default async function MeetingsListPage({
   );
 }
 
-function durationMinutes(startedAt: string, endedAt: string | null): number {
-  if (!endedAt) return 0;
-  return Math.round(
-    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60000,
-  );
-}

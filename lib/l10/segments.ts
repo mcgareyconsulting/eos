@@ -12,6 +12,8 @@ export const SEGMENTS = [
 export type Segment = (typeof SEGMENTS)[number];
 
 // Standard EOS L10: 5 + 5 + 5 + 5 + 5 + 60 + 5 = 90 minutes.
+export const TOTAL_MEETING_SECONDS = 90 * 60;
+
 export const SEGMENT_DURATION_SECONDS: Record<Segment, number> = {
   segue: 5 * 60,
   scorecard: 5 * 60,

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   SEGMENT_DURATION_SECONDS,
   SEGMENT_LABELS,
+  TOTAL_MEETING_SECONDS,
   type Segment,
 } from "@/lib/l10/segments";
 import { cn } from "@/lib/utils";
@@ -42,11 +43,16 @@ export function AgendaTimer({
         ? "text-amber-600 dark:text-amber-400"
         : "text-emerald-700 dark:text-emerald-400";
 
-  // When the timer crosses a duration boundary, ping the router so any
-  // server-side time-dependent UI (e.g. notifications) refetches. Cheap.
+  // Ping the router once per segment when its time runs out so any
+  // server-time-dependent UI refreshes. Tracked by ref so we don't
+  // re-trigger every tick while pct stays >= 1.
+  const firedForSegment = useRef<string | null>(null);
   useEffect(() => {
-    if (pct >= 1 && pct < 1.01) router.refresh();
-  }, [pct, router]);
+    if (pct >= 1 && firedForSegment.current !== segmentStartedAt) {
+      firedForSegment.current = segmentStartedAt;
+      router.refresh();
+    }
+  }, [pct, router, segmentStartedAt]);
 
   return (
     <div className="flex items-center gap-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-3">
@@ -76,7 +82,9 @@ export function AgendaTimer({
         <div className="text-2xl font-semibold tabular-nums">
           {formatClock(meetElapsedSec)}
         </div>
-        <div className="text-xs text-zinc-400 dark:text-zinc-500">target 1:30:00</div>
+        <div className="text-xs text-zinc-400 dark:text-zinc-500">
+          target {formatClock(TOTAL_MEETING_SECONDS)}
+        </div>
       </div>
     </div>
   );

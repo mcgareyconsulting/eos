@@ -1,16 +1,24 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, Circle, Target, Users, UserCircle2 } from "lucide-react";
+import { Circle, Target, Users, UserCircle2 } from "lucide-react";
 
 import { requireTeamAccess, getTeamMembers, onTrack } from "@/lib/teams";
 import { SEGMENT_HINTS, type Segment } from "@/lib/l10/segments";
-import { lastNMondays, mondayOf, toDateString } from "@/lib/dates";
+import {
+  lastNMondays,
+  mondayOf,
+  toDateString,
+  formatWeekLabel,
+} from "@/lib/dates";
+import { formatGoal } from "@/lib/scorecard";
 
 import { AgendaTimer } from "@/components/l10/agenda-timer";
 import { SegmentNav } from "@/components/l10/segment-nav";
 import { AdvanceButton } from "@/components/l10/advance-button";
 import { DropToIssuesButton } from "@/components/l10/drop-to-issues-button";
 import { RatingForm } from "@/components/l10/rating-form";
+import { Card, CardHeader, Empty } from "@/components/card";
+import { StatusBadge } from "@/components/status-badge";
 
 import {
   setSegment,
@@ -33,17 +41,22 @@ export default async function L10Page({
   const { teamId, meetingId } = await params;
   const { user, supabase, team } = await requireTeamAccess(teamId);
 
-  const { data: meeting } = await supabase
-    .from("meetings")
-    .select(
-      "id, team_id, started_at, ended_at, current_segment, segment_started_at, notes",
-    )
-    .eq("id", meetingId)
-    .single();
+  // Meeting + team members are independent — fetch in parallel.
+  const [meetingRes, members] = await Promise.all([
+    supabase
+      .from("meetings")
+      .select(
+        "id, team_id, started_at, ended_at, current_segment, segment_started_at, notes",
+      )
+      .eq("id", meetingId)
+      .single(),
+    getTeamMembers(teamId),
+  ]);
+
+  const meeting = meetingRes.data;
   if (!meeting) notFound();
 
   const segment = (meeting.current_segment as Segment) ?? "segue";
-  const members = await getTeamMembers(teamId);
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
@@ -167,15 +180,15 @@ function SegueSegment({
   return (
     <Card>
       <CardHeader>Segue — go around the room</CardHeader>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {members.map((m) => (
-          <li key={m.user_id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+          <div key={m.user_id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
             <UserCircle2 className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
             {m.full_name}
-          </li>
+          </div>
         ))}
         {members.length === 0 && <Empty>No team members yet.</Empty>}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -213,7 +226,7 @@ async function ScorecardSegment({
 
   return (
     <Card>
-      <CardHeader>Scorecard — week of {formatWeek(thisWeek)}</CardHeader>
+      <CardHeader>Scorecard — week of {formatWeekLabel(thisWeek)}</CardHeader>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -229,7 +242,7 @@ async function ScorecardSegment({
                   key={w}
                   className="text-right font-medium text-zinc-500 dark:text-zinc-400 px-2 py-2 whitespace-nowrap"
                 >
-                  {formatWeek(w)}
+                  {formatWeekLabel(w)}
                 </th>
               ))}
               <th className="px-2 py-2" />
@@ -330,10 +343,10 @@ async function RocksSegment({
   return (
     <Card>
       <CardHeader>Rocks — current quarter</CardHeader>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {rocks.length === 0 && <Empty>No active rocks.</Empty>}
         {rocks.map((r) => (
-          <li
+          <div
             key={r.id}
             className="grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm"
           >
@@ -363,9 +376,9 @@ async function RocksSegment({
                 </span>
               )}
             </div>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -390,10 +403,10 @@ async function HeadlinesSegment({
   return (
     <Card>
       <CardHeader>Headlines — this week</CardHeader>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {(headlines ?? []).length === 0 && <Empty>No headlines this week.</Empty>}
         {(headlines ?? []).map((h) => (
-          <li key={h.id} className="flex items-start gap-3 px-4 py-3 text-sm">
+          <div key={h.id} className="flex items-start gap-3 px-4 py-3 text-sm">
             <span
               className={
                 "mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full " +
@@ -420,9 +433,9 @@ async function HeadlinesSegment({
                 {new Date(h.created_at).toLocaleString()}
               </div>
             </div>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -457,12 +470,12 @@ async function TodosReviewSegment({
   return (
     <Card>
       <CardHeader>To-Dos — prior week review</CardHeader>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {(todos ?? []).length === 0 && (
           <Empty>No to-dos from last week. Move on.</Empty>
         )}
         {(todos ?? []).map((t) => (
-          <li
+          <div
             key={t.id}
             className="flex items-center gap-3 px-4 py-2.5 text-sm"
           >
@@ -490,9 +503,9 @@ async function TodosReviewSegment({
                 dropAction={dropFn}
               />
             )}
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -540,14 +553,14 @@ async function IDSSegment({
       <CardHeader>
         IDS — {(issues ?? []).length} open · sorted by priority, votes
       </CardHeader>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {(issues ?? []).length === 0 && (
           <Empty>
             Nothing to solve. Drop off-track items from earlier segments here.
           </Empty>
         )}
         {(issues ?? []).map((i) => (
-          <li
+          <div
             key={i.id}
             className="grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm"
           >
@@ -586,9 +599,9 @@ async function IDSSegment({
                 currentUserId={currentUserId}
               />
             </div>
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </Card>
   );
 }
@@ -611,17 +624,20 @@ async function ConcludeSegment({
 }) {
   const { supabase } = await requireTeamAccess(teamId);
 
-  const { data: newTodos } = await supabase
-    .from("todos")
-    .select("id, title, owner_id, due_date")
-    .eq("team_id", teamId)
-    .eq("source_meeting_id", meetingId)
-    .order("created_at", { ascending: true });
-
-  const { data: ratings } = await supabase
-    .from("meeting_ratings")
-    .select("user_id, score")
-    .eq("meeting_id", meetingId);
+  const [newTodosRes, ratingsRes] = await Promise.all([
+    supabase
+      .from("todos")
+      .select("id, title, owner_id, due_date")
+      .eq("team_id", teamId)
+      .eq("source_meeting_id", meetingId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("meeting_ratings")
+      .select("user_id, score")
+      .eq("meeting_id", meetingId),
+  ]);
+  const newTodos = newTodosRes.data;
+  const ratings = ratingsRes.data;
 
   const myRating =
     (ratings ?? []).find((r) => r.user_id === userId)?.score ?? null;
@@ -639,12 +655,12 @@ async function ConcludeSegment({
         <CardHeader>
           New to-dos from this meeting ({(newTodos ?? []).length})
         </CardHeader>
-        <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {(newTodos ?? []).length === 0 && (
             <Empty>No new to-dos. Either we&apos;re really efficient or we didn&apos;t solve much.</Empty>
           )}
           {(newTodos ?? []).map((t) => (
-            <li
+            <div
               key={t.id}
               className="flex items-center gap-3 px-4 py-2.5 text-sm"
             >
@@ -658,9 +674,9 @@ async function ConcludeSegment({
                   ? new Date(t.due_date).toLocaleDateString()
                   : "—"}
               </span>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       </Card>
 
       <Card>
@@ -692,15 +708,19 @@ async function DoneSegment({
   members: { user_id: string; full_name: string }[];
 }) {
   const { supabase } = await requireTeamAccess(teamId);
-  const { data: ratings } = await supabase
-    .from("meeting_ratings")
-    .select("user_id, score")
-    .eq("meeting_id", meetingId);
-  const { data: newTodos } = await supabase
-    .from("todos")
-    .select("id, title")
-    .eq("team_id", teamId)
-    .eq("source_meeting_id", meetingId);
+  const [ratingsRes, newTodosRes] = await Promise.all([
+    supabase
+      .from("meeting_ratings")
+      .select("user_id, score")
+      .eq("meeting_id", meetingId),
+    supabase
+      .from("todos")
+      .select("id, title")
+      .eq("team_id", teamId)
+      .eq("source_meeting_id", meetingId),
+  ]);
+  const ratings = ratingsRes.data;
+  const newTodos = newTodosRes.data;
 
   const avg =
     (ratings ?? []).length > 0
@@ -728,64 +748,3 @@ async function DoneSegment({
   );
 }
 
-// ---------- Shared ----------
-function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-      {children}
-    </div>
-  );
-}
-
-function CardHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs uppercase tracking-wide font-medium text-zinc-600 dark:text-zinc-400">
-      {children}
-    </div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-      {children}
-    </li>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    on_track: "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200 dark:ring-emerald-800",
-    off_track: "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200 dark:ring-amber-800",
-    done: "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 ring-zinc-200 dark:ring-zinc-700",
-    cancelled: "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 ring-zinc-200 dark:ring-zinc-700",
-  };
-  const label = status.replace("_", " ");
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset ${
-        styles[status] ?? styles.on_track
-      }`}
-    >
-      {status === "done" && <CheckCircle2 className="w-3 h-3" />}
-      {label}
-    </span>
-  );
-}
-
-function formatWeek(d: string): string {
-  const date = new Date(d + "T00:00:00");
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-function formatGoal(
-  goal: number | null,
-  direction: string,
-  unit: string,
-): string {
-  if (goal == null) return "—";
-  const arrow = direction === "gte" ? "≥" : direction === "lte" ? "≤" : "=";
-  if (unit === "currency") return `${arrow} $${goal.toLocaleString()}`;
-  if (unit === "percent") return `${arrow} ${goal}%`;
-  return `${arrow} ${goal.toLocaleString()}`;
-}

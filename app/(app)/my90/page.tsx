@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getUserTeams } from "@/lib/auth";
 import { getTeamMembers } from "@/lib/teams";
-import { CheckCircle2, Circle, Target } from "lucide-react";
+import { Circle, Target } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
 
 export default async function My90Page() {
   const { user, supabase, teams } = await getUserTeams();
@@ -105,7 +106,7 @@ export default async function My90Page() {
                 name={r.owner_id ? nameById.get(r.owner_id) ?? "—" : "unassigned"}
               />
               <TeamLabel name={teamNameById.get(r.team_id) ?? ""} />
-              <StatusPill status={r.status} />
+              <StatusBadge status={r.status} />
             </Link>
           ))}
         </div>
@@ -175,22 +176,3 @@ function DueLabel({ due }: { due: string | null }) {
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    on_track: "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200",
-    off_track: "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
-    done: "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 ring-zinc-200",
-    cancelled: "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 ring-zinc-200",
-  };
-  const label = status.replace("_", " ");
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset ${
-        styles[status] ?? styles.on_track
-      }`}
-    >
-      {status === "done" && <CheckCircle2 className="w-3 h-3" />}
-      {label}
-    </span>
-  );
-}

@@ -30,6 +30,22 @@ export async function addHeadline(teamId: string, formData: FormData) {
   revalidatePath(`/teams/${teamId}/headlines`);
 }
 
+export async function updateHeadlineTitle(
+  teamId: string,
+  id: string,
+  title: string,
+) {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Title required");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("headlines")
+    .update({ title: trimmed })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/teams/${teamId}/headlines`);
+}
+
 export async function deleteHeadline(teamId: string, id: string) {
   const supabase = await createClient();
   await supabase.from("headlines").delete().eq("id", id);

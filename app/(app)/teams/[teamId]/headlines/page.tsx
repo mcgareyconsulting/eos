@@ -1,6 +1,7 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
 import { Users, UserCircle2 } from "lucide-react";
-import { addHeadline, deleteHeadline } from "./actions";
+import { addHeadline, deleteHeadline, updateHeadlineTitle } from "./actions";
+import { EditableText } from "@/components/editable-text";
 import { mondayOf, toDateString } from "@/lib/dates";
 
 export default async function HeadlinesPage({
@@ -108,6 +109,7 @@ function HeadlineRow({
     "use server";
     await deleteHeadline(teamId, headline.id);
   }
+  const renameTitle = updateHeadlineTitle.bind(null, teamId, headline.id);
   const Icon = headline.kind === "customer" ? Users : UserCircle2;
   const tagColor =
     headline.kind === "customer"
@@ -120,7 +122,11 @@ function HeadlineRow({
         <Icon className="w-3.5 h-3.5" />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="font-medium">{headline.title}</div>
+        <EditableText
+          value={headline.title}
+          onSave={renameTitle}
+          className="font-medium"
+        />
         {headline.body && (
           <div className="text-sm text-zinc-600 mt-0.5">{headline.body}</div>
         )}

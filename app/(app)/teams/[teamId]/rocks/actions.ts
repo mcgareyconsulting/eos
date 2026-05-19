@@ -29,6 +29,22 @@ export async function addRock(teamId: string, formData: FormData) {
   revalidatePath(`/teams/${teamId}/rocks`);
 }
 
+export async function updateRockTitle(
+  teamId: string,
+  rockId: string,
+  title: string,
+) {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Title required");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rocks")
+    .update({ title: trimmed })
+    .eq("id", rockId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/teams/${teamId}/rocks`);
+}
+
 export async function setRockStatus(
   teamId: string,
   rockId: string,

@@ -1,7 +1,6 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
 import { TodoRow } from "./todo-row";
-import { addTodo } from "./actions";
-import { requireUser } from "@/lib/auth";
+import { addTodo, updateTodoTitle } from "./actions";
 
 export default async function TodosPage({
   params,
@@ -43,6 +42,7 @@ export default async function TodosPage({
             teamId={teamId}
             todo={t}
             ownerName={ownerName(t.owner_id)}
+            onRename={updateTodoTitle.bind(null, teamId, t.id)}
           />
         ))}
       </Section>
@@ -55,6 +55,7 @@ export default async function TodosPage({
               teamId={teamId}
               todo={t}
               ownerName={ownerName(t.owner_id)}
+              onRename={updateTodoTitle.bind(null, teamId, t.id)}
             />
           ))}
         </Section>

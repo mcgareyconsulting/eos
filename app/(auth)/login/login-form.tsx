@@ -1,10 +1,28 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { signIn, signUp, type LoginState } from "./actions";
 
 export function LoginForm({ next }: { next: string }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+
+  // Strip any Supabase redirect error params (?error_code=otp_expired etc.)
+  // from the URL on first paint so subsequent failed submits don't compound
+  // the stale message with a new one.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    let changed = false;
+    for (const key of ["error", "error_code", "error_description"]) {
+      if (url.searchParams.has(key)) {
+        url.searchParams.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, []);
 
   return mode === "signin" ? (
     <SignInPanel next={next} onSwitch={() => setMode("signup")} />

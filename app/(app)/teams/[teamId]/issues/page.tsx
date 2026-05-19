@@ -1,8 +1,9 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
-import { addIssue, deleteIssue, reopenIssue } from "./actions";
+import { addIssue, deleteIssue, reopenIssue, updateIssueTitle } from "./actions";
 import { PrioritySelect } from "./priority-select";
 import { VoteButton } from "./vote-button";
 import { SolveButton } from "./solve-button";
+import { EditableText } from "@/components/editable-text";
 
 export default async function IssuesPage({
   params,
@@ -23,6 +24,17 @@ export default async function IssuesPage({
     .order("priority", { ascending: false })
     .order("votes", { ascending: false })
     .order("created_at", { ascending: true });
+
+  const issueIds = (issues ?? []).map((i) => i.id);
+  const { data: myVotes } =
+    issueIds.length === 0
+      ? { data: [] as { issue_id: string }[] }
+      : await supabase
+          .from("issue_votes")
+          .select("issue_id")
+          .eq("user_id", user.id)
+          .in("issue_id", issueIds);
+  const votedSet = new Set((myVotes ?? []).map((v) => v.issue_id));
 
   const open = (issues ?? []).filter((i) => i.status !== "solved");
   const solved = (issues ?? []).filter((i) => i.status === "solved");
@@ -52,6 +64,7 @@ export default async function IssuesPage({
               key={i.id}
               teamId={teamId}
               issue={i}
+              voted={votedSet.has(i.id)}
               ownerName={ownerName(i.owner_id)}
               members={members}
               currentUserId={user.id}
@@ -86,6 +99,7 @@ export default async function IssuesPage({
 function IssueRow({
   teamId,
   issue,
+  voted,
   ownerName,
   members,
   currentUserId,
@@ -100,14 +114,20 @@ function IssueRow({
     votes: number;
     type: string;
   };
+  voted: boolean;
   ownerName: string;
   members: { user_id: string; full_name: string }[];
   currentUserId: string;
 }) {
+  const renameTitle = updateIssueTitle.bind(null, teamId, issue.id);
   return (
     <div className="grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm">
-      <div className="col-span-6">
-        <div className="font-medium">{issue.title}</div>
+      <div className="col-span-6 min-w-0">
+        <EditableText
+          value={issue.title}
+          onSave={renameTitle}
+          className="font-medium"
+        />
         {issue.description && (
           <div className="text-xs text-zinc-500 mt-0.5 line-clamp-2">
             {issue.description}
@@ -126,7 +146,12 @@ function IssueRow({
         />
       </div>
       <div className="col-span-1">
-        <VoteButton teamId={teamId} issueId={issue.id} votes={issue.votes} />
+        <VoteButton
+          teamId={teamId}
+          issueId={issue.id}
+          votes={issue.votes}
+          voted={voted}
+        />
       </div>
       <div className="col-span-2 justify-self-end">
         <SolveButton

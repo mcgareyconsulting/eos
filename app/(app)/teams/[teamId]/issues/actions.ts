@@ -27,6 +27,22 @@ export async function addIssue(teamId: string, formData: FormData) {
   revalidatePath(`/teams/${teamId}/issues`);
 }
 
+export async function updateIssueTitle(
+  teamId: string,
+  issueId: string,
+  title: string,
+) {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Title required");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("issues")
+    .update({ title: trimmed })
+    .eq("id", issueId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/teams/${teamId}/issues`);
+}
+
 export async function setIssuePriority(
   teamId: string,
   issueId: string,
@@ -40,16 +56,34 @@ export async function setIssuePriority(
   revalidatePath(`/teams/${teamId}/issues`);
 }
 
-export async function voteIssue(teamId: string, issueId: string, delta: number) {
+export async function toggleIssueVote(teamId: string, issueId: string) {
   const supabase = await createClient();
-  const { data: issue } = await supabase
-    .from("issues")
-    .select("votes")
-    .eq("id", issueId)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+
+  const { data: existing } = await supabase
+    .from("issue_votes")
+    .select("issue_id")
+    .eq("issue_id", issueId)
+    .eq("user_id", user.id)
     .maybeSingle();
-  if (!issue) return;
-  const next = Math.max(0, (issue.votes ?? 0) + delta);
-  await supabase.from("issues").update({ votes: next }).eq("id", issueId);
+
+  if (existing) {
+    const { error } = await supabase
+      .from("issue_votes")
+      .delete()
+      .eq("issue_id", issueId)
+      .eq("user_id", user.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("issue_votes")
+      .insert({ issue_id: issueId, user_id: user.id });
+    if (error) throw new Error(error.message);
+  }
+
   revalidatePath(`/teams/${teamId}/issues`);
 }
 

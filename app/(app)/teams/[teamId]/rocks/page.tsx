@@ -1,7 +1,9 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
 import { currentQuarter } from "@/lib/dates";
 import { StatusSelect } from "./status-select";
-import { addRock } from "./actions";
+import { addRock, deleteRock, updateRockTitle } from "./actions";
+import { EditableText } from "@/components/editable-text";
+import { Trash2 } from "lucide-react";
 
 export default async function RocksPage({
   params,
@@ -14,12 +16,17 @@ export default async function RocksPage({
 
   const quarter = currentQuarter();
 
-  const { data: rocks } = await supabase
+  const { data: rocksRaw } = await supabase
     .from("rocks")
     .select("id, title, owner_id, quarter, due_date, status, description")
     .eq("team_id", teamId)
-    .order("status", { ascending: true })
     .order("due_date", { ascending: true, nullsFirst: false });
+
+  const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
+  const rocks = (rocksRaw ?? []).slice().sort(
+    (a, b) =>
+      STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status),
+  );
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -41,13 +48,20 @@ export default async function RocksPage({
             No rocks yet. Add one below.
           </div>
         )}
-        {(rocks ?? []).map((r) => (
+        {(rocks ?? []).map((r) => {
+          const renameTitle = updateRockTitle.bind(null, teamId, r.id);
+          const remove = deleteRock.bind(null, teamId, r.id);
+          return (
           <div
             key={r.id}
-            className="grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm"
+            className="group grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm"
           >
-            <div className="col-span-6">
-              <div className="font-medium">{r.title}</div>
+            <div className="col-span-6 min-w-0">
+              <EditableText
+                value={r.title}
+                onSave={renameTitle}
+                className="font-medium"
+              />
               {r.description && (
                 <div className="text-xs text-zinc-500 mt-0.5 line-clamp-1">
                   {r.description}
@@ -63,15 +77,25 @@ export default async function RocksPage({
                 ? new Date(r.due_date).toLocaleDateString()
                 : "—"}
             </div>
-            <div className="col-span-2 justify-self-end">
+            <div className="col-span-2 justify-self-end flex items-center gap-2">
               <StatusSelect
                 teamId={teamId}
                 rockId={r.id}
                 status={r.status}
               />
+              <form action={remove}>
+                <button
+                  type="submit"
+                  className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                  aria-label="Delete rock"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </form>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <AddRockForm teamId={teamId} members={members} quarter={quarter} />

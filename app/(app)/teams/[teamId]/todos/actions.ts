@@ -28,6 +28,23 @@ export async function addTodo(teamId: string, formData: FormData) {
   revalidatePath("/my90");
 }
 
+export async function updateTodoTitle(
+  teamId: string,
+  todoId: string,
+  title: string,
+) {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("Title required");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("todos")
+    .update({ title: trimmed })
+    .eq("id", todoId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/teams/${teamId}/todos`);
+  revalidatePath("/my90");
+}
+
 export async function toggleTodo(
   teamId: string,
   todoId: string,

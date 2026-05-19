@@ -1,7 +1,8 @@
 import { requireTeamAccess, getTeamMembers, onTrack } from "@/lib/teams";
 import { lastNMondays, toDateString } from "@/lib/dates";
 import { ValueCell } from "./value-cell";
-import { addMetric } from "./actions";
+import { addMetric, deleteMetric } from "./actions";
+import { Trash2 } from "lucide-react";
 
 export default async function ScorecardPage({
   params,
@@ -68,10 +69,23 @@ export default async function ScorecardPage({
             </tr>
           </thead>
           <tbody>
-            {(metrics ?? []).map((m) => (
-              <tr key={m.id} className="border-b border-zinc-100 last:border-0">
+            {(metrics ?? []).map((m) => {
+              const remove = deleteMetric.bind(null, teamId, m.id);
+              return (
+              <tr key={m.id} className="group border-b border-zinc-100 last:border-0">
                 <td className="px-4 py-2 sticky left-0 bg-white font-medium">
-                  {m.name}
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1">{m.name}</span>
+                    <form action={remove}>
+                      <button
+                        type="submit"
+                        className="text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                        aria-label="Delete metric"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </form>
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-zinc-600">
                   {ownerName(m.owner_id)}
@@ -97,7 +111,8 @@ export default async function ScorecardPage({
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
             {(metrics ?? []).length === 0 && (
               <tr>
                 <td

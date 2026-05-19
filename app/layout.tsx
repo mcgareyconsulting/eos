@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EOS",
+  title: "High Plains Bank",
   description: "Level 10 meetings, scorecards, rocks, and the rest of EOS.",
 };
 

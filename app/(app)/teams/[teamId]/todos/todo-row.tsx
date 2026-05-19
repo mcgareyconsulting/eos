@@ -4,11 +4,13 @@ import { useState, useTransition } from "react";
 import { CheckCircle2, Circle, Trash2, Lock } from "lucide-react";
 import { toggleTodo, deleteTodo } from "./actions";
 import { cn } from "@/lib/utils";
+import { EditableText } from "@/components/editable-text";
 
 export function TodoRow({
   teamId,
   todo,
   ownerName,
+  onRename,
 }: {
   teamId: string;
   todo: {
@@ -19,6 +21,7 @@ export function TodoRow({
     visibility: string;
   };
   ownerName: string;
+  onRename: (next: string) => Promise<unknown>;
 }) {
   const [completed, setCompleted] = useState(!!todo.completed_at);
   const [pending, start] = useTransition();
@@ -66,18 +69,18 @@ export function TodoRow({
           <Circle className="w-5 h-5" />
         )}
       </button>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex items-center gap-1">
         <div
           className={cn(
-            "truncate",
+            "flex-1 min-w-0 truncate",
             completed && "text-zinc-400 line-through",
           )}
         >
-          {todo.title}
-          {todo.visibility === "private" && (
-            <Lock className="inline w-3 h-3 ml-1 text-zinc-400" />
-          )}
+          <EditableText value={todo.title} onSave={onRename} />
         </div>
+        {todo.visibility === "private" && (
+          <Lock className="shrink-0 w-3 h-3 text-zinc-400" />
+        )}
       </div>
       <div className="text-xs text-zinc-500 whitespace-nowrap">{ownerName}</div>
       <div

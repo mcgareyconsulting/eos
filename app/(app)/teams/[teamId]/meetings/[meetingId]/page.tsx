@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FileText } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
@@ -15,12 +16,7 @@ import {
   lastNMondays,
   toDateString,
 } from "@/lib/dates";
-import {
-  advanceSegment,
-  endMeeting,
-  rateMeeting,
-  saveMeetingNotes,
-} from "../actions";
+import { advanceSegment, endMeeting, jumpToSegment } from "../actions";
 import { MeetingPresence } from "@/components/meeting-presence";
 import { SegmentTimer } from "./segment-timer";
 import { SegmentScorecard } from "./segment-scorecard";
@@ -28,6 +24,13 @@ import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIDS } from "./segment-ids";
+import { ConcludeReview, type AttendeeScore } from "./conclude-review";
+import {
+  RecapModal,
+  type RecapItem,
+  type RecapAttendeeRating,
+  type RecapStats,
+} from "./recap-modal";
 
 type MeetingDoc = {
   team_id: string;
@@ -36,16 +39,20 @@ type MeetingDoc = {
   current_segment: Segment;
   segment_started_at: Timestamp | null;
   notes: string | null;
+  absent_user_ids?: string[];
 };
 
 const SCORECARD_WEEKS = 8;
 
 export default async function MeetingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ teamId: string; meetingId: string }>;
+  searchParams: Promise<{ recap?: string }>;
 }) {
   const { teamId: tid, meetingId: mid } = await params;
+  const { recap } = await searchParams;
   const { uid, db, team } = await requireTeamAccess(tid);
   const { name, email } = await requireFirebaseUser();
   const displayName = (name ?? email ?? "Member").trim();
@@ -55,33 +62,173 @@ export default async function MeetingDetailPage({
   const m = meetingSnap.data() as MeetingDoc;
 
   const members = await getTeamMembers(tid);
+  const absentUserIds = m.absent_user_ids ?? [];
 
-  const ratingsSnap = await db
+  const scoresSnap = await db
     .collection("meetings")
     .doc(mid)
-    .collection("ratings")
+    .collection("effectiveness_scores")
     .get();
-  const ratings = ratingsSnap.docs.map(
-    (d) => d.data() as { user_id: string; score: number },
-  );
-  const myRating = ratings.find((r) => r.user_id === uid)?.score ?? null;
-  const avgRating =
-    ratings.length === 0
-      ? null
-      : Math.round(
-          (ratings.reduce((sum, r) => sum + r.score, 0) / ratings.length) * 10,
-        ) / 10;
+  const scores: AttendeeScore[] = scoresSnap.docs.map((d) => {
+    const x = d.data();
+    return {
+      rater_user_id: x.rater_user_id,
+      rated_user_id: x.rated_user_id,
+      score: x.score,
+      notes: x.notes ?? null,
+    };
+  });
 
   const live = !m.ended_at;
   const segmentIndex = SEGMENTS.indexOf(m.current_segment);
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
+  const isConcludeOrDone =
+    m.current_segment === "conclude" || m.current_segment === "done";
+
+  // Recap modal data: items created in the meeting window. Only fetched when
+  // the recap modal is requested AND the meeting has actually ended.
+  const meetingMinutes =
+    m.started_at && m.ended_at
+      ? Math.max(
+          1,
+          Math.round(
+            (m.ended_at.toMillis() - m.started_at.toMillis()) / 60000,
+          ),
+        )
+      : null;
+
+  const showRecap = (recap === "1" || !live) && !!m.ended_at;
+  let newRocks: RecapItem[] = [];
+  let newTodos: RecapItem[] = [];
+  let newIssues: RecapItem[] = [];
+  let issuesSolved: RecapItem[] = [];
+  let newHeadlines: RecapItem[] = [];
+  let attendeeRatings: RecapAttendeeRating[] = [];
+  let recapStats: RecapStats = {
+    totalTrackedIssues: 0,
+    issuesSolvedToday: 0,
+    solveRatePercent: null,
+  };
+  if (showRecap && m.started_at && m.ended_at) {
+    const startedMs = m.started_at.toMillis();
+    const endedMs = m.ended_at.toMillis();
+    const memberName = (id: string | null | undefined) =>
+      id ? members.find((mm) => mm.user_id === id)?.full_name ?? null : null;
+    const inWindow = (ts: Timestamp | null | undefined) => {
+      const ms = ts?.toMillis?.() ?? 0;
+      return ms >= startedMs && ms <= endedMs;
+    };
+
+    // Single team-scoped fetch each, filter in memory.
+    const [rocksSnap, todosSnap, issuesSnap, headlinesSnap] = await Promise.all(
+      [
+        db.collection("rocks").where("team_id", "==", tid).get(),
+        db.collection("todos").where("team_id", "==", tid).get(),
+        db.collection("issues").where("team_id", "==", tid).get(),
+        db.collection("headlines").where("team_id", "==", tid).get(),
+      ],
+    );
+
+    newRocks = rocksSnap.docs
+      .map((d) => ({ id: d.id, x: d.data() }))
+      .filter(({ x }) => inWindow(x.created_at as Timestamp | null))
+      .map(({ id, x }) => ({
+        id,
+        title: x.title,
+        owner_name: memberName(x.owner_id),
+      }));
+
+    // Exclude milestone-style todos (those tied to a rock); recap should show
+    // standalone to-dos created during the meeting.
+    newTodos = todosSnap.docs
+      .map((d) => ({ id: d.id, x: d.data() }))
+      .filter(
+        ({ x }) =>
+          inWindow(x.created_at as Timestamp | null) && !x.source_rock_id,
+      )
+      .map(({ id, x }) => ({
+        id,
+        title: x.title,
+        owner_name: memberName(x.owner_id),
+      }));
+
+    const allIssues = issuesSnap.docs.map((d) => ({ id: d.id, x: d.data() }));
+    newIssues = allIssues
+      .filter(({ x }) => inWindow(x.created_at as Timestamp | null))
+      .map(({ id, x }) => ({
+        id,
+        title: x.title,
+        owner_name: memberName(x.owner_id),
+      }));
+    issuesSolved = allIssues
+      .filter(
+        ({ x }) =>
+          x.status === "solved" &&
+          inWindow(x.resolved_at as Timestamp | null),
+      )
+      .map(({ id, x }) => ({
+        id,
+        title: x.title,
+        owner_name: memberName(x.owner_id),
+      }));
+
+    // Short-term issue health snapshot. "Total tracked" = currently open,
+    // short-term. Solve rate = solved-today / (open-at-start + solved-today).
+    const shortTerm = allIssues.filter(
+      ({ x }) => (x.type ?? "short") === "short",
+    );
+    const openNow = shortTerm.filter(({ x }) => x.status === "open").length;
+    const solvedToday = issuesSolved.length;
+    const denominator = openNow + solvedToday;
+    recapStats = {
+      totalTrackedIssues: openNow,
+      issuesSolvedToday: solvedToday,
+      solveRatePercent:
+        denominator > 0
+          ? Math.round((solvedToday / denominator) * 100)
+          : null,
+    };
+
+    newHeadlines = headlinesSnap.docs
+      .map((d) => ({ id: d.id, x: d.data() }))
+      .filter(({ x }) => inWindow(x.created_at as Timestamp | null))
+      .map(({ id, x }) => ({
+        id,
+        title: x.title,
+        owner_name: memberName(x.created_by),
+      }));
+
+    // Per-attendee average effectiveness score (received).
+    const scoresByRatee = new Map<string, number[]>();
+    scores.forEach((s) => {
+      const list = scoresByRatee.get(s.rated_user_id) ?? [];
+      list.push(s.score);
+      scoresByRatee.set(s.rated_user_id, list);
+    });
+    attendeeRatings = members.map((mm) => {
+      const list = scoresByRatee.get(mm.user_id) ?? [];
+      const absent = absentUserIds.includes(mm.user_id);
+      const avg =
+        list.length === 0
+          ? null
+          : Math.round(
+              (list.reduce((sum, n) => sum + n, 0) / list.length) * 10,
+            ) / 10;
+      return {
+        user_id: mm.user_id,
+        full_name: mm.full_name,
+        average: avg,
+        absent,
+      };
+    });
+  }
 
   return (
     <div className="space-y-6">
-      <div className="text-xs text-zinc-500">
+      <div className="text-xs">
         <Link
           href={`/teams/${tid}/meetings`}
-          className="text-blue-600 underline"
+          className="text-hpb-blue hover:underline"
         >
           ← Meetings
         </Link>
@@ -121,29 +268,72 @@ export default async function MeetingDetailPage({
               </button>
             </form>
           )}
+          {!live && (
+            <Link
+              href={`/teams/${tid}/meetings/${mid}?recap=1`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+            >
+              <FileText className="h-4 w-4" />
+              View recap
+            </Link>
+          )}
         </div>
       </header>
 
       {/* Segment progress */}
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+        {live && (
+          <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+            <span>
+              Step {Math.min(segmentIndex + 1, SEGMENTS.length - 1)} of{" "}
+              {SEGMENTS.length - 1}
+            </span>
+            <span>
+              {Math.round(
+                ((segmentIndex + 1) / (SEGMENTS.length - 1)) * 100,
+              )}
+              %
+            </span>
+          </div>
+        )}
+        {live && (
+          <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div
+              className="h-full bg-hpb-blue transition-all"
+              style={{
+                width: `${Math.min(((segmentIndex + 1) / (SEGMENTS.length - 1)) * 100, 100)}%`,
+              }}
+            />
+          </div>
+        )}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
           {SEGMENTS.filter((s) => s !== "done").map((s, idx) => {
             const isCurrent = s === m.current_segment;
             const isPast = idx < segmentIndex;
+            const pillClass =
+              "rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap transition " +
+              (isCurrent
+                ? "bg-hpb-blue text-white ring-1 ring-inset ring-hpb-blue/30"
+                : isPast
+                  ? "bg-hpb-green/10 text-hpb-green ring-1 ring-inset ring-hpb-green/30 hover:bg-hpb-green/20"
+                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700");
+            if (!live) {
+              return (
+                <span key={s} className={pillClass}>
+                  {SEGMENT_LABELS[s]}
+                </span>
+              );
+            }
             return (
-              <div
-                key={s}
-                className={
-                  "rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap " +
-                  (isCurrent
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                    : isPast
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                      : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400")
-                }
-              >
-                {SEGMENT_LABELS[s]}
-              </div>
+              <form key={s} action={jumpToSegment.bind(null, tid, mid, s)}>
+                <button
+                  type="submit"
+                  className={pillClass}
+                  aria-current={isCurrent ? "step" : undefined}
+                >
+                  {SEGMENT_LABELS[s]}
+                </button>
+              </form>
             );
           })}
         </div>
@@ -176,7 +366,7 @@ export default async function MeetingDetailPage({
               <form action={advanceSegment.bind(null, tid, mid, "next")}>
                 <button
                   type="submit"
-                  className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
                 >
                   Next →
                 </button>
@@ -198,76 +388,33 @@ export default async function MeetingDetailPage({
         </section>
       )}
 
-      {/* Notes */}
-      <form
-        action={saveMeetingNotes.bind(null, tid, mid)}
-        className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3"
-      >
-        <label
-          htmlFor="notes"
-          className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-        >
-          Meeting notes
-        </label>
-        <textarea
-          id="notes"
-          name="notes"
-          rows={6}
-          defaultValue={m.notes ?? ""}
-          placeholder="Decisions, key discussions, anything to remember for the next L10…"
-          className="block w-full rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm"
+      {/* Meeting review — notes + peer effectiveness scoring.
+          Only surfaced in the Conclude segment (live) or on the completed
+          meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
+      {isConcludeOrDone && (
+        <ConcludeReview
+          teamId={tid}
+          meetingId={mid}
+          currentUserId={uid}
+          members={members}
+          absentUserIds={absentUserIds}
+          scores={scores}
+          notes={m.notes ?? null}
         />
-        <button
-          type="submit"
-          className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
-          Save notes
-        </button>
-      </form>
+      )}
 
-      {/* Rating */}
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Rate this meeting (1–10)
-        </h2>
-        <form
-          action={rateMeeting.bind(null, tid, mid)}
-          className="mt-2 flex flex-wrap items-center gap-2"
-        >
-          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-            <label
-              key={n}
-              className={
-                "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border text-sm " +
-                (myRating === n
-                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                  : "border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800")
-              }
-            >
-              <input
-                type="radio"
-                name="score"
-                value={n}
-                defaultChecked={myRating === n}
-                className="sr-only"
-              />
-              {n}
-            </label>
-          ))}
-          <button
-            type="submit"
-            className="ml-auto rounded-md bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Save rating
-          </button>
-        </form>
-        {avgRating != null && (
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Team average: <span className="font-medium">{avgRating}</span>{" "}
-            across {ratings.length} {ratings.length === 1 ? "rating" : "ratings"}.
-          </p>
-        )}
-      </div>
+      <RecapModal
+        meetingMinutes={meetingMinutes}
+        notes={m.notes ?? null}
+        newRocks={newRocks}
+        newTodos={newTodos}
+        newIssues={newIssues}
+        issuesSolved={issuesSolved}
+        newHeadlines={newHeadlines}
+        stats={recapStats}
+        attendeeRatings={attendeeRatings}
+        autoOpen={recap === "1"}
+      />
     </div>
   );
 }

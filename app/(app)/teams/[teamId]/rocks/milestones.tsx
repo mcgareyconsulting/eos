@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { TodoCheckbox } from "../todos/todo-row";
 import { deleteTodo } from "../todos/actions";
 import { addMilestone } from "./actions";
@@ -38,22 +38,40 @@ export function MilestonesDisclosure({
   const [open, setOpen] = useState(false);
   const count = milestones.length;
   const doneCount = milestones.filter((m) => m.completed).length;
+  const allDone = count > 0 && doneCount === count;
 
   return (
     <div className="col-span-12">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
         <ChevronRight
           className={
             "h-3.5 w-3.5 transition-transform " + (open ? "rotate-90" : "")
           }
         />
-        <span>
-          Milestones {count > 0 && `(${doneCount}/${count})`}
-        </span>
+        {count === 0 ? (
+          <span className="inline-flex items-center gap-1">
+            <Plus className="h-3 w-3" />
+            Add milestones
+          </span>
+        ) : (
+          <>
+            <span>Milestones</span>
+            <span
+              className={
+                "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset " +
+                (allDone
+                  ? "bg-hpb-green/10 text-hpb-green ring-hpb-green/30"
+                  : "bg-hpb-gold/15 text-hpb-brown dark:text-hpb-gold ring-hpb-gold/30")
+              }
+            >
+              {doneCount}/{count}
+            </span>
+          </>
+        )}
       </button>
 
       {open && (

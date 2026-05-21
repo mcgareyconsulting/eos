@@ -13,12 +13,12 @@ export const STATUS_LABELS: Record<RockStatus, string> = {
 
 export const STATUS_STYLES: Record<RockStatus, string> = {
   on_track:
-    "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200",
+    "bg-hpb-green/10 dark:bg-hpb-green/15 text-hpb-green dark:text-hpb-green ring-hpb-green/30",
   off_track:
-    "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
-  done: "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 ring-zinc-200",
+    "bg-hpb-gold/15 dark:bg-hpb-gold/20 text-hpb-brown dark:text-hpb-gold ring-hpb-gold/40",
+  done: "bg-hpb-blue/10 dark:bg-hpb-blue/20 text-hpb-blue dark:text-white ring-hpb-blue/30",
   cancelled:
-    "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 ring-zinc-200",
+    "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 ring-zinc-200 dark:ring-zinc-700",
 };
 
 export function isRockStatus(v: string): v is RockStatus {

@@ -5,7 +5,8 @@ import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
 import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
 import { OwnerFilter } from "./owner-filter";
-import { addRock, deleteRock, updateRockTitle } from "./actions";
+import { AddRockDrawer } from "./add-rock-drawer";
+import { deleteRock, updateRockTitle } from "./actions";
 
 type RockDoc = {
   team_id: string;
@@ -175,7 +176,16 @@ export default async function RocksPage({
             {team.name} · current quarter {quarter}
           </p>
         </div>
-        <OwnerFilter members={members} currentUserId={uid} />
+        <div className="flex items-center gap-2">
+          <OwnerFilter members={members} currentUserId={uid} />
+          <AddRockDrawer
+            teamId={teamId}
+            members={members}
+            quarter={quarter}
+            defaultDue={eoq}
+            currentUserId={uid}
+          />
+        </div>
       </header>
 
       {isAll ? (
@@ -206,12 +216,6 @@ export default async function RocksPage({
         </RockSection>
       )}
 
-      <AddRockForm
-        teamId={teamId}
-        members={members}
-        quarter={quarter}
-        defaultDue={eoq}
-      />
     </div>
   );
 }
@@ -243,68 +247,3 @@ function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AddRockForm({
-  teamId,
-  members,
-  quarter,
-  defaultDue,
-}: {
-  teamId: string;
-  members: { user_id: string; full_name: string }[];
-  quarter: string;
-  defaultDue: string;
-}) {
-  async function action(formData: FormData) {
-    "use server";
-    await addRock(teamId, formData);
-  }
-  return (
-    <form
-      action={action}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
-    >
-      <input
-        name="title"
-        placeholder="Rock title"
-        required
-        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
-      />
-      <input
-        name="quarter"
-        defaultValue={quarter}
-        required
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
-      />
-      <input
-        name="due_date"
-        type="date"
-        defaultValue={defaultDue}
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
-      />
-      <select
-        name="owner_id"
-        defaultValue=""
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
-      >
-        <option value="">— owner —</option>
-        {members.map((m) => (
-          <option key={m.user_id} value={m.user_id}>
-            {m.full_name}
-          </option>
-        ))}
-      </select>
-      <textarea
-        name="description"
-        placeholder="What does done look like? (optional)"
-        rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
-      />
-      <button
-        type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
-        Add rock
-      </button>
-    </form>
-  );
-}

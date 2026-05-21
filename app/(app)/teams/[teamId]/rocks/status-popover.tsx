@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { setRockStatus } from "./actions";
 import {
@@ -83,12 +84,20 @@ export function StatusPopover({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className={cn(
-          "rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset focus:outline-none",
+          "inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-0.5 text-xs font-medium ring-1 ring-inset focus:outline-none focus-visible:ring-2 hover:brightness-95 dark:hover:brightness-110 hover:ring-2",
           STATUS_STYLES[current],
         )}
       >
-        {STATUS_LABELS[current]}
+        <span>{STATUS_LABELS[current]}</span>
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 opacity-60 transition-transform",
+            open && "rotate-180",
+          )}
+        />
       </button>
 
       {open && (

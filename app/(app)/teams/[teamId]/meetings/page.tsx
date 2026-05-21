@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Plus, Star, Trash2 } from "lucide-react";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
-import { SEGMENT_LABELS } from "@/lib/l10/segments";
+import { SEGMENT_LABELS, SEGMENTS } from "@/lib/l10/segments";
 import { durationMinutes } from "@/lib/dates";
 import { deleteMeeting, startMeeting } from "./actions";
 
@@ -32,6 +32,31 @@ export default async function MeetingsPage({
       return bt - at;
     });
 
+  // Average peer effectiveness score across all attendees, per meeting.
+  // Bounded by team meeting history (a year of weekly L10s is ~52 reads).
+  const ratingsByMeeting = new Map<string, number | null>();
+  await Promise.all(
+    meetings.map(async (m) => {
+      const r = await db
+        .collection("meetings")
+        .doc(m.id)
+        .collection("effectiveness_scores")
+        .get();
+      if (r.empty) {
+        ratingsByMeeting.set(m.id, null);
+        return;
+      }
+      const scores = r.docs.map((d) => (d.data() as { score: number }).score);
+      const avg =
+        Math.round(
+          (scores.reduce((s, n) => s + n, 0) / scores.length) * 10,
+        ) / 10;
+      ratingsByMeeting.set(m.id, avg);
+    }),
+  );
+
+  const segmentCount = SEGMENTS.length - 1; // exclude "done"
+
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between">
@@ -55,11 +80,16 @@ export default async function MeetingsPage({
           const ended = m.ended_at?.toDate?.();
           const live = !ended;
           const remove = deleteMeeting.bind(null, tid, m.id);
+          const avg = ratingsByMeeting.get(m.id);
 
           const duration =
             started && ended
               ? durationMinutes(started.toISOString(), ended.toISOString())
               : null;
+
+          const segIdx = SEGMENTS.indexOf(m.current_segment);
+          const stepNumber =
+            live && segIdx >= 0 ? Math.min(segIdx + 1, segmentCount) : null;
 
           return (
             <div
@@ -81,13 +111,24 @@ export default async function MeetingsPage({
                 </div>
                 <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                   {live
-                    ? `In progress · ${SEGMENT_LABELS[m.current_segment] ?? m.current_segment}`
+                    ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[m.current_segment] ?? m.current_segment}`
                     : `Completed · ${duration ?? "—"} min`}
                 </div>
               </Link>
 
+              {!live && avg != null && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-hpb-gold/15 px-2 py-0.5 text-xs font-medium text-hpb-brown dark:text-hpb-gold ring-1 ring-inset ring-hpb-gold/40"
+                  title={`Team average rating`}
+                >
+                  <Star className="h-3 w-3 fill-current" />
+                  {avg.toFixed(1)}
+                </span>
+              )}
+
               {live && (
-                <span className="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200">
+                <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
+                  <span className="h-1.5 w-1.5 rounded-full bg-hpb-green animate-pulse" />
                   Live
                 </span>
               )}
@@ -118,8 +159,9 @@ function StartMeetingButton({ teamId }: { teamId: string }) {
     <form action={action}>
       <button
         type="submit"
-        className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
       >
+        <Plus className="h-4 w-4" />
         Start meeting
       </button>
     </form>

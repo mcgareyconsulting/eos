@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
-import { nextSegment, prevSegment, type Segment } from "@/lib/l10/segments";
+import {
+  SEGMENTS,
+  nextSegment,
+  prevSegment,
+  type Segment,
+} from "@/lib/l10/segments";
 
 function listPath(teamId: string) {
   return `/teams/${teamId}/meetings`;
@@ -49,6 +54,22 @@ export async function advanceSegment(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
+export async function jumpToSegment(
+  teamId: string,
+  meetingId: string,
+  target: Segment,
+) {
+  if (!SEGMENTS.includes(target) || target === "done") {
+    throw new Error("Invalid segment");
+  }
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("meetings").doc(meetingId).update({
+    current_segment: target,
+    segment_started_at: FieldValue.serverTimestamp(),
+  });
+  revalidatePath(detailPath(teamId, meetingId));
+}
+
 export async function endMeeting(teamId: string, meetingId: string) {
   const { db } = await requireTeamAccess(teamId);
   await db.collection("meetings").doc(meetingId).update({
@@ -57,6 +78,8 @@ export async function endMeeting(teamId: string, meetingId: string) {
   });
   revalidatePath(detailPath(teamId, meetingId));
   revalidatePath(listPath(teamId));
+  // ?recap=1 opens the post-meeting recap modal on the next render.
+  redirect(`${detailPath(teamId, meetingId)}?recap=1`);
 }
 
 export async function saveMeetingNotes(
@@ -70,38 +93,64 @@ export async function saveMeetingNotes(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
-export async function rateMeeting(
+// Peer effectiveness scoring (EOS-style end-of-meeting feedback). Each rater
+// scores each other attendee 1–10 with optional notes. Doc id is
+// `${rater}_${ratee}` so re-saving overwrites the prior score from that rater.
+export async function scoreAttendee(
   teamId: string,
   meetingId: string,
+  ratedUserId: string,
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
+  if (ratedUserId === uid) throw new Error("Cannot score yourself");
   const score = Number(formData.get("score"));
   if (!Number.isFinite(score) || score < 1 || score > 10) {
     throw new Error("Score must be 1–10");
   }
+  const notes = String(formData.get("notes") ?? "").trim() || null;
   await db
     .collection("meetings")
     .doc(meetingId)
-    .collection("ratings")
-    .doc(uid)
+    .collection("effectiveness_scores")
+    .doc(`${uid}_${ratedUserId}`)
     .set({
-      user_id: uid,
+      rater_user_id: uid,
+      rated_user_id: ratedUserId,
       score: Math.round(score),
+      notes,
       created_at: FieldValue.serverTimestamp(),
     });
   revalidatePath(detailPath(teamId, meetingId));
 }
 
+// Absence is a meeting-level fact, not per-rater. We store the list of absent
+// user IDs on the meeting doc and union/remove on toggle.
+export async function setAttendeeAbsence(
+  teamId: string,
+  meetingId: string,
+  userId: string,
+  absent: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const ref = db.collection("meetings").doc(meetingId);
+  await ref.update({
+    absent_user_ids: absent
+      ? FieldValue.arrayUnion(userId)
+      : FieldValue.arrayRemove(userId),
+  });
+  revalidatePath(detailPath(teamId, meetingId));
+}
+
 export async function deleteMeeting(teamId: string, meetingId: string) {
   const { db } = await requireTeamAccess(teamId);
-  const ratings = await db
+  const scores = await db
     .collection("meetings")
     .doc(meetingId)
-    .collection("ratings")
+    .collection("effectiveness_scores")
     .get();
   const batch = db.batch();
-  ratings.docs.forEach((r) => batch.delete(r.ref));
+  scores.docs.forEach((r) => batch.delete(r.ref));
   batch.delete(db.collection("meetings").doc(meetingId));
   await batch.commit();
   revalidatePath(listPath(teamId));

@@ -1,106 +1,127 @@
 import Link from "next/link";
-import { Play, Calendar } from "lucide-react";
-import { requireTeamAccess } from "@/lib/teams";
-import { startMeeting } from "./actions";
-import { SEGMENT_LABELS, type Segment } from "@/lib/l10/segments";
+import { Trash2 } from "lucide-react";
+import { Timestamp } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
+import { SEGMENT_LABELS } from "@/lib/l10/segments";
 import { durationMinutes } from "@/lib/dates";
+import { deleteMeeting, startMeeting } from "./actions";
 
-export default async function MeetingsListPage({
+type MeetingDoc = {
+  team_id: string;
+  started_at: Timestamp | null;
+  ended_at: Timestamp | null;
+  current_segment: keyof typeof SEGMENT_LABELS;
+  notes: string | null;
+};
+
+export default async function MeetingsPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
-  const { teamId } = await params;
-  const { supabase, team } = await requireTeamAccess(teamId);
+  const { teamId: tid } = await params;
+  const { db, team } = await requireTeamAccess(tid);
 
-  const { data: meetings } = await supabase
-    .from("meetings")
-    .select(
-      "id, started_at, ended_at, current_segment, segment_started_at, notes",
-    )
-    .eq("team_id", teamId)
-    .order("started_at", { ascending: false })
-    .limit(20);
+  const snap = await db.collection("meetings").where("team_id", "==", tid).get();
 
-  const active = (meetings ?? []).find((m) => !m.ended_at);
-  const past = (meetings ?? []).filter((m) => m.ended_at);
-
-  async function start() {
-    "use server";
-    await startMeeting(teamId);
-  }
+  const meetings = snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as MeetingDoc) }))
+    .sort((a, b) => {
+      const at = a.started_at?.toMillis?.() ?? 0;
+      const bt = b.started_at?.toMillis?.() ?? 0;
+      return bt - at;
+    });
 
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">L10 Meetings</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {team.name}
+            {team.name} · Level 10 weekly meetings
           </p>
         </div>
-        {active ? (
-          <Link
-            href={`/teams/${teamId}/meetings/${active.id}`}
-            className="inline-flex items-center gap-2 rounded-md bg-emerald-600 dark:bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:hover:bg-emerald-400"
-          >
-            <Play className="w-4 h-4" />
-            Rejoin meeting in progress
-          </Link>
-        ) : (
-          <form action={start}>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200"
-            >
-              <Play className="w-4 h-4" />
-              Start L10
-            </button>
-          </form>
-        )}
+        <StartMeetingButton teamId={tid} />
       </header>
 
-      <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-          Past meetings ({past.length})
-        </h2>
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
-          {past.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              No past meetings yet.
-            </div>
-          )}
-          {past.map((m) => (
-            <Link
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+        {meetings.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            No meetings yet. Click &quot;Start meeting&quot; to begin.
+          </div>
+        )}
+        {meetings.map((m) => {
+          const started = m.started_at?.toDate?.();
+          const ended = m.ended_at?.toDate?.();
+          const live = !ended;
+          const remove = deleteMeeting.bind(null, tid, m.id);
+
+          const duration =
+            started && ended
+              ? durationMinutes(started.toISOString(), ended.toISOString())
+              : null;
+
+          return (
+            <div
               key={m.id}
-              href={`/teams/${teamId}/meetings/${m.id}`}
-              className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
+              className="group flex items-center gap-4 px-4 py-3 text-sm"
             >
-              <Calendar className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
-              <div className="flex-1">
+              <Link
+                href={`/teams/${tid}/meetings/${m.id}`}
+                className="flex-1 min-w-0"
+              >
                 <div className="font-medium">
-                  {new Date(m.started_at).toLocaleString()}
+                  {started?.toLocaleString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }) ?? "—"}
                 </div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Ended {m.ended_at
-                    ? new Date(m.ended_at).toLocaleString()
-                    : ""}
-                  {" · "}
-                  {durationMinutes(m.started_at, m.ended_at)} min
+                <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {live
+                    ? `In progress · ${SEGMENT_LABELS[m.current_segment] ?? m.current_segment}`
+                    : `Completed · ${duration ?? "—"} min`}
                 </div>
-              </div>
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                {
-                  SEGMENT_LABELS[
-                    (m.current_segment as Segment) ?? "done"
-                  ]
-                }
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
+              </Link>
+
+              {live && (
+                <span className="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-200">
+                  Live
+                </span>
+              )}
+
+              <form action={remove}>
+                <button
+                  type="submit"
+                  className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                  aria-label="Delete meeting"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
+function StartMeetingButton({ teamId }: { teamId: string }) {
+  async function action() {
+    "use server";
+    await startMeeting(teamId);
+  }
+  return (
+    <form action={action}>
+      <button
+        type="submit"
+        className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
+      >
+        Start meeting
+      </button>
+    </form>
+  );
+}

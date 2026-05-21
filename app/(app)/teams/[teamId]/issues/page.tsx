@@ -1,43 +1,75 @@
-import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
-import { addIssue, deleteIssue, reopenIssue, updateIssueTitle } from "./actions";
-import { PrioritySelect } from "./priority-select";
+import { Trash2 } from "lucide-react";
+import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { VoteButton } from "./vote-button";
-import { SolveButton } from "./solve-button";
-import { EditableText } from "@/components/editable-text";
+import { StatusActions } from "./status-actions";
+import { addIssue, deleteIssue } from "./actions";
+
+type IssueDoc = {
+  team_id: string;
+  title: string;
+  description: string | null;
+  owner_id: string | null;
+  priority: number;
+  votes: number;
+  type: "short" | "long";
+  status: "open" | "solving" | "solved" | "dropped";
+};
+
+const STATUS_LABEL: Record<IssueDoc["status"], string> = {
+  open: "Open",
+  solving: "Solving",
+  solved: "Solved",
+  dropped: "Dropped",
+};
+
+const STATUS_BADGE: Record<IssueDoc["status"], string> = {
+  open: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300",
+  solving:
+    "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300",
+  solved:
+    "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
+  dropped:
+    "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+};
 
 export default async function IssuesPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
-  const { teamId } = await params;
-  const { user, supabase, team } = await requireTeamAccess(teamId);
-  const members = await getTeamMembers(teamId);
+  const { teamId: tid } = await params;
+  const { uid, db, team } = await requireTeamAccess(tid);
+  const members = await getTeamMembers(tid);
 
-  const { data: issues } = await supabase
-    .from("issues")
-    .select(
-      "id, title, description, owner_id, priority, votes, type, status, resolved_at, resolution_todo_id, created_at",
-    )
-    .eq("team_id", teamId)
-    .order("status", { ascending: true })
-    .order("priority", { ascending: false })
-    .order("votes", { ascending: false })
-    .order("created_at", { ascending: true });
+  const [issuesSnap, votesSnap] = await Promise.all([
+    db.collection("issues").where("team_id", "==", tid).get(),
+    db
+      .collection("issue_votes")
+      .where("user_id", "==", uid)
+      .where("team_id", "==", tid)
+      .get(),
+  ]);
 
-  const issueIds = (issues ?? []).map((i) => i.id);
-  const { data: myVotes } =
-    issueIds.length === 0
-      ? { data: [] as { issue_id: string }[] }
-      : await supabase
-          .from("issue_votes")
-          .select("issue_id")
-          .eq("user_id", user.id)
-          .in("issue_id", issueIds);
-  const votedSet = new Set((myVotes ?? []).map((v) => v.issue_id));
+  const myVoteByIssue = new Map<string, number>();
+  let myVotesUsed = 0;
+  for (const d of votesSnap.docs) {
+    const data = d.data();
+    const c = Number(data.count ?? 1); // back-compat: legacy docs without count
+    myVoteByIssue.set(data.issue_id as string, c);
+    myVotesUsed += c;
+  }
+  const myVotesRemaining = Math.max(0, 3 - myVotesUsed);
 
-  const open = (issues ?? []).filter((i) => i.status !== "solved");
-  const solved = (issues ?? []).filter((i) => i.status === "solved");
+  const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
+  const issues = issuesSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as IssueDoc) }))
+    .sort((a, b) => {
+      const byStatus =
+        STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+      if (byStatus !== 0) return byStatus;
+      // votes desc within status
+      return (b.votes ?? 0) - (a.votes ?? 0);
+    });
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -46,187 +78,75 @@ export default async function IssuesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {team.name} · {myVotesUsed}/3 votes used · IDS during L10
+        </p>
       </header>
 
-      <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-          Open ({open.length})
-        </h2>
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
-          {open.length === 0 && (
-            <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-              Nothing open. Add an issue below.
-            </div>
-          )}
-          {open.map((i) => (
-            <IssueRow
-              key={i.id}
-              teamId={teamId}
-              issue={i}
-              voted={votedSet.has(i.id)}
-              ownerName={ownerName(i.owner_id)}
-              members={members}
-              currentUserId={user.id}
-            />
-          ))}
-        </div>
-      </section>
+      <AddIssueForm teamId={tid} />
 
-      {solved.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-            Solved ({solved.length})
-          </h2>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
-            {solved.map((i) => (
-              <SolvedRow
-                key={i.id}
-                teamId={teamId}
-                issue={i}
-                ownerName={ownerName(i.owner_id)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <AddIssueForm teamId={teamId} members={members} />
-    </div>
-  );
-}
-
-function IssueRow({
-  teamId,
-  issue,
-  voted,
-  ownerName,
-  members,
-  currentUserId,
-}: {
-  teamId: string;
-  issue: {
-    id: string;
-    title: string;
-    description: string | null;
-    owner_id: string | null;
-    priority: number;
-    votes: number;
-    type: string;
-  };
-  voted: boolean;
-  ownerName: string;
-  members: { user_id: string; full_name: string }[];
-  currentUserId: string;
-}) {
-  const renameTitle = updateIssueTitle.bind(null, teamId, issue.id);
-  return (
-    <div className="grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm">
-      <div className="col-span-6 min-w-0">
-        <EditableText
-          value={issue.title}
-          onSave={renameTitle}
-          className="font-medium"
-        />
-        {issue.description && (
-          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
-            {issue.description}
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+        {issues.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            No issues yet. Add one above.
           </div>
         )}
-        <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-          {issue.type === "long" ? "Long-term" : "Short-term"}
-        </div>
-      </div>
-      <div className="col-span-2 text-zinc-600 dark:text-zinc-400">{ownerName}</div>
-      <div className="col-span-1">
-        <PrioritySelect
-          teamId={teamId}
-          issueId={issue.id}
-          priority={issue.priority}
-        />
-      </div>
-      <div className="col-span-1">
-        <VoteButton
-          teamId={teamId}
-          issueId={issue.id}
-          votes={issue.votes}
-          voted={voted}
-        />
-      </div>
-      <div className="col-span-2 justify-self-end">
-        <SolveButton
-          teamId={teamId}
-          issueId={issue.id}
-          defaultTitle={issue.title}
-          members={members}
-          currentUserId={currentUserId}
-        />
-      </div>
-    </div>
-  );
-}
-
-function SolvedRow({
-  teamId,
-  issue,
-  ownerName,
-}: {
-  teamId: string;
-  issue: {
-    id: string;
-    title: string;
-    resolved_at: string | null;
-  };
-  ownerName: string;
-}) {
-  async function reopen() {
-    "use server";
-    await reopenIssue(teamId, issue.id);
-  }
-  async function remove() {
-    "use server";
-    await deleteIssue(teamId, issue.id);
-  }
-  return (
-    <div className="grid grid-cols-12 gap-3 px-4 py-2.5 items-center text-sm">
-      <div className="col-span-7 text-zinc-500 dark:text-zinc-400 line-through truncate">
-        {issue.title}
-      </div>
-      <div className="col-span-2 text-xs text-zinc-500 dark:text-zinc-400">{ownerName}</div>
-      <div className="col-span-1 text-xs text-zinc-400 dark:text-zinc-500">
-        {issue.resolved_at
-          ? new Date(issue.resolved_at).toLocaleDateString()
-          : "—"}
-      </div>
-      <div className="col-span-2 justify-self-end flex gap-3">
-        <form action={reopen}>
-          <button
-            type="submit"
-            className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            Reopen
-          </button>
-        </form>
-        <form action={remove}>
-          <button
-            type="submit"
-            className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-red-600"
-          >
-            Delete
-          </button>
-        </form>
+        {issues.map((i) => {
+          const remove = deleteIssue.bind(null, tid, i.id);
+          return (
+            <div
+              key={i.id}
+              className="group flex items-start gap-3 px-4 py-3 text-sm"
+            >
+              <VoteButton
+                teamId={tid}
+                issueId={i.id}
+                count={i.votes ?? 0}
+                myCount={myVoteByIssue.get(i.id) ?? 0}
+                myRemaining={myVotesRemaining}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                  >
+                    {STATUS_LABEL[i.status]}
+                  </span>
+                  <span className="text-xs text-zinc-400">
+                    {i.type === "long" ? "Long-term" : "Short-term"}
+                  </span>
+                </div>
+                <div className="mt-1 font-medium">{i.title}</div>
+                {i.description && (
+                  <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
+                    {i.description}
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-zinc-500">
+                  {ownerName(i.owner_id)}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <StatusActions teamId={tid} issueId={i.id} status={i.status} />
+                <form action={remove}>
+                  <button
+                    type="submit"
+                    className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                    aria-label="Delete issue"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </form>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function AddIssueForm({
-  teamId,
-  members,
-}: {
-  teamId: string;
-  members: { user_id: string; full_name: string }[];
-}) {
+function AddIssueForm({ teamId }: { teamId: string }) {
   async function action(formData: FormData) {
     "use server";
     await addIssue(teamId, formData);
@@ -238,33 +158,10 @@ function AddIssueForm({
     >
       <input
         name="title"
-        placeholder="Issue title"
+        placeholder="Issue (one line)"
         required
-        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="md:col-span-4 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
-      <select
-        name="owner_id"
-        defaultValue=""
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
-      >
-        <option value="">— owner —</option>
-        {members.map((m) => (
-          <option key={m.user_id} value={m.user_id}>
-            {m.full_name}
-          </option>
-        ))}
-      </select>
-      <select
-        name="priority"
-        defaultValue="3"
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
-      >
-        {[5, 4, 3, 2, 1].map((n) => (
-          <option key={n} value={n}>
-            P{n}
-          </option>
-        ))}
-      </select>
       <select
         name="type"
         defaultValue="short"
@@ -273,9 +170,20 @@ function AddIssueForm({
         <option value="short">Short-term</option>
         <option value="long">Long-term</option>
       </select>
+      <select
+        name="priority"
+        defaultValue="3"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+      >
+        <option value="1">P1 — urgent</option>
+        <option value="2">P2 — high</option>
+        <option value="3">P3 — medium</option>
+        <option value="4">P4 — low</option>
+        <option value="5">P5 — backlog</option>
+      </select>
       <textarea
         name="description"
-        placeholder="Notes (optional)"
+        placeholder="Detail (optional)"
         rows={2}
         className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />

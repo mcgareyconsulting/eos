@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/proxy";
+import { gateRequest } from "@/lib/firebase/proxy";
 
-export async function proxy(request: NextRequest) {
-  return updateSession(request);
+export function proxy(request: NextRequest) {
+  return gateRequest(request);
 }
 
 export const config = {

@@ -2,116 +2,108 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import {
-  SEGMENTS,
-  type Segment,
-  nextSegment,
-} from "@/lib/l10/segments";
+import { FieldValue } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
+import { nextSegment, prevSegment, type Segment } from "@/lib/l10/segments";
 
-export async function startMeeting(teamId: string) {
-  const supabase = await createClient();
-  const now = new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from("meetings")
-    .insert({
-      team_id: teamId,
-      started_at: now,
-      current_segment: "segue",
-      segment_started_at: now,
-    })
-    .select("id")
-    .single();
-
-  if (error) throw new Error(error.message);
-  revalidatePath(`/teams/${teamId}/meetings`);
-  redirect(`/teams/${teamId}/meetings/${data!.id}`);
+function listPath(teamId: string) {
+  return `/teams/${teamId}/meetings`;
+}
+function detailPath(teamId: string, meetingId: string) {
+  return `/teams/${teamId}/meetings/${meetingId}`;
 }
 
-export async function setSegment(
-  teamId: string,
-  meetingId: string,
-  segment: Segment,
-) {
-  if (!SEGMENTS.includes(segment)) throw new Error("Invalid segment");
-  const supabase = await createClient();
-  const now = new Date().toISOString();
-
-  const update: Record<string, unknown> = {
-    current_segment: segment,
-    segment_started_at: now,
-  };
-  if (segment === "done") {
-    update.ended_at = now;
-  }
-
-  const { error } = await supabase
-    .from("meetings")
-    .update(update)
-    .eq("id", meetingId);
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/teams/${teamId}/meetings/${meetingId}`);
+export async function startMeeting(teamId: string) {
+  const { db } = await requireTeamAccess(teamId);
+  const ref = db.collection("meetings").doc();
+  await ref.set({
+    team_id: teamId,
+    started_at: FieldValue.serverTimestamp(),
+    ended_at: null,
+    current_segment: "segue",
+    segment_started_at: FieldValue.serverTimestamp(),
+    notes: null,
+  });
+  redirect(detailPath(teamId, ref.id));
 }
 
 export async function advanceSegment(
   teamId: string,
   meetingId: string,
-  fromSegment: Segment,
+  direction: "next" | "prev",
 ) {
-  await setSegment(teamId, meetingId, nextSegment(fromSegment));
+  const { db } = await requireTeamAccess(teamId);
+  const ref = db.collection("meetings").doc(meetingId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Meeting not found");
+
+  const current = (snap.data()?.current_segment as Segment) ?? "segue";
+  const target =
+    direction === "next" ? nextSegment(current) : prevSegment(current);
+
+  await ref.update({
+    current_segment: target,
+    segment_started_at: FieldValue.serverTimestamp(),
+  });
+
+  revalidatePath(detailPath(teamId, meetingId));
 }
 
 export async function endMeeting(teamId: string, meetingId: string) {
-  await setSegment(teamId, meetingId, "done");
-  redirect(`/teams/${teamId}/meetings`);
-}
-
-export async function submitRating(
-  teamId: string,
-  meetingId: string,
-  score: number,
-) {
-  if (!Number.isFinite(score) || score < 1 || score > 10) {
-    throw new Error("Score must be 1-10");
-  }
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-
-  const { error } = await supabase
-    .from("meeting_ratings")
-    .upsert(
-      { meeting_id: meetingId, user_id: user.id, score: Math.round(score) },
-      { onConflict: "meeting_id,user_id" },
-    );
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/teams/${teamId}/meetings/${meetingId}`);
-}
-
-// Drop an off-track scorecard metric / off-track rock / overdue todo into the
-// Issues list as a P5 short-term issue, tagged with the meeting id so it can be
-// IDS'd in this same meeting.
-export async function dropToIssues(
-  teamId: string,
-  meetingId: string,
-  title: string,
-  description?: string,
-) {
-  const supabase = await createClient();
-  const { error } = await supabase.from("issues").insert({
-    team_id: teamId,
-    title,
-    description: description ?? null,
-    priority: 5,
-    type: "short",
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("meetings").doc(meetingId).update({
+    current_segment: "done",
+    ended_at: FieldValue.serverTimestamp(),
   });
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/teams/${teamId}/meetings/${meetingId}`);
-  revalidatePath(`/teams/${teamId}/issues`);
+  revalidatePath(detailPath(teamId, meetingId));
+  revalidatePath(listPath(teamId));
 }
+
+export async function saveMeetingNotes(
+  teamId: string,
+  meetingId: string,
+  formData: FormData,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const notes = String(formData.get("notes") ?? "");
+  await db.collection("meetings").doc(meetingId).update({ notes });
+  revalidatePath(detailPath(teamId, meetingId));
+}
+
+export async function rateMeeting(
+  teamId: string,
+  meetingId: string,
+  formData: FormData,
+) {
+  const { uid, db } = await requireTeamAccess(teamId);
+  const score = Number(formData.get("score"));
+  if (!Number.isFinite(score) || score < 1 || score > 10) {
+    throw new Error("Score must be 1–10");
+  }
+  await db
+    .collection("meetings")
+    .doc(meetingId)
+    .collection("ratings")
+    .doc(uid)
+    .set({
+      user_id: uid,
+      score: Math.round(score),
+      created_at: FieldValue.serverTimestamp(),
+    });
+  revalidatePath(detailPath(teamId, meetingId));
+}
+
+export async function deleteMeeting(teamId: string, meetingId: string) {
+  const { db } = await requireTeamAccess(teamId);
+  const ratings = await db
+    .collection("meetings")
+    .doc(meetingId)
+    .collection("ratings")
+    .get();
+  const batch = db.batch();
+  ratings.docs.forEach((r) => batch.delete(r.ref));
+  batch.delete(db.collection("meetings").doc(meetingId));
+  await batch.commit();
+  revalidatePath(listPath(teamId));
+}
+

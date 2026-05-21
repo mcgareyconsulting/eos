@@ -1,113 +1,83 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { setScorecardValue } from "./actions";
-import { cn } from "@/lib/utils";
+import { useOptimistic, useState, useTransition } from "react";
+import { setEntry } from "./actions";
 
 export function ValueCell({
   teamId,
   metricId,
-  weekStart,
-  initialValue,
+  weekStartDate,
+  initial,
   onTrack,
-  readOnly = false,
-  unit,
 }: {
   teamId: string;
   metricId: string;
-  weekStart: string;
-  initialValue: number | null;
+  weekStartDate: string;
+  initial: number | null;
   onTrack: boolean | null;
-  readOnly?: boolean;
-  unit: string;
 }) {
-  const [value, setValue] = useState<string>(
-    initialValue == null ? "" : String(initialValue),
-  );
-  const [savedValue, setSavedValue] = useState(value);
-  const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initial == null ? "" : String(initial));
+  const [, start] = useTransition();
+  const [optimisticValue, setOptimisticValue] = useOptimistic(
+    initial,
+    (_state, next: number | null) => next,
+  );
+
+  const display = optimisticValue == null ? "—" : optimisticValue.toLocaleString();
+  const color =
+    onTrack == null
+      ? "text-zinc-500 dark:text-zinc-400"
+      : onTrack
+        ? "text-emerald-700 dark:text-emerald-300"
+        : "text-red-700 dark:text-red-300";
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(optimisticValue == null ? "" : String(optimisticValue));
+          setEditing(true);
+        }}
+        className={`w-full text-right rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 tabular-nums ${color}`}
+      >
+        {display}
+      </button>
+    );
+  }
 
   const commit = () => {
-    if (value === savedValue) {
+    if (draft === (optimisticValue == null ? "" : String(optimisticValue))) {
       setEditing(false);
       return;
     }
-    startTransition(async () => {
-      try {
-        await setScorecardValue(teamId, metricId, weekStart, value);
-        setSavedValue(value);
-      } catch {
-        setValue(savedValue);
-      } finally {
-        setEditing(false);
-      }
+    const parsed = draft.trim() === "" ? null : Number(draft);
+    const next = parsed != null && Number.isFinite(parsed) ? parsed : null;
+    setEditing(false);
+    start(async () => {
+      setOptimisticValue(next);
+      await setEntry(teamId, metricId, weekStartDate, draft);
     });
   };
 
-  const display = formatValue(savedValue, unit);
-
-  const colorClass =
-    savedValue === ""
-      ? "text-zinc-400 dark:text-zinc-500"
-      : onTrack === true
-        ? "text-emerald-700"
-        : onTrack === false
-          ? "text-red-600"
-          : "text-zinc-700 dark:text-zinc-300";
-
-  if (readOnly) {
-    return (
-      <div className={cn("text-right tabular-nums text-sm py-1", colorClass)}>
-        {display || "—"}
-      </div>
-    );
-  }
-
-  if (editing) {
-    return (
-      <input
-        type="text"
-        inputMode="decimal"
-        autoFocus
-        defaultValue={value}
-        onBlur={(e) => {
-          setValue(e.target.value);
-          // commit on next tick so state is set
-          setTimeout(commit, 0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            setValue(savedValue);
-            setEditing(false);
-          }
-        }}
-        className="w-full text-right tabular-nums text-sm rounded-sm border border-zinc-300 dark:border-zinc-700 px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-zinc-900"
-        disabled={pending}
-      />
-    );
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className={cn(
-        "w-full text-right tabular-nums text-sm py-1 px-1 rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800",
-        colorClass,
-      )}
-    >
-      {display || "—"}
-    </button>
+    <input
+      autoFocus
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLElement).blur();
+        } else if (e.key === "Escape") {
+          setEditing(false);
+        }
+      }}
+      className="w-full text-right rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-zinc-900"
+    />
   );
-}
-
-function formatValue(v: string, unit: string): string {
-  if (v === "") return "";
-  const n = Number(v);
-  if (Number.isNaN(n)) return v;
-  if (unit === "currency") return `$${n.toLocaleString()}`;
-  if (unit === "percent") return `${n}%`;
-  return n.toLocaleString();
 }

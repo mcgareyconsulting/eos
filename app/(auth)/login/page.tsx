@@ -1,43 +1,50 @@
+import Link from "next/link";
+import { verifySession } from "@/lib/firebase/session";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    next?: string;
-    error?: string;
-    error_code?: string;
-    error_description?: string;
-  }>;
+  searchParams: Promise<{ next?: string }>;
 }) {
   const sp = await searchParams;
-  const next = sp.next ?? "/my90";
-  const urlError = sp.error_description || sp.error;
+  const next = safeNext(sp.next);
+
+  const session = await verifySession();
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-sm">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
             High Plains Bank
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Sign in or create an account to continue.
+          <p className="text-xs italic text-zinc-500 dark:text-zinc-400">
+            Employee Owned • Community Driven
+          </p>
+          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+            {session
+              ? "You're already signed in."
+              : "Sign in with your Google account to continue."}
           </p>
         </div>
-        {urlError && (
-          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm text-amber-900">
-            <div className="font-medium">{urlError.replace(/\+/g, " ")}</div>
-            {sp.error_code === "otp_expired" && (
-              <div className="mt-1 text-xs">
-                Email confirmation is still enabled on the project. Turn it off
-                in the Supabase dashboard so signup logs you in immediately.
-              </div>
-            )}
-          </div>
+
+        {session ? (
+          <Link
+            href={next}
+            className="block w-full rounded-md bg-hpb-blue px-4 py-2.5 text-center text-sm font-semibold text-white hover:opacity-90"
+          >
+            Continue to app
+          </Link>
+        ) : (
+          <LoginForm next={next} />
         )}
-        <LoginForm next={next} />
       </div>
     </div>
   );
+}
+
+function safeNext(raw: unknown): string {
+  const value = typeof raw === "string" ? raw : "";
+  return value.startsWith("/") && !value.startsWith("//") ? value : "/my90";
 }

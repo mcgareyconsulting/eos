@@ -1,57 +1,98 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { ArrowBigUp } from "lucide-react";
-import { toggleIssueVote } from "./actions";
-import { cn } from "@/lib/utils";
+import { useOptimistic, useState, useTransition } from "react";
+import { Minus, Plus } from "lucide-react";
+import { castVote } from "./actions";
 
 export function VoteButton({
   teamId,
   issueId,
-  votes,
-  voted,
+  count,
+  myCount,
+  myRemaining,
 }: {
   teamId: string;
   issueId: string;
-  votes: number;
-  voted: boolean;
+  count: number;
+  myCount: number;
+  myRemaining: number;
 }) {
-  const [pending, start] = useTransition();
-  const [optimistic, setOptimistic] = useState({ votes, voted });
+  const [, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [optimistic, applyOptimistic] = useOptimistic(
+    { count, myCount, myRemaining },
+    (_s, next: { count: number; myCount: number; myRemaining: number }) => next,
+  );
 
-  const onClick = () => {
-    const nextVoted = !optimistic.voted;
-    const nextVotes = Math.max(
-      0,
-      optimistic.votes + (nextVoted ? 1 : -1),
-    );
-    setOptimistic({ votes: nextVotes, voted: nextVoted });
+  function cast(delta: 1 | -1) {
+    if (delta === 1 && optimistic.myRemaining <= 0) return;
+    if (delta === -1 && optimistic.myCount <= 0) return;
     start(async () => {
+      setError(null);
+      applyOptimistic({
+        count: optimistic.count + delta,
+        myCount: optimistic.myCount + delta,
+        myRemaining: optimistic.myRemaining - delta,
+      });
       try {
-        await toggleIssueVote(teamId, issueId);
+        await castVote(teamId, issueId, delta);
       } catch (e) {
-        // Revert + show the server's message (e.g. max-3 limit).
-        setOptimistic({ votes, voted });
-        alert((e as Error).message);
+        setError(e instanceof Error ? e.message : String(e));
       }
     });
-  };
+  }
+
+  const cantAdd = optimistic.myRemaining <= 0;
+  const cantSub = optimistic.myCount <= 0;
 
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs disabled:opacity-50",
-        optimistic.voted
-          ? "bg-zinc-900 text-white"
-          : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800",
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => cast(-1)}
+          disabled={cantSub}
+          title={cantSub ? "No votes to remove" : "Remove a vote"}
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <div
+          className={
+            "min-w-[2rem] text-center text-sm font-semibold tabular-nums " +
+            (optimistic.myCount > 0
+              ? "text-blue-700 dark:text-blue-300"
+              : "text-zinc-600 dark:text-zinc-400")
+          }
+          title={`Team total: ${optimistic.count} · Your votes: ${optimistic.myCount}`}
+        >
+          {optimistic.count}
+        </div>
+        <button
+          type="button"
+          onClick={() => cast(1)}
+          disabled={cantAdd}
+          title={cantAdd ? "Out of votes (3 per team)" : "Add a vote"}
+          className={
+            "flex h-6 w-6 items-center justify-center rounded-md border text-xs " +
+            (cantAdd
+              ? "border-zinc-200 dark:border-zinc-800 text-zinc-300 dark:text-zinc-700 cursor-not-allowed"
+              : "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900")
+          }
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+      {optimistic.myCount > 0 && (
+        <div className="text-[10px] text-blue-700 dark:text-blue-300 tabular-nums">
+          you: {optimistic.myCount}
+        </div>
       )}
-      title={optimistic.voted ? "Remove your vote" : "Upvote (max 3 per team)"}
-    >
-      <ArrowBigUp className="w-4 h-4" />
-      {optimistic.votes}
-    </button>
+      {error && (
+        <span className="mt-0.5 text-[10px] text-red-600 max-w-[100px] text-center">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }

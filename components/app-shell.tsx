@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { VoiceCreateButton } from "@/components/voice-create-button";
 
 type Team = { id: string; name: string };
 type Profile = {
@@ -49,37 +50,44 @@ export function AppShell({
     : [];
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="relative w-60 shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+    <div className="flex h-screen overflow-hidden">
+      <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="px-4 py-5 border-b border-zinc-200 dark:border-zinc-800">
-          <Link href="/my90" className="text-lg font-semibold tracking-tight">
-            High Plains Bank
+          <Link href="/my90" className="block">
+            <span className="block text-base font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
+              High Plains Bank
+            </span>
+            <span className="mt-0.5 block text-[10px] italic text-zinc-500 dark:text-zinc-400">
+              Employee Owned • Community Driven
+            </span>
           </Link>
         </div>
 
-        <nav className="px-2 py-3 space-y-0.5">
-          <NavLink href="/my90" icon={Home} label="My 90" />
-        </nav>
+        <div className="flex-1 overflow-y-auto">
+          <nav className="px-2 py-3 space-y-0.5">
+            <NavLink href="/my90" icon={Home} label="My 90" />
+          </nav>
 
-        {team && (
-          <div className="px-2 py-3 border-t border-zinc-200 dark:border-zinc-800">
-            <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              {team.name}
+          {team && (
+            <div className="px-2 py-3 border-t border-zinc-200 dark:border-zinc-800">
+              <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                {team.name}
+              </div>
+              <div className="space-y-0.5">
+                {teamNav.map((item) => (
+                  <NavLink
+                    key={item.href}
+                    href={item.href}
+                    icon={item.icon}
+                    label={item.label}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {teamNav.map((item) => (
-                <NavLink
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  label={item.label}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        <div className="absolute bottom-0 w-60 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
+        <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
@@ -94,12 +102,13 @@ export function AppShell({
                 </button>
               </form>
             </div>
+            <VoiceCreateButton teamId={team?.id ?? null} />
             <ThemeToggle />
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">{children}</div>
       </main>
     </div>

@@ -1,28 +1,51 @@
-import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
-import { TodoRow } from "./todo-row";
-import { addTodo, updateTodoTitle } from "./actions";
+import { Trash2, Lock } from "lucide-react";
+import { EditableText } from "@/components/editable-text";
+import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { TodoCheckbox } from "./todo-row";
+import { addTodo, deleteTodo, updateTodoTitle } from "./actions";
+
+type TodoDoc = {
+  team_id: string;
+  title: string;
+  owner_id: string | null;
+  due_date: string | null;
+  completed_at: { toDate: () => Date } | null;
+  visibility: "team" | "private";
+  source_issue_id: string | null;
+  source_meeting_id: string | null;
+  source_rock_id: string | null;
+};
 
 export default async function TodosPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
-  const { teamId } = await params;
-  const { user, supabase, team } = await requireTeamAccess(teamId);
-  const members = await getTeamMembers(teamId);
+  const { teamId: tid } = await params;
+  const { uid, db, team } = await requireTeamAccess(tid);
+  const members = await getTeamMembers(tid);
 
-  const { data: todos } = await supabase
-    .from("todos")
-    .select(
-      "id, title, owner_id, due_date, completed_at, visibility, created_at",
-    )
-    .eq("team_id", teamId)
-    .or(`visibility.eq.team,owner_id.eq.${user.id}`)
-    .order("completed_at", { ascending: true, nullsFirst: true })
-    .order("due_date", { ascending: true, nullsFirst: false });
+  const snap = await db.collection("todos").where("team_id", "==", tid).get();
 
-  const open = (todos ?? []).filter((t) => !t.completed_at);
-  const done = (todos ?? []).filter((t) => t.completed_at);
+  const todos = snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as TodoDoc) }))
+    // Milestones live in this collection but belong to a rock — hide them here.
+    .filter((t) => !t.source_rock_id)
+    // private items hidden from non-owners
+    .filter(
+      (t) =>
+        t.visibility === "team" ||
+        t.owner_id === uid,
+    );
+
+  const byDue = <T extends { due_date: string | null }>(a: T, b: T) => {
+    if (!a.due_date && !b.due_date) return 0;
+    if (!a.due_date) return 1;
+    if (!b.due_date) return -1;
+    return a.due_date.localeCompare(b.due_date);
+  };
+  const open = todos.filter((t) => !t.completed_at).sort(byDue);
+  const done = todos.filter((t) => t.completed_at).sort(byDue);
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -31,72 +54,131 @@ export default async function TodosPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {team.name} · 7-day action items from L10
+        </p>
       </header>
 
-      <Section title={`Open (${open.length})`}>
-        {open.length === 0 && <Empty>Nothing open. </Empty>}
-        {open.map((t) => (
-          <TodoRow
-            key={t.id}
-            teamId={teamId}
-            todo={t}
-            ownerName={ownerName(t.owner_id)}
-            onRename={updateTodoTitle.bind(null, teamId, t.id)}
-          />
-        ))}
-      </Section>
+      <AddTodoForm teamId={tid} members={members} defaultOwnerId={uid} />
 
-      {done.length > 0 && (
-        <Section title={`Done (${done.length})`}>
-          {done.map((t) => (
-            <TodoRow
+      <section>
+        <SectionHeader>Open ({open.length})</SectionHeader>
+        <List>
+          {open.length === 0 && <Empty>No open to-dos.</Empty>}
+          {open.map((t) => (
+            <Row
               key={t.id}
-              teamId={teamId}
+              teamId={tid}
               todo={t}
               ownerName={ownerName(t.owner_id)}
-              onRename={updateTodoTitle.bind(null, teamId, t.id)}
             />
           ))}
-        </Section>
-      )}
+        </List>
+      </section>
 
-      <AddTodoForm teamId={teamId} members={members} currentUserId={user.id} />
+      {done.length > 0 && (
+        <section>
+          <SectionHeader>Done ({done.length})</SectionHeader>
+          <List>
+            {done.map((t) => (
+              <Row
+                key={t.id}
+                teamId={tid}
+                todo={t}
+                ownerName={ownerName(t.owner_id)}
+              />
+            ))}
+          </List>
+        </section>
+      )}
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
+function Row({
+  teamId,
+  todo,
+  ownerName,
 }: {
-  title: string;
-  children: React.ReactNode;
+  teamId: string;
+  todo: { id: string } & TodoDoc;
+  ownerName: string;
 }) {
+  const renameTitle = updateTodoTitle.bind(null, teamId, todo.id);
+  const remove = deleteTodo.bind(null, teamId, todo.id);
+  const completed = !!todo.completed_at;
   return (
-    <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-        {title}
-      </h2>
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
-        {children}
+    <div className="group grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm">
+      <div className="col-span-1">
+        <TodoCheckbox teamId={teamId} todoId={todo.id} completed={completed} />
       </div>
-    </section>
+      <div className="col-span-7 min-w-0">
+        <EditableText
+          value={todo.title}
+          onSave={renameTitle}
+          className={completed ? "text-zinc-400 line-through" : ""}
+        />
+        {todo.visibility === "private" && (
+          <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-400">
+            <Lock className="h-3 w-3" /> private
+          </span>
+        )}
+      </div>
+      <div className="col-span-2 text-zinc-600 dark:text-zinc-400">
+        {ownerName}
+      </div>
+      <div className="col-span-1 text-xs text-zinc-500 dark:text-zinc-400">
+        {todo.due_date
+          ? new Date(todo.due_date).toLocaleDateString()
+          : "—"}
+      </div>
+      <div className="col-span-1 justify-self-end">
+        <form action={remove}>
+          <button
+            type="submit"
+            className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
+            aria-label="Delete to-do"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+      {children}
+    </h2>
+  );
+}
+
+function List({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      {children}
+    </div>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>;
+  return (
+    <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
+      {children}
+    </div>
+  );
 }
 
 function AddTodoForm({
   teamId,
   members,
-  currentUserId,
+  defaultOwnerId,
 }: {
   teamId: string;
   members: { user_id: string; full_name: string }[];
-  currentUserId: string;
+  defaultOwnerId: string;
 }) {
   async function action(formData: FormData) {
     "use server";
@@ -109,16 +191,15 @@ function AddTodoForm({
     >
       <input
         name="title"
-        placeholder="What needs to get done?"
+        placeholder="To-Do (one line)"
         required
         className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="owner_id"
-        defaultValue={currentUserId}
+        defaultValue={defaultOwnerId}
         className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
       >
-        <option value="">— owner —</option>
         {members.map((m) => (
           <option key={m.user_id} value={m.user_id}>
             {m.full_name}

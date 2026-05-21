@@ -1,53 +1,109 @@
 import Link from "next/link";
-import { getUserTeams } from "@/lib/auth";
-import { getTeamMembers } from "@/lib/teams";
-import { Circle, Target } from "lucide-react";
+import { Circle, Flag, Target } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+
+type TodoRow = {
+  id: string;
+  title: string;
+  due_date: string | null;
+  team_id: string;
+  owner_id: string | null;
+  visibility: string;
+  completed_at: string | null;
+  source_rock_id: string | null;
+};
+
+type RockRow = {
+  id: string;
+  title: string;
+  status: string;
+  due_date: string | null;
+  quarter: string;
+  owner_id: string | null;
+  team_id: string;
+};
 
 export default async function My90Page() {
-  const { user, supabase, teams } = await getUserTeams();
+  const { user, teams, db } = await getUserTeamsFirebase();
   const teamIds = teams.map((t) => t.id);
 
-  // Open to-dos across all my teams (team-visible items + my private ones).
-  const { data: todos } =
-    teamIds.length === 0
-      ? { data: [] as TodoRow[] }
-      : await supabase
-          .from("todos")
-          .select(
-            "id, title, due_date, team_id, owner_id, visibility, completed_at",
-          )
-          .in("team_id", teamIds)
-          .is("completed_at", null)
-          .order("due_date", { ascending: true, nullsFirst: false });
+  // Firestore `in` operator caps at 30 — fine for a single user's teams.
+  const [todosSnap, rocksSnap, memberSnap] = teamIds.length
+    ? await Promise.all([
+        db
+          .collection("todos")
+          .where("team_id", "in", teamIds)
+          .where("completed_at", "==", null)
+          .get(),
+        db
+          .collection("rocks")
+          .where("team_id", "in", teamIds)
+          .where("status", "in", ["on_track", "off_track"])
+          .get(),
+        db
+          .collection("team_members")
+          .where("team_id", "in", teamIds)
+          .get(),
+      ])
+    : [null, null, null];
 
-  // Active rocks across all my teams.
-  const { data: rocks } =
-    teamIds.length === 0
-      ? { data: [] as RockRow[] }
-      : await supabase
-          .from("rocks")
-          .select("id, title, status, due_date, quarter, owner_id, team_id")
-          .in("team_id", teamIds)
-          .not("status", "in", "(done,cancelled)")
-          .order("due_date", { ascending: true, nullsFirst: false });
-
-  // Names for the owner labels (one query across all teams).
-  const memberLists = await Promise.all(teamIds.map((id) => getTeamMembers(id)));
-  const nameById = new Map<string, string>();
-  for (const list of memberLists) {
-    for (const m of list) nameById.set(m.user_id, m.full_name);
+  // Hydrate display names for every teammate across the user's teams. One
+  // batched getAll() — no per-row N+1.
+  const memberUids = new Set<string>(
+    memberSnap?.docs.map((d) => d.data().user_id as string) ?? [],
+  );
+  const nameByUserId = new Map<string, string>();
+  if (memberUids.size > 0) {
+    const userDocs = await db.getAll(
+      ...[...memberUids].map((id) => db.collection("users").doc(id)),
+    );
+    for (const d of userDocs) {
+      if (!d.exists) continue;
+      const data = d.data() ?? {};
+      const name =
+        (data.display_name as string) ||
+        [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
+        (data.email as string) ||
+        "";
+      if (name) nameByUserId.set(d.id, name);
+    }
   }
+
+  const todos = todosSnap
+    ? (todosSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TodoRow, "id">) })) as TodoRow[])
+    : [];
+  const rocks = rocksSnap
+    ? (rocksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RockRow, "id">) })) as RockRow[])
+    : [];
+
+  // due_date asc, nulls last
+  const byDue = <T extends { due_date: string | null }>(a: T, b: T) => {
+    if (!a.due_date && !b.due_date) return 0;
+    if (!a.due_date) return 1;
+    if (!b.due_date) return -1;
+    return a.due_date.localeCompare(b.due_date);
+  };
+  todos.sort(byDue);
+  rocks.sort(byDue);
+
   const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
+  const rockTitleById = new Map(rocks.map((r) => [r.id, r.title]));
 
   const mineFirst = <T extends { owner_id: string | null }>(rows: T[]) =>
     [...rows].sort(
-      (a, b) =>
-        Number(b.owner_id === user.id) - Number(a.owner_id === user.id),
+      (a, b) => Number(b.owner_id === user.id) - Number(a.owner_id === user.id),
     );
 
-  const sortedTodos = mineFirst(todos ?? []);
-  const sortedRocks = mineFirst(rocks ?? []);
+  // Split: pure to-dos (no parent rock) vs milestones (linked to a rock and
+  // owned by the current user). Prevents double-counting in the to-dos section.
+  const pureTodos = todos.filter((t) => !t.source_rock_id);
+  const myMilestones = todos.filter(
+    (t) => t.source_rock_id && t.owner_id === user.id,
+  );
+
+  const sortedTodos = mineFirst(pureTodos);
+  const sortedRocks = mineFirst(rocks);
 
   return (
     <div className="space-y-8">
@@ -75,7 +131,7 @@ export default async function My90Page() {
               <div className="flex-1 min-w-0 truncate">{t.title}</div>
               <OwnerLabel
                 isMine={t.owner_id === user.id}
-                name={t.owner_id ? nameById.get(t.owner_id) ?? "—" : "unassigned"}
+                name={t.owner_id ? nameByUserId.get(t.owner_id) ?? null : null}
               />
               <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
               <DueLabel due={t.due_date} />
@@ -83,6 +139,33 @@ export default async function My90Page() {
           ))}
         </div>
       </section>
+
+      {myMilestones.length > 0 && (
+        <section>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+            Rock Milestones ({myMilestones.length})
+          </h2>
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+            {myMilestones.map((m) => (
+              <Link
+                key={m.id}
+                href={`/teams/${m.team_id}/rocks`}
+                className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              >
+                <Flag className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{m.title}</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                    {rockTitleById.get(m.source_rock_id ?? "") ?? "—"}
+                  </div>
+                </div>
+                <TeamLabel name={teamNameById.get(m.team_id) ?? ""} />
+                <DueLabel due={m.due_date} />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
@@ -99,11 +182,13 @@ export default async function My90Page() {
               <Target className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
               <div className="flex-1 min-w-0">
                 <div className="truncate">{r.title}</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">{r.quarter}</div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {r.quarter}
+                </div>
               </div>
               <OwnerLabel
                 isMine={r.owner_id === user.id}
-                name={r.owner_id ? nameById.get(r.owner_id) ?? "—" : "unassigned"}
+                name={r.owner_id ? nameByUserId.get(r.owner_id) ?? null : null}
               />
               <TeamLabel name={teamNameById.get(r.team_id) ?? ""} />
               <StatusBadge status={r.status} />
@@ -115,39 +200,32 @@ export default async function My90Page() {
   );
 }
 
-type TodoRow = {
-  id: string;
-  title: string;
-  due_date: string | null;
-  team_id: string;
-  owner_id: string | null;
-  visibility: string;
-  completed_at: string | null;
-};
-
-type RockRow = {
-  id: string;
-  title: string;
-  status: string;
-  due_date: string | null;
-  quarter: string;
-  owner_id: string | null;
-  team_id: string;
-};
-
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>;
+  return (
+    <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
+      {children}
+    </div>
+  );
 }
 
-function OwnerLabel({ isMine, name }: { isMine: boolean; name: string }) {
+function OwnerLabel({
+  isMine,
+  name,
+}: {
+  isMine: boolean;
+  name: string | null;
+}) {
+  const label = isMine ? "You" : name ?? "—";
   return (
     <span
       className={
         "inline-flex items-center text-xs whitespace-nowrap " +
-        (isMine ? "text-zinc-900 dark:text-zinc-100 font-medium" : "text-zinc-500 dark:text-zinc-400")
+        (isMine
+          ? "text-zinc-900 dark:text-zinc-100 font-medium"
+          : "text-zinc-500 dark:text-zinc-400")
       }
     >
-      {isMine ? "You" : name}
+      {label}
     </span>
   );
 }
@@ -162,7 +240,12 @@ function TeamLabel({ name }: { name: string }) {
 }
 
 function DueLabel({ due }: { due: string | null }) {
-  if (!due) return <span className="text-xs text-zinc-400 dark:text-zinc-500 w-24 text-right">—</span>;
+  if (!due)
+    return (
+      <span className="text-xs text-zinc-400 dark:text-zinc-500 w-24 text-right">
+        —
+      </span>
+    );
   const overdue = new Date(due) < new Date(new Date().toDateString());
   return (
     <span
@@ -175,4 +258,3 @@ function DueLabel({ due }: { due: string | null }) {
     </span>
   );
 }
-

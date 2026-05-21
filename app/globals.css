@@ -16,12 +16,44 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+
+  /* High Plains Bank brand palette — see "HPB Branding for McGarey.pdf". */
+  --color-hpb-blue: #0033a0;
+  --color-hpb-gold: #ffc845;
+  --color-hpb-green: #2cb34a;
+  --color-hpb-brown: #603813;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  label[for],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 120ms;
+  }
+
+  button:active:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: translateY(0.5px);
+  }
 }

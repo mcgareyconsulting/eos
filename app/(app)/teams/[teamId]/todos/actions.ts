@@ -1,31 +1,60 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { addDays, toDateString } from "@/lib/dates";
+import { FieldValue } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
+
+const VISIBILITIES = ["team", "private"] as const;
+type Visibility = (typeof VISIBILITIES)[number];
+
+function pathFor(teamId: string) {
+  return `/teams/${teamId}/todos`;
+}
 
 export async function addTodo(teamId: string, formData: FormData) {
+  const { uid, db } = await requireTeamAccess(teamId);
+
   const title = String(formData.get("title") ?? "").trim();
-  const owner_id = String(formData.get("owner_id") ?? "") || null;
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(addDays(new Date(), 7));
-  const visibility = String(formData.get("visibility") ?? "team");
+  const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const due_date = String(formData.get("due_date") ?? "").trim() || null;
+  const visibilityRaw = String(formData.get("visibility") ?? "team");
+  const visibility: Visibility = VISIBILITIES.includes(
+    visibilityRaw as Visibility,
+  )
+    ? (visibilityRaw as Visibility)
+    : "team";
 
   if (!title) throw new Error("Title required");
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("todos").insert({
+  await db.collection("todos").add({
     team_id: teamId,
     title,
     owner_id,
     due_date,
+    completed_at: null,
     visibility,
+    source_issue_id: null,
+    source_meeting_id: null,
+    source_rock_id: null,
+    created_at: FieldValue.serverTimestamp(),
   });
-  if (error) throw new Error(error.message);
 
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
+  revalidatePath(pathFor(teamId));
+}
+
+export async function toggleTodo(
+  teamId: string,
+  todoId: string,
+  currentlyComplete: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("todos")
+    .doc(todoId)
+    .update({
+      completed_at: currentlyComplete ? null : FieldValue.serverTimestamp(),
+    });
+  revalidatePath(pathFor(teamId));
 }
 
 export async function updateTodoTitle(
@@ -35,34 +64,13 @@ export async function updateTodoTitle(
 ) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Title required");
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("todos")
-    .update({ title: trimmed })
-    .eq("id", todoId);
-  if (error) throw new Error(error.message);
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
-}
-
-export async function toggleTodo(
-  teamId: string,
-  todoId: string,
-  completed: boolean,
-) {
-  const supabase = await createClient();
-  await supabase
-    .from("todos")
-    .update({ completed_at: completed ? new Date().toISOString() : null })
-    .eq("id", todoId);
-
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("todos").doc(todoId).update({ title: trimmed });
+  revalidatePath(pathFor(teamId));
 }
 
 export async function deleteTodo(teamId: string, todoId: string) {
-  const supabase = await createClient();
-  await supabase.from("todos").delete().eq("id", todoId);
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("todos").doc(todoId).delete();
+  revalidatePath(pathFor(teamId));
 }

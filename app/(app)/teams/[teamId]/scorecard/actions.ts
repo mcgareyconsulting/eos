@@ -1,80 +1,87 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { mondayOf, toDateString } from "@/lib/dates";
+import { FieldValue } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
 
-export async function setScorecardValue(
-  teamId: string,
-  metricId: string,
-  weekStart: string, // YYYY-MM-DD
-  rawValue: string,
-) {
-  const supabase = await createClient();
-  const trimmed = rawValue.trim();
+const UNITS = ["number", "currency", "percent", "yesno", "time"] as const;
+type Unit = (typeof UNITS)[number];
 
-  if (trimmed === "") {
-    await supabase
-      .from("scorecard_entries")
-      .delete()
-      .eq("metric_id", metricId)
-      .eq("week_start_date", weekStart);
-  } else {
-    const value = Number(trimmed);
-    if (Number.isNaN(value)) {
-      throw new Error("Value must be a number");
-    }
-    await supabase
-      .from("scorecard_entries")
-      .upsert(
-        { metric_id: metricId, week_start_date: weekStart, value },
-        { onConflict: "metric_id,week_start_date" },
-      );
-  }
-  revalidatePath(`/teams/${teamId}/scorecard`);
+const DIRECTIONS = ["gte", "lte", "eq"] as const;
+type Direction = (typeof DIRECTIONS)[number];
+
+function pathFor(teamId: string) {
+  return `/teams/${teamId}/scorecard`;
 }
 
 export async function addMetric(teamId: string, formData: FormData) {
+  const { uid, db } = await requireTeamAccess(teamId);
+
   const name = String(formData.get("name") ?? "").trim();
-  const unit = String(formData.get("unit") ?? "number");
-  const goalStr = String(formData.get("goal") ?? "").trim();
-  const direction = String(formData.get("direction") ?? "gte");
-  const ownerId = String(formData.get("owner_id") ?? "") || null;
+  const unitRaw = String(formData.get("unit") ?? "number");
+  const directionRaw = String(formData.get("direction") ?? "gte");
+  const goalRaw = String(formData.get("goal") ?? "").trim();
+  const owner_id = String(formData.get("owner_id") ?? "") || uid;
 
   if (!name) throw new Error("Name required");
-  const goal = goalStr === "" ? null : Number(goalStr);
 
-  const supabase = await createClient();
+  const unit: Unit = UNITS.includes(unitRaw as Unit)
+    ? (unitRaw as Unit)
+    : "number";
+  const direction: Direction = DIRECTIONS.includes(directionRaw as Direction)
+    ? (directionRaw as Direction)
+    : "gte";
+  const goal = goalRaw === "" ? null : Number(goalRaw);
+  if (goal !== null && Number.isNaN(goal))
+    throw new Error("Goal must be a number");
 
-  const { data: existing } = await supabase
-    .from("scorecard_metrics")
-    .select("sort_order")
-    .eq("team_id", teamId)
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const { error } = await supabase.from("scorecard_metrics").insert({
+  await db.collection("scorecard_metrics").add({
     team_id: teamId,
     name,
     unit,
     goal,
     direction,
-    owner_id: ownerId,
-    sort_order: (existing?.sort_order ?? 0) + 1,
+    owner_id,
+    sort_order: 0,
+    created_at: FieldValue.serverTimestamp(),
   });
-  if (error) throw new Error(error.message);
 
-  revalidatePath(`/teams/${teamId}/scorecard`);
+  revalidatePath(pathFor(teamId));
+}
+
+export async function setEntry(
+  teamId: string,
+  metricId: string,
+  weekStartDate: string,
+  valueRaw: string,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const trimmed = valueRaw.trim();
+  const value = trimmed === "" ? null : Number(trimmed);
+  if (value !== null && Number.isNaN(value))
+    throw new Error("Value must be a number");
+
+  const id = `${metricId}__${weekStartDate}`;
+  await db
+    .collection("scorecard_entries")
+    .doc(id)
+    .set(
+      {
+        metric_id: metricId,
+        week_start_date: weekStartDate,
+        value,
+        note: null,
+        created_at: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+  revalidatePath(pathFor(teamId));
 }
 
 export async function deleteMetric(teamId: string, metricId: string) {
-  const supabase = await createClient();
-  await supabase.from("scorecard_metrics").delete().eq("id", metricId);
-  revalidatePath(`/teams/${teamId}/scorecard`);
-}
-
-// Convenience: returns this week's Monday so the UI doesn't have to compute it.
-export async function thisWeekStart() {
-  return toDateString(mondayOf());
+  const { db } = await requireTeamAccess(teamId);
+  // Delete the metric. Entries are orphaned but harmless; can clean up later.
+  await db.collection("scorecard_metrics").doc(metricId).delete();
+  revalidatePath(pathFor(teamId));
 }

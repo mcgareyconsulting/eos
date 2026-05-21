@@ -1,0 +1,147 @@
+rules_version = '2';
+
+// Firestore Security Rules for the EOS app.
+// Mirrors the access patterns of the current Postgres RLS — gated on
+// team membership via the team_members collection + Identity Platform
+// custom claims (`role: "normal" | "admin"`).
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ---------- helpers ----------
+    function authed() { return request.auth != null; }
+    function admin()  { return authed() && request.auth.token.role == "admin"; }
+
+    // Hosted-domain backstop. Real enforcement happens at the Firebase Auth
+    // provider config (Console → Authentication → Sign-in method → Google →
+    // Restrict access by domain). This is a defense-in-depth check.
+    // TODO: replace "example.com" with the client's Workspace domain.
+    function inDomain() {
+      return authed() && request.auth.token.email.matches(".*@example[.]com$");
+    }
+
+    function isMember(teamId) {
+      return authed()
+        && exists(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
+    }
+
+    function isLeader(teamId) {
+      let m = get(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
+      return m != null && m.data.role == "leader";
+    }
+
+    // ---------- default deny ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------- organizations & users ----------
+    match /organizations/{orgId} {
+      allow read:  if authed();
+      allow write: if admin();
+    }
+
+    match /users/{uid} {
+      allow read:  if authed();
+      allow write: if uid == request.auth.uid || admin();
+    }
+
+    // ---------- teams & memberships ----------
+    match /teams/{teamId} {
+      allow read:  if authed();
+      allow write: if admin();
+    }
+
+    match /team_members/{id} {
+      allow read:  if authed();
+      allow write: if admin();
+    }
+
+    // ---------- scorecard ----------
+    match /scorecard_metrics/{id} {
+      allow read, write: if admin() || isMember(resource.data.team_id);
+      allow create:      if admin() || isMember(request.resource.data.team_id);
+    }
+
+    match /scorecard_entries/{id} {
+      function metricTeam() {
+        return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data.team_id;
+      }
+      function createMetricTeam() {
+        return get(/databases/$(db)/documents/scorecard_metrics/$(request.resource.data.metric_id)).data.team_id;
+      }
+      allow read, update, delete: if admin() || isMember(metricTeam());
+      allow create:               if admin() || isMember(createMetricTeam());
+    }
+
+    // ---------- rocks ----------
+    match /rocks/{id} {
+      allow read, update, delete: if admin() || isMember(resource.data.team_id);
+      allow create:               if admin() || isMember(request.resource.data.team_id);
+    }
+
+    // ---------- rock status updates (immutable history) ----------
+    match /rock_status_updates/{id} {
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow create: if admin() || isMember(request.resource.data.team_id);
+      // No update/delete from clients — history is append-only.
+    }
+
+    // ---------- todos ----------
+    match /todos/{id} {
+      allow read: if admin()
+                  || (isMember(resource.data.team_id)
+                      && (resource.data.visibility == "team"
+                          || resource.data.owner_id == request.auth.uid));
+      allow update, delete: if admin() || isMember(resource.data.team_id);
+      allow create:         if admin() || isMember(request.resource.data.team_id);
+    }
+
+    // ---------- issues + per-user votes ----------
+    match /issues/{id} {
+      allow read, update, delete: if admin() || isMember(resource.data.team_id);
+      allow create:               if admin() || isMember(request.resource.data.team_id);
+    }
+
+    match /issue_votes/{id} {
+      // 3-per-team-per-user limit + count stacking are enforced in the server
+      // action (Firestore transaction); rules just confirm ownership + membership.
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow create: if request.resource.data.user_id == request.auth.uid
+                    && isMember(request.resource.data.team_id);
+      allow update: if resource.data.user_id == request.auth.uid
+                    && request.resource.data.user_id == request.auth.uid;
+      allow delete: if resource.data.user_id == request.auth.uid;
+    }
+
+    // ---------- headlines ----------
+    match /headlines/{id} {
+      // Cascading headlines visible to target teams via app-layer filtering
+      // (rules can't iterate target_team_ids efficiently; the query already
+      // scopes by team_id, so this is enforced at query time).
+      allow read:           if admin() || isMember(resource.data.team_id);
+      allow update, delete: if admin() || isMember(resource.data.team_id);
+      allow create:         if admin() || isMember(request.resource.data.team_id);
+    }
+
+    // ---------- meetings (L10) ----------
+    match /meetings/{meetingId} {
+      allow read, update, delete: if admin() || isMember(resource.data.team_id);
+      allow create:               if admin() || isMember(request.resource.data.team_id);
+
+      function meetingTeam() {
+        return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
+      }
+
+      match /ratings/{uid} {
+        allow read:  if admin() || isMember(meetingTeam());
+        allow write: if uid == request.auth.uid && isMember(meetingTeam());
+      }
+
+      match /presence/{uid} {
+        allow read:  if admin() || isMember(meetingTeam());
+        allow write: if uid == request.auth.uid && isMember(meetingTeam());
+      }
+    }
+  }
+}

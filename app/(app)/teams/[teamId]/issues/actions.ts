@@ -1,46 +1,135 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { addDays, toDateString } from "@/lib/dates";
+import { FieldValue } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
+
+const STATUSES = ["open", "solving", "solved", "dropped"] as const;
+type Status = (typeof STATUSES)[number];
+
+const TYPES = ["short", "long"] as const;
+type Type = (typeof TYPES)[number];
+
+const MAX_VOTES_PER_TEAM = 3;
+
+function pathFor(teamId: string) {
+  return `/teams/${teamId}/issues`;
+}
 
 export async function addIssue(teamId: string, formData: FormData) {
+  const { uid, db } = await requireTeamAccess(teamId);
+
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
-  const owner_id = String(formData.get("owner_id") ?? "") || null;
-  const priority = clampPriority(Number(formData.get("priority") ?? 3));
-  const type = String(formData.get("type") ?? "short");
+  const typeRaw = String(formData.get("type") ?? "short");
+  const priorityRaw = Number(formData.get("priority") ?? 3);
+  const type: Type = TYPES.includes(typeRaw as Type)
+    ? (typeRaw as Type)
+    : "short";
+  const priority =
+    Number.isFinite(priorityRaw) &&
+    priorityRaw >= 1 &&
+    priorityRaw <= 5
+      ? Math.round(priorityRaw)
+      : 3;
 
   if (!title) throw new Error("Title required");
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("issues").insert({
+  await db.collection("issues").add({
     team_id: teamId,
     title,
     description,
-    owner_id,
+    owner_id: uid,
     priority,
+    votes: 0,
     type,
+    status: "open",
+    resolved_at: null,
+    resolution_todo_id: null,
+    created_at: FieldValue.serverTimestamp(),
   });
-  if (error) throw new Error(error.message);
 
-  revalidatePath(`/teams/${teamId}/issues`);
+  revalidatePath(pathFor(teamId));
 }
 
-export async function updateIssueTitle(
+// Cast a vote on this issue (delta = +1 or -1). Each user has 3 vote credits
+// per team and can stack multiple credits on a single issue. Atomic across:
+//  - the user's per-issue credit count (issue_votes.count)
+//  - the user's total credits across the team (sum of count, capped at 3)
+//  - the issue's denormalized counter (issues.votes)
+export async function castVote(
   teamId: string,
   issueId: string,
-  title: string,
+  delta: 1 | -1,
 ) {
-  const trimmed = title.trim();
-  if (!trimmed) throw new Error("Title required");
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("issues")
-    .update({ title: trimmed })
-    .eq("id", issueId);
-  if (error) throw new Error(error.message);
-  revalidatePath(`/teams/${teamId}/issues`);
+  const { uid, db } = await requireTeamAccess(teamId);
+  if (delta !== 1 && delta !== -1) throw new Error("Bad delta");
+
+  await db.runTransaction(async (tx) => {
+    const voteId = `${issueId}__${uid}`;
+    const voteRef = db.collection("issue_votes").doc(voteId);
+    const issueRef = db.collection("issues").doc(issueId);
+
+    // Reads first (Firestore transaction rule).
+    const voteSnap = await tx.get(voteRef);
+    const currentCount = voteSnap.exists
+      ? Number(voteSnap.data()?.count ?? 0)
+      : 0;
+
+    if (delta === 1) {
+      const allMine = await tx.get(
+        db
+          .collection("issue_votes")
+          .where("user_id", "==", uid)
+          .where("team_id", "==", teamId),
+      );
+      const totalUsed = allMine.docs.reduce(
+        (sum, d) => sum + Number(d.data().count ?? 0),
+        0,
+      );
+      if (totalUsed >= MAX_VOTES_PER_TEAM) {
+        throw new Error(
+          `Out of votes (${MAX_VOTES_PER_TEAM} per team). Remove one first.`,
+        );
+      }
+    } else if (currentCount <= 0) {
+      // Nothing to subtract.
+      return;
+    }
+
+    const nextCount = currentCount + delta;
+    if (nextCount <= 0) {
+      tx.delete(voteRef);
+    } else if (voteSnap.exists) {
+      tx.update(voteRef, { count: nextCount });
+    } else {
+      tx.set(voteRef, {
+        issue_id: issueId,
+        user_id: uid,
+        team_id: teamId,
+        count: nextCount,
+        created_at: FieldValue.serverTimestamp(),
+      });
+    }
+    tx.update(issueRef, { votes: FieldValue.increment(delta) });
+  });
+
+  revalidatePath(pathFor(teamId));
+}
+
+export async function setIssueStatus(
+  teamId: string,
+  issueId: string,
+  status: string,
+) {
+  if (!STATUSES.includes(status as Status)) throw new Error("Bad status");
+  const { db } = await requireTeamAccess(teamId);
+  const update: Record<string, unknown> = { status };
+  if (status === "solved" || status === "dropped") {
+    update.resolved_at = FieldValue.serverTimestamp();
+  }
+  await db.collection("issues").doc(issueId).update(update);
+  revalidatePath(pathFor(teamId));
 }
 
 export async function setIssuePriority(
@@ -48,101 +137,27 @@ export async function setIssuePriority(
   issueId: string,
   priority: number,
 ) {
-  const supabase = await createClient();
-  await supabase
-    .from("issues")
-    .update({ priority: clampPriority(priority) })
-    .eq("id", issueId);
-  revalidatePath(`/teams/${teamId}/issues`);
-}
-
-export async function toggleIssueVote(teamId: string, issueId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-
-  const { data: existing } = await supabase
-    .from("issue_votes")
-    .select("issue_id")
-    .eq("issue_id", issueId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (existing) {
-    const { error } = await supabase
-      .from("issue_votes")
-      .delete()
-      .eq("issue_id", issueId)
-      .eq("user_id", user.id);
-    if (error) throw new Error(error.message);
-  } else {
-    const { error } = await supabase
-      .from("issue_votes")
-      .insert({ issue_id: issueId, user_id: user.id });
-    if (error) throw new Error(error.message);
+  if (!Number.isFinite(priority) || priority < 1 || priority > 5) {
+    throw new Error("Priority must be 1–5");
   }
-
-  revalidatePath(`/teams/${teamId}/issues`);
-}
-
-export async function solveIssue(
-  teamId: string,
-  issueId: string,
-  formData: FormData,
-) {
-  const resolutionTitle =
-    String(formData.get("resolution") ?? "").trim() ||
-    "Follow up on issue";
-  const todoOwnerId = String(formData.get("todo_owner_id") ?? "") || null;
-
-  const supabase = await createClient();
-
-  const { data: todo, error: todoErr } = await supabase
-    .from("todos")
-    .insert({
-      team_id: teamId,
-      title: resolutionTitle,
-      owner_id: todoOwnerId,
-      due_date: toDateString(addDays(new Date(), 7)),
-      visibility: "team",
-      source_issue_id: issueId,
-    })
-    .select("id")
-    .single();
-  if (todoErr) throw todoErr;
-
-  await supabase
-    .from("issues")
-    .update({
-      status: "solved",
-      resolved_at: new Date().toISOString(),
-      resolution_todo_id: todo!.id,
-    })
-    .eq("id", issueId);
-
-  revalidatePath(`/teams/${teamId}/issues`);
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
-}
-
-export async function reopenIssue(teamId: string, issueId: string) {
-  const supabase = await createClient();
-  await supabase
-    .from("issues")
-    .update({ status: "open", resolved_at: null, resolution_todo_id: null })
-    .eq("id", issueId);
-  revalidatePath(`/teams/${teamId}/issues`);
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("issues")
+    .doc(issueId)
+    .update({ priority: Math.round(priority) });
+  revalidatePath(pathFor(teamId));
 }
 
 export async function deleteIssue(teamId: string, issueId: string) {
-  const supabase = await createClient();
-  await supabase.from("issues").delete().eq("id", issueId);
-  revalidatePath(`/teams/${teamId}/issues`);
-}
-
-function clampPriority(n: number): number {
-  if (!Number.isFinite(n)) return 3;
-  return Math.max(1, Math.min(5, Math.round(n)));
+  const { db } = await requireTeamAccess(teamId);
+  // Cascade: delete the issue + any votes for it
+  const votes = await db
+    .collection("issue_votes")
+    .where("issue_id", "==", issueId)
+    .get();
+  const batch = db.batch();
+  batch.delete(db.collection("issues").doc(issueId));
+  votes.docs.forEach((v) => batch.delete(v.ref));
+  await batch.commit();
+  revalidatePath(pathFor(teamId));
 }

@@ -1,32 +1,41 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { FieldValue } from "firebase-admin/firestore";
+import { requireTeamAccess } from "@/lib/firebase/teams";
+import { endOfQuarter, toDateString } from "@/lib/dates";
+import { isRockStatus } from "./status";
 
-const STATUSES = ["on_track", "off_track", "done", "cancelled"] as const;
-type Status = (typeof STATUSES)[number];
+function pathFor(teamId: string) {
+  return `/teams/${teamId}/rocks`;
+}
 
 export async function addRock(teamId: string, formData: FormData) {
+  const { uid, db } = await requireTeamAccess(teamId);
+
   const title = String(formData.get("title") ?? "").trim();
   const quarter = String(formData.get("quarter") ?? "").trim();
-  const due_date = String(formData.get("due_date") ?? "").trim() || null;
-  const owner_id = String(formData.get("owner_id") ?? "") || null;
-  const description = String(formData.get("description") ?? "").trim() || null;
+  const due_date =
+    String(formData.get("due_date") ?? "").trim() ||
+    toDateString(endOfQuarter());
+  const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const description =
+    String(formData.get("description") ?? "").trim() || null;
 
   if (!title || !quarter) throw new Error("Title and quarter required");
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("rocks").insert({
+  await db.collection("rocks").add({
     team_id: teamId,
     title,
     quarter,
     due_date,
     owner_id,
     description,
+    status: "on_track",
+    created_at: FieldValue.serverTimestamp(),
   });
-  if (error) throw new Error(error.message);
 
-  revalidatePath(`/teams/${teamId}/rocks`);
+  revalidatePath(pathFor(teamId));
 }
 
 export async function updateRockTitle(
@@ -36,28 +45,96 @@ export async function updateRockTitle(
 ) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Title required");
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("rocks")
-    .update({ title: trimmed })
-    .eq("id", rockId);
-  if (error) throw new Error(error.message);
-  revalidatePath(`/teams/${teamId}/rocks`);
+
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("rocks").doc(rockId).update({ title: trimmed });
+
+  revalidatePath(pathFor(teamId));
 }
 
+// Atomic: writes the new status onto the rock AND appends an immutable history
+// entry to rock_status_updates. Off-track always requires a "why" comment.
 export async function setRockStatus(
   teamId: string,
   rockId: string,
   status: string,
+  comment: string | null,
 ) {
-  if (!STATUSES.includes(status as Status)) throw new Error("Bad status");
-  const supabase = await createClient();
-  await supabase.from("rocks").update({ status }).eq("id", rockId);
-  revalidatePath(`/teams/${teamId}/rocks`);
+  if (!isRockStatus(status)) throw new Error("Bad status");
+  const trimmed = (comment ?? "").trim() || null;
+  if (status === "off_track" && !trimmed) {
+    throw new Error("Comment required when moving a rock off track.");
+  }
+
+  const { uid, db } = await requireTeamAccess(teamId);
+
+  const batch = db.batch();
+  batch.update(db.collection("rocks").doc(rockId), { status });
+  batch.set(db.collection("rock_status_updates").doc(), {
+    rock_id: rockId,
+    team_id: teamId,
+    status,
+    comment: trimmed,
+    user_id: uid,
+    created_at: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+
+  revalidatePath(pathFor(teamId));
 }
 
+// Removes the rock and any todos linked via source_rock_id (milestones).
+// Single batch so a partial failure can't orphan milestones.
 export async function deleteRock(teamId: string, rockId: string) {
-  const supabase = await createClient();
-  await supabase.from("rocks").delete().eq("id", rockId);
-  revalidatePath(`/teams/${teamId}/rocks`);
+  const { db } = await requireTeamAccess(teamId);
+
+  const milestonesSnap = await db
+    .collection("todos")
+    .where("team_id", "==", teamId)
+    .where("source_rock_id", "==", rockId)
+    .get();
+
+  const batch = db.batch();
+  milestonesSnap.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(db.collection("rocks").doc(rockId));
+  await batch.commit();
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/todos`);
+  revalidatePath("/my90");
+}
+
+// Create a milestone — i.e., a todo tied to a rock via source_rock_id.
+// Lives in the todos collection so it reuses TodoCheckbox, toggleTodo,
+// and the existing privacy/visibility rules.
+export async function addMilestone(
+  teamId: string,
+  rockId: string,
+  formData: FormData,
+) {
+  const { uid, db } = await requireTeamAccess(teamId);
+
+  const title = String(formData.get("title") ?? "").trim();
+  const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const due_date =
+    String(formData.get("due_date") ?? "").trim() ||
+    toDateString(endOfQuarter());
+
+  if (!title) throw new Error("Title required");
+
+  await db.collection("todos").add({
+    team_id: teamId,
+    title,
+    owner_id,
+    due_date,
+    completed_at: null,
+    visibility: "team",
+    source_issue_id: null,
+    source_meeting_id: null,
+    source_rock_id: rockId,
+    created_at: FieldValue.serverTimestamp(),
+  });
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath("/my90");
 }

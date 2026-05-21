@@ -1,8 +1,41 @@
-import { requireTeamAccess, getTeamMembers } from "@/lib/teams";
-import { Users, UserCircle2 } from "lucide-react";
-import { addHeadline, deleteHeadline, updateHeadlineTitle } from "./actions";
-import { EditableText } from "@/components/editable-text";
-import { mondayOf, toDateString } from "@/lib/dates";
+import { Trash2, Smile, Users, Megaphone } from "lucide-react";
+import { Timestamp } from "firebase-admin/firestore";
+import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { addHeadline, deleteHeadline } from "./actions";
+
+type HeadlineDoc = {
+  team_id: string;
+  title: string;
+  body: string | null;
+  kind: "customer" | "employee" | "cascading";
+  created_by: string | null;
+  target_team_ids: string[];
+  created_at: Timestamp | null;
+};
+
+const KIND_META: Record<
+  HeadlineDoc["kind"],
+  { label: string; badge: string; Icon: typeof Smile }
+> = {
+  customer: {
+    label: "Customer",
+    badge:
+      "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200",
+    Icon: Smile,
+  },
+  employee: {
+    label: "Employee",
+    badge:
+      "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 ring-blue-200",
+    Icon: Users,
+  },
+  cascading: {
+    label: "Cascading",
+    badge:
+      "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
+    Icon: Megaphone,
+  },
+};
 
 export default async function HeadlinesPage({
   params,
@@ -10,138 +43,91 @@ export default async function HeadlinesPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = await params;
-  const { supabase, team } = await requireTeamAccess(teamId);
+  const { uid, db, team } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
-  const sinceMonday = toDateString(mondayOf());
-  const { data: headlines } = await supabase
-    .from("headlines")
-    .select("id, title, body, kind, created_by, created_at")
-    .eq("team_id", teamId)
-    .order("created_at", { ascending: false });
+  const snap = await db
+    .collection("headlines")
+    .where("team_id", "==", teamId)
+    .get();
 
-  const authorName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+  const headlines = snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as HeadlineDoc) }))
+    .sort((a, b) => {
+      const at = a.created_at?.toMillis?.() ?? 0;
+      const bt = b.created_at?.toMillis?.() ?? 0;
+      return bt - at;
+    });
 
-  const thisWeek = (headlines ?? []).filter(
-    (h) => h.created_at.slice(0, 10) >= sinceMonday,
-  );
-  const earlier = (headlines ?? []).filter(
-    (h) => h.created_at.slice(0, 10) < sinceMonday,
-  );
+  const creatorName = (id: string | null) =>
+    id === uid
+      ? "You"
+      : id
+        ? (members.find((m) => m.user_id === id)?.full_name ?? "—")
+        : "—";
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{team.name}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {team.name} · customer wins, employee news, and cascading messages
+        </p>
       </header>
 
-      <Section title={`This week (${thisWeek.length})`}>
-        {thisWeek.length === 0 && <Empty>No headlines yet this week.</Empty>}
-        {thisWeek.map((h) => (
-          <HeadlineRow
-            key={h.id}
-            teamId={teamId}
-            headline={h}
-            authorName={authorName(h.created_by)}
-          />
-        ))}
-      </Section>
-
-      {earlier.length > 0 && (
-        <Section title="Earlier">
-          {earlier.map((h) => (
-            <HeadlineRow
-              key={h.id}
-              teamId={teamId}
-              headline={h}
-              authorName={authorName(h.created_by)}
-            />
-          ))}
-        </Section>
-      )}
-
       <AddHeadlineForm teamId={teamId} />
-    </div>
-  );
-}
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-        {title}
-      </h2>
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>;
-}
-
-function HeadlineRow({
-  teamId,
-  headline,
-  authorName,
-}: {
-  teamId: string;
-  headline: {
-    id: string;
-    title: string;
-    body: string | null;
-    kind: string;
-    created_at: string;
-  };
-  authorName: string;
-}) {
-  async function remove() {
-    "use server";
-    await deleteHeadline(teamId, headline.id);
-  }
-  const renameTitle = updateHeadlineTitle.bind(null, teamId, headline.id);
-  const Icon = headline.kind === "customer" ? Users : UserCircle2;
-  const tagColor =
-    headline.kind === "customer"
-      ? "text-blue-600 dark:text-blue-300 bg-blue-50"
-      : "text-purple-600 dark:text-purple-300 bg-purple-50";
-
-  return (
-    <div className="group flex items-start gap-3 px-4 py-3 text-sm">
-      <span className={`mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full ${tagColor}`}>
-        <Icon className="w-3.5 h-3.5" />
-      </span>
-      <div className="flex-1 min-w-0">
-        <EditableText
-          value={headline.title}
-          onSave={renameTitle}
-          className="font-medium"
-        />
-        {headline.body && (
-          <div className="text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">{headline.body}</div>
+        {headlines.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            No headlines yet. Add one above.
+          </div>
         )}
-        <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-          {authorName} · {new Date(headline.created_at).toLocaleString()}
-        </div>
+        {headlines.map((h) => {
+          const meta = KIND_META[h.kind] ?? KIND_META.customer;
+          const remove = deleteHeadline.bind(null, teamId, h.id);
+          const when =
+            h.created_at?.toDate?.()?.toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }) ?? "—";
+          return (
+            <div
+              key={h.id}
+              className="group flex items-start gap-3 px-4 py-3 text-sm"
+            >
+              <div
+                className={`mt-0.5 rounded-full p-1.5 ring-1 ring-inset ${meta.badge}`}
+                title={meta.label}
+              >
+                <meta.Icon className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium">{h.title}</div>
+                {h.body && (
+                  <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
+                    {h.body}
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                  {meta.label} · {creatorName(h.created_by)} · {when}
+                </div>
+              </div>
+              <form action={remove}>
+                <button
+                  type="submit"
+                  className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100 mt-1"
+                  aria-label="Delete headline"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
+          );
+        })}
       </div>
-      <form action={remove}>
-        <button
-          type="submit"
-          className="text-xs text-zinc-300 dark:text-zinc-600 hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100"
-        >
-          Delete
-        </button>
-      </form>
     </div>
   );
 }
@@ -158,7 +144,7 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
     >
       <input
         name="title"
-        placeholder="Headline (e.g. New customer signed)"
+        placeholder="Headline (one line)"
         required
         className="md:col-span-4 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
@@ -169,10 +155,11 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
       >
         <option value="customer">Customer</option>
         <option value="employee">Employee</option>
+        <option value="cascading">Cascading</option>
       </select>
       <textarea
         name="body"
-        placeholder="Details (optional)"
+        placeholder="Detail (optional)"
         rows={2}
         className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />

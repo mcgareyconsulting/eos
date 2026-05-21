@@ -34,6 +34,16 @@ export function currentQuarter(d: Date = new Date()): string {
   return `${d.getFullYear()}-Q${q}`;
 }
 
+// Last day of d's calendar quarter, at 00:00 local time.
+// Q1 → Mar 31, Q2 → Jun 30, Q3 → Sep 30, Q4 → Dec 31.
+export function endOfQuarter(d: Date = new Date()): Date {
+  const q = Math.floor(d.getMonth() / 3); // 0..3
+  const lastMonth = q * 3 + 2; // 2, 5, 8, 11
+  const out = new Date(d.getFullYear(), lastMonth + 1, 0); // day 0 of next month = last day of this month
+  out.setHours(0, 0, 0, 0);
+  return out;
+}
+
 export function addDays(d: Date, days: number): Date {
   const out = new Date(d);
   out.setDate(out.getDate() + days);

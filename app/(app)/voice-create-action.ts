@@ -5,7 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import {
-  parseVoiceAudio,
+  chatRespond,
   type ActionItem,
   type VoiceAction,
 } from "@/lib/voice/parse";
@@ -61,6 +61,11 @@ export type ResolvedAction =
       milestone_id: string;
       milestone_title: string;
       rock_title: string;
+    }
+  | {
+      action: "complete_todo";
+      todo_id: string;
+      todo_title: string;
     };
 
 export type ParsedVoice = {
@@ -77,49 +82,75 @@ export type CommitResult = {
   path: string;
 };
 
-// Step 1: audio → Gemini → parsed preview. Resolves N actions against the
-// team's current rocks/milestones. Does NOT mutate anything.
-export async function voiceParse(formData: FormData): Promise<ParsedVoice> {
-  const file = formData.get("audio");
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("No audio recorded");
-  }
-  if (file.size > 15 * 1024 * 1024) {
-    throw new Error("Recording too long (max ~15MB)");
-  }
+// One assistant turn returned to the chat UI. `items` are resolved, ready
+// to confirm; `rawActions` is the model's own form, replayed next turn so a
+// pending proposal can be refined. Nothing is committed here.
+export type ChatReply = {
+  reply: string;
+  transcript: string;
+  items: ResolvedAction[];
+  rawActions: ActionItem[];
+};
 
-  const teamIdRaw = String(formData.get("team_id") ?? "").trim();
-  const { uid, name, email } = await requireFirebaseUser();
-  const teamId = teamIdRaw || (await firstTeamId(uid));
-  if (!teamId) throw new Error("No team available");
+type TeamContext = {
+  members: { user_id: string; full_name: string }[];
+  rocks: { id: string; title: string; status: string; owner: string | null }[];
+  openMilestones: { id: string; title: string; rock_title: string }[];
+  todos: { id: string; title: string; owner: string | null; due_date: string | null }[];
+  issues: { title: string; status: string }[];
+};
 
-  const { db } = await requireTeamAccess(teamId);
+// Snapshot of everything the assistant needs to answer questions and resolve
+// proposed actions: rocks, open milestones, open to-dos, open issues, members.
+async function loadTeamContext(
+  db: FirebaseFirestore.Firestore,
+  teamId: string,
+): Promise<TeamContext> {
   const members = await getTeamMembers(teamId);
+  const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
 
-  const [rocksSnap, milestonesSnap] = await Promise.all([
+  const [rocksSnap, todosSnap, issuesSnap] = await Promise.all([
     db.collection("rocks").where("team_id", "==", teamId).get(),
     db
       .collection("todos")
       .where("team_id", "==", teamId)
       .where("completed_at", "==", null)
       .get(),
+    db.collection("issues").where("team_id", "==", teamId).get(),
   ]);
 
   const rocks = rocksSnap.docs.map((d) => {
-    const data = d.data() as { title: string; status: string };
-    return { id: d.id, title: data.title, status: data.status };
+    const data = d.data() as {
+      title: string;
+      status: string;
+      owner_id: string | null;
+    };
+    return {
+      id: d.id,
+      title: data.title,
+      status: data.status,
+      owner: (data.owner_id && nameById.get(data.owner_id)) || null,
+    };
   });
   const rockTitleById = new Map(rocks.map((r) => [r.id, r.title]));
 
-  const openMilestones = milestonesSnap.docs
-    .map((d) => {
-      const data = d.data() as { title: string; source_rock_id: string | null };
-      return {
-        id: d.id,
-        title: data.title,
-        source_rock_id: data.source_rock_id,
-      };
-    })
+  const openTodos = todosSnap.docs.map((d) => {
+    const data = d.data() as {
+      title: string;
+      owner_id: string | null;
+      due_date: string | null;
+      source_rock_id: string | null;
+    };
+    return {
+      id: d.id,
+      title: data.title,
+      owner_id: data.owner_id,
+      due_date: data.due_date ?? null,
+      source_rock_id: data.source_rock_id ?? null,
+    };
+  });
+
+  const openMilestones = openTodos
     .filter((t) => t.source_rock_id)
     .map((t) => ({
       id: t.id,
@@ -127,28 +158,115 @@ export async function voiceParse(formData: FormData): Promise<ParsedVoice> {
       rock_title: rockTitleById.get(t.source_rock_id!) ?? "—",
     }));
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const parsed = await parseVoiceAudio({
-    audioBase64: buffer.toString("base64"),
-    mimeType: file.type || "audio/webm",
-    memberNames: members.map((m) => m.full_name).filter((n) => n && n !== "—"),
-    currentUserName: name || email || "me",
-    rocks,
-    openMilestones,
-  });
+  const todos = openTodos
+    .filter((t) => !t.source_rock_id)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      owner: (t.owner_id && nameById.get(t.owner_id)) || null,
+      due_date: t.due_date,
+    }));
 
-  const items: ResolvedAction[] = [];
-  for (let i = 0; i < parsed.actions.length; i++) {
-    const a = parsed.actions[i];
-    const positional = parsed.actions.length > 1 ? ` (action ${i + 1})` : "";
-    items.push(resolveAction(a, positional, rocks, openMilestones, members, uid, name, email));
+  const issues = issuesSnap.docs
+    .map((d) => {
+      const data = d.data() as { title: string; status: string };
+      return { title: data.title, status: data.status };
+    })
+    .filter((i) => i.status === "open");
+
+  return { members, rocks, openMilestones, todos, issues };
+}
+
+// Step 1: one chat turn (typed text OR spoken audio) → Gemini → reply plus
+// any proposed actions, resolved against the team's live data. Does NOT
+// mutate anything; the user confirms via chatCommit.
+export async function chatTurn(formData: FormData): Promise<ChatReply> {
+  const teamIdRaw = String(formData.get("team_id") ?? "").trim();
+  const { uid, name, email } = await requireFirebaseUser();
+  const teamId = teamIdRaw || (await firstTeamId(uid));
+  if (!teamId) throw new Error("No team available");
+
+  const { db } = await requireTeamAccess(teamId);
+  const ctx = await loadTeamContext(db, teamId);
+
+  let history: { role: "user" | "assistant"; text: string }[] = [];
+  let pending: ActionItem[] = [];
+  try {
+    const raw = JSON.parse(String(formData.get("history") ?? "[]"));
+    if (Array.isArray(raw)) history = raw.slice(-12);
+  } catch {
+    // ignore malformed history
+  }
+  try {
+    const raw = JSON.parse(String(formData.get("pending") ?? "[]"));
+    if (Array.isArray(raw)) pending = raw;
+  } catch {
+    // ignore malformed pending proposal
   }
 
-  return {
-    teamId,
-    items,
-    transcript: parsed.transcript,
-  };
+  const audio = formData.get("audio");
+  let input;
+  if (audio instanceof File && audio.size > 0) {
+    if (audio.size > 15 * 1024 * 1024) {
+      throw new Error("Recording too long (max ~15MB)");
+    }
+    const buffer = Buffer.from(await audio.arrayBuffer());
+    input = {
+      kind: "audio" as const,
+      audioBase64: buffer.toString("base64"),
+      mimeType: audio.type || "audio/webm",
+    };
+  } else {
+    const text = String(formData.get("text") ?? "").trim();
+    if (!text) throw new Error("Empty message");
+    input = { kind: "text" as const, text };
+  }
+
+  const resp = await chatRespond({
+    history,
+    input,
+    pendingActions: pending,
+    context: {
+      memberNames: ctx.members
+        .map((m) => m.full_name)
+        .filter((n) => n && n !== "—"),
+      currentUserName: name || email || "me",
+      rocks: ctx.rocks,
+      openMilestones: ctx.openMilestones,
+      todos: ctx.todos,
+      issues: ctx.issues,
+    },
+  });
+
+  // Resolve each proposed action; a failure (e.g. unmatched rock) becomes a
+  // note in the reply rather than killing the whole turn.
+  const items: ResolvedAction[] = [];
+  const rawActions: ActionItem[] = [];
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < resp.actions.length; i++) {
+    const a = resp.actions[i];
+    const positional = resp.actions.length > 1 ? ` (action ${i + 1})` : "";
+    try {
+      const resolved = resolveAction(
+        a, positional, ctx.rocks, ctx.openMilestones, ctx.todos, ctx.members, uid, name, email,
+      );
+      // The model occasionally repeats an identical action; collapse exact dupes.
+      const sig = JSON.stringify(resolved);
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      items.push(resolved);
+      rawActions.push(a);
+    } catch (e) {
+      notes.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  let reply = (resp.reply ?? "").trim();
+  if (!reply && items.length) reply = "Here's what I'll do — confirm to apply.";
+  if (notes.length) reply = [reply, ...notes].filter(Boolean).join("\n");
+
+  return { reply, transcript: resp.transcript ?? "", items, rawActions };
 }
 
 function resolveAction(
@@ -156,6 +274,7 @@ function resolveAction(
   positional: string,
   rocks: { id: string; title: string; status: string }[],
   openMilestones: { id: string; title: string; rock_title: string }[],
+  openTodos: { id: string; title: string }[],
   members: { user_id: string; full_name: string }[],
   uid: string,
   name: string | null,
@@ -249,12 +368,28 @@ function resolveAction(
         rock_title: ms.rock_title,
       };
     }
+    case "complete_todo": {
+      requireField(a.todo_id, `to-do${positional}`);
+      const todo = openTodos.find((t) => t.id === a.todo_id);
+      if (!todo) {
+        throw new Error(
+          `Couldn't match an open to-do${positional}. Name it more clearly.`,
+        );
+      }
+      return {
+        action: "complete_todo",
+        todo_id: todo.id,
+        todo_title: todo.title,
+      };
+    }
   }
 }
 
-// Step 2: user confirmed → apply each item in order. Stops on first failure
-// and reports which actions ran. Errors before any commit do nothing.
-export async function voiceCommit(parsed: ParsedVoice): Promise<CommitResult> {
+// Step 2: user confirmed the proposal → apply each item in order. Stops on
+// first failure and reports which actions ran. Errors before any commit do
+// nothing. This is the human-in-the-loop gate: nothing here runs until the
+// user clicks Apply on a proposal.
+export async function chatCommit(parsed: ParsedVoice): Promise<CommitResult> {
   const { db } = await requireTeamAccess(parsed.teamId);
   const summaries: CommitResult["summaries"] = [];
   const pathsToRevalidate = new Set<string>();
@@ -360,6 +495,11 @@ async function applyItem(
       paths.add(`/teams/${teamId}/rocks`);
       return `Completed milestone: "${item.milestone_title}"`;
     }
+    case "complete_todo": {
+      await toggleTodo(teamId, item.todo_id, false);
+      paths.add(`/teams/${teamId}/todos`);
+      return `Closed to-do: "${item.todo_title}"`;
+    }
   }
 }
 
@@ -370,13 +510,15 @@ function pickPrimaryPath(teamId: string, items: ResolvedAction[]): string {
     "complete_milestone",
     "create_rock",
     "create_issue",
+    "complete_todo",
     "create_todo",
   ];
   for (const a of priority) {
     const hit = items.find((i) => i.action === a);
     if (hit) {
       if (a === "create_issue") return `/teams/${teamId}/issues`;
-      if (a === "create_todo") return `/teams/${teamId}/todos`;
+      if (a === "create_todo" || a === "complete_todo")
+        return `/teams/${teamId}/todos`;
       return `/teams/${teamId}/rocks`;
     }
   }
@@ -396,7 +538,7 @@ function labelFor(status: string): string {
 
 function requireField<T>(v: T, name: string): asserts v is NonNullable<T> {
   if (v == null || v === "") {
-    throw new Error(`Couldn't extract ${name} from the audio. Try again with more detail.`);
+    throw new Error(`Couldn't work out the ${name} — add a bit more detail.`);
   }
 }
 

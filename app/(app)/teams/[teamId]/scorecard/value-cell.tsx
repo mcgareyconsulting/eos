@@ -66,6 +66,7 @@ export function ValueCell({
       autoFocus
       type="text"
       inputMode="decimal"
+      size={1}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -77,7 +78,7 @@ export function ValueCell({
           setEditing(false);
         }
       }}
-      className="w-full text-right rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-zinc-900"
+      className="w-full min-w-0 text-right rounded bg-white dark:bg-zinc-900 px-2 py-1 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-zinc-900"
     />
   );
 }

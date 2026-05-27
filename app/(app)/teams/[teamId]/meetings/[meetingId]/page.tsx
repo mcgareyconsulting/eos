@@ -4,21 +4,16 @@ import { notFound } from "next/navigation";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import {
-  SEGMENTS,
-  SEGMENT_LABELS,
-  SEGMENT_HINTS,
-  type Segment,
-} from "@/lib/l10/segments";
+import { type Segment, isSegment } from "@/lib/l10/segments";
 import {
   currentQuarter,
   endOfQuarter,
   lastNMondays,
   toDateString,
 } from "@/lib/dates";
-import { advanceSegment, endMeeting, jumpToSegment } from "../actions";
+import { endMeeting } from "../actions";
 import { MeetingPresence } from "@/components/meeting-presence";
-import { SegmentTimer } from "./segment-timer";
+import { MeetingLive } from "./meeting-live";
 import { SegmentScorecard } from "./segment-scorecard";
 import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
@@ -38,6 +33,7 @@ type MeetingDoc = {
   ended_at: Timestamp | null;
   current_segment: Segment;
   segment_started_at: Timestamp | null;
+  current_issue_id?: string | null;
   notes: string | null;
   absent_user_ids?: string[];
 };
@@ -49,10 +45,10 @@ export default async function MeetingDetailPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string; meetingId: string }>;
-  searchParams: Promise<{ recap?: string }>;
+  searchParams: Promise<{ recap?: string; view?: string }>;
 }) {
   const { teamId: tid, meetingId: mid } = await params;
-  const { recap } = await searchParams;
+  const { recap, view } = await searchParams;
   const { uid, db, team } = await requireTeamAccess(tid);
   const { name, email } = await requireFirebaseUser();
   const displayName = (name ?? email ?? "Member").trim();
@@ -80,10 +76,15 @@ export default async function MeetingDetailPage({
   });
 
   const live = !m.ended_at;
-  const segmentIndex = SEGMENTS.indexOf(m.current_segment);
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
-  const isConcludeOrDone =
-    m.current_segment === "conclude" || m.current_segment === "done";
+
+  // Which stage THIS client is showing. With no ?view we follow the shared
+  // active stage; a valid ?view lets the user peek elsewhere without moving
+  // the group. The live active stage is reconciled client-side in MeetingLive.
+  const viewParam = isSegment(view) && view !== "done" ? view : null;
+  const viewSegment: Segment = viewParam ?? m.current_segment;
+  const following = viewParam === null;
+  const showConclude = (live && viewSegment === "conclude") || !live;
 
   // Recap modal data: items created in the meeting window. Only fetched when
   // the recap modal is requested AND the meeting has actually ended.
@@ -280,109 +281,25 @@ export default async function MeetingDetailPage({
         </div>
       </header>
 
-      {/* Segment progress */}
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-        {live && (
-          <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-            <span>
-              Step {Math.min(segmentIndex + 1, SEGMENTS.length - 1)} of{" "}
-              {SEGMENTS.length - 1}
-            </span>
-            <span>
-              {Math.round(
-                ((segmentIndex + 1) / (SEGMENTS.length - 1)) * 100,
-              )}
-              %
-            </span>
-          </div>
-        )}
-        {live && (
-          <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-            <div
-              className="h-full bg-hpb-blue transition-all"
-              style={{
-                width: `${Math.min(((segmentIndex + 1) / (SEGMENTS.length - 1)) * 100, 100)}%`,
-              }}
-            />
-          </div>
-        )}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {SEGMENTS.filter((s) => s !== "done").map((s, idx) => {
-            const isCurrent = s === m.current_segment;
-            const isPast = idx < segmentIndex;
-            const pillClass =
-              "rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap transition " +
-              (isCurrent
-                ? "bg-hpb-blue text-white ring-1 ring-inset ring-hpb-blue/30"
-                : isPast
-                  ? "bg-hpb-green/10 text-hpb-green ring-1 ring-inset ring-hpb-green/30 hover:bg-hpb-green/20"
-                  : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700");
-            if (!live) {
-              return (
-                <span key={s} className={pillClass}>
-                  {SEGMENT_LABELS[s]}
-                </span>
-              );
-            }
-            return (
-              <form key={s} action={jumpToSegment.bind(null, tid, mid, s)}>
-                <button
-                  type="submit"
-                  className={pillClass}
-                  aria-current={isCurrent ? "step" : undefined}
-                >
-                  {SEGMENT_LABELS[s]}
-                </button>
-              </form>
-            );
-          })}
-        </div>
+      <MeetingLive
+        teamId={tid}
+        meetingId={mid}
+        viewSegment={viewSegment}
+        following={following}
+        initialSegment={m.current_segment}
+        initialStartedAtMs={segmentStartedAtMs}
+        initialEnded={!live}
+      />
 
-        {live && m.current_segment !== "done" && (
-          <div className="mt-3 flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold">
-                  {SEGMENT_LABELS[m.current_segment]}
-                </div>
-                <SegmentTimer
-                  segment={m.current_segment}
-                  startedAtMs={segmentStartedAtMs}
-                />
-              </div>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                {SEGMENT_HINTS[m.current_segment]}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <form action={advanceSegment.bind(null, tid, mid, "prev")}>
-                <button
-                  type="submit"
-                  className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
-                  ← Back
-                </button>
-              </form>
-              <form action={advanceSegment.bind(null, tid, mid, "next")}>
-                <button
-                  type="submit"
-                  className="rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-                >
-                  Next →
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Segment content — live, team-filtered */}
-      {live && m.current_segment !== "done" && m.current_segment !== "segue" && (
+      {/* Segment content follows the locally-viewed stage (peek-aware). */}
+      {live && viewSegment !== "done" && viewSegment !== "segue" && (
         <section>
           <SegmentContent
             teamId={tid}
             userId={uid}
-            segment={m.current_segment}
+            meetingId={mid}
+            segment={viewSegment}
+            currentIssueId={m.current_issue_id ?? null}
             members={members}
           />
         </section>
@@ -391,7 +308,7 @@ export default async function MeetingDetailPage({
       {/* Meeting review — notes + peer effectiveness scoring.
           Only surfaced in the Conclude segment (live) or on the completed
           meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
-      {isConcludeOrDone && (
+      {showConclude && (
         <ConcludeReview
           teamId={tid}
           meetingId={mid}
@@ -423,12 +340,16 @@ export default async function MeetingDetailPage({
 async function SegmentContent({
   teamId,
   userId,
+  meetingId,
   segment,
+  currentIssueId,
   members,
 }: {
   teamId: string;
   userId: string;
+  meetingId: string;
   segment: Segment;
+  currentIssueId: string | null;
   members: { user_id: string; full_name: string }[];
 }) {
   const { db } = await requireTeamAccess(teamId);
@@ -600,7 +521,6 @@ async function SegmentContent({
         title: x.title,
         description: x.description ?? null,
         owner_id: x.owner_id ?? null,
-        priority: x.priority ?? 3,
         votes: x.votes ?? 0,
         type: x.type ?? "short",
         status: x.status ?? "open",
@@ -619,9 +539,11 @@ async function SegmentContent({
     return (
       <SegmentIDS
         teamId={teamId}
+        meetingId={meetingId}
         userId={userId}
         initialIssues={initialIssues}
         initialVotes={initialVotes}
+        initialCurrentIssueId={currentIssueId}
         members={members}
       />
     );

@@ -24,7 +24,6 @@ export function QuickAddIssue({
     const fd = new FormData();
     fd.set("title", trimmed);
     fd.set("type", "short");
-    fd.set("priority", "3");
     start(async () => {
       try {
         setError(null);

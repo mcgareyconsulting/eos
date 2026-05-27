@@ -27,6 +27,7 @@ export async function startMeeting(teamId: string) {
     ended_at: null,
     current_segment: "segue",
     segment_started_at: FieldValue.serverTimestamp(),
+    current_issue_id: null,
     notes: null,
   });
   redirect(detailPath(teamId, ref.id));
@@ -68,6 +69,21 @@ export async function jumpToSegment(
     segment_started_at: FieldValue.serverTimestamp(),
   });
   revalidatePath(detailPath(teamId, meetingId));
+}
+
+// Mark which issue the group is currently discussing (or null to clear).
+// No revalidatePath: every client subscribes to the meeting doc live, so the
+// snapshot delivers this instantly — a re-render would only add lag.
+export async function setDiscussingIssue(
+  teamId: string,
+  meetingId: string,
+  issueId: string | null,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("meetings")
+    .doc(meetingId)
+    .update({ current_issue_id: issueId });
 }
 
 export async function endMeeting(teamId: string, meetingId: string) {

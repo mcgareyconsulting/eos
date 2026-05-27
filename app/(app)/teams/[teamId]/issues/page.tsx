@@ -1,6 +1,5 @@
 import { Trash2 } from "lucide-react";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { VoteButton } from "./vote-button";
 import { StatusActions } from "./status-actions";
 import { addIssue, deleteIssue } from "./actions";
 
@@ -9,7 +8,6 @@ type IssueDoc = {
   title: string;
   description: string | null;
   owner_id: string | null;
-  priority: number;
   votes: number;
   type: "short" | "long";
   status: "open" | "solving" | "solved" | "dropped";
@@ -38,28 +36,17 @@ export default async function IssuesPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const { db, team } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
-  const [issuesSnap, votesSnap] = await Promise.all([
-    db.collection("issues").where("team_id", "==", tid).get(),
-    db
-      .collection("issue_votes")
-      .where("user_id", "==", uid)
-      .where("team_id", "==", tid)
-      .get(),
-  ]);
+  const issuesSnap = await db
+    .collection("issues")
+    .where("team_id", "==", tid)
+    .get();
 
-  const myVoteByIssue = new Map<string, number>();
-  let myVotesUsed = 0;
-  for (const d of votesSnap.docs) {
-    const data = d.data();
-    const c = Number(data.count ?? 1); // back-compat: legacy docs without count
-    myVoteByIssue.set(data.issue_id as string, c);
-    myVotesUsed += c;
-  }
-  const myVotesRemaining = Math.max(0, 3 - myVotesUsed);
-
+  // Voting happens in the L10 IDS segment; this page is read-only and just
+  // ranks issues by the team's vote total (most important first), with
+  // active issues above resolved ones.
   const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
   const issues = issuesSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as IssueDoc) }))
@@ -67,7 +54,6 @@ export default async function IssuesPage({
       const byStatus =
         STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
       if (byStatus !== 0) return byStatus;
-      // votes desc within status
       return (b.votes ?? 0) - (a.votes ?? 0);
     });
 
@@ -79,7 +65,7 @@ export default async function IssuesPage({
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          {team.name} · {myVotesUsed}/3 votes used · IDS during L10
+          {team.name} · ranked by team votes · vote &amp; IDS during L10
         </p>
       </header>
 
@@ -98,13 +84,17 @@ export default async function IssuesPage({
               key={i.id}
               className="group flex items-start gap-3 px-4 py-3 text-sm"
             >
-              <VoteButton
-                teamId={tid}
-                issueId={i.id}
-                count={i.votes ?? 0}
-                myCount={myVoteByIssue.get(i.id) ?? 0}
-                myRemaining={myVotesRemaining}
-              />
+              <div
+                className="flex w-9 shrink-0 flex-col items-center pt-0.5"
+                title="Team votes (cast during L10)"
+              >
+                <span className="text-sm font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
+                  {i.votes ?? 0}
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-zinc-400">
+                  votes
+                </span>
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span
@@ -160,7 +150,7 @@ function AddIssueForm({ teamId }: { teamId: string }) {
         name="title"
         placeholder="Issue (one line)"
         required
-        className="md:col-span-4 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="md:col-span-5 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
       <select
         name="type"
@@ -169,17 +159,6 @@ function AddIssueForm({ teamId }: { teamId: string }) {
       >
         <option value="short">Short-term</option>
         <option value="long">Long-term</option>
-      </select>
-      <select
-        name="priority"
-        defaultValue="3"
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
-      >
-        <option value="1">P1 — urgent</option>
-        <option value="2">P2 — high</option>
-        <option value="3">P3 — medium</option>
-        <option value="4">P4 — low</option>
-        <option value="5">P5 — backlog</option>
       </select>
       <textarea
         name="description"

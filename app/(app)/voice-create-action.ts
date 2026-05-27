@@ -444,7 +444,6 @@ async function applyItem(
         title: item.title,
         description: item.description,
         owner_id: ownerId,
-        priority: 3,
         votes: 0,
         type: "short",
         status: "open",

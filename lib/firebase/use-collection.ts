@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   onSnapshot,
   type DocumentReference,
@@ -8,6 +9,19 @@ import {
   type Query,
   type QuerySnapshot,
 } from "firebase/firestore";
+import { getClientAuth } from "./client";
+
+// Resolves to the signed-in uid once Firebase Auth has restored its state,
+// `null` if signed out, `undefined` while still determining. Firestore rules
+// require request.auth, and a listener attached before auth is ready gets a
+// permanent permission-denied — so every realtime subscription waits on this.
+export function useAuthUid(): string | null | undefined {
+  const [uid, setUid] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    return onAuthStateChanged(getClientAuth(), (u) => setUid(u?.uid ?? null));
+  }, []);
+  return uid;
+}
 
 // Realtime collection subscription with server-rendered hydration.
 // `initial` paints first; the first onSnapshot result replaces it.
@@ -19,9 +33,12 @@ export function useCollection<T>(
   label?: string,
 ): T[] {
   const [docs, setDocs] = useState<T[]>(initial);
+  const uid = useAuthUid();
 
   useEffect(() => {
-    if (!query) return;
+    // Wait for client auth — a listener attached before request.auth exists
+    // is permanently denied by Firestore rules and never recovers.
+    if (!query || !uid) return;
     const unsub = onSnapshot(
       query,
       (snap: QuerySnapshot) => {
@@ -31,13 +48,13 @@ export function useCollection<T>(
       },
       (err) => {
         console.error(
-          `[useCollection${label ? `:${label}` : ""}] subscription error — likely undeployed rules/indexes:`,
+          `[useCollection${label ? `:${label}` : ""}] subscription error:`,
           err,
         );
       },
     );
     return unsub;
-  }, [query, label]);
+  }, [query, label, uid]);
 
   return docs;
 }
@@ -48,9 +65,10 @@ export function useDoc<T>(
   label?: string,
 ): T {
   const [doc, setDoc] = useState<T>(initial);
+  const uid = useAuthUid();
 
   useEffect(() => {
-    if (!ref) return;
+    if (!ref || !uid) return;
     const unsub = onSnapshot(
       ref,
       (snap: DocumentSnapshot) => {
@@ -65,7 +83,7 @@ export function useDoc<T>(
       },
     );
     return unsub;
-  }, [ref, label]);
+  }, [ref, label, uid]);
 
   return doc;
 }

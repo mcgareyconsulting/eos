@@ -22,16 +22,9 @@ export async function addIssue(teamId: string, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
   const typeRaw = String(formData.get("type") ?? "short");
-  const priorityRaw = Number(formData.get("priority") ?? 3);
   const type: Type = TYPES.includes(typeRaw as Type)
     ? (typeRaw as Type)
     : "short";
-  const priority =
-    Number.isFinite(priorityRaw) &&
-    priorityRaw >= 1 &&
-    priorityRaw <= 5
-      ? Math.round(priorityRaw)
-      : 3;
 
   if (!title) throw new Error("Title required");
 
@@ -40,7 +33,6 @@ export async function addIssue(teamId: string, formData: FormData) {
     title,
     description,
     owner_id: uid,
-    priority,
     votes: 0,
     type,
     status: "open",
@@ -129,22 +121,6 @@ export async function setIssueStatus(
     update.resolved_at = FieldValue.serverTimestamp();
   }
   await db.collection("issues").doc(issueId).update(update);
-  revalidatePath(pathFor(teamId));
-}
-
-export async function setIssuePriority(
-  teamId: string,
-  issueId: string,
-  priority: number,
-) {
-  if (!Number.isFinite(priority) || priority < 1 || priority > 5) {
-    throw new Error("Priority must be 1–5");
-  }
-  const { db } = await requireTeamAccess(teamId);
-  await db
-    .collection("issues")
-    .doc(issueId)
-    .update({ priority: Math.round(priority) });
   revalidatePath(pathFor(teamId));
 }
 

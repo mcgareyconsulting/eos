@@ -11,6 +11,7 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
+import { useAuthUid } from "@/lib/firebase/use-collection";
 
 type PresenceDoc = {
   uid: string;
@@ -32,9 +33,12 @@ export function MeetingPresence({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [present, setPresent] = useState<PresenceDoc[]>([]);
+  const authUid = useAuthUid();
 
-  // Heartbeat + cleanup
+  // Heartbeat + cleanup. Waits for client auth — writing before request.auth
+  // exists is denied by the presence rule.
   useEffect(() => {
+    if (!authUid) return;
     const db = getClientDb();
     const ref = doc(db, "meetings", meetingId, "presence", userId);
 
@@ -52,10 +56,11 @@ export function MeetingPresence({
       clearInterval(beat);
       deleteDoc(ref).catch(() => {});
     };
-  }, [meetingId, userId, displayName]);
+  }, [meetingId, userId, displayName, authUid]);
 
   // Subscribe to others
   useEffect(() => {
+    if (!authUid) return;
     const db = getClientDb();
     const unsub = onSnapshot(
       collection(db, "meetings", meetingId, "presence"),
@@ -67,7 +72,7 @@ export function MeetingPresence({
       (err) => console.error("[presence] sub:", err),
     );
     return unsub;
-  }, [meetingId]);
+  }, [meetingId, authUid]);
 
   // Tick clock so stale entries fall off without a new snapshot.
   useEffect(() => {

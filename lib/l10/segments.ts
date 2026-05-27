@@ -60,3 +60,7 @@ export function prevSegment(s: Segment): Segment {
 export function isActiveSegment(s: Segment): boolean {
   return s !== "done";
 }
+
+export function isSegment(s: string | null | undefined): s is Segment {
+  return !!s && (SEGMENTS as readonly string[]).includes(s);
+}

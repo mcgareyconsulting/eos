@@ -1,6 +1,6 @@
 # EOS
 
-A self-hosted alternative to ninety.io for running EOS — Level 10 meetings, Scorecard, Rocks, To-Dos, Issues, Headlines, and a personal "My 90" dashboard.
+A self-hosted alternative to ninety.io for running EOS — Level 10 meetings, Scorecard, Rocks, To-Dos, Issues, Headlines, and a personal Home dashboard.
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind v4 · Supabase (Postgres + Auth + Realtime) · Vercel.
 
@@ -75,7 +75,7 @@ app/
   (auth)/login/       — public sign-in (magic link)
   auth/callback/      — OAuth code exchange
   (app)/              — auth-gated route group
-    my90/             — personal dashboard
+    home/             — personal dashboard
     layout.tsx        — sidebar shell
 components/
   app-shell.tsx       — sidebar nav
@@ -93,7 +93,7 @@ supabase/
 | Day | Status | Goal |
 |-----|--------|------|
 | Wed eve | done | Scaffold, schema, auth, nav shell |
-| Thu     | todo | Scorecard / Rocks / To-Dos CRUD + My 90 wiring |
+| Thu     | todo | Scorecard / Rocks / To-Dos CRUD + Home wiring |
 | Fri     | todo | Issues / Headlines CRUD, IDS → spawn to-do |
 | Sat     | todo | L10 orchestrator (segment state, AgendaTimer, drop-to-issues) |
 | Sun     | todo | Realtime sync, deploy to Vercel, dry-run |

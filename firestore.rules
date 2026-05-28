@@ -57,6 +57,20 @@ service cloud.firestore {
       allow write: if admin();
     }
 
+    // ---------- join requests ----------
+    // A teamless user requests to join a team; a team leader approves/denies.
+    // The actual membership write happens via an admin-SDK server action, so
+    // these client rules are defense-in-depth: a user may create/read their
+    // own pending request; leaders read + decide their team's requests.
+    match /team_join_requests/{id} {
+      allow read:   if admin()
+                    || resource.data.user_id == request.auth.uid
+                    || isLeader(resource.data.team_id);
+      allow create: if request.resource.data.user_id == request.auth.uid
+                    && request.resource.data.status == "pending";
+      allow update, delete: if admin() || isLeader(resource.data.team_id);
+    }
+
     // ---------- scorecard ----------
     match /scorecard_metrics/{id} {
       allow read, write: if admin() || isMember(resource.data.team_id);

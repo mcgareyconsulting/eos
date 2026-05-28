@@ -240,6 +240,13 @@ export async function chatTurn(formData: FormData): Promise<ChatReply> {
 
   // Resolve each proposed action; a failure (e.g. unmatched rock) becomes a
   // note in the reply rather than killing the whole turn.
+  // Gemini sometimes resolves a date into its reply but forgets to copy it
+  // into the action's due_date field. Recover one from the reply (model
+  // normalizes to ISO) or the user's own words as a deterministic backstop.
+  const userText =
+    input.kind === "text" ? input.text : resp.transcript ?? "";
+  const fallbackDue = extractFallbackDate(resp.reply ?? "", userText);
+
   const items: ResolvedAction[] = [];
   const rawActions: ActionItem[] = [];
   const notes: string[] = [];
@@ -249,7 +256,7 @@ export async function chatTurn(formData: FormData): Promise<ChatReply> {
     const positional = resp.actions.length > 1 ? ` (action ${i + 1})` : "";
     try {
       const resolved = resolveAction(
-        a, positional, ctx.rocks, ctx.openMilestones, ctx.todos, ctx.members, uid, name, email,
+        a, positional, ctx.rocks, ctx.openMilestones, ctx.todos, ctx.members, uid, name, email, fallbackDue,
       );
       // The model occasionally repeats an identical action; collapse exact dupes.
       const sig = JSON.stringify(resolved);
@@ -279,6 +286,7 @@ function resolveAction(
   uid: string,
   name: string | null,
   email: string | null,
+  fallbackDue: string | null,
 ): ResolvedAction {
   const owner = resolveOwner(a.owner_name, members, uid, name, email);
   switch (a.action) {
@@ -288,7 +296,7 @@ function resolveAction(
         action: "create_todo",
         title: a.title!,
         description: a.description,
-        due_date: a.due_date,
+        due_date: a.due_date ?? fallbackDue,
         owner_id: owner.user_id,
         owner_name: owner.full_name,
       };
@@ -307,7 +315,7 @@ function resolveAction(
         action: "create_rock",
         title: a.title!,
         description: a.description,
-        due_date: a.due_date ?? toDateString(endOfQuarter()),
+        due_date: a.due_date ?? fallbackDue ?? toDateString(endOfQuarter()),
         quarter: a.quarter ?? quarterOfNow(),
         owner_id: owner.user_id,
         owner_name: owner.full_name,
@@ -350,7 +358,7 @@ function resolveAction(
         title: a.title!,
         owner_id: owner.user_id,
         owner_name: owner.full_name,
-        due_date: a.due_date ?? toDateString(endOfQuarter()),
+        due_date: a.due_date ?? fallbackDue ?? toDateString(endOfQuarter()),
       };
     }
     case "complete_milestone": {
@@ -539,6 +547,37 @@ function requireField<T>(v: T, name: string): asserts v is NonNullable<T> {
   if (v == null || v === "") {
     throw new Error(`Couldn't work out the ${name} — add a bit more detail.`);
   }
+}
+
+// Pull the first explicit calendar date out of the given texts, in priority
+// order: ISO (YYYY-MM-DD, which the model emits in its reply) then US
+// (M/D/YYYY, how users tend to type). Returns a validated YYYY-MM-DD or null.
+function extractFallbackDate(...texts: string[]): string | null {
+  for (const t of texts) {
+    if (!t) continue;
+    const iso = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    if (iso) {
+      const d = `${iso[1]}-${iso[2]}-${iso[3]}`;
+      if (isRealDate(d)) return d;
+    }
+    const us = t.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+    if (us) {
+      const d = `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+      if (isRealDate(d)) return d;
+    }
+  }
+  return null;
+}
+
+// Guards against shapes that match the regex but aren't real dates (13/45).
+function isRealDate(iso: string): boolean {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
 }
 
 function quarterOfNow(): string {

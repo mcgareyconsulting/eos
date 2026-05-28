@@ -24,7 +24,7 @@ type RockRow = {
   team_id: string;
 };
 
-export default async function My90Page() {
+export default async function HomePage() {
   const { user, teams, db } = await getUserTeamsFirebase();
   const teamIds = teams.map((t) => t.id);
 
@@ -108,7 +108,7 @@ export default async function My90Page() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">My 90</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           Open to-dos and active rocks across {teams.length}{" "}
           {teams.length === 1 ? "team" : "teams"}.

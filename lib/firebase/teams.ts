@@ -26,14 +26,40 @@ export const requireTeamAccess = cache(async (teamId: string) => {
   };
 });
 
+// Like requireTeamAccess, but additionally requires the current user to be a
+// team *leader* (role === "leader"). Used to gate member management — e.g.
+// approving/denying join requests. 404s for non-leaders and unknown teams.
+export const requireTeamLeader = cache(async (teamId: string) => {
+  const { uid, db } = await requireFirebaseUser();
+
+  const membership = await db
+    .collection("team_members")
+    .doc(`${teamId}__${uid}`)
+    .get();
+  if (!membership.exists || membership.data()?.role !== "leader") notFound();
+
+  const teamSnap = await db.collection("teams").doc(teamId).get();
+  if (!teamSnap.exists) notFound();
+
+  return {
+    uid,
+    db,
+    team: {
+      id: teamSnap.id,
+      name: (teamSnap.data()?.name as string) ?? "Team",
+    },
+  };
+});
+
 export type TeamMember = {
   user_id: string;
   full_name: string;
+  role: string;
 };
 
-// Hydrates team members (user_id + display name). Pulls display names from
-// /users/{uid} docs (which the smoke profile-write populated). Falls back
-// to "—" if the profile doc doesn't exist yet.
+// Hydrates team members (user_id + display name + role). Pulls display names
+// from /users/{uid} docs (which the profile-write / join approval populate).
+// Falls back to "—" if the profile doc doesn't exist yet.
 export const getTeamMembers = cache(
   async (teamId: string): Promise<TeamMember[]> => {
     const { db } = await requireFirebaseUser();
@@ -43,11 +69,14 @@ export const getTeamMembers = cache(
       .where("team_id", "==", teamId)
       .get();
 
-    const userIds = membersSnap.docs.map((d) => d.data().user_id as string);
-    if (userIds.length === 0) return [];
+    const members = membersSnap.docs.map((d) => ({
+      user_id: d.data().user_id as string,
+      role: (d.data().role as string) ?? "member",
+    }));
+    if (members.length === 0) return [];
 
     const userDocs = await db.getAll(
-      ...userIds.map((id) => db.collection("users").doc(id)),
+      ...members.map((m) => db.collection("users").doc(m.user_id)),
     );
     const nameById = new Map<string, string>();
     for (const d of userDocs) {
@@ -61,9 +90,10 @@ export const getTeamMembers = cache(
       nameById.set(d.id, name || "—");
     }
 
-    return userIds.map((id) => ({
-      user_id: id,
-      full_name: nameById.get(id) ?? "—",
+    return members.map((m) => ({
+      user_id: m.user_id,
+      full_name: nameById.get(m.user_id) ?? "—",
+      role: m.role,
     }));
   },
 );

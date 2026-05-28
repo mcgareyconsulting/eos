@@ -46,5 +46,5 @@ export default async function LoginPage({
 
 function safeNext(raw: unknown): string {
   const value = typeof raw === "string" ? raw : "";
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/my90";
+  return value.startsWith("/") && !value.startsWith("//") ? value : "/home";
 }

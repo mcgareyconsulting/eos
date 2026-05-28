@@ -101,7 +101,7 @@ export async function deleteRock(teamId: string, rockId: string) {
 
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/my90");
+  revalidatePath("/home");
 }
 
 // Create a milestone — i.e., a todo tied to a rock via source_rock_id.
@@ -136,5 +136,5 @@ export async function addMilestone(
   });
 
   revalidatePath(pathFor(teamId));
-  revalidatePath("/my90");
+  revalidatePath("/home");
 }

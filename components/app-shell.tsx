@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Megaphone,
   Calendar,
+  Users,
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -46,6 +47,7 @@ export function AppShell({
         { href: `${teamPath}/issues`, label: "Issues", icon: AlertCircle },
         { href: `${teamPath}/headlines`, label: "Headlines", icon: Megaphone },
         { href: `${teamPath}/meetings`, label: "Meetings", icon: Calendar },
+        { href: `${teamPath}/members`, label: "Members", icon: Users },
       ]
     : [];
 
@@ -53,7 +55,7 @@ export function AppShell({
     <div className="flex h-screen overflow-hidden">
       <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="px-4 py-5 border-b border-zinc-200 dark:border-zinc-800">
-          <Link href="/my90" className="block">
+          <Link href="/home" className="block">
             <span className="block text-base font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
               High Plains Bank
             </span>
@@ -65,7 +67,7 @@ export function AppShell({
 
         <div className="flex-1 overflow-y-auto">
           <nav className="px-2 py-3 space-y-0.5">
-            <NavLink href="/my90" icon={Home} label="My 90" />
+            <NavLink href="/home" icon={Home} label="Home" />
           </nav>
 
           {team && (

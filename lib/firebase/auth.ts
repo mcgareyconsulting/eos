@@ -2,7 +2,6 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { getAdminDb } from "./admin";
 import { verifySession } from "./session";
-import { ensureUserHasTeam } from "./team-provision";
 
 // Mirror of lib/auth.ts (Supabase) for Firebase. Per-request de-duped via
 // React cache() so layout + page share a single session verification.
@@ -19,14 +18,13 @@ export const requireFirebaseUser = cache(async () => {
 });
 
 // Shape-compatible replacement for lib/auth.ts `getUserTeams()`. Returns
-// the same user/profile/teams structure that AppShell + my90 already expect,
-// hydrated from Firebase Auth claims + Firestore. Auto-provisions a default
-// team on first call so new users never see an empty app.
+// the same user/profile/teams structure that AppShell + home already expect,
+// hydrated from Firebase Auth claims + Firestore. Returns an empty `teams`
+// array for users not yet on a team — the (app) layout redirects those users
+// to /join, where they request membership (a leader approves). We never
+// auto-create a personal "solo team".
 export const getUserTeamsFirebase = cache(async () => {
   const { uid, name, email, picture, db } = await requireFirebaseUser();
-
-  // Guarantee at least one team exists for this user (idempotent).
-  await ensureUserHasTeam(db, uid, name, email);
 
   // Load all the user's team memberships, then hydrate the teams.
   const membershipsSnap = await db

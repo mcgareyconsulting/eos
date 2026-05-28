@@ -101,7 +101,7 @@ export function SegmentScorecard({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs text-zinc-600 dark:text-zinc-400">
           last {weeks.length} weeks · off-track? drop to IDS
         </div>
         <QuickAddIssue
@@ -111,10 +111,10 @@ export function SegmentScorecard({
         />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+            <tr className="border-b border-zinc-300 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 uppercase tracking-wide">
               <th className="text-left px-4 py-2 font-medium">Metric</th>
               <th className="text-left px-4 py-2 font-medium">Owner</th>
               <th className="text-left px-4 py-2 font-medium">Goal</th>
@@ -133,7 +133,7 @@ export function SegmentScorecard({
               <tr>
                 <td
                   colSpan={3 + weeks.length}
-                  className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400"
+                  className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400"
                 >
                   No metrics yet.
                 </td>
@@ -142,13 +142,13 @@ export function SegmentScorecard({
             {sorted.map((m) => (
               <tr
                 key={m.id}
-                className="border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+                className="border-b border-zinc-200 dark:border-zinc-800 last:border-0"
               >
                 <td className="px-4 py-2 font-medium">{m.name}</td>
                 <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
                   {ownerName(m.owner_id)}
                 </td>
-                <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400 tabular-nums">
+                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
                   {formatGoal(m.goal, m.direction, m.unit)}
                 </td>
                 {weeks.map((w) => {

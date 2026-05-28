@@ -27,7 +27,7 @@ export function ValueCell({
   const display = optimisticValue == null ? "—" : optimisticValue.toLocaleString();
   const color =
     onTrack == null
-      ? "text-zinc-500 dark:text-zinc-400"
+      ? "text-zinc-600 dark:text-zinc-400"
       : onTrack
         ? "text-emerald-700 dark:text-emerald-300"
         : "text-red-700 dark:text-red-300";

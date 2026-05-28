@@ -55,34 +55,34 @@ export function AgendaTimer({
   }, [pct, router, segmentStartedAt]);
 
   return (
-    <div className="flex items-center gap-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-3">
+    <div className="flex items-center gap-6 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-3">
       <div className="flex-1">
-        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
           Current segment
         </div>
         <div className="text-lg font-semibold">{SEGMENT_LABELS[segment]}</div>
       </div>
 
       <div className="text-right">
-        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
           Segment
         </div>
         <div className={cn("text-2xl font-semibold tabular-nums", colorClass)}>
           {formatClock(remainingSec)}
         </div>
-        <div className="text-xs text-zinc-400 dark:text-zinc-500">
+        <div className="text-xs text-zinc-500 dark:text-zinc-500">
           target {formatClock(targetSec)}
         </div>
       </div>
 
       <div className="text-right">
-        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
           Total
         </div>
         <div className="text-2xl font-semibold tabular-nums">
           {formatClock(meetElapsedSec)}
         </div>
-        <div className="text-xs text-zinc-400 dark:text-zinc-500">
+        <div className="text-xs text-zinc-500 dark:text-zinc-500">
           target {formatClock(TOTAL_MEETING_SECONDS)}
         </div>
       </div>

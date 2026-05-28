@@ -50,7 +50,7 @@ export function EditableText({
         }}
         className={cn(
           "text-left w-full rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 px-1 -mx-1",
-          !value && "text-zinc-400 dark:text-zinc-500 italic",
+          !value && "text-zinc-500 dark:text-zinc-500 italic",
           className,
         )}
         title="Click to edit"

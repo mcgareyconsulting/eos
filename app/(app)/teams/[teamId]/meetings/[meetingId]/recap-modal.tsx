@@ -87,13 +87,13 @@ export function RecapModal({
       <div
         role="dialog"
         aria-label="Past L10 condensed"
-        className="absolute right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl border-l border-zinc-200 dark:border-zinc-800 flex flex-col"
+        className="absolute right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl border-l border-zinc-300 dark:border-zinc-800 flex flex-col"
       >
-        <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+        <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-300 dark:border-zinc-800">
           <div>
             <h2 className="text-base font-semibold">Past L10 Condensed</h2>
             {meetingMinutes != null && (
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                 {meetingMinutes} min meeting
               </p>
             )}
@@ -101,7 +101,7 @@ export function RecapModal({
           <button
             type="button"
             onClick={close}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -180,7 +180,7 @@ export function RecapModal({
             {attendeeRatings.length === 0 ? (
               <EmptyHint>No attendees</EmptyHint>
             ) : (
-              <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-md border border-zinc-100 dark:border-zinc-800">
+              <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800">
                 {attendeeRatings.map((r) => (
                   <li
                     key={r.user_id}
@@ -189,7 +189,7 @@ export function RecapModal({
                     <span
                       className={
                         r.absent
-                          ? "text-zinc-400 dark:text-zinc-500"
+                          ? "text-zinc-500 dark:text-zinc-500"
                           : "text-zinc-700 dark:text-zinc-200"
                       }
                     >
@@ -198,9 +198,9 @@ export function RecapModal({
                     <span
                       className={
                         r.absent
-                          ? "text-xs uppercase tracking-wide text-zinc-400"
+                          ? "text-xs uppercase tracking-wide text-zinc-500"
                           : r.average == null
-                            ? "text-zinc-400"
+                            ? "text-zinc-500"
                             : "font-semibold text-hpb-blue"
                       }
                     >
@@ -217,7 +217,7 @@ export function RecapModal({
           </Section>
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 px-5 py-3">
+        <footer className="flex items-center justify-end gap-2 border-t border-zinc-300 dark:border-zinc-800 px-5 py-3">
           <button
             type="button"
             onClick={close}
@@ -258,7 +258,7 @@ function ItemList({ items, empty }: { items: RecapItem[]; empty: string }) {
     );
   }
   return (
-    <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 rounded-md border border-zinc-100 dark:border-zinc-800">
+    <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800">
       {items.map((it) => (
         <li
           key={it.id}
@@ -304,8 +304,8 @@ function StatCard({
   emphasis?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center">
-      <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+    <div className="rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center">
+      <div className="text-[11px] uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
         {label}
       </div>
       <div
@@ -322,6 +322,6 @@ function StatCard({
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs text-zinc-500 dark:text-zinc-400">{children}</p>
+    <p className="text-xs text-zinc-600 dark:text-zinc-400">{children}</p>
   );
 }

@@ -1,4 +1,5 @@
-import { Trash2, Lock } from "lucide-react";
+import { Trash2, Lock, CheckSquare } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { TodoCheckbox } from "./todo-row";
@@ -54,7 +55,7 @@ export default async function TodosPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · 7-day action items from L10
         </p>
       </header>
@@ -116,10 +117,10 @@ function Row({
         <EditableText
           value={todo.title}
           onSave={renameTitle}
-          className={completed ? "text-zinc-400 line-through" : ""}
+          className={completed ? "text-zinc-500 line-through" : ""}
         />
         {todo.visibility === "private" && (
-          <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-400">
+          <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-500">
             <Lock className="h-3 w-3" /> private
           </span>
         )}
@@ -127,7 +128,7 @@ function Row({
       <div className="col-span-2 text-zinc-600 dark:text-zinc-400">
         {ownerName}
       </div>
-      <div className="col-span-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <div className="col-span-1 text-xs text-zinc-600 dark:text-zinc-400">
         {todo.due_date
           ? new Date(todo.due_date).toLocaleDateString()
           : "—"}
@@ -149,7 +150,7 @@ function Row({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+    <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
       {children}
     </h2>
   );
@@ -157,18 +158,14 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function List({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+    <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
       {children}
     </div>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-      {children}
-    </div>
-  );
+  return <EmptyState icon={CheckSquare} title={children} />;
 }
 
 function AddTodoForm({
@@ -187,7 +184,7 @@ function AddTodoForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"

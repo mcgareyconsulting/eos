@@ -36,7 +36,7 @@ const STATUS_STYLE: Record<string, string> = {
     "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300",
   off_track: "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300",
   done: "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300",
-  cancelled: "bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400",
+  cancelled: "bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400",
 };
 
 export function ChatPanel({
@@ -299,8 +299,8 @@ export function ChatPanel({
   // --- render ---------------------------------------------------------------
 
   return (
-    <div className="fixed bottom-20 right-5 z-50 flex h-[520px] max-h-[calc(100vh-7rem)] w-[min(380px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-800">
+    <div className="fixed bottom-20 right-5 z-50 flex h-[520px] max-h-[calc(100vh-7rem)] w-[min(380px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
         <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
           Assistant
         </h2>
@@ -312,7 +312,7 @@ export function ChatPanel({
               disabled={busy}
               aria-label="Clear conversation"
               title="Clear conversation"
-              className="rounded p-1 text-zinc-400 hover:text-zinc-900 disabled:opacity-50 dark:hover:text-zinc-100"
+              className="rounded p-1 text-zinc-500 hover:text-zinc-900 disabled:opacity-50 dark:hover:text-zinc-100"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -322,7 +322,7 @@ export function ChatPanel({
             onClick={onClose}
             aria-label="Close"
             title="Close (keeps history)"
-            className="rounded p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            className="rounded p-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
           >
             <X className="h-4 w-4" />
           </button>
@@ -346,13 +346,13 @@ export function ChatPanel({
           ),
         )}
         {busy && (
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
           </div>
         )}
       </div>
 
-      <div className="border-t border-zinc-100 px-3 py-2.5 dark:border-zinc-800">
+      <div className="border-t border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
         {recording ? (
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
@@ -419,7 +419,7 @@ function EmptyState() {
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Type or tap the mic. I can answer questions or propose changes.
       </p>
-      <ul className="mt-2 space-y-0.5 text-xs text-zinc-400">
+      <ul className="mt-2 space-y-0.5 text-xs text-zinc-500">
         <li>“Which rocks are off track?”</li>
         <li>“Remind me to send the audit pack by Friday.”</li>
         <li>“Set the lending rock off track — vendor delays.”</li>
@@ -486,7 +486,7 @@ function ProposalCard({
 }) {
   const n = proposal.items.length;
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/50">
+    <div className="rounded-xl border border-zinc-300 bg-zinc-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/50">
       <div className="flex flex-col gap-2">
         {proposal.items.map((item, i) => (
           <ItemCard key={i} item={item} />
@@ -522,7 +522,7 @@ function ProposalCard({
           {proposal.result?.path && (
             <a
               href={proposal.result.path}
-              className="ml-auto text-zinc-500 underline-offset-2 hover:underline dark:text-zinc-400"
+              className="ml-auto text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400"
             >
               View →
             </a>
@@ -530,10 +530,10 @@ function ProposalCard({
         </div>
       )}
       {proposal.status === "cancelled" && (
-        <div className="mt-2 text-xs text-zinc-400">Cancelled</div>
+        <div className="mt-2 text-xs text-zinc-500">Cancelled</div>
       )}
       {proposal.status === "superseded" && (
-        <div className="mt-2 text-xs text-zinc-400">Updated below ↓</div>
+        <div className="mt-2 text-xs text-zinc-500">Updated below ↓</div>
       )}
     </div>
   );
@@ -542,15 +542,15 @@ function ProposalCard({
 function ItemCard({ item }: { item: ResolvedAction }) {
   const { header, rows } = describeItem(item);
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+    <div className="rounded-lg border border-zinc-300 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-600">
         {header.kicker}
       </div>
       <div className="mt-0.5 text-sm font-medium text-zinc-900 dark:text-zinc-100">
         {header.title}
       </div>
       {header.subtitle && (
-        <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
           {header.subtitle}
         </div>
       )}
@@ -558,7 +558,7 @@ function ItemCard({ item }: { item: ResolvedAction }) {
         <dl className="mt-1.5 grid grid-cols-[64px_1fr] gap-y-0.5 text-xs">
           {rows.map((r) => (
             <div key={r.label} className="contents">
-              <dt className="text-zinc-500">{r.label}</dt>
+              <dt className="text-zinc-600">{r.label}</dt>
               <dd className="text-zinc-900 dark:text-zinc-100">{r.value}</dd>
             </div>
           ))}

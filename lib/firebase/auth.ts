@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getAdminDb } from "./admin";
 import { verifySession } from "./session";
 
-// Mirror of lib/auth.ts (Supabase) for Firebase. Per-request de-duped via
+// Resolves the current Firebase session user. Per-request de-duped via
 // React cache() so layout + page share a single session verification.
 export const requireFirebaseUser = cache(async () => {
   const decoded = await verifySession();
@@ -17,8 +17,7 @@ export const requireFirebaseUser = cache(async () => {
   };
 });
 
-// Shape-compatible replacement for lib/auth.ts `getUserTeams()`. Returns
-// the same user/profile/teams structure that AppShell + home already expect,
+// Returns the user/profile/teams structure that AppShell + home expect,
 // hydrated from Firebase Auth claims + Firestore. Returns an empty `teams`
 // array for users not yet on a team — the (app) layout redirects those users
 // to /join, where they request membership (a leader approves). We never
@@ -46,7 +45,7 @@ export const getUserTeamsFirebase = cache(async () => {
     .filter((d) => d.exists)
     .map((d) => ({ id: d.id, name: (d.data()?.name as string) ?? "Team" }));
 
-  // Build a Supabase-shaped profile so AppShell renders without changes.
+  // Build the profile shape AppShell + home render from.
   const fullName = (name ?? email ?? "").trim();
   const [firstName, ...rest] = fullName.split(/\s+/);
   const lastName = rest.join(" ");

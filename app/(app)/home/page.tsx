@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Circle, Flag, Target } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 
@@ -109,17 +110,17 @@ export default async function HomePage() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Open to-dos and active rocks across {teams.length}{" "}
           {teams.length === 1 ? "team" : "teams"}.
         </p>
       </header>
 
       <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
           Active To-Dos ({sortedTodos.length})
         </h2>
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
           {sortedTodos.length === 0 && <Empty>No open to-dos.</Empty>}
           {sortedTodos.map((t) => (
             <Link
@@ -142,20 +143,20 @@ export default async function HomePage() {
 
       {myMilestones.length > 0 && (
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
             Rock Milestones ({myMilestones.length})
           </h2>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
             {myMilestones.map((m) => (
               <Link
                 key={m.id}
                 href={`/teams/${m.team_id}/rocks`}
                 className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
               >
-                <Flag className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
+                <Flag className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
                 <div className="flex-1 min-w-0">
                   <div className="truncate">{m.title}</div>
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                  <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
                     {rockTitleById.get(m.source_rock_id ?? "") ?? "—"}
                   </div>
                 </div>
@@ -168,10 +169,10 @@ export default async function HomePage() {
       )}
 
       <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
           Active Rocks ({sortedRocks.length})
         </h2>
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
           {sortedRocks.length === 0 && <Empty>No active rocks.</Empty>}
           {sortedRocks.map((r) => (
             <Link
@@ -179,10 +180,10 @@ export default async function HomePage() {
               href={`/teams/${r.team_id}/rocks`}
               className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
             >
-              <Target className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
+              <Target className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
               <div className="flex-1 min-w-0">
                 <div className="truncate">{r.title}</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="text-xs text-zinc-600 dark:text-zinc-400">
                   {r.quarter}
                 </div>
               </div>
@@ -201,11 +202,7 @@ export default async function HomePage() {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-      {children}
-    </div>
-  );
+  return <EmptyState title={children} />;
 }
 
 function OwnerLabel({
@@ -222,7 +219,7 @@ function OwnerLabel({
         "inline-flex items-center text-xs whitespace-nowrap " +
         (isMine
           ? "text-zinc-900 dark:text-zinc-100 font-medium"
-          : "text-zinc-500 dark:text-zinc-400")
+          : "text-zinc-600 dark:text-zinc-400")
       }
     >
       {label}
@@ -233,7 +230,7 @@ function OwnerLabel({
 function TeamLabel({ name }: { name: string }) {
   if (!name) return null;
   return (
-    <span className="hidden md:inline-flex items-center text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap">
+    <span className="hidden md:inline-flex items-center text-xs text-zinc-500 dark:text-zinc-500 whitespace-nowrap">
       {name}
     </span>
   );
@@ -242,7 +239,7 @@ function TeamLabel({ name }: { name: string }) {
 function DueLabel({ due }: { due: string | null }) {
   if (!due)
     return (
-      <span className="text-xs text-zinc-400 dark:text-zinc-500 w-24 text-right">
+      <span className="text-xs text-zinc-500 dark:text-zinc-500 w-24 text-right">
         —
       </span>
     );
@@ -251,7 +248,7 @@ function DueLabel({ due }: { due: string | null }) {
     <span
       className={
         "text-xs whitespace-nowrap w-24 text-right " +
-        (overdue ? "text-red-600" : "text-zinc-500 dark:text-zinc-400")
+        (overdue ? "text-red-600" : "text-zinc-600 dark:text-zinc-400")
       }
     >
       Due {new Date(due).toLocaleDateString()}

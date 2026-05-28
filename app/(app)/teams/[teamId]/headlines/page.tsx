@@ -1,4 +1,5 @@
 import { Trash2, Smile, Users, Megaphone } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { addHeadline, deleteHeadline } from "./actions";
@@ -70,18 +71,20 @@ export default async function HeadlinesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · customer wins, employee news, and cascading messages
         </p>
       </header>
 
       <AddHeadlineForm teamId={teamId} />
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {headlines.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            No headlines yet. Add one above.
-          </div>
+          <EmptyState
+            icon={Megaphone}
+            title="No headlines yet"
+            hint="Share customer wins, employee news, and cascading messages with the form above."
+          />
         )}
         {headlines.map((h) => {
           const meta = KIND_META[h.kind] ?? KIND_META.customer;
@@ -111,7 +114,7 @@ export default async function HeadlinesPage({
                     {h.body}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
                   {meta.label} · {creatorName(h.created_by)} · {when}
                 </div>
               </div>
@@ -140,7 +143,7 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"

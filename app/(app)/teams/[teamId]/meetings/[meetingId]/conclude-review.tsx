@@ -38,18 +38,18 @@ export function ConcludeReview({
     <div className="space-y-6">
       <NotesCard teamId={teamId} meetingId={meetingId} initialNotes={notes} />
 
-      <section className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+      <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Score teammates (1–10)
           </h2>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">
             Peer effectiveness · your scores stay attributed to you
           </span>
         </header>
 
         {peers.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
             No teammates to score on this team.
           </p>
         ) : (
@@ -119,7 +119,7 @@ function NotesCard({
   return (
     <form
       onSubmit={submit}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3"
     >
       <div className="flex items-baseline justify-between">
         <label
@@ -211,8 +211,8 @@ function AttendeeCard({
       className={
         "rounded-lg border p-3 transition " +
         (isAbsent
-          ? "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 opacity-70"
-          : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900")
+          ? "border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 opacity-70"
+          : "border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900")
       }
     >
       <header className="flex items-center justify-between gap-2">
@@ -223,13 +223,13 @@ function AttendeeCard({
           <div className="min-w-0">
             <div className="text-sm font-medium truncate">{peer.full_name}</div>
             {teamAvg != null && !isAbsent && (
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
                 Team avg {teamAvg.toFixed(1)} · {ratingCount}{" "}
                 {ratingCount === 1 ? "score" : "scores"}
               </div>
             )}
             {isAbsent && (
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
                 Marked absent
               </div>
             )}

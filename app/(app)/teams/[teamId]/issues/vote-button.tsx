@@ -53,7 +53,7 @@ export function VoteButton({
           onClick={() => cast(-1)}
           disabled={cantSub}
           title={cantSub ? "No votes to remove" : "Remove a vote"}
-          className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-700 text-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Minus className="h-3 w-3" />
         </button>
@@ -76,7 +76,7 @@ export function VoteButton({
           className={
             "flex h-6 w-6 items-center justify-center rounded-md border text-xs " +
             (cantAdd
-              ? "border-zinc-200 dark:border-zinc-800 text-zinc-300 dark:text-zinc-700 cursor-not-allowed"
+              ? "border-zinc-300 dark:border-zinc-800 text-zinc-300 dark:text-zinc-700 cursor-not-allowed"
               : "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900")
           }
         >

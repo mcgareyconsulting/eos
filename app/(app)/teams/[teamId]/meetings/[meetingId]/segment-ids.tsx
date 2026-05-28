@@ -51,7 +51,7 @@ const STATUS_BADGE: Record<IssueDoc["status"], string> = {
   solved:
     "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
   dropped:
-    "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+    "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
 const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
@@ -127,7 +127,7 @@ export function SegmentIDS({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs text-zinc-600 dark:text-zinc-400">
           <span
             className={
               "font-medium " +
@@ -147,9 +147,9 @@ export function SegmentIDS({
         <QuickAddIssue teamId={teamId} compact />
       </div>
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {sorted.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
             No issues yet. Drop one from any segment.
           </div>
         )}
@@ -192,7 +192,7 @@ export function SegmentIDS({
                   >
                     {STATUS_LABEL[i.status]}
                   </span>
-                  <span className="text-xs text-zinc-400">
+                  <span className="text-xs text-zinc-500">
                     {i.type === "long" ? "Long-term" : "Short-term"}
                   </span>
                 </div>
@@ -202,7 +202,7 @@ export function SegmentIDS({
                     {i.description}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-zinc-500">
+                <div className="mt-1 text-xs text-zinc-600">
                   {ownerName(i.owner_id)}
                 </div>
               </div>
@@ -220,7 +220,7 @@ export function SegmentIDS({
                       "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition " +
                       (isDiscussing
                         ? "bg-hpb-blue/10 text-hpb-blue ring-1 ring-inset ring-hpb-blue/30"
-                        : "text-zinc-400 hover:text-hpb-blue opacity-0 group-hover:opacity-100")
+                        : "text-zinc-500 hover:text-hpb-blue opacity-0 group-hover:opacity-100")
                     }
                   >
                     <Megaphone className="h-3.5 w-3.5" />

@@ -1,4 +1,5 @@
-import { Trash2 } from "lucide-react";
+import { Trash2, Target } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
@@ -129,18 +130,18 @@ export default async function RocksPage({
             className="font-medium"
           />
           {r.description && (
-            <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
+            <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 line-clamp-1">
               {r.description}
             </div>
           )}
-          <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+          <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-0.5">
             {r.quarter}
           </div>
         </div>
         <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
           {ownerName(r.owner_id)}
         </div>
-        <div className="col-span-1 text-zinc-500 dark:text-zinc-400 text-xs">
+        <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
           {r.due_date ? new Date(r.due_date).toLocaleDateString() : "—"}
         </div>
         <div className="col-span-2 justify-self-end flex items-center gap-2">
@@ -172,7 +173,7 @@ export default async function RocksPage({
       <header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             {team.name} · current quarter {quarter}
           </p>
         </div>
@@ -229,10 +230,10 @@ function RockSection({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
         {title}
       </h2>
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {children}
       </div>
     </section>
@@ -240,10 +241,6 @@ function RockSection({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-      {children}
-    </div>
-  );
+  return <EmptyState icon={Target} title={children} />;
 }
 

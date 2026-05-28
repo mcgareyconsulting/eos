@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Plus, Star, Trash2 } from "lucide-react";
+import { Plus, Star, Trash2, Calendar } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { SEGMENT_LABELS, SEGMENTS } from "@/lib/l10/segments";
@@ -62,18 +63,20 @@ export default async function MeetingsPage({
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             {team.name} · Level 10 weekly meetings
           </p>
         </div>
         <StartMeetingButton teamId={tid} />
       </header>
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {meetings.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            No meetings yet. Click &quot;Start meeting&quot; to begin.
-          </div>
+          <EmptyState
+            icon={Calendar}
+            title="No meetings yet"
+            hint="Click “Start meeting” to run your first timed Level 10."
+          />
         )}
         {meetings.map((m) => {
           const started = m.started_at?.toDate?.();
@@ -109,7 +112,7 @@ export default async function MeetingsPage({
                     minute: "2-digit",
                   }) ?? "—"}
                 </div>
-                <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                   {live
                     ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[m.current_segment] ?? m.current_segment}`
                     : `Completed · ${duration ?? "—"} min`}

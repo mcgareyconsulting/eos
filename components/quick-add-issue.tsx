@@ -86,7 +86,7 @@ export function QuickAddIssue({
           setOpen(false);
           setTitle(prefill ?? "");
         }}
-        className="rounded-md p-1 text-zinc-400 hover:text-zinc-600"
+        className="rounded-md p-1 text-zinc-500 hover:text-zinc-600"
         aria-label="Cancel"
       >
         <X className="h-3 w-3" />

@@ -41,16 +41,16 @@ export default async function JoinPage() {
           <span className="block text-lg font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
             High Plains Bank
           </span>
-          <span className="mt-0.5 block text-[10px] italic text-zinc-500 dark:text-zinc-400">
+          <span className="mt-0.5 block text-[10px] italic text-zinc-600 dark:text-zinc-400">
             Employee Owned • Community Driven
           </span>
         </div>
 
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
           <h1 className="text-xl font-semibold tracking-tight">
             Join a team
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             You&apos;re signed in as{" "}
             <span className="font-medium text-zinc-700 dark:text-zinc-300">
               {name || email}
@@ -66,9 +66,9 @@ export default async function JoinPage() {
             </p>
           )}
 
-          <div className="mt-5 divide-y divide-zinc-100 dark:divide-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800 rounded-lg border border-zinc-300 dark:border-zinc-800">
             {teams.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+              <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
                 No teams exist yet. Ask an administrator to set one up.
               </div>
             )}
@@ -106,7 +106,7 @@ export default async function JoinPage() {
           <form action={signOut}>
             <button
               type="submit"
-              className="text-xs text-zinc-500 dark:text-zinc-400 underline-offset-2 hover:underline"
+              className="text-xs text-zinc-600 dark:text-zinc-400 underline-offset-2 hover:underline"
             >
               Sign out
             </button>

@@ -20,7 +20,7 @@ export function SegmentNav({ current, setSegmentAction }: Props) {
   const currentIdx = SEGMENTS.indexOf(current);
 
   return (
-    <nav className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 space-y-0.5">
+    <nav className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 space-y-0.5">
       {SEGMENTS.filter((s) => s !== "done").map((s, idx) => {
         const isCurrent = s === current;
         const isPast = idx < currentIdx;
@@ -36,7 +36,7 @@ export function SegmentNav({ current, setSegmentAction }: Props) {
               isCurrent
                 ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900"
                 : isPast
-                  ? "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  ? "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800",
               pending && "opacity-50",
             )}
@@ -54,7 +54,7 @@ export function SegmentNav({ current, setSegmentAction }: Props) {
                 "text-xs tabular-nums",
                 isCurrent
                   ? "text-zinc-300 dark:text-zinc-600"
-                  : "text-zinc-400 dark:text-zinc-500",
+                  : "text-zinc-500 dark:text-zinc-500",
               )}
             >
               {targetMin}m

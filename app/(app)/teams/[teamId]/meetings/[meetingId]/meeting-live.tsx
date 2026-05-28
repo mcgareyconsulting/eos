@@ -113,10 +113,10 @@ export function MeetingLive({
   );
 
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+    <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
       {!ended && (
         <>
-          <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="mb-3 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
             <span>
               Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
               {SEGMENTS.length - 1}
@@ -145,7 +145,7 @@ export function MeetingLive({
                 ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/40"
                 : isPast
                   ? "bg-hpb-green/10 text-hpb-green ring-hpb-green/30 hover:bg-hpb-green/20"
-                  : "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700");
+                  : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700");
           return (
             <button
               key={s}
@@ -196,7 +196,7 @@ export function MeetingLive({
               </div>
               <SegmentTimer segment={activeSegment} startedAtMs={startedAtMs} />
             </div>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
               {SEGMENT_HINTS[activeSegment]}
             </p>
           </div>

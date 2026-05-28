@@ -45,7 +45,7 @@ export function MilestonesDisclosure({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
         <ChevronRight
           className={
@@ -75,9 +75,9 @@ export function MilestonesDisclosure({
       </button>
 
       {open && (
-        <div className="mt-2 ml-5 space-y-2 border-l border-zinc-200 dark:border-zinc-800 pl-4">
+        <div className="mt-2 ml-5 space-y-2 border-l border-zinc-300 dark:border-zinc-800 pl-4">
           {milestones.length === 0 && (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
               No milestones yet.
             </p>
           )}
@@ -128,15 +128,15 @@ function MilestoneRow({
       <div
         className={
           "flex-1 min-w-0 truncate " +
-          (milestone.completed ? "text-zinc-400 line-through" : "")
+          (milestone.completed ? "text-zinc-500 line-through" : "")
         }
       >
         {milestone.title}
       </div>
-      <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+      <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
         {ownerName}
       </span>
-      <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap w-24 text-right">
+      <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap w-24 text-right">
         {milestone.due_date
           ? new Date(milestone.due_date).toLocaleDateString()
           : "—"}
@@ -191,7 +191,7 @@ function AddMilestoneForm({
   return (
     <form
       onSubmit={submit}
-      className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800"
+      className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800"
     >
       <input
         value={title}

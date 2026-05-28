@@ -95,14 +95,14 @@ export function AddRockDrawer({
           <div
             role="dialog"
             aria-label="New Rock"
-            className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-zinc-900 shadow-xl border-l border-zinc-200 dark:border-zinc-800 flex flex-col"
+            className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-zinc-900 shadow-xl border-l border-zinc-300 dark:border-zinc-800 flex flex-col"
           >
-            <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+            <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-300 dark:border-zinc-800">
               <h2 className="text-base font-semibold">New Rock</h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -174,7 +174,7 @@ export function AddRockDrawer({
                 )}
               </div>
 
-              <footer className="mt-auto flex items-center justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 px-5 py-3">
+              <footer className="mt-auto flex items-center justify-end gap-2 border-t border-zinc-300 dark:border-zinc-800 px-5 py-3">
                 <button
                   type="button"
                   onClick={() => setOpen(false)}

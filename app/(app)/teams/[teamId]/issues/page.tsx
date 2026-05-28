@@ -1,4 +1,5 @@
-import { Trash2 } from "lucide-react";
+import { Trash2, AlertCircle } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { StatusActions } from "./status-actions";
 import { addIssue, deleteIssue } from "./actions";
@@ -27,7 +28,7 @@ const STATUS_BADGE: Record<IssueDoc["status"], string> = {
   solved:
     "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
   dropped:
-    "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+    "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
 export default async function IssuesPage({
@@ -64,18 +65,20 @@ export default async function IssuesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · ranked by team votes · vote &amp; IDS during L10
         </p>
       </header>
 
       <AddIssueForm teamId={tid} />
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {issues.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            No issues yet. Add one above.
-          </div>
+          <EmptyState
+            icon={AlertCircle}
+            title="No issues yet"
+            hint="Capture team blockers above, then vote and solve them in the L10 IDS segment."
+          />
         )}
         {issues.map((i) => {
           const remove = deleteIssue.bind(null, tid, i.id);
@@ -91,7 +94,7 @@ export default async function IssuesPage({
                 <span className="text-sm font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
                   {i.votes ?? 0}
                 </span>
-                <span className="text-[10px] uppercase tracking-wide text-zinc-400">
+                <span className="text-[10px] uppercase tracking-wide text-zinc-500">
                   votes
                 </span>
               </div>
@@ -102,7 +105,7 @@ export default async function IssuesPage({
                   >
                     {STATUS_LABEL[i.status]}
                   </span>
-                  <span className="text-xs text-zinc-400">
+                  <span className="text-xs text-zinc-500">
                     {i.type === "long" ? "Long-term" : "Short-term"}
                   </span>
                 </div>
@@ -112,7 +115,7 @@ export default async function IssuesPage({
                     {i.description}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-zinc-500">
+                <div className="mt-1 text-xs text-zinc-600">
                   {ownerName(i.owner_id)}
                 </div>
               </div>
@@ -144,7 +147,7 @@ function AddIssueForm({ teamId }: { teamId: string }) {
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="title"

@@ -53,13 +53,13 @@ export function AppShell({
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-        <div className="px-4 py-5 border-b border-zinc-200 dark:border-zinc-800">
+      <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+        <div className="px-4 py-5 border-b border-zinc-300 dark:border-zinc-800">
           <Link href="/home" className="block">
             <span className="block text-base font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
               High Plains Bank
             </span>
-            <span className="mt-0.5 block text-[10px] italic text-zinc-500 dark:text-zinc-400">
+            <span className="mt-0.5 block text-[10px] italic text-zinc-600 dark:text-zinc-400">
               Employee Owned • Community Driven
             </span>
           </Link>
@@ -71,8 +71,8 @@ export function AppShell({
           </nav>
 
           {team && (
-            <div className="px-2 py-3 border-t border-zinc-200 dark:border-zinc-800">
-              <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            <div className="px-2 py-3 border-t border-zinc-300 dark:border-zinc-800">
+              <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
                 {team.name}
               </div>
               <div className="space-y-0.5">
@@ -89,7 +89,7 @@ export function AppShell({
           )}
         </div>
 
-        <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
+        <div className="border-t border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
@@ -98,7 +98,7 @@ export function AppShell({
               <form action={signOut} className="mt-0.5">
                 <button
                   type="submit"
-                  className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline"
+                  className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline"
                 >
                   Sign out
                 </button>
@@ -132,7 +132,7 @@ function NavLink({
       href={href}
       className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
     >
-      <Icon className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+      <Icon className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
       <span>{label}</span>
     </Link>
   );

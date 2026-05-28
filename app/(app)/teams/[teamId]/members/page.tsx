@@ -40,7 +40,7 @@ export default async function MembersPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · {members.length}{" "}
           {members.length === 1 ? "member" : "members"}
         </p>
@@ -48,7 +48,7 @@ export default async function MembersPage({
 
       {isLeader && (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Pending requests
             {pending.length > 0 && (
               <span className="ml-2 rounded-full bg-amber-100 dark:bg-amber-950 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -56,9 +56,9 @@ export default async function MembersPage({
               </span>
             )}
           </h2>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
             {pending.length === 0 && (
-              <div className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+              <div className="px-4 py-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
                 No pending requests.
               </div>
             )}
@@ -75,7 +75,7 @@ export default async function MembersPage({
                       {r.requester_name || r.requester_email || r.user_id}
                     </div>
                     {r.requester_email && (
-                      <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                      <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
                         {r.requester_email}
                       </div>
                     )}
@@ -108,10 +108,10 @@ export default async function MembersPage({
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
           Team members
         </h2>
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
           {members.map((m) => (
             <div
               key={m.user_id}

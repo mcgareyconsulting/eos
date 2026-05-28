@@ -26,7 +26,7 @@ export function SegmentTimer({
 
   if (!startedAtMs) {
     return (
-      <div className="text-xs text-zinc-400 tabular-nums">—:—</div>
+      <div className="text-xs text-zinc-500 tabular-nums">—:—</div>
     );
   }
 

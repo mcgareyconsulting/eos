@@ -104,7 +104,7 @@ export function StatusPopover({
         <div
           role="dialog"
           aria-label="Update rock status"
-          className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-3 text-sm"
+          className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-3 text-sm"
         >
           <div className="space-y-1">
             {STATUSES.map((s) => (
@@ -133,7 +133,7 @@ export function StatusPopover({
           </div>
 
           <div className="mt-3">
-            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+            <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-1">
               {draftStatus === "off_track"
                 ? "Why off track? (required)"
                 : "Comment (optional)"}

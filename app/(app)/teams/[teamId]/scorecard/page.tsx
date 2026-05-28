@@ -1,4 +1,5 @@
-import { Trash2 } from "lucide-react";
+import { Trash2, BarChart3 } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { mondayOf, toDateString, lastNMondays, formatWeekLabel } from "@/lib/dates";
 import { formatGoal, formatValue } from "@/lib/scorecard";
@@ -88,17 +89,17 @@ export default async function ScorecardPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Scorecard</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · last {WEEKS} weeks (Mondays)
         </p>
       </header>
 
       <AddMetricForm teamId={tid} members={members} defaultOwnerId={uid} />
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+            <tr className="border-b border-zinc-300 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 uppercase tracking-wide">
               <th className="text-left px-4 py-2 font-medium">Metric</th>
               <th className="text-left px-4 py-2 font-medium">Owner</th>
               <th className="text-left px-4 py-2 font-medium">Goal</th>
@@ -117,11 +118,12 @@ export default async function ScorecardPage({
           <tbody>
             {metrics.length === 0 && (
               <tr>
-                <td
-                  colSpan={4 + weeks.length + 1}
-                  className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400"
-                >
-                  No metrics yet. Add one above.
+                <td colSpan={4 + weeks.length + 1} className="p-0">
+                  <EmptyState
+                    icon={BarChart3}
+                    title="No metrics yet"
+                    hint="Add your team's weekly KPIs with the form above to start tracking."
+                  />
                 </td>
               </tr>
             )}
@@ -134,20 +136,20 @@ export default async function ScorecardPage({
               const avgOnTrack = onTrack(avg, m.goal, m.direction);
               const avgColor =
                 avgOnTrack == null
-                  ? "text-zinc-500 dark:text-zinc-400"
+                  ? "text-zinc-600 dark:text-zinc-400"
                   : avgOnTrack
                     ? "text-emerald-700 dark:text-emerald-300"
                     : "text-red-700 dark:text-red-300";
               return (
                 <tr
                   key={m.id}
-                  className="group border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+                  className="group border-b border-zinc-200 dark:border-zinc-800 last:border-0"
                 >
                   <td className="px-4 py-2 font-medium">{m.name}</td>
                   <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
                     {ownerName(m.owner_id)}
                   </td>
-                  <td className="px-4 py-2 text-zinc-500 dark:text-zinc-400 tabular-nums">
+                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
                     {formatGoal(m.goal, m.direction, m.unit)}
                   </td>
                   <td
@@ -192,7 +194,7 @@ export default async function ScorecardPage({
         </table>
       </div>
 
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-zinc-500">
         Current week:{" "}
         <span className="tabular-nums">{toDateString(mondayOf())}</span>
       </p>
@@ -216,7 +218,7 @@ function AddMetricForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
     >
       <input
         name="name"

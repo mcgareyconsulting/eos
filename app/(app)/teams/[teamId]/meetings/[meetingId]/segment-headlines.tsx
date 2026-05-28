@@ -101,7 +101,7 @@ export function SegmentHeadlines({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs text-zinc-600 dark:text-zinc-400">
           Customer wins, employee news, cascading messages
         </div>
         <QuickAddIssue
@@ -113,9 +113,9 @@ export function SegmentHeadlines({
 
       <QuickAddHeadline teamId={teamId} />
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {sorted.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
             No headlines yet.
           </div>
         )}
@@ -147,7 +147,7 @@ export function SegmentHeadlines({
                     {h.body}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
                   {meta.label} · {creatorName(h.created_by)} · {when}
                 </div>
               </div>
@@ -192,7 +192,7 @@ function QuickAddHeadline({ teamId }: { teamId: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
+    <div className="flex items-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
       <select
         value={kind}
         onChange={(e) => setKind(e.target.value as HeadlineDoc["kind"])}

@@ -14,15 +14,15 @@ export default async function LoginPage({
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-sm">
         <div className="mb-6">
           <h1 className="text-2xl font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
             High Plains Bank
           </h1>
-          <p className="text-xs italic text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs italic text-zinc-600 dark:text-zinc-400">
             Employee Owned • Community Driven
           </p>
-          <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
             {session
               ? "You're already signed in."
               : "Sign in with your Google account to continue."}

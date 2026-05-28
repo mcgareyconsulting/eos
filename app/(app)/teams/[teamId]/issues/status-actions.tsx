@@ -25,7 +25,7 @@ export function StatusActions({
             await setIssueStatus(teamId, issueId, "open");
           })
         }
-        className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
+        className="text-xs text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
       >
         Reopen
       </button>
@@ -43,7 +43,7 @@ export function StatusActions({
           })
         }
         title="Mark solved"
-        className="rounded p-1 text-zinc-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-950 dark:hover:text-emerald-300"
+        className="rounded p-1 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50 dark:hover:bg-emerald-950 dark:hover:text-emerald-300"
       >
         <Check className="h-4 w-4" />
       </button>
@@ -56,7 +56,7 @@ export function StatusActions({
           })
         }
         title="Drop"
-        className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+        className="rounded p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
       >
         <X className="h-4 w-4" />
       </button>

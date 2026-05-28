@@ -122,16 +122,16 @@ export function SegmentRocks({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="text-xs text-zinc-600 dark:text-zinc-400">
           {visible.length} rock{visible.length === 1 ? "" : "s"} · {quarter} ·
           off-track? drop to IDS
         </div>
         <QuickAddIssue teamId={teamId} prefill="Off-track rock: " compact />
       </div>
 
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800">
+      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {visible.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
             No rocks for {quarter}.
           </div>
         )}
@@ -143,7 +143,7 @@ export function SegmentRocks({
             <div className="col-span-6 min-w-0">
               <div className="font-medium">{r.title}</div>
               {r.description && (
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
+                <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 line-clamp-1">
                   {r.description}
                 </div>
               )}
@@ -151,7 +151,7 @@ export function SegmentRocks({
             <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
               {ownerName(r.owner_id)}
             </div>
-            <div className="col-span-1 text-zinc-500 dark:text-zinc-400 text-xs">
+            <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
               {r.due_date ? new Date(r.due_date).toLocaleDateString() : "—"}
             </div>
             <div className="col-span-2 justify-self-end">

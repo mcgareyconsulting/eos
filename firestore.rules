@@ -10,14 +10,30 @@ service cloud.firestore {
 
     // ---------- helpers ----------
     function authed() { return request.auth != null; }
-    function admin()  { return authed() && request.auth.token.role == "admin"; }
 
-    // Hosted-domain backstop. Real enforcement happens at the Firebase Auth
-    // provider config (Console → Authentication → Sign-in method → Google →
-    // Restrict access by domain). This is a defense-in-depth check.
-    // TODO: replace "example.com" with the client's Workspace domain.
+    // Break-glass admin accounts allowlisted by email. These get full access
+    // regardless of email domain — e.g. the consultant's account, which is not
+    // on the Workspace domain and would otherwise be locked out by inDomain().
+    function isAdminEmail() {
+      return authed()
+        && request.auth.token.email in ["mcgareyconsulting@gmail.com"];
+    }
+
+    // Admin = Identity Platform custom claim (role: "admin") OR an allowlisted
+    // admin email above.
+    function admin() {
+      return (authed() && request.auth.token.role == "admin") || isAdminEmail();
+    }
+
+    // Workspace-domain perimeter (defense-in-depth). Primary enforcement is at
+    // the Firebase Auth provider (Console → Authentication → Sign-in method →
+    // Google → "Restrict by domain" = highplainsbank.com). These rules also gate
+    // the broad org/user/team reads below so a token from outside the Workspace
+    // can't enumerate them. Allowlisted admin emails are permitted alongside.
     function inDomain() {
-      return authed() && request.auth.token.email.matches(".*@example[.]com$");
+      return isAdminEmail()
+        || (authed()
+            && request.auth.token.email.matches(".*@highplainsbank[.]com$"));
     }
 
     function isMember(teamId) {
@@ -37,23 +53,23 @@ service cloud.firestore {
 
     // ---------- organizations & users ----------
     match /organizations/{orgId} {
-      allow read:  if authed();
+      allow read:  if inDomain();
       allow write: if admin();
     }
 
     match /users/{uid} {
-      allow read:  if authed();
+      allow read:  if inDomain();
       allow write: if uid == request.auth.uid || admin();
     }
 
     // ---------- teams & memberships ----------
     match /teams/{teamId} {
-      allow read:  if authed();
+      allow read:  if inDomain();
       allow write: if admin();
     }
 
     match /team_members/{id} {
-      allow read:  if authed();
+      allow read:  if inDomain();
       allow write: if admin();
     }
 
@@ -66,7 +82,8 @@ service cloud.firestore {
       allow read:   if admin()
                     || resource.data.user_id == request.auth.uid
                     || isLeader(resource.data.team_id);
-      allow create: if request.resource.data.user_id == request.auth.uid
+      allow create: if inDomain()
+                    && request.resource.data.user_id == request.auth.uid
                     && request.resource.data.status == "pending";
       allow update, delete: if admin() || isLeader(resource.data.team_id);
     }
@@ -147,9 +164,12 @@ service cloud.firestore {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
       }
 
-      match /ratings/{uid} {
+      // Peer effectiveness scores are written server-side (admin SDK) during
+      // the Conclude segment; clients only read aggregates via server
+      // components, so no client write path is needed.
+      match /effectiveness_scores/{scoreId} {
         allow read:  if admin() || isMember(meetingTeam());
-        allow write: if uid == request.auth.uid && isMember(meetingTeam());
+        allow write: if admin();
       }
 
       match /presence/{uid} {

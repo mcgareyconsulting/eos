@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 7_
+**Last updated:** 2026-06-05 — _Pass 8_
 
 ---
 
@@ -69,19 +69,43 @@
   A managed pipe (official Firestore→BigQuery extension / change streams) keeps
   Firestore authoritative and BQ eventually-consistent.
 
-#### Open infrastructure questions (to resolve before scoping)
-- **BigQuery's role:** downstream analytics/consolidation sink only (Firestore
-  stays live source of truth) vs. a more primary role serving the app?
-  - Note: BigQuery is an OLAP/analytics warehouse — streaming **inserts** are
-    fine, but it is **not** built for low-latency real-time per-user reads /
-    live listeners the way Firestore is. "Going straight into BigQuery" for the
-    live in/out-of-meeting sync needs scrutiny.
-- **How live is "as live as possible"?** True real-time listeners (sub-second)
-  vs. near-real-time (a few seconds acceptable)?
-- **Sync mechanism to BigQuery:** continuous streaming (e.g. Firestore→BigQuery
-  change-stream/extension) vs. scheduled batch export. Does analytics need
-  real-time, or is near-real-time / periodic fine?
-- **Which collections/entities** mirror to BigQuery, and what schema mapping?
+#### Chosen direction — nightly batch worker (DECIDED)
+**Firestore owns the live + meeting-doc-heavy layer; BigQuery is the
+non-real-time consolidation warehouse, fed by a scheduled batch worker.**
+
+Rationale: EOS data is **meeting-cadence** (weekly L10s, weekly scorecard
+numbers, quarterly rocks). No analytics question needs sub-day freshness, so
+streaming infra buys nothing here. Scheduled batch is the cheap, simple,
+correct choice.
+
+Design decisions:
+- **Run cadence: nightly.** Barely more cost than weekly, keeps each batch tiny,
+  and gives day-resolution if ever wanted. **Decouple run cadence from
+  analytical grain** — the worker can run nightly even though analytics mostly
+  cares weekly.
+- **Date-partitioned snapshots, not overwrite.** Each run **appends** the
+  current state of each collection tagged with a `snapshot_date` partition
+  column (rather than truncate-and-reload). EOS analytics is inherently
+  historical (trend lines, quarter-over-quarter), so the warehouse should
+  **accumulate** state, not just mirror "now."
+- **Mechanics:** Cloud Scheduler → Cloud Run/Function worker → BigQuery load
+  jobs. Idempotent, partitioned by date. Small surface area.
+
+Caveats / boundaries:
+- **A nightly read-current-state job misses intra-day churn and deletes.** An
+  item created and deleted the same day never reaches BQ. Acceptable for EOS
+  analytics (end-of-day/weekly state matters, not every intermediate edit). It
+  is **not** an audit trail — if that's ever needed, that's the trigger to
+  revisit streaming.
+- **In-app Scorecard trend lines (Feature 2) read from Firestore, NOT BigQuery.**
+  Those are a live app feature over data already in Firestore. BigQuery is for
+  the client's **cross-source consolidation/reporting**, not for powering
+  in-app charts — don't couple a live feature to the nightly lag.
+
+#### Still open (to resolve before building the worker)
+- **Which collections/entities** mirror to BigQuery, and the **schema mapping**
+  for each.
+- Final pick between **nightly vs. weekly** run cadence (leaning nightly above).
 
 ---
 

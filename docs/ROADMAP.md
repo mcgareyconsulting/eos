@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 2_
+**Last updated:** 2026-06-05 — _Pass 3_
 
 ---
 
@@ -96,6 +96,27 @@ It works in two primary ways:
 - Add an **archive tab** to the Rocks page.
 - A **paginated** view to browse archived rocks (page through N pages of
   archived rocks).
+
+### 6. Multi-user To-do assignment
+
+- A to-do can be **assigned to multiple users at once**.
+- It surfaces as **one single line item** on the team To-dos list — **do not
+  duplicate** the line item per user. One to-do, distributed to multiple users.
+- Indicate multiple assignees with **multiple profile avatar pictures** on the
+  line item.
+- **Clicking/expanding** the line item reveals the specific details of the
+  to-do, including the multiple assigned users.
+
+### 7. Optional description / tagline on Rocks, To-dos (and maybe Milestones)
+
+- Add an **optional description (tagline) field** for **greater context** on:
+  - **Rocks**
+  - **To-dos**
+  - **Milestones** (maybe / TBD)
+- Primary use case: when an **admin creates a rock, milestone, or to-do for
+  another user**, they can **optionally drop additional notes** in this
+  description field.
+- Goal: **improve the handoff** of whatever action needs to be done.
 
 ---
 

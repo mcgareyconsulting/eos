@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 3_
+**Last updated:** 2026-06-05 — _Pass 4_
 
 ---
 
@@ -106,6 +106,13 @@ It works in two primary ways:
   line item.
 - **Clicking/expanding** the line item reveals the specific details of the
   to-do, including the multiple assigned users.
+- **Completion semantics (per-user):** a multi-assigned to-do **does not clear
+  until _all_ assigned users mark it complete.**
+  - Each assigned user checks off their own completion independently.
+  - Show a **staged / partially-complete state** reflecting how many of the
+    assigned users have checked off (e.g. 2 of 3 done).
+  - The to-do is only **fully complete (and clears)** once **every** assigned
+    user has marked it done.
 
 ### 7. Optional description / tagline on Rocks, To-dos (and maybe Milestones)
 

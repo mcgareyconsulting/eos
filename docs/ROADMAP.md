@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 6_
+**Last updated:** 2026-06-05 — _Pass 7_
 
 ---
 
@@ -15,12 +15,73 @@
 - Firestore remains the **system of record for live, real-time data** — the
   back-and-forth between users stays here. No change to the live data layer.
 
+### Live data must flow seamlessly in and out of meeting
+- Updates to **rocks, milestones, to-dos, issues, etc.** must **flow live both
+  in and out of the meeting context.**
+- Example: a user updates an issue **while in a meeting**; when they open their
+  **Issues tab outside the meeting**, the update is already reflected there.
+- Goal: make the data feel **as live as possible** everywhere — not just on the
+  live voting features.
+- Today's live behavior (real-time voting) should **extend to all updates** of
+  rocks / issues / to-dos / milestones / etc.
+
 ### Bleed all data down into BigQuery
 - Every Firestore data object needs to **flow down into BigQuery**.
 - Purpose: **consolidate all of the client's data** into a single analytics
   warehouse alongside their other sources.
-- _Open questions for later: sync mechanism (streaming export vs. scheduled
-  batch), schema mapping, which collections, latency expectations._
+- All app data should **trickle down (as relevant) into BigQuery.**
+
+### Why Firestore now — and the open architecture question
+- The **current MVP is on Firebase Firestore** for **very quick up/down latency**
+  on the **live voting** features.
+- We want that **"live field"** to extend to all entity updates (rocks, issues,
+  to-dos, milestones, etc.), and then have that data **trickle down to BigQuery**
+  as relevant.
+- **Open architectural idea:** if we can create that live field effectively, we
+  may want to **step around Firestore and write straight into BigQuery** — and
+  adjust the infrastructure accordingly. This requires **tuning how we handle
+  data flow.**
+- _Open questions captured separately below — to be resolved before scoping the
+  data layer._
+
+#### Recommendation (engineering)
+- **Keep Firestore as the live source of truth; feed BigQuery downstream.**
+  Do **not** step around Firestore into BigQuery for the live field. BigQuery is
+  an OLAP warehouse: streaming inserts land in a buffer, queries are billed and
+  take seconds, and there is **no real-time listener/push model**. Making BQ the
+  live layer would **regress** the live feel, not improve it.
+- **The live "feel" and the infra cost are two different dials:**
+  - **Live UX is essentially free on Firestore.** Making rocks/issues/to-dos/
+    milestones live both in and out of meeting is the **default behavior of
+    Firestore `onSnapshot` listeners** — the same mechanism the live voting
+    already uses. Writes propagate **sub-second** to every subscribed client
+    with no separate real-time infra to build. Marginal cost is per-doc reads +
+    concurrent connections — trivial at this client's scale (tens of users).
+    → **Recommendation: real-time (sub-second) everywhere, via Firestore
+    listeners.**
+  - **Cost lives on the BigQuery path, not the live path.** Streaming-vs-batch
+    only bites here, and analytics rarely needs sub-second freshness, so BQ can
+    run cheaper (batch / low-frequency streaming) **without** affecting live UX.
+    → There is **no meaningful inflection point on the live-UX side**; the dial
+    to tune for cost is **BQ freshness**, a separate decision.
+- **Prefer a managed Firestore→BigQuery stream over app-level dual-write.**
+  Dual-writing from the app risks Firestore and BQ diverging on partial failure.
+  A managed pipe (official Firestore→BigQuery extension / change streams) keeps
+  Firestore authoritative and BQ eventually-consistent.
+
+#### Open infrastructure questions (to resolve before scoping)
+- **BigQuery's role:** downstream analytics/consolidation sink only (Firestore
+  stays live source of truth) vs. a more primary role serving the app?
+  - Note: BigQuery is an OLAP/analytics warehouse — streaming **inserts** are
+    fine, but it is **not** built for low-latency real-time per-user reads /
+    live listeners the way Firestore is. "Going straight into BigQuery" for the
+    live in/out-of-meeting sync needs scrutiny.
+- **How live is "as live as possible"?** True real-time listeners (sub-second)
+  vs. near-real-time (a few seconds acceptable)?
+- **Sync mechanism to BigQuery:** continuous streaming (e.g. Firestore→BigQuery
+  change-stream/extension) vs. scheduled batch export. Does analytics need
+  real-time, or is near-real-time / periodic fine?
+- **Which collections/entities** mirror to BigQuery, and what schema mapping?
 
 ---
 

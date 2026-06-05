@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 5_
+**Last updated:** 2026-06-05 — _Pass 6_
 
 ---
 
@@ -134,6 +134,18 @@ It works in two primary ways:
   - **High**
   - **Medium**
   - **Low**
+
+### 9. End-of-meeting vote — rate the meeting, not the attendees _(change)_
+
+**This is a change to existing functionality.**
+- The end-of-meeting vote must measure the **quality/efficacy of the meeting
+  itself** — **not** a user voting on the quality/performance of the other
+  attendees.
+- A user should be able to:
+  - **Vote on the efficacy of the meeting**, and
+  - **Optionally leave a note** describing/explaining that rating.
+- **Remove** any option to vote on the efficacy/performance of **other
+  attendees**. There is no per-attendee rating.
 
 ---
 

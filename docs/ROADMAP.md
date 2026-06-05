@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 8_
+**Last updated:** 2026-06-05 — _Pass 9_
 
 ---
 
@@ -92,15 +92,41 @@ Design decisions:
   jobs. Idempotent, partitioned by date. Small surface area.
 
 Caveats / boundaries:
-- **A nightly read-current-state job misses intra-day churn and deletes.** An
-  item created and deleted the same day never reaches BQ. Acceptable for EOS
-  analytics (end-of-day/weekly state matters, not every intermediate edit). It
-  is **not** an audit trail — if that's ever needed, that's the trigger to
-  revisit streaming.
+- **A nightly read-current-state *snapshot* misses intra-day churn and deletes.**
+  An item created and deleted the same day never reaches BQ via snapshots alone.
+  **This is solvable without streaming — see the audit log decision below.**
 - **In-app Scorecard trend lines (Feature 2) read from Firestore, NOT BigQuery.**
   Those are a live app feature over data already in Firestore. BigQuery is for
   the client's **cross-source consolidation/reporting**, not for powering
   in-app charts — don't couple a live feature to the nightly lag.
+
+#### Audit log / change history → BigQuery (TABLED — decision pending)
+The "snapshot misses intra-day changes/deletes" gap is a property of snapshotting
+current state, **not** a real limitation. An **append-only audit log captures
+full change history and still ships fine on the nightly batch** (append-only =
+nothing to overwrite, so nightly cadence loses nothing; deletes become event
+rows).
+
+Design: add an append-only `audit_log` (event) collection in Firestore. Each
+mutation writes an immutable row:
+`{ entity_type, entity_id, action (create/update/delete), actor, timestamp,
+before/after or diff }`. The nightly worker ships it to BQ like any other table
+(date-partitioned). Keeps the simple, cheap BQ pipe — **no streaming-to-BQ.**
+
+**Open decision — where to capture the events:**
+- **Option 1 — app-level (data-access layer writes the audit row).** Simple,
+  rich semantics (actor/action/human-readable diff) for free. Risk: writes that
+  bypass that layer (e.g. admin/direct writes) aren't logged.
+- **Option 2 — server-side Firestore `onWrite` trigger (Cloud Function).**
+  Captures **everything**, even direct/admin writes — nothing slips past.
+  Slightly more infra; diff reconstructed from the change snapshot. Still writes
+  to the Firestore audit collection (not streamed to BQ), so the nightly pipe is
+  unchanged.
+- **Engineering lean: Option 2** — only the trigger *guarantees* nothing is
+  missed, which is the whole point of an audit log.
+- Practical notes: partition the BQ audit table by date; the log grows
+  unbounded, so optionally TTL the Firestore copy once shipped (BQ keeps the
+  permanent record).
 
 #### Still open (to resolve before building the worker)
 - **Which collections/entities** mirror to BigQuery, and the **schema mapping**
@@ -233,6 +259,25 @@ It works in two primary ways:
   attendees**. There is no per-attendee rating.
 
 ---
+
+## ▶ RESUME HERE — next session (start with this before continuing)
+
+All of the above is **tabled** for now. When we next work in this repo, **before
+continuing feature work**:
+
+1. **Surface the tech stack.** Map and present the repo's actual stack — Next.js
+   version + conventions (per `AGENTS.md`, read `node_modules/next/dist/docs/`
+   first), Firebase/Firestore setup (`firebase.json`, `firestore.rules`,
+   `firestore.indexes.json`), data-access patterns, styling, auth, and any
+   charting libs. _(This was not yet explored — earlier exploration was
+   interrupted.)_
+2. **Recommend handling these pending decisions before building:**
+   - **Audit log capture point** — Option 1 (app-level) vs Option 2 (`onWrite`
+     trigger). Engineering lean: Option 2. _(See "Audit log → BigQuery" above.)_
+   - **Which collections/entities** mirror to BigQuery, and **schema mapping**
+     per entity.
+   - **Run cadence** — nightly vs weekly (leaning nightly).
+3. Then pick the first feature(s) to scope from the list above.
 
 ## Pending passes
 _Additional notes to be added in subsequent passes._

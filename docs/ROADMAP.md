@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 1_
+**Last updated:** 2026-06-05 — _Pass 2_
 
 ---
 
@@ -21,6 +21,16 @@
   warehouse alongside their other sources.
 - _Open questions for later: sync mechanism (streaming export vs. scheduled
   batch), schema mapping, which collections, latency expectations._
+
+---
+
+## Cross-cutting notes
+
+### Tabs surface identically in-meeting and standalone
+- **Scorecard, Rocks, To-dos, etc. render nearly identically** whether viewed
+  on their own independent tab or inside the L10 meeting view.
+- Captured here as a design note for future feature work: when we build/extend
+  any of these tabs, the same component should serve both contexts.
 
 ---
 
@@ -62,6 +72,30 @@ It works in two primary ways:
    - Allow a message to be **opted in to other teams** for cross-team L10
      communication — e.g. _"Hey marketing team, thanks for your great work this
      week."_
+
+### 5. Rocks page enhancements
+
+**5a. Layout — departmental rocks first, then individual rocks**
+- **First line item: departmental rocks.**
+- **Following line items: individual rocks.**
+- Everything **filtered down to just the team** — nothing outside that team's view.
+
+**5b. Dashboard / milestone summary at top of page**
+- A **dashboard-style section at the top of the Rocks page**, shown **whether
+  in-meeting or not**.
+- Surfaces:
+  - **Milestones completed this week** (what your teammates accomplished).
+  - **Upcoming milestones** — high-urgency items due next week.
+- Goal: when you click the Rocks tab in a meeting, everyone immediately sees
+  what teammates accomplished this week and what high-urgency item is due next
+  week.
+- **Time-gated for now** (this-week / next-week windows). Surfaced to the top.
+- _Note: "milestones" here are the to-do-like sub-items under each rock._
+
+**5c. Archive tab**
+- Add an **archive tab** to the Rocks page.
+- A **paginated** view to browse archived rocks (page through N pages of
+  archived rocks).
 
 ---
 

@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 4_
+**Last updated:** 2026-06-05 — _Pass 5_
 
 ---
 
@@ -124,6 +124,16 @@ It works in two primary ways:
   another user**, they can **optionally drop additional notes** in this
   description field.
 - Goal: **improve the handoff** of whatever action needs to be done.
+
+### 8. Issues — single owner + priority gate
+
+- **Single owner only.** When creating an issue, assign exactly **one owner** —
+  **no** multiple-owner / multi-user assignment for issues (unlike to-dos).
+- Add a **priority gate** with **four levels**:
+  - **Urgent**
+  - **High**
+  - **Medium**
+  - **Low**
 
 ---
 

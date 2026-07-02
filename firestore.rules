@@ -177,5 +177,16 @@ service cloud.firestore {
         allow write: if uid == request.auth.uid && isMember(meetingTeam());
       }
     }
+
+    // ---------- audit log (append-only, function-written) ----------
+    // Populated exclusively by the onDocumentWrittenWithAuthContext Cloud
+    // Function (functions/src/index.ts), which writes via the Admin SDK and
+    // therefore bypasses these rules entirely. The `allow write: if false`
+    // here is what guarantees clients can never forge or tamper with an
+    // audit row — only admins may even read the log.
+    match /audit_log/{eventId} {
+      allow read:  if admin();
+      allow write: if false;
+    }
   }
 }

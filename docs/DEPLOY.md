@@ -3,6 +3,12 @@
 Runbook for standing up this app in the client's GCP project. Assumes `gcloud`
 is authenticated against that project (`gcloud config set project <PROJECT_ID>`).
 
+> **Terraform alternative:** everything in sections 0–2 (APIs, Artifact
+> Registry, runtime service account) plus the optional security levers can be
+> provisioned as code from [`terraform/`](../terraform/README.md) — preferred
+> when the client's cloud team wants to review the footprint before granting
+> access. The gcloud commands below are the manual equivalent.
+
 ## 0. Enable required APIs
 
 ```bash
@@ -61,7 +67,51 @@ Independent of the app deploy — do this whenever `firestore.rules` or
 firebase deploy --only firestore:rules,firestore:indexes --project "$PROJECT_ID"
 ```
 
-## 4. Firebase Auth setup
+## 4. Audit log function
+
+`functions/` (self-contained — its own `package.json`/`tsconfig.json`, not
+part of the root pnpm workspace) holds the audit-log Cloud Function: a
+2nd-gen `onDocumentWrittenWithAuthContext` trigger on every top-level
+collection plus `meetings/{meetingId}/effectiveness_scores/{scoreId}`, which
+writes an immutable row to `audit_log` for every create/update/delete. This
+is the DECIDED (docs/ROADMAP.md) capture mechanism — a server-side trigger,
+so nothing can bypass it (app server actions, admin/seed scripts, and
+console edits all pass through Firestore and all get audited).
+
+Required APIs (in addition to §0):
+
+```bash
+gcloud services enable \
+  cloudfunctions.googleapis.com \
+  eventarc.googleapis.com \
+  run.googleapis.com
+```
+
+2nd-gen Cloud Functions deploy as Cloud Run services fronted by Eventarc, so
+all three APIs are needed even though `run.googleapis.com` is already
+enabled for the app itself.
+
+Deploy:
+
+```bash
+firebase deploy --only functions --project "$PROJECT_ID"
+```
+
+This builds (`tsc`, via the `predeploy` hook in `firebase.json`) and deploys
+under the project's default Cloud Functions runtime service account
+(`{PROJECT_ID}@appspot.gserviceaccount.com` unless a dedicated per-function
+SA is configured) — it needs `roles/datastore.user` to write `audit_log`
+rows, the same Firestore access the rest of the project already grants. No
+client-facing service account changes are needed; clients never write to
+`audit_log` directly (see `firestore.rules`).
+
+**Caveat (ROADMAP-decided):** the Firestore `audit_log` collection grows
+unbounded. Once the nightly Firestore→BigQuery worker ships it to BigQuery
+(BigQuery becomes the permanent record), the Firestore copy may be put on a
+TTL policy and periodically purged — don't rely on Firestore `audit_log` as
+infinite retention past that point.
+
+## 5. Firebase Auth setup
 
 In Firebase Console (same GCP project):
 
@@ -75,7 +125,7 @@ In Firebase Console (same GCP project):
 3. Add the Cloud Run URL (and any custom domain, see §6) to **Authorized
    domains**.
 
-## 5. Build and deploy
+## 6. Build and deploy
 
 ```bash
 gcloud builds submit --config cloudbuild.yaml \
@@ -101,7 +151,7 @@ Cloud Run service.
 is Firebase Auth + the hosted-domain restriction, not Cloud Run IAM — see
 security levers below if you want GCP-level auth instead).
 
-## 6. Custom domain
+## 7. Custom domain
 
 ```bash
 gcloud beta run domain-mappings create \
@@ -109,7 +159,7 @@ gcloud beta run domain-mappings create \
 ```
 
 Then add the CNAME/records Cloud Run prints out at the DNS provider, and add
-that domain to Firebase Auth's authorized domains (step 4.3).
+that domain to Firebase Auth's authorized domains (step 5.3).
 
 ## Security levers (optional, flip on as needed)
 

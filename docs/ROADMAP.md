@@ -315,17 +315,27 @@ done this pass: Gemini assistant removed, repo hygiene (branding PDF
 untracked, strays deleted), Cloud Run deploy scaffolding (Dockerfile,
 cloudbuild.yaml, `docs/DEPLOY.md`).
 
+**Done this pass (2026-07-01, second batch):**
+- Audit-log `onWrite` trigger built — `functions/` (Cloud Functions gen2,
+  `onDocumentWrittenWithAuthContext`, audit_log loop guard, presence
+  excluded), rules block (admin-read / never-client-write), deploy section
+  in `docs/DEPLOY.md`. Not yet deployed.
+- Terraform skeleton built — `terraform/` root module (APIs, least-privilege
+  runtime SA, Artifact Registry, Cloud Run, Tier 1 levers behind boolean
+  flags with $/mo notes, commented nightly-worker skeleton).
+  `fmt` + `validate` clean. See `terraform/README.md` for the client
+  cloud-team review flow and open inputs (state bucket, org_id, LB scope,
+  Firestore import for native PITR/CMEK).
+
 **Next up (in order):**
 1. **Blocked on client:** requirements stack + BigQuery/data-compliance
    conventions (dataset naming, region, PII/retention). Also: which GCP
-   project, Cloud Build vs GitHub Actions for CI, consultant IAM identity.
-2. **Buildable now:** audit-log `onWrite` trigger (Cloud Function writing the
-   append-only `audit_log` collection) — independent of BQ schema decisions.
-3. **Buildable now:** Terraform skeleton for the client-project footprint,
-   with Tier 1/2 security levers as toggleable blocks (see Pass 10 notes).
-4. **After conventions arrive:** nightly BQ batch worker (Cloud Scheduler →
-   Cloud Run job → date-partitioned load jobs).
-5. Then feature scoping against the requirements stack (features above remain
+   project, Cloud Build vs GitHub Actions for CI, consultant IAM identity,
+   plus the Terraform open inputs above.
+2. **After conventions arrive:** nightly BQ batch worker (Cloud Scheduler →
+   Cloud Run job → date-partitioned load jobs) — uncomment and finish
+   `terraform/scheduler.tf`.
+3. Then feature scoping against the requirements stack (features above remain
    tabled until it lands).
 
 ## Pending passes

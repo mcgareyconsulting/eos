@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Self-contained Cloud Functions package: has its own tsconfig/deps and
+    // lib/ is tsc build output — not part of the Next.js app's lint surface.
+    "functions/**",
   ]),
 ]);
 

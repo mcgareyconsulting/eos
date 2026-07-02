@@ -1,21 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Sun, Moon } from "lucide-react";
 
 type Theme = "light" | "dark";
 
+const THEME_CHANGE_EVENT = "hpb-theme-change";
+
 function readTheme(): Theme {
-  if (typeof window === "undefined") return "light";
   return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("light");
+function getServerTheme(): Theme {
+  return "light";
+}
 
-  useEffect(() => {
-    setTheme(readTheme());
-  }, []);
+function subscribe(onStoreChange: () => void) {
+  window.addEventListener(THEME_CHANGE_EVENT, onStoreChange);
+  return () => window.removeEventListener(THEME_CHANGE_EVENT, onStoreChange);
+}
+
+export function ThemeToggle() {
+  // Theme lives on document.documentElement's class list (a browser-only,
+  // pre-hydration inline script sets it to avoid a flash), so we read it via
+  // useSyncExternalStore instead of mirroring it into useState+useEffect:
+  // getServerSnapshot ("light") keeps SSR/hydration consistent, and the
+  // dispatched event below notifies this hook when toggle() changes the class.
+  const theme = useSyncExternalStore(subscribe, readTheme, getServerTheme);
 
   const toggle = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -25,7 +36,7 @@ export function ThemeToggle() {
     } catch {
       /* private mode etc. — ignore */
     }
-    setTheme(next);
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
   };
 
   return (

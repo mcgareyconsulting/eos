@@ -30,14 +30,18 @@ export function StatusPopover({
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Reset draft state every time the popover opens, so a previously-cancelled
-  // edit doesn't leak into the next interaction.
-  useEffect(() => {
+  // edit doesn't leak into the next interaction. Adjusted during render
+  // (tracking the prior `open` value) rather than in an effect, so the reset
+  // is visible on the same paint that shows the popover.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setDraftStatus(current);
       setComment("");
       setError(null);
     }
-  }, [open, current]);
+  }
 
   // Close on Esc or click outside.
   useEffect(() => {

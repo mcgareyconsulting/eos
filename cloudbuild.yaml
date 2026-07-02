@@ -1,0 +1,79 @@
+# Cloud Build pipeline: build image -> push to Artifact Registry -> deploy to Cloud Run.
+#
+# Trigger manually with:
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_NEXT_PUBLIC_FIREBASE_API_KEY=...,_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...,...
+#
+# See docs/DEPLOY.md for the full runbook (APIs, service account, first-time setup).
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE: eos
+  _REPO: eos
+  # Public web config (baked into the client bundle at build time — not secrets).
+  _NEXT_PUBLIC_FIREBASE_API_KEY: ""
+  _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ""
+  _NEXT_PUBLIC_FIREBASE_PROJECT_ID: ""
+  _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ""
+  _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ""
+  _NEXT_PUBLIC_FIREBASE_APP_ID: ""
+  _NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN: ""
+  # Dedicated least-privilege runtime SA (see docs/DEPLOY.md). Empty = Cloud
+  # Run's default compute SA, which is broader than needed.
+  _RUNTIME_SERVICE_ACCOUNT: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}"
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:latest
+      - --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=${_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN}
+      - "."
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
+
+  - id: deploy
+    name: gcr.io/google-cloud-sdk/slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        SA_FLAG=()
+        if [ -n "${_RUNTIME_SERVICE_ACCOUNT}" ]; then
+          SA_FLAG=(--service-account="${_RUNTIME_SERVICE_ACCOUNT}")
+        fi
+        # Ingress is public (--allow-unauthenticated): access control is enforced
+        # at the application layer by Firebase Auth (Google sign-in restricted to
+        # the highplainsbank.com hosted domain), not by Cloud Run IAM. To require
+        # GCP-level auth instead (e.g. behind IAP), flip this to
+        # --no-allow-unauthenticated — see the "security levers" section of
+        # docs/DEPLOY.md.
+        gcloud run deploy "${_SERVICE}" \
+          --image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}" \
+          --region="${_REGION}" \
+          --platform=managed \
+          --allow-unauthenticated \
+          --quiet \
+          "${SA_FLAG[@]}"
+
+timeout: 1200s

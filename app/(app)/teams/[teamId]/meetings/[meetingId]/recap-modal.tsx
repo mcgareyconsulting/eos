@@ -49,13 +49,18 @@ export function RecapModal({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const recapParam = params.get("recap");
   const [open, setOpen] = useState(autoOpen);
 
   // Re-sync with URL query so router-driven open (?recap=1) and our local
-  // close (router.replace) stay aligned.
-  useEffect(() => {
-    setOpen(params.get("recap") === "1");
-  }, [params]);
+  // close (router.replace) stay aligned. Done during render (React's
+  // sanctioned "adjust state from a prop" pattern) rather than in an effect
+  // so it lands in the same commit instead of a follow-up render.
+  const [prevRecapParam, setPrevRecapParam] = useState(recapParam);
+  if (recapParam !== prevRecapParam) {
+    setPrevRecapParam(recapParam);
+    setOpen(recapParam === "1");
+  }
 
   useEffect(() => {
     if (!open) return;

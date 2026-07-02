@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { VoiceCreateButton } from "@/components/voice-create-button";
 
 type Team = { id: string; name: string };
 type Profile = {
@@ -112,8 +111,6 @@ export function AppShell({
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">{children}</div>
       </main>
-
-      <VoiceCreateButton teamId={team?.id ?? null} />
     </div>
   );
 }

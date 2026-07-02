@@ -2,7 +2,7 @@
 
 A scripted demo of the High Plains Bank EOS app. The arc: **see the operating
 system at a glance → run a live Level 10 meeting → turn a problem into an
-owned action → wrap with a recap.** Total core run: ~9 minutes.
+owned action → wrap with a recap.** Total core run: ~8 minutes.
 
 > **The story you're telling:** "You're on High Plains Bank's leadership team.
 > This one app runs your week — your numbers, your quarterly goals, your
@@ -22,9 +22,7 @@ owned action → wrap with a recap.** Total core run: ~9 minutes.
    scorecard, ranked issues, to-dos, headlines, and one completed meeting.
 2. **Sign in** at <http://localhost:3000/login> with the demo leader account,
    land on **Home**.
-3. **Mic (optional):** the Assistant takes voice *or* typed input — typing is
-   fine and more reliable on a projector.
-4. **Optional wow-factor:** open a second browser (incognito) signed in as a
+3. **Optional wow-factor:** open a second browser (incognito) signed in as a
    teammate and put it side-by-side — votes and the "Discussing now" pin sync
    live between the two during IDS.
 
@@ -94,35 +92,22 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   identify the *real* issue, discuss, solve. Solving it isn't the end though —
   someone owns the next step."
 
-### 6:00 — Assistant · "Capture the action by voice"
-- **DO:** Click the round **Assistant** button (bottom-right). Type or say:
-  > "Add a to-do for Tom to pilot automated doc intake by Friday."
-
-  The Assistant replies with a **proposed** to-do card. Click **Apply / Confirm**.
-- **SAY:** "Here's where it gets modern. I just *tell* it the follow-up — by
-  voice or text. It drafts the action with the right owner and due date, and
-  **nothing is written until I confirm**. That's the guardrail: AI proposes, a
-  human commits."
-- *(Optional second prompt:)* "What rocks are off track?" — show it answers from
-  real team data, not guesses.
-
-### 7:15 — Conclude & End · "Recap + rate the meeting"
+### 6:00 — Conclude & End · "Recap + rate the meeting"
 - **DO:** Advance to **Conclude**. Show the notes field and the **peer
   effectiveness** scoring (rate teammates 1–10). Click **End meeting** — the
   **Recap** modal opens automatically.
 - **SAY:** "We close by capturing cascading messages and rating the meeting 1 to
   10 — EOS holds the meeting itself accountable."
 
-### 8:15 — The Recap · "Proof the hour produced something"
-- **DO:** In the recap, point at: the new to-do (Tom's), the issue(s) solved,
-  the solve-rate stat, and the per-person ratings.
+### 7:00 — The Recap · "Proof the hour produced something"
+- **DO:** In the recap, point at: the issue(s) you dropped and solved, the
+  solve-rate stat, and the per-person ratings.
 - **SAY:** "In one screen: what we created, what we solved, and how we performed
   — all auto-generated. The team leaves with owned actions, not vibes."
 
-### 9:00 — Wrap
+### 7:45 — Wrap
 - **SAY:** "Numbers, goals, problems, and the meeting that drives them — one
-  system, GCP-native, with an AI assistant that respects a human in the loop.
-  That's the whole operating system in ten minutes."
+  system, GCP-native. That's the whole operating system in ten minutes."
 
 ---
 
@@ -130,9 +115,7 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
 
 - **It's the *meeting*, not just the data.** Most tools store EOS artifacts;
   this one *runs the L10 live* with a shared timer and synced state.
-- **AI proposes, humans commit.** The Assistant never writes silently — every
-  change is a card you confirm. Easy story for a risk-conscious bank.
-- **GCP-native.** Firestore + Firebase Auth + Cloud Run + Gemini — fits HPB's
+- **GCP-native.** Firestore + Firebase Auth + Cloud Run — fits HPB's
   existing Google stack; no new vendor.
 - **Live & multiplayer.** Votes, the "Discussing" pin, and segment changes sync
   across everyone in the meeting in real time.
@@ -155,6 +138,5 @@ The seed only touches the demo team — it never deletes other teams' data.
   email** — it attaches your account to the Demo Team as a leader.
 - **Owner shows "—" instead of your name?** Re-run the seed — it backfills your
   `/users` profile from your Auth account.
-- **Mic blocked?** Just type into the Assistant instead; same behavior.
 - **No teammate window?** The live-sync beat is optional — the single-screen
   flow stands on its own.

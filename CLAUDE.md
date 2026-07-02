@@ -2,15 +2,12 @@
 
 ## ⚠ Before continuing feature/infra work — read `docs/ROADMAP.md`
 
-There is a tabled planning backlog with pending decisions. At the **start of a
-session**, before continuing any feature or infrastructure work, **first**:
+At the **start of a session**, read the "▶ RESUME HERE" section of
+`docs/ROADMAP.md` — it tracks what's decided, what's blocked on the client
+(requirements stack, BigQuery conventions), and what's buildable now.
 
-1. **Surface the tech stack** — map and present this repo's actual stack
-   (Next.js version + conventions, Firebase/Firestore setup, data-access
-   patterns, styling, auth, charting libs).
-2. **Recommend handling the pending decisions** in `docs/ROADMAP.md`
-   (see the "▶ RESUME HERE" section): audit-log capture point, which
-   collections mirror to BigQuery + schema mapping, and nightly-vs-weekly
-   run cadence.
-
-Only then continue with feature scoping.
+Standing constraints (Pass 10, 2026-07-01): runs fully in the client's GCP
+org (no Vercel); Firestore = live layer, BigQuery = warehouse via nightly
+batch + `onWrite` audit log; Gemini/AI features removed and deferred
+(Vertex-AI-only if revived); features stay tabled until the client's
+requirements stack arrives.

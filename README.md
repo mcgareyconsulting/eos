@@ -2,7 +2,7 @@
 
 A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwide.com/) — Level 10 meetings, Scorecard, Rocks, To-Dos, Issues, Headlines, and a personal Home dashboard. Built for High Plains Bank.
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · Firebase (Firestore + Firebase Auth) · Google Gemini · GCP (Cloud Run).
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · Firebase (Firestore + Firebase Auth) · GCP (Cloud Run).
 
 ## Features
 
@@ -13,7 +13,6 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 - **Issues (IDS)** — team issues ranked by votes (3 credits per person), worked through live during the meeting.
 - **Headlines** — customer wins, employee news, and cascading messages.
 - **Level 10 Meeting** — a live, timed 90-minute orchestrator (Segue → Scorecard → Rocks → Headlines → To-Dos → IDS → Conclude) with shared segment state, presence, peer effectiveness scoring, and a post-meeting recap.
-- **Assistant** — a chat/voice helper (Gemini) that *proposes* changes (create a to-do, mark a rock off-track, add a milestone…) which you confirm before they're written. Floating button, bottom-right.
 
 ## Setup
 
@@ -30,7 +29,7 @@ This app uses a single Firebase project for Firestore + Auth.
 1. In the [Firebase Console](https://console.firebase.google.com/): create a project (or use the existing HPB one).
 2. **Authentication → Sign-in method →** enable **Google**. For a production perimeter, set "Restrict by domain" to `highplainsbank.com` (grant exceptions to any break-glass admin accounts — see [Security](#security)).
 3. **Project Settings → General → Your apps → Web app** — copy the config values.
-4. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values plus `GEMINI_API_KEY`.
+4. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values.
 
 ```bash
 cp .env.example .env.local
@@ -66,6 +65,14 @@ Pass the **email or UID of the account you sign in to the app with** — using y
 
 See **[docs/DEMO.md](docs/DEMO.md)** for the 5–10 minute walkthrough script.
 
+## Deploy (Cloud Run)
+
+The app deploys to Cloud Run in the client's GCP project — see
+**[docs/DEPLOY.md](docs/DEPLOY.md)** for the full runbook (required APIs,
+Artifact Registry, least-privilege runtime service account, `gcloud builds
+submit` via `cloudbuild.yaml`, Firestore rules deploy, Firebase Auth domain
+restriction, and optional security levers).
+
 ## Onboarding flow
 
 - Sign-in is Google OAuth → an HttpOnly session cookie (`lib/firebase/session.ts`); `proxy.ts` gates every route.
@@ -83,15 +90,14 @@ app/
   (auth)/login/                 — Google sign-in
   join/                         — teamless users request to join
   (app)/                        — auth-gated route group
-    layout.tsx                  — sidebar shell + Assistant button
+    layout.tsx                  — sidebar shell
     home/                       — personal dashboard
     teams/[teamId]/
       scorecard/ rocks/ todos/
       issues/ headlines/ members/
       meetings/                 — L10 list
       meetings/[meetingId]/     — live L10 orchestrator (segment components)
-    voice-create-action.ts      — Assistant: propose + commit changes (Gemini)
-components/                     — app shell, chat panel, shared UI
+components/                     — app shell, shared UI
 lib/
   firebase/                     — admin, client, auth, session, teams helpers
   l10/segments.ts               — meeting segment definitions + timings

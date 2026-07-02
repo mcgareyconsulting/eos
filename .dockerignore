@@ -1,0 +1,43 @@
+# Dependencies & build output (reinstalled/rebuilt inside the image)
+node_modules
+.next
+out
+
+# Version control
+.git
+.gitignore
+
+# Env files — secrets/local config must never be baked into the image.
+# NEXT_PUBLIC_* values are injected explicitly as Docker build args instead.
+.env
+.env*
+!.env.example
+
+# Cloud tooling state, not needed at build/runtime
+.firebase
+.vercel
+
+# Docs, scripts, and non-runtime assets
+docs
+scripts
+*.md
+*.pdf
+
+# Editor/OS cruft
+.DS_Store
+*.pem
+.vscode
+.idea
+
+# Build/test artifacts
+coverage
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Container/CI files not needed inside the image itself
+Dockerfile
+.dockerignore
+cloudbuild.yaml

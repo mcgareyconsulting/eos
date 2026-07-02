@@ -5,11 +5,41 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-06-05 — _Pass 9_
+**Last updated:** 2026-07-01 — _Pass 10_
 
 ---
 
 ## Infrastructure
+
+### Pass 10 (2026-07-01) — deployment target + scope decisions
+
+- **Runs fully in the client's GCP org.** No Vercel anywhere (the Vercel demo
+  retires at cutover — rotate the service-account key stored in its env vars).
+  Web app infra is created in HPB's GCP project; consultant access via
+  client-granted IAM, replacing the hardcoded break-glass gmail in
+  `firestore.rules` (retirement plan required — a personal gmail with full
+  admin will not survive a bank security review).
+- **BigQuery promoted from deferred to foundation-tier data target.** The
+  client is mid-migration of core banking data from **Jack Henry → BigQuery**;
+  EOS is one more source feeding that warehouse. Firestore stays the live/
+  operational layer (realtime L10 voting); the nightly batch + audit-log
+  design below stands.
+- **Gemini assistant pulled from the app** (chat panel, voice-create action,
+  parser). AI features are deferred; if revived, they return as **Vertex AI
+  inside the client's GCP perimeter**, never the key-based AI Studio API.
+  The old `GEMINI_API_KEY` must be revoked in AI Studio.
+- **Requirements stack pending from client.** Assume current app ≈75% of
+  final functionality. Until requirements + data-compliance conventions
+  arrive, work = foundation lockdown (security, storage stack, deploy
+  scaffolding) — not new features.
+- **Security levers menu (client-facing, ballpark $/mo, verify before
+  quoting):** Tier 0 free/included — least-privilege SAs with zero exported
+  keys, Secret Manager, default-deny rules, domain-restricted auth, audit
+  log, Cloud Audit Logs, org policy banning SA key export, SCC Standard.
+  Tier 1 (~$40–75/mo total) — Cloud Armor WAF, CMEK on Firestore/BQ, Firestore
+  PITR, Data Access audit logs, LB + IAP. Tier 2 (quote on request) — VPC-SC
+  perimeter ($0 direct, real ops cost), SCC Premium, Access Transparency,
+  Assured Workloads (likely client-owned org-level products).
 
 ### Keep data live on Firebase Firestore
 - Firestore remains the **system of record for live, real-time data** — the
@@ -100,7 +130,7 @@ Caveats / boundaries:
   the client's **cross-source consolidation/reporting**, not for powering
   in-app charts — don't couple a live feature to the nightly lag.
 
-#### Audit log / change history → BigQuery (TABLED — decision pending)
+#### Audit log / change history → BigQuery (DECIDED — Option 2, `onWrite` trigger)
 The "snapshot misses intra-day changes/deletes" gap is a property of snapshotting
 current state, **not** a real limitation. An **append-only audit log captures
 full change history and still ships fine on the nightly batch** (append-only =
@@ -113,7 +143,13 @@ mutation writes an immutable row:
 before/after or diff }`. The nightly worker ships it to BQ like any other table
 (date-partitioned). Keeps the simple, cheap BQ pipe — **no streaming-to-BQ.**
 
-**Open decision — where to capture the events:**
+**DECIDED 2026-07-01: Option 2 — server-side `onWrite` trigger.** The app has
+three write paths (server actions, admin/seed scripts, future integrations);
+only the trigger guarantees all of them are captured — for a bank, "the audit
+log cannot be bypassed" is the property that matters. Original analysis kept
+below for the record.
+
+**Where to capture the events (original options):**
 - **Option 1 — app-level (data-access layer writes the audit row).** Simple,
   rich semantics (actor/action/human-readable diff) for free. Risk: writes that
   bypass that layer (e.g. admin/direct writes) aren't logged.
@@ -129,9 +165,19 @@ before/after or diff }`. The nightly worker ships it to BQ like any other table
   permanent record).
 
 #### Still open (to resolve before building the worker)
-- **Which collections/entities** mirror to BigQuery, and the **schema mapping**
-  for each.
-- Final pick between **nightly vs. weekly** run cadence (leaning nightly above).
+- **Run cadence: DECIDED 2026-07-01 — nightly.** Cost delta vs. weekly is
+  noise at this scale; day-resolution snapshots + the append-only audit log
+  close the intra-day-churn gap.
+- **Collections to mirror: decided in principle** — all nine domain
+  collections (`organizations`, `users`, `teams`, `team_members`, rocks +
+  milestones, todos, issues, headlines, scorecard metrics/values, meetings)
+  plus `audit_log`; skip ephemeral presence/segment-cursor state. Per-table
+  shape: stable scalar columns + `snapshot_date` partition + a `raw` JSON
+  column to absorb schema drift.
+- **Schema mapping: BLOCKED on client** — must conform to HPB's BigQuery
+  conventions from the Jack Henry migration (dataset naming, region,
+  partitioning standards, PII handling, retention, reader access). Build the
+  worker schema-agnostic until their conventions arrive.
 
 ---
 
@@ -260,24 +306,27 @@ It works in two primary ways:
 
 ---
 
-## ▶ RESUME HERE — next session (start with this before continuing)
+## ▶ RESUME HERE — next session
 
-All of the above is **tabled** for now. When we next work in this repo, **before
-continuing feature work**:
+Pass 10 (2026-07-01) resolved the session-start checklist: stack surfaced,
+audit-log capture point (Option 2), nightly cadence, and collection list
+decided; deployment target locked to the client's GCP org. Foundation work
+done this pass: Gemini assistant removed, repo hygiene (branding PDF
+untracked, strays deleted), Cloud Run deploy scaffolding (Dockerfile,
+cloudbuild.yaml, `docs/DEPLOY.md`).
 
-1. **Surface the tech stack.** Map and present the repo's actual stack — Next.js
-   version + conventions (per `AGENTS.md`, read `node_modules/next/dist/docs/`
-   first), Firebase/Firestore setup (`firebase.json`, `firestore.rules`,
-   `firestore.indexes.json`), data-access patterns, styling, auth, and any
-   charting libs. _(This was not yet explored — earlier exploration was
-   interrupted.)_
-2. **Recommend handling these pending decisions before building:**
-   - **Audit log capture point** — Option 1 (app-level) vs Option 2 (`onWrite`
-     trigger). Engineering lean: Option 2. _(See "Audit log → BigQuery" above.)_
-   - **Which collections/entities** mirror to BigQuery, and **schema mapping**
-     per entity.
-   - **Run cadence** — nightly vs weekly (leaning nightly).
-3. Then pick the first feature(s) to scope from the list above.
+**Next up (in order):**
+1. **Blocked on client:** requirements stack + BigQuery/data-compliance
+   conventions (dataset naming, region, PII/retention). Also: which GCP
+   project, Cloud Build vs GitHub Actions for CI, consultant IAM identity.
+2. **Buildable now:** audit-log `onWrite` trigger (Cloud Function writing the
+   append-only `audit_log` collection) — independent of BQ schema decisions.
+3. **Buildable now:** Terraform skeleton for the client-project footprint,
+   with Tier 1/2 security levers as toggleable blocks (see Pass 10 notes).
+4. **After conventions arrive:** nightly BQ batch worker (Cloud Scheduler →
+   Cloud Run job → date-partitioned load jobs).
+5. Then feature scoping against the requirements stack (features above remain
+   tabled until it lands).
 
 ## Pending passes
 _Additional notes to be added in subsequent passes._

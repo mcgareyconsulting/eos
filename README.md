@@ -27,7 +27,7 @@ pnpm install
 This app uses a single Firebase project for Firestore + Auth.
 
 1. In the [Firebase Console](https://console.firebase.google.com/): create a project (or use the existing HPB one).
-2. **Authentication → Sign-in method →** enable **Google**. For a production perimeter, set "Restrict by domain" to `highplainsbank.com` (grant exceptions to any break-glass admin accounts — see [Security](#security)).
+2. **Authentication → Sign-in method →** enable **Google** and set "Restrict by domain" to `highplainsbank.com`. App access is HPB SSO only — no external allowlist (see [Security](#security)).
 3. **Project Settings → General → Your apps → Web app** — copy the config values.
 4. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values.
 
@@ -81,7 +81,7 @@ restriction, and optional security levers).
 
 ## Security
 
-Access is gated on team membership in Firestore rules (`firestore.rules`), mirrored by `requireTeamAccess()` on the server. As defense-in-depth, the broad org/user/team reads are gated to the Workspace domain (`highplainsbank.com`); the consultant account (`mcgareyconsulting@gmail.com`) is allowlisted as a break-glass admin so the domain lock can't shut it out. The authoritative domain perimeter is the Firebase Auth provider's domain restriction.
+Access is gated on team membership in Firestore rules (`firestore.rules`), mirrored by `requireTeamAccess()` on the server. As defense-in-depth, the broad org/user/team reads are gated to the Workspace domain (`highplainsbank.com`). App sign-in is **HPB SSO only** — there is no email allowlist and no break-glass app account. Admin in-app is the Identity Platform `role: "admin"` custom claim, granted by HPB. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login. The authoritative domain perimeter is the Firebase Auth provider's domain restriction.
 
 ## Project structure
 

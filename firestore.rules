@@ -11,29 +11,23 @@ service cloud.firestore {
     // ---------- helpers ----------
     function authed() { return request.auth != null; }
 
-    // Break-glass admin accounts allowlisted by email. These get full access
-    // regardless of email domain — e.g. the consultant's account, which is not
-    // on the Workspace domain and would otherwise be locked out by inDomain().
-    function isAdminEmail() {
-      return authed()
-        && request.auth.token.email in ["mcgareyconsulting@gmail.com"];
-    }
-
-    // Admin = Identity Platform custom claim (role: "admin") OR an allowlisted
-    // admin email above.
+    // Admin = Identity Platform custom claim (role: "admin"), granted by HPB to
+    // their own admin accounts. There are no email-allowlisted break-glass
+    // accounts: app access is HPB SSO only. Consultant / operator administration
+    // happens at the GCP IAM + Admin SDK layer (HPB-granted), which bypasses
+    // these rules entirely and needs no app login.
     function admin() {
-      return (authed() && request.auth.token.role == "admin") || isAdminEmail();
+      return authed() && request.auth.token.role == "admin";
     }
 
     // Workspace-domain perimeter (defense-in-depth). Primary enforcement is at
     // the Firebase Auth provider (Console → Authentication → Sign-in method →
     // Google → "Restrict by domain" = highplainsbank.com). These rules also gate
     // the broad org/user/team reads below so a token from outside the Workspace
-    // can't enumerate them. Allowlisted admin emails are permitted alongside.
+    // can't enumerate them. HPB domain only — no external allowlist.
     function inDomain() {
-      return isAdminEmail()
-        || (authed()
-            && request.auth.token.email.matches(".*@highplainsbank[.]com$"));
+      return authed()
+        && request.auth.token.email.matches(".*@highplainsbank[.]com$");
     }
 
     function isMember(teamId) {

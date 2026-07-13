@@ -33,7 +33,7 @@ Console → IAM.
 | Option | What it is | Tradeoff |
 |---|---|---|
 | **Fast path (recommended to start)** | `roles/editor` on the project, granted to `[names/emails to be provided at kickoff]` | Broad but standard for an initial buildout; easy to grant, easy to review, easy to narrow later |
-| **Scoped path** | A custom role covering just: Service Usage Admin, IAM Admin, Cloud Run Admin, Artifact Registry Admin (+ Compute/Audit Config Admin only if you want us running the optional security add-ons in §5 for you) | Smaller footprint, more setup time up front — pick this if your security review requires least-privilege from day one |
+| **Scoped path** | A custom role covering just: Service Usage Admin, IAM Admin, Cloud Run Admin, Artifact Registry Admin (+ Compute/KMS/Audit Config Admin only if you want us running the optional security add-ons in §5 for you) | Smaller footprint, more setup time up front — pick this if your security review requires least-privilege from day one |
 
 **Why:** an IAM grant, not a handoff. You see exactly what's been given,
 can narrow it later, and can pull it at any time from your own Console —
@@ -46,19 +46,28 @@ nothing to track down or rotate elsewhere if access ever needs to end.
 - [ ] Confirm the **Google Workspace domain** used for employee sign-in
       (defaults to `highplainsbank.com` in the current build). App access is
       gated to that domain via Google SSO only.
+- [ ] Pick the **Firestore database region** (we suggest `us-central1`,
+      matching the rest of the deploy). This choice is **permanent** for the
+      database, so if your BigQuery conventions from the Jack Henry
+      migration pin a region, tell us now and we'll match it.
 
 **Why:** you already run identity, MFA, and offboarding through Workspace.
 Signing in through it means EOS doesn't need a second password system to
-maintain, and access already tracks your real employee roster.
+maintain, and access already tracks your real employee roster. The database
+region is called out because it's the one setting in this list that can't
+be changed later without a migration.
 
 ## 4. Make a few build decisions
 
 - [ ] **CI/CD:** Google Cloud Build (already scaffolded — see
-      `cloudbuild.yaml`) or GitHub Actions? Cloud Build is the path of least
-      resistance today.
+      `cloudbuild.yaml`) or GitHub Actions? Cloud Build is the path of
+      least resistance today; both work fine.
 - [ ] **Sizing:** a rough sense of expected concurrent users, so we can set
-      sensible Cloud Run min/max instance counts (currently placeholder
-      0–2, i.e. scales to zero when idle).
+      sensible Cloud Run min/max instance counts. The real choice here:
+      scale to zero when idle (free overnight, but the first person in on
+      Monday morning waits a few seconds for a cold start) or keep one
+      instance warm (~$10–15/mo, always instant). For a meeting tool with a
+      predictable morning spike, we lean toward one warm instance.
 - [ ] **Custom domain**, if you want one at launch (e.g.
       `eos.highplainsbank.com`). Not a blocker — can be added after go-live
       once we know who owns DNS on your side.
@@ -145,6 +154,7 @@ Tracked in `docs/ROADMAP.md`; repeated here for visibility:
 
 - [ ] Which GCP project (§1)
 - [ ] Named accounts to grant IAM access to (§2)
+- [ ] Firestore database region (§3)
 - [ ] Cloud Build vs. GitHub Actions (§4)
 - [ ] Traffic/sizing expectations (§4)
 - [ ] Security tier selection (§5)

@@ -60,11 +60,25 @@ Then open <http://localhost:3000>:
 - **Inspect data live:** Emulator UI at <http://127.0.0.1:4000> — browse Auth
   users and Firestore documents, edit them by hand.
 - **Clean slate:** re-run `pnpm seed …`. It clears the Demo Team's data first.
-- **Emulator data is in-memory.** Stopping `pnpm emulators` (Ctrl-C) wipes both
-  Auth users and Firestore. Just restart it and re-seed — takes seconds.
-- **Cloud Functions / audit-log trigger are not run** by `pnpm emulators` (only
-  `auth` + `firestore`). The app doesn't need them; the nightly-warehouse and
-  audit-log functions are a production concern.
+- **Emulator data is in-memory.** Stopping the emulators (Ctrl-C) wipes both
+  Auth users and Firestore. Just restart and re-seed — takes seconds.
+
+### Audit-log trigger (optional)
+
+`pnpm emulators` stays lean — **auth + firestore only** — which is all the app
+needs and the fastest thing to boot for a demo. To also run the audit-log
+Cloud Function (the `onWrite` Firestore trigger that mirrors every change into
+the `audit_log` collection — see [DEPLOY.md](DEPLOY.md) §4), use:
+
+```bash
+pnpm emulators:all      # builds functions/ + runs auth, firestore, functions
+```
+
+Then every write — from the app, `pnpm seed`, or a hand-edit in the Emulator
+UI — appends an immutable row to `audit_log`, exactly as it will in production.
+A full seed produces ~170 audit rows; browse them at
+<http://127.0.0.1:4000/firestore>. Requires the same **Java 11+** as the other
+emulators (the functions themselves run on the host's Node).
 
 ## What to look at (recent ninety.io drift changes)
 

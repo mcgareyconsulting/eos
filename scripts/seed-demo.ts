@@ -3,7 +3,7 @@
 // Fills EVERY screen for a believable High Plains Bank leadership team:
 //   • 4 synthetic teammates (+ you, the leader)
 //   • Rocks (with milestones) across all statuses + owners
-//   • Scorecard — 7 metrics × 8 weeks of entries (green/red mix, a story)
+//   • Scorecard — 7 metrics × 13 weeks of entries (green/red mix, a story)
 //   • Issues — ranked by real seeded votes, mixed statuses
 //   • To-Dos — open/done/private/overdue, assigned across the team
 //   • Headlines — customer / employee / cascading
@@ -139,7 +139,7 @@ const ROCKS: SeedRock[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Scorecard. `values` is oldest → newest (8 weeks); mapped onto Mondays below.
+// Scorecard. `values` is oldest → newest (13 weeks); mapped onto Mondays below.
 // Designed so averages show a green/red mix and the latest week has a couple
 // of obvious red cells to point at during the demo.
 // ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ type SeedMetric = {
   direction: "gte" | "lte" | "eq";
   owner: MemberKey;
   group?: string; // ninety.io-style scorecard section
-  values: number[]; // length 8, oldest → newest
+  values: number[]; // length 13, oldest → newest
 };
 
 const METRICS: SeedMetric[] = [
@@ -161,7 +161,7 @@ const METRICS: SeedMetric[] = [
     direction: "gte",
     owner: "marcus",
     group: "Deposit & Loan Volume",
-    values: [1_250_000, 1_310_000, 1_180_000, 1_420_000, 1_380_000, 1_270_000, 1_450_000, 1_090_000],
+    values: [1_150_000, 1_220_000, 1_080_000, 1_340_000, 1_190_000, 1_250_000, 1_310_000, 1_180_000, 1_420_000, 1_380_000, 1_270_000, 1_450_000, 1_090_000],
   },
   {
     name: "Loans funded ($/wk)",
@@ -170,7 +170,7 @@ const METRICS: SeedMetric[] = [
     direction: "gte",
     owner: "tom",
     group: "Deposit & Loan Volume",
-    values: [2_100_000, 1_900_000, 2_300_000, 2_050_000, 2_200_000, 1_850_000, 2_400_000, 2_150_000],
+    values: [1_950_000, 2_050_000, 2_250_000, 1_800_000, 2_150_000, 2_100_000, 1_900_000, 2_300_000, 2_050_000, 2_200_000, 1_850_000, 2_400_000, 2_150_000],
   },
   {
     name: "Loan pipeline (#)",
@@ -179,7 +179,7 @@ const METRICS: SeedMetric[] = [
     direction: "gte",
     owner: "tom",
     group: "Deposit & Loan Volume",
-    values: [22, 26, 28, 24, 30, 27, 31, 33],
+    values: [19, 21, 23, 20, 25, 22, 26, 28, 24, 30, 27, 31, 33],
   },
   {
     name: "New checking accounts",
@@ -188,7 +188,7 @@ const METRICS: SeedMetric[] = [
     direction: "gte",
     owner: "sarah",
     group: "Customer",
-    values: [38, 45, 41, 52, 47, 39, 55, 48],
+    values: [35, 42, 37, 44, 40, 38, 45, 41, 52, 47, 39, 55, 48],
   },
   {
     name: "Net Promoter Score",
@@ -197,7 +197,7 @@ const METRICS: SeedMetric[] = [
     direction: "gte",
     owner: "sarah",
     group: "Customer",
-    values: [54, 57, 59, 61, 58, 62, 64, 66],
+    values: [48, 51, 53, 50, 55, 54, 57, 59, 61, 58, 62, 64, 66],
   },
   {
     name: "30-day delinquency rate",
@@ -206,7 +206,7 @@ const METRICS: SeedMetric[] = [
     direction: "lte",
     owner: "elena",
     group: "Risk & Compliance",
-    values: [1.3, 1.5, 1.7, 1.9, 1.8, 2.1, 1.6, 1.4],
+    values: [1.2, 1.4, 1.6, 1.3, 1.5, 1.3, 1.5, 1.7, 1.9, 1.8, 2.1, 1.6, 1.4],
   },
   {
     name: "Open compliance findings",
@@ -215,7 +215,7 @@ const METRICS: SeedMetric[] = [
     direction: "lte",
     owner: "elena",
     group: "Risk & Compliance",
-    values: [3, 2, 4, 1, 2, 3, 1, 2],
+    values: [2, 3, 2, 4, 3, 3, 2, 4, 1, 2, 3, 1, 2],
   },
 ];
 
@@ -554,8 +554,8 @@ async function main() {
   }
 
   // --- Scorecard (metrics + 8 weeks of entries) --------------------------
-  console.log(`Seeding ${METRICS.length} scorecard metrics × 8 weeks…`);
-  const weeks = lastNMondays(8).map(toDateString); // newest first
+  console.log(`Seeding ${METRICS.length} scorecard metrics × 13 weeks…`);
+  const weeks = lastNMondays(13).map(toDateString); // newest first
   for (const [i, mt] of METRICS.entries()) {
     const metricRef = db.collection("scorecard_metrics").doc();
     await metricRef.set({

@@ -16,7 +16,8 @@ elsewhere and gets retired once this is live).
 Most of this lands on your IT/cloud team, but four other people get asked
 for something along the way:
 
-- **Your Google Workspace admin** — employee sign-in runs through Workspace (§3).
+- **Your identity admin** (Google Workspace or Microsoft 365) — employee
+  sign-in runs through your identity provider (§3).
 - **Whoever owns your DNS** — only if you want a custom domain at launch (§4).
 - **Compliance / risk** — data retention and the vendor-review process (§9).
 - **Finance** — the billing account and a monthly budget number (§1, §8).
@@ -54,9 +55,16 @@ nothing to track down or rotate elsewhere if access ever needs to end.
 
 - [ ] Confirm whether we're using an existing Firebase project tied to the
       GCP project above, or creating a new one.
-- [ ] Confirm the **Google Workspace domain** used for employee sign-in
-      (defaults to `highplainsbank.com` in the current build). App access is
-      gated to that domain via Google SSO only.
+- [ ] Confirm your **identity provider**: does the bank run **Google
+      Workspace** or **Microsoft 365 / Entra ID** (or Okta, etc.) for
+      employee accounts? The current build signs users in with Google SSO
+      restricted to `highplainsbank.com` — that works out of the box **only
+      if you're a Google Workspace shop.** If you're on Microsoft or
+      another provider, we swap the login flow to SAML/OIDC federation with
+      your provider — a small, contained change (the sign-in button, not
+      the app), at negligible cost (~$0.015 per active user/month). Either
+      way, sign-in stays SSO through *your* identity system: your MFA,
+      your offboarding, no separate passwords.
 - [ ] Pick the **Firestore database location** — either a single region
       (e.g. `us-central1`, colocated with the app) or the **US multi-region**
       (`nam5`), which replicates the database across multiple US regions for
@@ -69,11 +77,13 @@ durability answer to give a security review. If your BigQuery conventions
 from the Jack Henry migration pin everything to a single region, tell us
 now and we'll match that instead.
 
-**Why:** you already run identity, MFA, and offboarding through Workspace.
-Signing in through it means EOS doesn't need a second password system to
-maintain, and access already tracks your real employee roster. The database
-location is called out because it's the one setting in this list that can't
-be changed later without a migration.
+**Why:** you already run identity, MFA, and offboarding through your
+identity provider. Signing in through it means EOS doesn't need a second
+password system to maintain, and access already tracks your real employee
+roster. The identity-provider question is first because it's the biggest
+unverified assumption in the current build; the database location is
+called out because it's the one setting here that can't be changed later
+without a migration.
 
 ## 4. Make a few build decisions
 
@@ -220,7 +230,7 @@ deploy, and one item is usually the longest pole in the tent:
    that can't be reproduced or handed to your own team later.
 2. **We deploy the app to Cloud Run** in your project — staging copy
    first, then production — backed by your Firestore database, gated by
-   your Workspace sign-in domain. *Why Cloud Run:* EOS is a low-traffic
+   SSO through your identity provider. *Why Cloud Run:* EOS is a low-traffic
    internal tool, not a public product; it scales to zero when idle and
    needs no servers for anyone to patch or manage.
 3. **We turn on the audit-log trigger** so every data change (create,
@@ -259,6 +269,7 @@ gate the initial deploy; the rest gate go-live or later phases.
 
 - [ ] Which GCP project (§1)
 - [ ] Named accounts to grant IAM access to (§2)
+- [ ] Identity provider — Google Workspace or Microsoft/other (§3)
 - [ ] Firestore database location — single region or `nam5` multi-region (§3)
 - [ ] Cloud Build vs. GitHub Actions (§4)
 - [ ] Sizing — warm instance or scale-to-zero (§4)

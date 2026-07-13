@@ -117,6 +117,11 @@ export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(
 // ---------------------------------------------------------------------------
 // meetings/{meetingId}/effectiveness_scores/{scoreId}
 //
+// One doc per attendee holding their end-of-meeting rating of the meeting
+// itself (1-10, optional note) — not a peer rating of other attendees.
+// Collection name kept as `effectiveness_scores` for path stability (this
+// trigger + firestore.rules) even though the doc shape changed.
+//
 // Subcollections aren't matched by the single-segment wildcard above, so
 // this needs its own trigger. Deliberately no trigger exists for
 // meetings/{meetingId}/presence — that's ephemeral in-meeting state, not an

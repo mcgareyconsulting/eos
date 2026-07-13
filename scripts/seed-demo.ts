@@ -63,6 +63,7 @@ type SeedRock = {
   description: string;
   status: "on_track" | "off_track" | "done" | "cancelled";
   owner: MemberKey;
+  rock_type?: "company" | "department" | "individual";
   milestones?: { title: string; daysFromNow: number; done?: boolean }[];
 };
 
@@ -72,6 +73,7 @@ const ROCKS: SeedRock[] = [
     description: "Mass-market campaign + commercial outreach push.",
     status: "on_track",
     owner: "marcus",
+    rock_type: "company",
     milestones: [
       { title: "Launch deposit campaign creative", daysFromNow: -21, done: true },
       { title: "Commercial RM outreach to top 50 prospects", daysFromNow: 7 },
@@ -79,6 +81,7 @@ const ROCKS: SeedRock[] = [
     ],
   },
   {
+    rock_type: "department",
     title: "Launch consumer mobile app v2.0",
     description: "iOS + Android: full account access, mobile deposit, bill pay.",
     status: "on_track",
@@ -146,6 +149,7 @@ type SeedMetric = {
   goal: number;
   direction: "gte" | "lte" | "eq";
   owner: MemberKey;
+  group?: string; // ninety.io-style scorecard section
   values: number[]; // length 8, oldest → newest
 };
 
@@ -156,6 +160,7 @@ const METRICS: SeedMetric[] = [
     goal: 1_200_000,
     direction: "gte",
     owner: "marcus",
+    group: "Deposit & Loan Volume",
     values: [1_250_000, 1_310_000, 1_180_000, 1_420_000, 1_380_000, 1_270_000, 1_450_000, 1_090_000],
   },
   {
@@ -164,6 +169,7 @@ const METRICS: SeedMetric[] = [
     goal: 2_000_000,
     direction: "gte",
     owner: "tom",
+    group: "Deposit & Loan Volume",
     values: [2_100_000, 1_900_000, 2_300_000, 2_050_000, 2_200_000, 1_850_000, 2_400_000, 2_150_000],
   },
   {
@@ -172,6 +178,7 @@ const METRICS: SeedMetric[] = [
     goal: 25,
     direction: "gte",
     owner: "tom",
+    group: "Deposit & Loan Volume",
     values: [22, 26, 28, 24, 30, 27, 31, 33],
   },
   {
@@ -180,6 +187,7 @@ const METRICS: SeedMetric[] = [
     goal: 40,
     direction: "gte",
     owner: "sarah",
+    group: "Customer",
     values: [38, 45, 41, 52, 47, 39, 55, 48],
   },
   {
@@ -188,6 +196,7 @@ const METRICS: SeedMetric[] = [
     goal: 50,
     direction: "gte",
     owner: "sarah",
+    group: "Customer",
     values: [54, 57, 59, 61, 58, 62, 64, 66],
   },
   {
@@ -196,6 +205,7 @@ const METRICS: SeedMetric[] = [
     goal: 1.5,
     direction: "lte",
     owner: "elena",
+    group: "Risk & Compliance",
     values: [1.3, 1.5, 1.7, 1.9, 1.8, 2.1, 1.6, 1.4],
   },
   {
@@ -204,6 +214,7 @@ const METRICS: SeedMetric[] = [
     goal: 2,
     direction: "lte",
     owner: "elena",
+    group: "Risk & Compliance",
     values: [3, 2, 4, 1, 2, 3, 1, 2],
   },
 ];
@@ -220,14 +231,15 @@ type SeedIssue = {
   type: "short" | "long";
   status: "open" | "solving" | "solved" | "dropped";
   owner: MemberKey;
+  priority?: "urgent" | "high" | "medium" | "low";
 };
 
 const ISSUES: SeedIssue[] = [
-  { key: "core", title: "Core system cutover keeps slipping", description: "Third reschedule — vendor resourcing is the bottleneck.", type: "long", status: "open", owner: "me" },
-  { key: "underwriting", title: "Underwriting backlog is spiking turnaround time", description: "Two RMs out; doc intake still manual.", type: "short", status: "solving", owner: "tom" },
-  { key: "appstore", title: "Mobile app store rejection — compliance disclosures", description: null, type: "short", status: "open", owner: "sarah" },
-  { key: "staffing", title: "Branch staffing gaps in two markets", description: null, type: "short", status: "open", owner: "marcus" },
-  { key: "billpay", title: "Should we sunset the legacy bill-pay product?", description: "Low usage, high maintenance cost.", type: "long", status: "open", owner: "me" },
+  { key: "core", title: "Core system cutover keeps slipping", description: "Third reschedule — vendor resourcing is the bottleneck.", type: "long", status: "open", owner: "me", priority: "high" },
+  { key: "underwriting", title: "Underwriting backlog is spiking turnaround time", description: "Two RMs out; doc intake still manual.", type: "short", status: "solving", owner: "tom", priority: "urgent" },
+  { key: "appstore", title: "Mobile app store rejection — compliance disclosures", description: null, type: "short", status: "open", owner: "sarah", priority: "medium" },
+  { key: "staffing", title: "Branch staffing gaps in two markets", description: null, type: "short", status: "open", owner: "marcus", priority: "high" },
+  { key: "billpay", title: "Should we sunset the legacy bill-pay product?", description: "Low usage, high maintenance cost.", type: "long", status: "open", owner: "me", priority: "low" },
   { key: "vendor", title: "Vendor SLA misses on card processing", description: "Resolved — escalation path agreed with vendor.", type: "short", status: "solved", owner: "elena" },
   { key: "kyc", title: "Duplicate KYC alerts overwhelming ops", description: "Dropped — fixed by the rules-engine patch.", type: "short", status: "dropped", owner: "elena" },
 ];
@@ -498,6 +510,7 @@ async function main() {
       title: r.title,
       description: r.description,
       status: r.status,
+      rock_type: r.rock_type ?? "individual",
       quarter,
       owner_id: ownerId,
       due_date: active ? eoq : null,
@@ -535,6 +548,7 @@ async function main() {
       goal: mt.goal,
       direction: mt.direction,
       owner_id: ownerByKey[mt.owner],
+      group: mt.group ?? null,
       sort_order: i,
       created_at: FieldValue.serverTimestamp(),
     });
@@ -574,6 +588,7 @@ async function main() {
       owner_id: ownerByKey[iss.owner],
       votes: voteTotals.get(iss.key) ?? 0,
       type: iss.type,
+      priority: iss.priority ?? null,
       status: iss.status,
       resolved_at: resolved ? FieldValue.serverTimestamp() : null,
       resolution_todo_id: null,
@@ -630,7 +645,7 @@ async function main() {
   }
   await headlineBatch.commit();
 
-  // --- One completed L10 meeting (with peer effectiveness scores) ---------
+  // --- One completed L10 meeting (with per-attendee meeting ratings) ------
   console.log("Seeding one completed L10 meeting…");
   const lastWeek = addDays(now, -7);
   const startedAt = Timestamp.fromDate(at(lastWeek, 9, 0));
@@ -649,24 +664,19 @@ async function main() {
       "Acquisition integration flagged off-track; cutover dry-run rescheduled.",
     absent_user_ids: [],
   });
+  // One rating doc per attendee, keyed by the rater's uid — each person
+  // rates THE MEETING 1-10 (ROADMAP item 9), not their teammates.
   const allMemberIds = [uid, ...SYNTHETIC_MEMBERS.map((m) => m.id)];
   const SCORE_CYCLE = [8, 9, 7, 9, 8, 8, 9, 7];
   let s = 0;
   const scoreBatch = db.batch();
   for (const rater of allMemberIds) {
-    for (const ratee of allMemberIds) {
-      if (rater === ratee) continue;
-      scoreBatch.set(
-        meetingRef.collection("effectiveness_scores").doc(`${rater}_${ratee}`),
-        {
-          rater_user_id: rater,
-          rated_user_id: ratee,
-          score: SCORE_CYCLE[s++ % SCORE_CYCLE.length],
-          notes: null,
-          created_at: endedAt,
-        },
-      );
-    }
+    scoreBatch.set(meetingRef.collection("effectiveness_scores").doc(rater), {
+      user_id: rater,
+      rating: SCORE_CYCLE[s++ % SCORE_CYCLE.length],
+      notes: null,
+      created_at: endedAt,
+    });
   }
   await scoreBatch.commit();
 

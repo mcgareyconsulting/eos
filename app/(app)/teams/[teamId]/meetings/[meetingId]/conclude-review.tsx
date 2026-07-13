@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { UserX, UserCheck } from "lucide-react";
-import { saveMeetingNotes, scoreAttendee, setAttendeeAbsence } from "../actions";
+import { RatingForm } from "@/components/l10/rating-form";
+import { saveMeetingNotes, rateMeeting, setAttendeeAbsence } from "../actions";
 
 type Member = { user_id: string; full_name: string };
 
-export type AttendeeScore = {
-  rater_user_id: string;
-  rated_user_id: string;
-  score: number;
+export type MeetingRating = {
+  user_id: string;
+  rating: number;
   notes: string | null;
 };
 
@@ -20,7 +20,7 @@ export function ConcludeReview({
   currentUserId,
   members,
   absentUserIds,
-  scores,
+  ratings,
   notes,
 }: {
   teamId: string;
@@ -28,11 +28,19 @@ export function ConcludeReview({
   currentUserId: string;
   members: Member[];
   absentUserIds: string[];
-  scores: AttendeeScore[];
+  ratings: MeetingRating[];
   notes: string | null;
 }) {
-  // Peers = everyone on the team other than me.
+  // Peers = everyone on the team other than me — used for attendance only.
   const peers = members.filter((m) => m.user_id !== currentUserId);
+  const myRating = ratings.find((r) => r.user_id === currentUserId) ?? null;
+  const average =
+    ratings.length === 0
+      ? null
+      : Math.round(
+          (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length) *
+            10,
+        ) / 10;
 
   return (
     <div className="space-y-6">
@@ -41,54 +49,102 @@ export function ConcludeReview({
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-            Score teammates (1–10)
+            Rate this meeting
           </h2>
           <span className="text-xs text-zinc-600 dark:text-zinc-400">
-            Peer effectiveness · your scores stay attributed to you
+            {ratings.length === 0
+              ? "No ratings yet"
+              : `Avg ${average?.toFixed(1)} · ${ratings.length} ${
+                  ratings.length === 1 ? "rating" : "ratings"
+                }`}
           </span>
+        </header>
+
+        <MeetingRatingWidget
+          teamId={teamId}
+          meetingId={meetingId}
+          myRating={myRating}
+        />
+
+        {ratings.length > 0 && (
+          <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800 pt-3">
+            <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
+              {ratings.map((r) => {
+                const member = members.find((m) => m.user_id === r.user_id);
+                return (
+                  <li
+                    key={r.user_id}
+                    className="text-zinc-700 dark:text-zinc-300"
+                    title={r.notes ?? undefined}
+                  >
+                    <span className="font-medium">
+                      {member?.full_name ?? "Member"}
+                    </span>{" "}
+                    <span className="text-hpb-blue font-semibold">
+                      {r.rating}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+        <header className="mb-3">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+            Attendance
+          </h2>
         </header>
 
         {peers.length === 0 ? (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            No teammates to score on this team.
+            No other teammates on this team.
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {peers.map((peer) => {
-              const isAbsent = absentUserIds.includes(peer.user_id);
-              const peerScores = scores.filter(
-                (s) => s.rated_user_id === peer.user_id,
-              );
-              const mine = peerScores.find(
-                (s) => s.rater_user_id === currentUserId,
-              );
-              const peerAvg =
-                peerScores.length === 0
-                  ? null
-                  : Math.round(
-                      (peerScores.reduce((sum, s) => sum + s.score, 0) /
-                        peerScores.length) *
-                        10,
-                    ) / 10;
-
-              return (
-                <AttendeeCard
-                  key={peer.user_id}
-                  teamId={teamId}
-                  meetingId={meetingId}
-                  peer={peer}
-                  isAbsent={isAbsent}
-                  myScore={mine?.score ?? null}
-                  myNotes={mine?.notes ?? ""}
-                  teamAvg={peerAvg}
-                  ratingCount={peerScores.length}
-                />
-              );
-            })}
+            {peers.map((peer) => (
+              <AttendanceCard
+                key={peer.user_id}
+                teamId={teamId}
+                meetingId={meetingId}
+                peer={peer}
+                isAbsent={absentUserIds.includes(peer.user_id)}
+              />
+            ))}
           </div>
         )}
       </section>
     </div>
+  );
+}
+
+function MeetingRatingWidget({
+  teamId,
+  meetingId,
+  myRating,
+}: {
+  teamId: string;
+  meetingId: string;
+  myRating: MeetingRating | null;
+}) {
+  const router = useRouter();
+
+  async function submit(score: number, notes: string) {
+    const fd = new FormData();
+    fd.set("rating", String(score));
+    fd.set("notes", notes);
+    await rateMeeting(teamId, meetingId, fd);
+    router.refresh();
+  }
+
+  return (
+    <RatingForm
+      initialScore={myRating?.rating ?? null}
+      initialNotes={myRating?.notes ?? ""}
+      submitAction={submit}
+    />
   );
 }
 
@@ -152,31 +208,19 @@ function NotesCard({
   );
 }
 
-function AttendeeCard({
+function AttendanceCard({
   teamId,
   meetingId,
   peer,
   isAbsent,
-  myScore,
-  myNotes,
-  teamAvg,
-  ratingCount,
 }: {
   teamId: string;
   meetingId: string;
   peer: Member;
   isAbsent: boolean;
-  myScore: number | null;
-  myNotes: string;
-  teamAvg: number | null;
-  ratingCount: number;
 }) {
   const router = useRouter();
-  const [score, setScore] = useState<number | null>(myScore);
-  const [notes, setNotes] = useState(myNotes);
-  const [pendingScore, startScore] = useTransition();
   const [pendingAbsence, startAbsence] = useTransition();
-  const [saved, setSaved] = useState(false);
 
   const initials = peer.full_name
     .split(/\s+/)
@@ -193,112 +237,50 @@ function AttendeeCard({
     });
   }
 
-  function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (score == null) return;
-    const fd = new FormData();
-    fd.set("score", String(score));
-    fd.set("notes", notes);
-    startScore(async () => {
-      await scoreAttendee(teamId, meetingId, peer.user_id, fd);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    });
-  }
-
   return (
     <div
       className={
-        "rounded-lg border p-3 transition " +
+        "flex items-center justify-between gap-2 rounded-lg border p-3 transition " +
         (isAbsent
           ? "border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 opacity-70"
           : "border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900")
       }
     >
-      <header className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-hpb-blue/10 text-hpb-blue text-xs font-semibold ring-1 ring-inset ring-hpb-blue/30">
-            {initials || "?"}
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium truncate">{peer.full_name}</div>
-            {teamAvg != null && !isAbsent && (
-              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                Team avg {teamAvg.toFixed(1)} · {ratingCount}{" "}
-                {ratingCount === 1 ? "score" : "scores"}
-              </div>
-            )}
-            {isAbsent && (
-              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                Marked absent
-              </div>
-            )}
-          </div>
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-hpb-blue/10 text-hpb-blue text-xs font-semibold ring-1 ring-inset ring-hpb-blue/30">
+          {initials || "?"}
         </div>
-        <button
-          type="button"
-          onClick={toggleAbsence}
-          disabled={pendingAbsence}
-          className={
-            "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-50 " +
-            (isAbsent
-              ? "border-hpb-green/40 text-hpb-green hover:bg-hpb-green/10"
-              : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800")
-          }
-          aria-label={isAbsent ? "Mark present" : "Mark absent"}
-        >
-          {isAbsent ? (
-            <>
-              <UserCheck className="h-3 w-3" /> Present
-            </>
-          ) : (
-            <>
-              <UserX className="h-3 w-3" /> Absent
-            </>
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{peer.full_name}</div>
+          {isAbsent && (
+            <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+              Marked absent
+            </div>
           )}
-        </button>
-      </header>
-
-      {!isAbsent && (
-        <form onSubmit={save} className="mt-3 space-y-2">
-          <div className="flex flex-wrap items-center gap-1">
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setScore(n)}
-                className={
-                  "h-7 w-7 rounded-md border text-xs font-medium transition " +
-                  (score === n
-                    ? "border-hpb-blue bg-hpb-blue text-white"
-                    : "border-zinc-300 hover:border-hpb-blue/40 hover:bg-hpb-blue/5 dark:border-zinc-700 dark:hover:bg-hpb-blue/10")
-                }
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            placeholder="Notes (optional)"
-            className="block w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-hpb-blue/30"
-          />
-          <div className="flex items-center justify-end gap-2">
-            {saved && (
-              <span className="text-[11px] text-hpb-green">Saved</span>
-            )}
-            <button
-              type="submit"
-              disabled={pendingScore || score == null}
-              className="rounded-md bg-hpb-blue px-2.5 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 disabled:opacity-50"
-            >
-              {pendingScore ? "Saving…" : myScore != null ? "Update" : "Save"}
-            </button>
-          </div>
-        </form>
-      )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={toggleAbsence}
+        disabled={pendingAbsence}
+        className={
+          "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-50 " +
+          (isAbsent
+            ? "border-hpb-green/40 text-hpb-green hover:bg-hpb-green/10"
+            : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800")
+        }
+        aria-label={isAbsent ? "Mark present" : "Mark absent"}
+      >
+        {isAbsent ? (
+          <>
+            <UserCheck className="h-3 w-3" /> Present
+          </>
+        ) : (
+          <>
+            <UserX className="h-3 w-3" /> Absent
+          </>
+        )}
+      </button>
     </div>
   );
 }

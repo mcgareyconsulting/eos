@@ -109,31 +109,29 @@ export async function saveMeetingNotes(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
-// Peer effectiveness scoring (EOS-style end-of-meeting feedback). Each rater
-// scores each other attendee 1–10 with optional notes. Doc id is
-// `${rater}_${ratee}` so re-saving overwrites the prior score from that rater.
-export async function scoreAttendee(
+// End-of-meeting rating (EOS-style meeting effectiveness vote). Each
+// attendee rates the MEETING itself 1–10, with an optional note explaining
+// the rating — not a peer rating of other attendees. Doc id is the rater's
+// own uid, so re-saving overwrites that attendee's prior rating.
+export async function rateMeeting(
   teamId: string,
   meetingId: string,
-  ratedUserId: string,
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
-  if (ratedUserId === uid) throw new Error("Cannot score yourself");
-  const score = Number(formData.get("score"));
-  if (!Number.isFinite(score) || score < 1 || score > 10) {
-    throw new Error("Score must be 1–10");
+  const rating = Number(formData.get("rating"));
+  if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
+    throw new Error("Rating must be 1–10");
   }
   const notes = String(formData.get("notes") ?? "").trim() || null;
   await db
     .collection("meetings")
     .doc(meetingId)
     .collection("effectiveness_scores")
-    .doc(`${uid}_${ratedUserId}`)
+    .doc(uid)
     .set({
-      rater_user_id: uid,
-      rated_user_id: ratedUserId,
-      score: Math.round(score),
+      user_id: uid,
+      rating: Math.round(rating),
       notes,
       created_at: FieldValue.serverTimestamp(),
     });

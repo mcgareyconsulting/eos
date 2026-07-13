@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { addRock } from "./actions";
+import { ROCK_TYPES, ROCK_TYPE_LABELS, type RockType } from "./rock-type";
 
 type Member = { user_id: string; full_name: string };
 
@@ -30,6 +31,7 @@ export function AddRockDrawer({
   const [due, setDue] = useState(defaultDue);
   const [ownerId, setOwnerId] = useState(currentUserId);
   const [description, setDescription] = useState("");
+  const [rockType, setRockType] = useState<RockType>("individual");
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +48,7 @@ export function AddRockDrawer({
     setDue(defaultDue);
     setOwnerId(currentUserId);
     setDescription("");
+    setRockType("individual");
     setError(null);
   }
 
@@ -61,6 +64,7 @@ export function AddRockDrawer({
     fd.set("due_date", due);
     fd.set("owner_id", ownerId);
     fd.set("description", description);
+    fd.set("rock_type", rockType);
     start(async () => {
       try {
         setError(null);
@@ -157,6 +161,20 @@ export function AddRockDrawer({
                     />
                   </Field>
                 </div>
+
+                <Field label="Rock type">
+                  <select
+                    value={rockType}
+                    onChange={(e) => setRockType(e.target.value as RockType)}
+                    className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm"
+                  >
+                    {ROCK_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {ROCK_TYPE_LABELS[t]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
 
                 <Field label="Due date">
                   <input

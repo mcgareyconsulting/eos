@@ -33,7 +33,7 @@ export default async function MeetingsPage({
       return bt - at;
     });
 
-  // Average peer effectiveness score across all attendees, per meeting.
+  // Average meeting-effectiveness rating across all attendees, per meeting.
   // Bounded by team meeting history (a year of weekly L10s is ~52 reads).
   const ratingsByMeeting = new Map<string, number | null>();
   await Promise.all(
@@ -47,10 +47,12 @@ export default async function MeetingsPage({
         ratingsByMeeting.set(m.id, null);
         return;
       }
-      const scores = r.docs.map((d) => (d.data() as { score: number }).score);
+      const ratings = r.docs.map(
+        (d) => (d.data() as { rating: number }).rating,
+      );
       const avg =
         Math.round(
-          (scores.reduce((s, n) => s + n, 0) / scores.length) * 10,
+          (ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10,
         ) / 10;
       ratingsByMeeting.set(m.id, avg);
     }),

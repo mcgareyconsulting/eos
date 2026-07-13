@@ -3,9 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { EditableText } from "@/components/editable-text";
 import { TodoCheckbox } from "../todos/todo-row";
 import { deleteTodo } from "../todos/actions";
-import { addMilestone } from "./actions";
+import {
+  addMilestone,
+  updateMilestoneDescription,
+  updateRockDescription,
+} from "./actions";
 
 // Plain-data shape passed from the Server Component. Firestore Timestamps
 // are class instances and can't cross the RSC boundary, so the parent serializes
@@ -16,6 +21,7 @@ export type MilestoneSerialized = {
   owner_id: string | null;
   due_date: string | null;
   completed: boolean;
+  description: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -24,6 +30,7 @@ export function MilestonesDisclosure({
   teamId,
   rockId,
   rockOwnerId,
+  rockDescription,
   members,
   milestones,
   defaultDue,
@@ -31,6 +38,7 @@ export function MilestonesDisclosure({
   teamId: string;
   rockId: string;
   rockOwnerId: string | null;
+  rockDescription?: string | null;
   members: Member[];
   milestones: MilestoneSerialized[];
   defaultDue: string;
@@ -76,6 +84,20 @@ export function MilestonesDisclosure({
 
       {open && (
         <div className="mt-2 ml-5 space-y-2 border-l border-zinc-300 dark:border-zinc-800 pl-4">
+          {rockDescription !== undefined && (
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500 mb-1">
+                Description
+              </div>
+              <EditableText
+                value={rockDescription ?? ""}
+                onSave={updateRockDescription.bind(null, teamId, rockId)}
+                multiline
+                placeholder="Add a note for whoever picks this up"
+                className="text-xs text-zinc-700 dark:text-zinc-300"
+              />
+            </div>
+          )}
           {milestones.length === 0 && (
             <p className="text-xs text-zinc-600 dark:text-zinc-400">
               No milestones yet.
@@ -118,20 +140,36 @@ function MilestoneRow({
   ownerName: string;
 }) {
   const remove = deleteTodo.bind(null, teamId, milestone.id);
+  const saveDescription = updateMilestoneDescription.bind(
+    null,
+    teamId,
+    milestone.id,
+  );
   return (
-    <div className="group flex items-center gap-3 text-sm">
-      <TodoCheckbox
-        teamId={teamId}
-        todoId={milestone.id}
-        completed={milestone.completed}
-      />
-      <div
-        className={
-          "flex-1 min-w-0 truncate " +
-          (milestone.completed ? "text-zinc-500 line-through" : "")
-        }
-      >
-        {milestone.title}
+    <div className="group flex items-start gap-3 text-sm">
+      <div className="pt-0.5">
+        <TodoCheckbox
+          teamId={teamId}
+          todoId={milestone.id}
+          completed={milestone.completed}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div
+          className={
+            "truncate " +
+            (milestone.completed ? "text-zinc-500 line-through" : "")
+          }
+        >
+          {milestone.title}
+        </div>
+        <EditableText
+          value={milestone.description ?? ""}
+          onSave={saveDescription}
+          multiline
+          placeholder="Add a note"
+          className="text-xs text-zinc-600 dark:text-zinc-400"
+        />
       </div>
       <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
         {ownerName}
@@ -172,6 +210,7 @@ function AddMilestoneForm({
   const [title, setTitle] = useState("");
   const [ownerId, setOwnerId] = useState(defaultOwnerId);
   const [due, setDue] = useState(defaultDue);
+  const [description, setDescription] = useState("");
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -180,10 +219,12 @@ function AddMilestoneForm({
     fd.set("title", title);
     fd.set("owner_id", ownerId);
     fd.set("due_date", due);
+    fd.set("description", description);
     start(async () => {
       await addMilestone(teamId, rockId, fd);
       setTitle("");
       setDue(defaultDue);
+      setDescription("");
       router.refresh();
     });
   }
@@ -191,38 +232,47 @@ function AddMilestoneForm({
   return (
     <form
       onSubmit={submit}
-      className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800"
+      className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800"
     >
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Add a milestone"
-        className="flex-1 min-w-[10rem] rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Add a milestone"
+          className="flex-1 min-w-[10rem] rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
+        />
+        <select
+          value={ownerId}
+          onChange={(e) => setOwnerId(e.target.value)}
+          className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
+        >
+          {members.map((m) => (
+            <option key={m.user_id} value={m.user_id}>
+              {m.full_name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+          className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
+        />
+        <button
+          type="submit"
+          disabled={pending || !title.trim()}
+          className="rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1 text-xs font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Optional note for whoever picks this up"
+        rows={2}
+        className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
       />
-      <select
-        value={ownerId}
-        onChange={(e) => setOwnerId(e.target.value)}
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
-      >
-        {members.map((m) => (
-          <option key={m.user_id} value={m.user_id}>
-            {m.full_name}
-          </option>
-        ))}
-      </select>
-      <input
-        type="date"
-        value={due}
-        onChange={(e) => setDue(e.target.value)}
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
-      />
-      <button
-        type="submit"
-        disabled={pending || !title.trim()}
-        className="rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1 text-xs font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50"
-      >
-        Add
-      </button>
     </form>
   );
 }

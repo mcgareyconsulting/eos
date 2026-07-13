@@ -9,10 +9,12 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { StatusPopover } from "../../rocks/status-popover";
+import { RockTypeBadge } from "../../rocks/rock-type-badge";
 import {
   MilestonesDisclosure,
   type MilestoneSerialized,
 } from "../../rocks/milestones";
+import { ROCK_TYPE_ORDER, normalizeRockType } from "../../rocks/rock-type";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 type RockDoc = {
@@ -24,6 +26,7 @@ type RockDoc = {
   due_date: string | null;
   status: string;
   description: string | null;
+  rock_type: string | null;
 };
 
 // completed_at is a Firestore Timestamp from onSnapshot but a plain boolean
@@ -37,14 +40,22 @@ type TodoDoc = {
   due_date: string | null;
   completed_at: { toDate: () => Date } | boolean | null;
   source_rock_id: string | null;
+  description: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
+// Company rocks first, then department, then individual — mirrors
+// app/(app)/teams/[teamId]/rocks/page.tsx's sortRocks so the meeting segment
+// and the standalone Rocks tab order rocks identically.
 function sortRocks(rocks: RockDoc[]): RockDoc[] {
   return [...rocks].sort((a, b) => {
+    const byType =
+      ROCK_TYPE_ORDER.indexOf(normalizeRockType(a.rock_type)) -
+      ROCK_TYPE_ORDER.indexOf(normalizeRockType(b.rock_type));
+    if (byType !== 0) return byType;
     const byStatus =
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byStatus !== 0) return byStatus;
@@ -102,6 +113,7 @@ export function SegmentRocks({
       owner_id: t.owner_id,
       due_date: t.due_date,
       completed: !!t.completed_at,
+      description: t.description ?? null,
     });
     milestonesByRock.set(t.source_rock_id, list);
   }
@@ -147,6 +159,13 @@ export function SegmentRocks({
                   {r.description}
                 </div>
               )}
+              <div className="mt-0.5">
+                <RockTypeBadge
+                  teamId={teamId}
+                  rockId={r.id}
+                  rockType={r.rock_type}
+                />
+              </div>
             </div>
             <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
               {ownerName(r.owner_id)}
@@ -165,6 +184,7 @@ export function SegmentRocks({
               teamId={teamId}
               rockId={r.id}
               rockOwnerId={r.owner_id}
+              rockDescription={r.description}
               members={members}
               milestones={milestonesByRock.get(r.id) ?? []}
               defaultDue={defaultDue}

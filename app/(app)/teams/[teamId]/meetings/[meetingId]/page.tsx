@@ -19,11 +19,11 @@ import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIDS } from "./segment-ids";
-import { ConcludeReview, type AttendeeScore } from "./conclude-review";
+import { ConcludeReview, type MeetingRating } from "./conclude-review";
 import {
   RecapModal,
   type RecapItem,
-  type RecapAttendeeRating,
+  type RecapMeetingRating,
   type RecapStats,
 } from "./recap-modal";
 
@@ -38,7 +38,7 @@ type MeetingDoc = {
   absent_user_ids?: string[];
 };
 
-const SCORECARD_WEEKS = 8;
+const SCORECARD_WEEKS = 13;
 
 export default async function MeetingDetailPage({
   params,
@@ -60,17 +60,16 @@ export default async function MeetingDetailPage({
   const members = await getTeamMembers(tid);
   const absentUserIds = m.absent_user_ids ?? [];
 
-  const scoresSnap = await db
+  const ratingsSnap = await db
     .collection("meetings")
     .doc(mid)
     .collection("effectiveness_scores")
     .get();
-  const scores: AttendeeScore[] = scoresSnap.docs.map((d) => {
+  const ratings: MeetingRating[] = ratingsSnap.docs.map((d) => {
     const x = d.data();
     return {
-      rater_user_id: x.rater_user_id,
-      rated_user_id: x.rated_user_id,
-      score: x.score,
+      user_id: x.user_id ?? d.id,
+      rating: x.rating,
       notes: x.notes ?? null,
     };
   });
@@ -104,7 +103,8 @@ export default async function MeetingDetailPage({
   let newIssues: RecapItem[] = [];
   let issuesSolved: RecapItem[] = [];
   let newHeadlines: RecapItem[] = [];
-  let attendeeRatings: RecapAttendeeRating[] = [];
+  let attendeeRatings: RecapMeetingRating[] = [];
+  let overallAverageRating: number | null = null;
   let recapStats: RecapStats = {
     totalTrackedIssues: 0,
     issuesSolvedToday: 0,
@@ -199,29 +199,22 @@ export default async function MeetingDetailPage({
         owner_name: memberName(x.created_by),
       }));
 
-    // Per-attendee average effectiveness score (received).
-    const scoresByRatee = new Map<string, number[]>();
-    scores.forEach((s) => {
-      const list = scoresByRatee.get(s.rated_user_id) ?? [];
-      list.push(s.score);
-      scoresByRatee.set(s.rated_user_id, list);
-    });
-    attendeeRatings = members.map((mm) => {
-      const list = scoresByRatee.get(mm.user_id) ?? [];
-      const absent = absentUserIds.includes(mm.user_id);
-      const avg =
-        list.length === 0
-          ? null
-          : Math.round(
-              (list.reduce((sum, n) => sum + n, 0) / list.length) * 10,
-            ) / 10;
-      return {
-        user_id: mm.user_id,
-        full_name: mm.full_name,
-        average: avg,
-        absent,
-      };
-    });
+    // Each attendee's own rating of the meeting (not a peer average).
+    const ratingByUser = new Map<string, number>();
+    ratings.forEach((r) => ratingByUser.set(r.user_id, r.rating));
+    attendeeRatings = members.map((mm) => ({
+      user_id: mm.user_id,
+      full_name: mm.full_name,
+      rating: ratingByUser.get(mm.user_id) ?? null,
+      absent: absentUserIds.includes(mm.user_id),
+    }));
+    overallAverageRating =
+      ratings.length === 0
+        ? null
+        : Math.round(
+            (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length) *
+              10,
+          ) / 10;
   }
 
   return (
@@ -305,7 +298,7 @@ export default async function MeetingDetailPage({
         </section>
       )}
 
-      {/* Meeting review — notes + peer effectiveness scoring.
+      {/* Meeting review — notes + end-of-meeting meeting rating.
           Only surfaced in the Conclude segment (live) or on the completed
           meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
       {showConclude && (
@@ -315,7 +308,7 @@ export default async function MeetingDetailPage({
           currentUserId={uid}
           members={members}
           absentUserIds={absentUserIds}
-          scores={scores}
+          ratings={ratings}
           notes={m.notes ?? null}
         />
       )}
@@ -330,6 +323,7 @@ export default async function MeetingDetailPage({
         newHeadlines={newHeadlines}
         stats={recapStats}
         attendeeRatings={attendeeRatings}
+        overallAverageRating={overallAverageRating}
         autoOpen={recap === "1"}
       />
     </div>
@@ -369,6 +363,7 @@ async function SegmentContent({
         goal: x.goal ?? null,
         direction: x.direction,
         owner_id: x.owner_id ?? null,
+        group: x.group ?? null,
         sort_order: x.sort_order ?? 0,
       };
     });
@@ -422,6 +417,7 @@ async function SegmentContent({
         due_date: x.due_date ?? null,
         status: x.status,
         description: x.description ?? null,
+        rock_type: x.rock_type ?? null,
       };
     });
     const initialTodos = todosSnap.docs.map((d) => {
@@ -434,6 +430,7 @@ async function SegmentContent({
         due_date: x.due_date ?? null,
         completed_at: x.completed_at ? true : null,
         source_rock_id: x.source_rock_id ?? null,
+        description: x.description ?? null,
       };
     });
     return (
@@ -521,6 +518,7 @@ async function SegmentContent({
         title: x.title,
         description: x.description ?? null,
         owner_id: x.owner_id ?? null,
+        priority: x.priority ?? null,
         votes: x.votes ?? 0,
         type: x.type ?? "short",
         status: x.status ?? "open",

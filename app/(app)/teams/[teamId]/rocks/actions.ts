@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { endOfQuarter, toDateString } from "@/lib/dates";
 import { isRockStatus } from "./status";
+import { isRockType } from "./rock-type";
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
@@ -21,6 +22,8 @@ export async function addRock(teamId: string, formData: FormData) {
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const description =
     String(formData.get("description") ?? "").trim() || null;
+  const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
+  const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
 
   if (!title || !quarter) throw new Error("Title and quarter required");
 
@@ -31,6 +34,7 @@ export async function addRock(teamId: string, formData: FormData) {
     due_date,
     owner_id,
     description,
+    rock_type,
     status: "on_track",
     created_at: FieldValue.serverTimestamp(),
   });
@@ -48,6 +52,37 @@ export async function updateRockTitle(
 
   const { db } = await requireTeamAccess(teamId);
   await db.collection("rocks").doc(rockId).update({ title: trimmed });
+
+  revalidatePath(pathFor(teamId));
+}
+
+// Optional handoff notes — an admin creating/reassigning a rock can leave
+// context for whoever owns it. Empty input clears the field back to null.
+export async function updateRockDescription(
+  teamId: string,
+  rockId: string,
+  description: string,
+) {
+  const trimmed = description.trim() || null;
+
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("rocks")
+    .doc(rockId)
+    .update({ description: trimmed });
+
+  revalidatePath(pathFor(teamId));
+}
+
+export async function setRockType(
+  teamId: string,
+  rockId: string,
+  rockType: string,
+) {
+  if (!isRockType(rockType)) throw new Error("Bad rock type");
+
+  const { db } = await requireTeamAccess(teamId);
+  await db.collection("rocks").doc(rockId).update({ rock_type: rockType });
 
   revalidatePath(pathFor(teamId));
 }
@@ -119,6 +154,8 @@ export async function addMilestone(
   const due_date =
     String(formData.get("due_date") ?? "").trim() ||
     toDateString(endOfQuarter());
+  const description =
+    String(formData.get("description") ?? "").trim() || null;
 
   if (!title) throw new Error("Title required");
 
@@ -127,6 +164,7 @@ export async function addMilestone(
     title,
     owner_id,
     due_date,
+    description,
     completed_at: null,
     visibility: "team",
     source_issue_id: null,
@@ -137,4 +175,23 @@ export async function addMilestone(
 
   revalidatePath(pathFor(teamId));
   revalidatePath("/home");
+}
+
+// Optional handoff notes on a milestone — same rationale as
+// updateRockDescription. Milestones are todos (source_rock_id set), so this
+// writes to the todos collection.
+export async function updateMilestoneDescription(
+  teamId: string,
+  milestoneId: string,
+  description: string,
+) {
+  const trimmed = description.trim() || null;
+
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("todos")
+    .doc(milestoneId)
+    .update({ description: trimmed });
+
+  revalidatePath(pathFor(teamId));
 }

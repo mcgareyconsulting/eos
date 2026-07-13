@@ -4,10 +4,12 @@ import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
+import { RockTypeBadge } from "./rock-type-badge";
 import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
 import { OwnerFilter } from "./owner-filter";
 import { AddRockDrawer } from "./add-rock-drawer";
 import { deleteRock, updateRockTitle } from "./actions";
+import { ROCK_TYPE_ORDER, normalizeRockType } from "./rock-type";
 
 type RockDoc = {
   team_id: string;
@@ -17,6 +19,7 @@ type RockDoc = {
   due_date: string | null;
   status: string;
   description: string | null;
+  rock_type: string | null;
 };
 
 type TodoDoc = {
@@ -29,14 +32,25 @@ type TodoDoc = {
   source_issue_id: string | null;
   source_meeting_id: string | null;
   source_rock_id: string | null;
+  description: string | null;
 };
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
-function sortRocks<T extends { status: string; due_date: string | null }>(
-  rocks: T[],
-): T[] {
+// Company rocks first, then department, then individual — existing
+// status/due-date ordering applies as the secondary sort within each type.
+function sortRocks<
+  T extends {
+    status: string;
+    due_date: string | null;
+    rock_type?: string | null;
+  },
+>(rocks: T[]): T[] {
   return [...rocks].sort((a, b) => {
+    const byType =
+      ROCK_TYPE_ORDER.indexOf(normalizeRockType(a.rock_type)) -
+      ROCK_TYPE_ORDER.indexOf(normalizeRockType(b.rock_type));
+    if (byType !== 0) return byType;
     const byStatus =
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byStatus !== 0) return byStatus;
@@ -85,6 +99,7 @@ export default async function RocksPage({
       owner_id: t.owner_id,
       due_date: t.due_date,
       completed: !!t.completed_at,
+      description: t.description ?? null,
     };
     const list = milestonesByRock.get(t.source_rock_id) ?? [];
     list.push(m);
@@ -134,8 +149,11 @@ export default async function RocksPage({
               {r.description}
             </div>
           )}
-          <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-0.5">
-            {r.quarter}
+          <div className="flex items-center gap-2 mt-0.5">
+            <RockTypeBadge teamId={teamId} rockId={r.id} rockType={r.rock_type} />
+            <span className="text-xs text-zinc-500 dark:text-zinc-500">
+              {r.quarter}
+            </span>
           </div>
         </div>
         <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
@@ -160,6 +178,7 @@ export default async function RocksPage({
           teamId={teamId}
           rockId={r.id}
           rockOwnerId={r.owner_id}
+          rockDescription={r.description}
           members={members}
           milestones={milestones}
           defaultDue={eoq}

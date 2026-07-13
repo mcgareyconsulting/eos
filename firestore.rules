@@ -158,9 +158,11 @@ service cloud.firestore {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
       }
 
-      // Peer effectiveness scores are written server-side (admin SDK) during
-      // the Conclude segment; clients only read aggregates via server
-      // components, so no client write path is needed.
+      // End-of-meeting ratings (one doc per attendee, keyed by that
+      // attendee's uid) are written server-side (admin SDK) during the
+      // Conclude segment; clients only read aggregates via server
+      // components, so no client write path is needed. Collection name kept
+      // as `effectiveness_scores` for path stability (rules + audit trigger).
       match /effectiveness_scores/{scoreId} {
         allow read:  if admin() || isMember(meetingTeam());
         allow write: if admin();

@@ -10,10 +10,10 @@ export type RecapItem = {
   owner_name?: string | null;
 };
 
-export type RecapAttendeeRating = {
+export type RecapMeetingRating = {
   user_id: string;
   full_name: string;
-  average: number | null;
+  rating: number | null;
   absent: boolean;
 };
 
@@ -33,6 +33,7 @@ export function RecapModal({
   newHeadlines,
   stats,
   attendeeRatings,
+  overallAverageRating,
   autoOpen,
 }: {
   meetingMinutes: number | null;
@@ -43,7 +44,8 @@ export function RecapModal({
   issuesSolved: RecapItem[];
   newHeadlines: RecapItem[];
   stats: RecapStats;
-  attendeeRatings: RecapAttendeeRating[];
+  attendeeRatings: RecapMeetingRating[];
+  overallAverageRating: number | null;
   autoOpen: boolean;
 }) {
   const router = useRouter();
@@ -181,43 +183,58 @@ export function RecapModal({
             )}
           </Section>
 
-          <Section title="Ratings">
+          <Section title="Meeting Rating">
             {attendeeRatings.length === 0 ? (
               <EmptyHint>No attendees</EmptyHint>
             ) : (
-              <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800">
-                {attendeeRatings.map((r) => (
-                  <li
-                    key={r.user_id}
-                    className="flex items-center justify-between px-3 py-2 text-sm"
-                  >
-                    <span
-                      className={
-                        r.absent
-                          ? "text-zinc-500 dark:text-zinc-500"
-                          : "text-zinc-700 dark:text-zinc-200"
-                      }
-                    >
-                      {r.full_name}
+              <>
+                {overallAverageRating != null && (
+                  <div className="mb-2 flex items-baseline gap-1.5 text-sm">
+                    <span className="text-zinc-600 dark:text-zinc-400">
+                      Average
                     </span>
-                    <span
-                      className={
-                        r.absent
-                          ? "text-xs uppercase tracking-wide text-zinc-500"
-                          : r.average == null
-                            ? "text-zinc-500"
-                            : "font-semibold text-hpb-blue"
-                      }
-                    >
-                      {r.absent
-                        ? "Absent"
-                        : r.average == null
-                          ? "N/A"
-                          : r.average.toFixed(1)}
+                    <span className="text-lg font-semibold text-hpb-blue">
+                      {overallAverageRating.toFixed(1)}
                     </span>
-                  </li>
-                ))}
-              </ul>
+                    <span className="text-zinc-500 dark:text-zinc-500">
+                      /10
+                    </span>
+                  </div>
+                )}
+                <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800">
+                  {attendeeRatings.map((r) => (
+                    <li
+                      key={r.user_id}
+                      className="flex items-center justify-between px-3 py-2 text-sm"
+                    >
+                      <span
+                        className={
+                          r.absent
+                            ? "text-zinc-500 dark:text-zinc-500"
+                            : "text-zinc-700 dark:text-zinc-200"
+                        }
+                      >
+                        {r.full_name}
+                      </span>
+                      <span
+                        className={
+                          r.absent
+                            ? "text-xs uppercase tracking-wide text-zinc-500"
+                            : r.rating == null
+                              ? "text-zinc-500"
+                              : "font-semibold text-hpb-blue"
+                        }
+                      >
+                        {r.absent
+                          ? "Absent"
+                          : r.rating == null
+                            ? "N/A"
+                            : r.rating}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </Section>
         </div>

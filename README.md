@@ -73,6 +73,10 @@ Artifact Registry, least-privilege runtime service account, `gcloud builds
 submit` via `cloudbuild.yaml`, Firestore rules deploy, Firebase Auth domain
 restriction, and optional security levers).
 
+For what the client needs to do on their end to get a real deployment
+rolling (GCP project, IAM access, sign-in domain, security tier), send them
+**[docs/CLIENT_GCP_SETUP.md](docs/CLIENT_GCP_SETUP.md)**.
+
 ## Onboarding flow
 
 - Sign-in is Google OAuth → an HttpOnly session cookie (`lib/firebase/session.ts`); `proxy.ts` gates every route.

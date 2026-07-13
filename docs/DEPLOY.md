@@ -3,6 +3,11 @@
 Runbook for standing up this app in the client's GCP project. Assumes `gcloud`
 is authenticated against that project (`gcloud config set project <PROJECT_ID>`).
 
+> **Sending this to the client?** Use
+> [`CLIENT_GCP_SETUP.md`](./CLIENT_GCP_SETUP.md) instead — it's the
+> non-engineer checklist of what they need to do/provide before this runbook
+> is runnable (GCP project, IAM access, sign-in domain, security tier).
+
 > **Terraform alternative:** everything in sections 0–2 (APIs, Artifact
 > Registry, runtime service account) plus the optional security levers can be
 > provisioned as code from [`terraform/`](../terraform/README.md) — preferred

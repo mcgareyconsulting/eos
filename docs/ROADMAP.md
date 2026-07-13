@@ -326,6 +326,12 @@ cloudbuild.yaml, `docs/DEPLOY.md`).
   `fmt` + `validate` clean. See `terraform/README.md` for the client
   cloud-team review flow and open inputs (state bucket, org_id, LB scope,
   Firestore import for native PITR/CMEK).
+- Client-facing onboarding checklist written — `docs/CLIENT_GCP_SETUP.md`
+  (non-engineer version of `docs/DEPLOY.md`: what HPB needs to
+  provide/decide to unblock a real deploy — GCP project, IAM grant for us
+  in place of a service-account key, Workspace sign-in domain, CI choice,
+  sizing, security tier pick from the Pass 10 levers menu). Linked from
+  `README.md` and the top of `docs/DEPLOY.md`.
 
 **Next up (in order):**
 1. **Blocked on client:** requirements stack + BigQuery/data-compliance

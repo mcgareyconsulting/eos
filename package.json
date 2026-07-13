@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-hpb-eos",
     "seed": "tsx scripts/seed-demo.ts",
     "reset": "tsx scripts/reset-demo.ts",
     "team:info": "tsx scripts/team-info.ts"
@@ -36,6 +37,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "firebase-tools": "^15.23.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

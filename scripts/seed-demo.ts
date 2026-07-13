@@ -378,6 +378,11 @@ async function main() {
   const db = getAdminDb();
   const auth = getAdminAuth();
 
+  // Local emulator? The admin SDK sets this when FIREBASE_AUTH_EMULATOR_HOST is
+  // present. On the emulator there's no real Google sign-in, so we can safely
+  // bootstrap the account here rather than requiring a sign-in round-trip first.
+  const onAuthEmulator = !!process.env.FIREBASE_AUTH_EMULATOR_HOST;
+
   // Resolve the account → uid. Accept an email (looked up via Firebase Auth)
   // or a raw uid. Seeding by login email prevents the classic mistake of
   // attaching the data to a different uid than the one you actually sign in as.
@@ -390,10 +395,22 @@ async function main() {
     uid = authUser.uid;
   } catch {
     if (account.includes("@")) {
-      console.error(
-        `No Firebase Auth user with email "${account}". Sign in to the app once, then re-run.`,
-      );
-      process.exit(1);
+      if (onAuthEmulator) {
+        // Emulator keys users by email, so signing into the app with this same
+        // address later reuses this exact uid — the seed data lines up.
+        authUser = await auth.createUser({
+          email: account,
+          emailVerified: true,
+          displayName: "Demo Leader",
+        });
+        uid = authUser.uid;
+        console.log(`Created emulator auth user for "${account}".`);
+      } else {
+        console.error(
+          `No Firebase Auth user with email "${account}". Sign in to the app once, then re-run.`,
+        );
+        process.exit(1);
+      }
     }
     // A raw uid we couldn't look up — proceed with it as given.
   }

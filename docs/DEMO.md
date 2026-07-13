@@ -18,7 +18,7 @@ owned action → wrap with a recap.** Total core run: ~8 minutes.
    ```
    (Pass the email — or UID — of the account you sign in with, so the data
    lands on a team you're actually a member of.)
-   This fills *every* screen: 4 teammates, rocks + milestones, an 8-week
+   This fills *every* screen: 4 teammates, rocks + milestones, a 13-week
    scorecard, ranked issues, to-dos, headlines, and one completed meeting.
 2. **Sign in** at <http://localhost:3000/login> with the demo leader account,
    land on **Home**.
@@ -42,10 +42,11 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   teams, mine first, soonest due at the top. Nothing falls through the cracks."
 
 ### 0:45 — Scorecard · "The numbers that matter, weekly"
-- **DO:** Sidebar → **Scorecard**. Scan the 8-week grid. Point at a green
+- **DO:** Sidebar → **Scorecard**. Scan the 13-week grid, grouped into sections
+  (Customer, Deposit & Loan Volume, Risk & Compliance). Point at a green
   trend (Net Promoter Score climbing) and a **red** average (30-day delinquency
   rate is over goal). Click one cell to show inline editing, then `Esc`.
-- **SAY:** "Seven KPIs, eight weeks, each with an owner and a goal. Green is on
+- **SAY:** "Seven KPIs, thirteen weeks, each with an owner and a goal. Green is on
   track, red isn't. The delinquency rate is trending the wrong way — hold that
   thought, we'll deal with it *in the meeting*, not in a hallway."
 
@@ -93,8 +94,8 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   someone owns the next step."
 
 ### 6:00 — Conclude & End · "Recap + rate the meeting"
-- **DO:** Advance to **Conclude**. Show the notes field and the **peer
-  effectiveness** scoring (rate teammates 1–10). Click **End meeting** — the
+- **DO:** Advance to **Conclude**. Show the notes field and the **meeting
+  rating** (each attendee rates *the meeting* 1–10). Click **End meeting** — the
   **Recap** modal opens automatically.
 - **SAY:** "We close by capturing cascading messages and rating the meeting 1 to
   10 — EOS holds the meeting itself accountable."

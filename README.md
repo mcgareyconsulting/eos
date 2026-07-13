@@ -7,7 +7,7 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 ## Features
 
 - **Home** — every open to-do and active rock across all your teams, yours first.
-- **Scorecard** — weekly KPIs on an 8-week rolling grid; on-/off-track coloring, per-metric owners and goals.
+- **Scorecard** — weekly KPIs on a 13-week rolling grid, grouped into sections; on-/off-track coloring, per-metric owners and goals.
 - **Rocks** — quarterly goals with owners, status (on/off-track, done, cancelled), append-only status history, and milestones.
 - **To-Dos** — 7-day action items, team or private, assignable, with due dates.
 - **Issues (IDS)** — team issues ranked by votes (3 credits per person), worked through live during the meeting.
@@ -15,6 +15,11 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 - **Level 10 Meeting** — a live, timed 90-minute orchestrator (Segue → Scorecard → Rocks → Headlines → To-Dos → IDS → Conclude) with shared segment state, presence, peer effectiveness scoring, and a post-meeting recap.
 
 ## Setup
+
+> **Just want to run it locally?** The fastest path needs **no cloud project at
+> all** — see **[docs/LOCAL_DEV.md](docs/LOCAL_DEV.md)**, which runs Firebase Auth
+> + Firestore in local emulators. The steps below configure a **real** Firebase
+> project (for staging/production / a deployed demo).
 
 ### 1. Install deps
 
@@ -29,7 +34,10 @@ This app uses a single Firebase project for Firestore + Auth.
 1. In the [Firebase Console](https://console.firebase.google.com/): create a project (or use the existing HPB one).
 2. **Authentication → Sign-in method →** enable **Google** and set "Restrict by domain" to `highplainsbank.com`. App access is HPB SSO only — no external allowlist (see [Security](#security)).
 3. **Project Settings → General → Your apps → Web app** — copy the config values.
-4. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values.
+4. Copy `.env.example` to `.env.local`, then fill in the `NEXT_PUBLIC_FIREBASE_*`
+   values. `.env.example` **ships in emulator mode**, so for a real project set
+   `NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false` and delete the two `*_EMULATOR_HOST`
+   lines (see the comments in the file).
 
 ```bash
 cp .env.example .env.local
@@ -55,7 +63,7 @@ Open <http://localhost:3000>. You'll be redirected to `/login` — sign in with 
 
 ### 5. Seed demo data
 
-The seed populates **every screen** for a believable bank leadership team (4 teammates, rocks + milestones, an 8-week scorecard, ranked issues, to-dos, headlines, and a completed meeting). It's idempotent — re-run it for a clean slate between demos.
+The seed populates **every screen** for a believable bank leadership team (4 teammates, rocks + milestones, a 13-week scorecard, ranked issues, to-dos, headlines, and a completed meeting). It's idempotent — re-run it for a clean slate between demos.
 
 ```bash
 pnpm seed <your-login-email>      # or pass your UID

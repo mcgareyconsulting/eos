@@ -1,6 +1,20 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import {
+  connectAuthEmulator,
+  getAuth,
+  GoogleAuthProvider,
+  type Auth,
+} from "firebase/auth";
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  type Firestore,
+} from "firebase/firestore";
+
+// Local-only: when NEXT_PUBLIC_FIREBASE_USE_EMULATOR=true the client SDK talks
+// to the Firebase emulators instead of a real project — no cloud credentials
+// needed. See docs/LOCAL_DEV.md. Never set this in production.
+const USE_EMULATOR = process.env.NEXT_PUBLIC_FIREBASE_USE_EMULATOR === "true";
 
 function getClientApp(): FirebaseApp {
   if (getApps().length) return getApp();
@@ -15,12 +29,26 @@ function getClientApp(): FirebaseApp {
   });
 }
 
+let authEmulatorConnected = false;
 export function getClientAuth(): Auth {
-  return getAuth(getClientApp());
+  const auth = getAuth(getClientApp());
+  if (USE_EMULATOR && !authEmulatorConnected) {
+    authEmulatorConnected = true;
+    connectAuthEmulator(auth, "http://127.0.0.1:9099", {
+      disableWarnings: true,
+    });
+  }
+  return auth;
 }
 
+let firestoreEmulatorConnected = false;
 export function getClientDb(): Firestore {
-  return getFirestore(getClientApp());
+  const db = getFirestore(getClientApp());
+  if (USE_EMULATOR && !firestoreEmulatorConnected) {
+    firestoreEmulatorConnected = true;
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  }
+  return db;
 }
 
 // Google provider preconfigured with hosted-domain hint (if set).

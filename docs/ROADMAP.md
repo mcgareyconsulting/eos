@@ -331,7 +331,33 @@ cloudbuild.yaml, `docs/DEPLOY.md`).
   provide/decide to unblock a real deploy — GCP project, IAM grant for us
   in place of a service-account key, Workspace sign-in domain, CI choice,
   sizing, security tier pick from the Pass 10 levers menu). Linked from
-  `README.md` and the top of `docs/DEPLOY.md`.
+  `README.md` and the top of `docs/DEPLOY.md`. Expanded (2026-07-13) with
+  gap-analysis sections: Firestore location choice (nam5 vs regional),
+  baseline run cost, demo cutover/decommission plan, day-2 ops (alerts
+  destination, admin handoff session, staging copy, patching ownership),
+  and risk/compliance items (access lifecycle, repo ownership, retention,
+  vendor review). **Note: the doc now promises Tier-0 baseline monitoring,
+  budget alerts, scheduled Firestore exports, and a staging service — none
+  of which exist in `terraform/` yet. Build these before go-live.**
+
+**Deploy-path fixes found in infra review (2026-07-13), not yet applied:**
+1. `cloudbuild.yaml` manual `gcloud builds submit` gets empty `SHORT_SHA`
+   → invalid image tag; document passing it or add a `_TAG` default.
+2. `docs/DEPLOY.md` never grants the Cloud Build SA its deploy roles
+   (`run.admin`, `iam.serviceAccountUser` on runtime SA,
+   `artifactregistry.writer`) — §6 fails on a fresh project without them.
+3. No step anywhere creates the Firestore database (fresh project has
+   none; location choice is permanent — now a client decision in
+   CLIENT_GCP_SETUP.md §3).
+4. Terraform-only path skips the Firebase Auth admin role the runtime SA
+   needs for `createSessionCookie` → sign-in 500s; add to terraform README
+   post-apply steps or include the narrower role in `iam.tf`.
+5. `levers.tf` CMEK: missing AR service-agent
+   `cloudkms.cryptoKeyEncrypterDecrypter` grant (apply fails), and
+   `kms_key_name` is immutable on AR repos (late enable = destroy/recreate,
+   images lost). Also stale §-references in terraform/README + cloud_run.tf
+   after DEPLOY.md renumbering; gen2 functions default SA is the compute SA,
+   not appspot, in DEPLOY.md §4.
 
 **Next up (in order):**
 1. **Blocked on client:** requirements stack + BigQuery/data-compliance

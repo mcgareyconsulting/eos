@@ -12,6 +12,7 @@ locals {
     "artifactregistry.googleapis.com",
     "firestore.googleapis.com",
     "identitytoolkit.googleapis.com",
+    "firebase.googleapis.com",
     "cloudfunctions.googleapis.com",
     "eventarc.googleapis.com",
     "cloudscheduler.googleapis.com",

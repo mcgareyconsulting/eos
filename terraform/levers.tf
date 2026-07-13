@@ -105,6 +105,31 @@ resource "google_kms_crypto_key" "app" {
   }
 }
 
+# Artifact Registry does not implicitly get to use a CMEK key just because
+# `kms_key_name` is set on the repo (artifact_registry.tf) — its per-service
+# service agent must be explicitly granted Encrypter/Decrypter on the key,
+# or repo creation/image pushes fail with a KMS permission-denied error.
+# google_project_service_identity provisions (or looks up) that service
+# agent so its email can be referenced without hardcoding the
+# service-<PROJECT_NUMBER>@gcp-sa-artifactregistry.iam.gserviceaccount.com
+# convention.
+resource "google_project_service_identity" "artifactregistry" {
+  count = var.enable_cmek ? 1 : 0
+
+  project = var.project_id
+  service = "artifactregistry.googleapis.com"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_kms_crypto_key_iam_member" "artifact_registry_cmek" {
+  count = var.enable_cmek ? 1 : 0
+
+  crypto_key_id = google_kms_crypto_key.app[0].id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_project_service_identity.artifactregistry[0].email}"
+}
+
 # ---------------------------------------------------------------------------
 # Lever 3: Firestore point-in-time recovery (PITR)
 # Ballpark: PITR retains ~7 days of change history; roughly adds the cost of

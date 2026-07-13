@@ -26,7 +26,7 @@ variable "allowed_domain" {
     Workspace hosted domain allowed to sign in (Firebase Auth Google
     sign-in restriction). Documentation/reference only — this repo's
     Firebase Auth *provider* configuration is not managed by Terraform
-    (see docs/DEPLOY.md §4 and terraform/README.md "not managed here").
+    (see docs/DEPLOY.md §5 and terraform/README.md "not managed here").
     Mirrors NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN in cloudbuild.yaml.
   EOT
   type        = string

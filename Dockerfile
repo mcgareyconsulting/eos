@@ -4,9 +4,11 @@
 # Node LTS on Alpine: small image, meets Next.js 16's engines requirement
 # (node >=20.9.0). Corepack (bundled with Node 20/22) pins the exact pnpm
 # version so local, CI, and image builds all resolve the same dependency
-# tree as pnpm-lock.yaml (lockfileVersion 9 -> pnpm 9.x).
+# tree as pnpm-lock.yaml. Pinned to match package.json's "packageManager"
+# field (pnpm 10.x — the lockfile is still format v9 ("lockfileVersion:
+# 9.0"); pnpm 10 didn't bump the lockfile format from pnpm 9).
 FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /app
 
 # ---- Dependencies -------------------------------------------------------
@@ -31,6 +33,26 @@ ARG NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
 ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN
+
+# Fail fast instead of shipping a build that 500s at first sign-in:
+# cloudbuild.yaml defaults every _NEXT_PUBLIC_FIREBASE_* substitution to ""
+# and `docker build` succeeds fine with empty values baked into the client
+# bundle — the breakage only shows up at runtime. STORAGE_BUCKET/
+# MESSAGING_SENDER_ID/HOSTED_DOMAIN are genuinely optional (not every app
+# uses Storage/FCM, and the hosted-domain restriction may not apply); the
+# other four are required for the Firebase JS SDK to initialize at all.
+RUN set -eu; \
+    missing=""; \
+    [ -n "$NEXT_PUBLIC_FIREBASE_API_KEY" ] || missing="$missing NEXT_PUBLIC_FIREBASE_API_KEY"; \
+    [ -n "$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN" ] || missing="$missing NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"; \
+    [ -n "$NEXT_PUBLIC_FIREBASE_PROJECT_ID" ] || missing="$missing NEXT_PUBLIC_FIREBASE_PROJECT_ID"; \
+    [ -n "$NEXT_PUBLIC_FIREBASE_APP_ID" ] || missing="$missing NEXT_PUBLIC_FIREBASE_APP_ID"; \
+    if [ -n "$missing" ]; then \
+      echo "ERROR: missing required build arg(s):$missing" >&2; \
+      echo "Pass them via --substitutions in 'gcloud builds submit' (see docs/DEPLOY.md §6.2)." >&2; \
+      exit 1; \
+    fi
+
 ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
     NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID \

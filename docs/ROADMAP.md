@@ -421,24 +421,36 @@ cloudbuild.yaml, `docs/DEPLOY.md`).
   budget alerts, scheduled Firestore exports, and a staging service — none
   of which exist in `terraform/` yet. Build these before go-live.**
 
-**Deploy-path fixes found in infra review (2026-07-13), not yet applied:**
-1. `cloudbuild.yaml` manual `gcloud builds submit` gets empty `SHORT_SHA`
-   → invalid image tag; document passing it or add a `_TAG` default.
-2. `docs/DEPLOY.md` never grants the Cloud Build SA its deploy roles
-   (`run.admin`, `iam.serviceAccountUser` on runtime SA,
-   `artifactregistry.writer`) — §6 fails on a fresh project without them.
-3. No step anywhere creates the Firestore database (fresh project has
-   none; location choice is permanent — now a client decision in
-   CLIENT_GCP_SETUP.md §3).
-4. Terraform-only path skips the Firebase Auth admin role the runtime SA
-   needs for `createSessionCookie` → sign-in 500s; add to terraform README
-   post-apply steps or include the narrower role in `iam.tf`.
-5. `levers.tf` CMEK: missing AR service-agent
-   `cloudkms.cryptoKeyEncrypterDecrypter` grant (apply fails), and
-   `kms_key_name` is immutable on AR repos (late enable = destroy/recreate,
-   images lost). Also stale §-references in terraform/README + cloud_run.tf
-   after DEPLOY.md renumbering; gen2 functions default SA is the compute SA,
-   not appspot, in DEPLOY.md §4.
+**Deploy-path fixes (2026-07-13 infra review): ALL APPLIED (2026-07-13
+pre-deploy hardening pass).** `_TAG` substitution replaces `SHORT_SHA`;
+DEPLOY.md §6.1 grants the acting Cloud Build SA (legacy *or* compute-default
+on 2024+ projects) its deploy roles; §3.1 creates the Firestore database
+(location = client decision, permanent); `iam.tf` now grants the runtime SA
+`roles/firebaseauth.admin`; CMEK lever grants the AR service agent KMS use +
+immutability warning; stale §-refs and the gen2-functions SA corrected.
+Same pass also added: Firebase project registration step (§0.5 +
+`firebase.googleapis.com` in apis.tf — was a fresh-project blocker),
+Dockerfile fail-fast guard on empty `NEXT_PUBLIC_*` build args, pnpm pinned
+to 10.33.0 (packageManager + Dockerfile), and authorized-domains moved to a
+post-deploy step (§6.3).
+
+**Also fixed same pass (from the 3-agent code review):** cross-team IDOR —
+all mutating server actions now call `requireTeamDoc()` (admin SDK bypasses
+rules, so actions are the only write-side tenant check); TZ off-by-one in
+live-L10 due dates (`formatDateOnly`, local-midnight parse); NaN-proofed
+meeting-rating averages; seed creates real emulator Auth users for the 4
+synthetic teammates (multiplayer demo beat works locally; teammate emails
+now @highplainsbank.com to pass the rules domain gate).
+
+**Known-remaining (LOW, non-blocking, do when convenient):**
+- `terraform fmt -check` + `validate` never re-run after the CMEK/iam edits
+  (CLI not installed in the session env) — run before first apply.
+- Home page query breaks for a user on >15 teams (double-`in` disjunction
+  cap, `app/(app)/home/page.tsx`); scorecard `in`-queries silently cap at 30
+  metrics/team; home 7-day/overdue boundaries computed at UTC midnight (no
+  business-timezone config).
+- `firestore.indexes.json` carries unused composite indexes (superset —
+  harmless, prune someday).
 
 **Next up (in order):**
 1. **Blocked on client:** requirements stack + BigQuery/data-compliance

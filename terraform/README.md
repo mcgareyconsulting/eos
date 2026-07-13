@@ -22,7 +22,7 @@ just add indirection for reviewers.
 
 - **Firebase Auth provider configuration** (enabling Google sign-in,
   authorized domains, hosted-domain restriction). Firebase Auth setup is
-  done in the Firebase Console — see `../docs/DEPLOY.md` §4. Terraform has
+  done in the Firebase Console — see `../docs/DEPLOY.md` §5. Terraform has
   a `google_identity_platform_*` resource family that *can* manage some of
   this, but it isn't wired up here; the console flow is the source of truth
   today.
@@ -32,12 +32,12 @@ just add indirection for reviewers.
   §3. This module enables the Firestore API and grants the runtime SA
   `roles/datastore.user`, but does not touch rules/indexes content.
 - **Application deploys (image builds/pushes/`gcloud run deploy`).** Those
-  are owned by `../cloudbuild.yaml`, triggered per `../docs/DEPLOY.md` §5.
+  are owned by `../cloudbuild.yaml`, triggered per `../docs/DEPLOY.md` §6.
   The `google_cloud_run_v2_service` resource here manages the *service
   shape* (SA, scaling, ingress) with `lifecycle { ignore_changes = [...] }`
   on the image, specifically so Terraform and Cloud Build don't fight over
   the running image tag.
-- **Custom domain mapping** (`../docs/DEPLOY.md` §6) — not yet in this
+- **Custom domain mapping** (`../docs/DEPLOY.md` §7) — not yet in this
   module; add a `google_cloud_run_domain_mapping` resource if/when wanted.
 - **BigQuery datasets/tables for the nightly sync worker** — blocked on
   client BigQuery conventions (dataset naming, region, partitioning, PII
@@ -103,7 +103,7 @@ After first apply, wire the outputs into the deploy pipeline:
 ```bash
 terraform output runtime_service_account_email
 # -> pass as _RUNTIME_SERVICE_ACCOUNT in the cloudbuild.yaml substitutions,
-#    see ../docs/DEPLOY.md §5
+#    see ../docs/DEPLOY.md §6
 ```
 
 Quality gates this module is validated against: `terraform fmt -check` and

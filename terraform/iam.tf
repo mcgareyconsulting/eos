@@ -27,26 +27,34 @@ resource "google_project_iam_member" "runtime_log_writer" {
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
-# --- NOTE: Firebase Admin role for the runtime SA ---
-# docs/DEPLOY.md §2 also grants roles/firebase.sdkAdminServiceAgent (or the
-# narrower roles/firebaseauth.admin) for session verification / user
-# management via firebase-admin. Deliberately left out of this module: which
-# role is actually available/permitted varies by project, and DEPLOY.md
-# already flags "check what's actually available/permitted in this project
-# and prefer the narrower role" as a manual step. Add the binding here once
-# confirmed:
-#
-# resource "google_project_iam_member" "runtime_firebase_admin" {
-#   project = var.project_id
-#   role    = "roles/firebaseauth.admin" # narrower alternative to sdkAdminServiceAgent
-#   member  = "serviceAccount:${google_service_account.runtime.email}"
-# }
+# Firebase Auth admin: firebase-admin's createSessionCookie() (this app's
+# session-cookie auth flow, per docs/DEPLOY.md §2) requires this role on the
+# calling identity — without it, the ID-token exchange succeeds but session
+# cookie creation 500s, so sign-in is broken on a Terraform-only deploy
+# without this binding. Narrower than roles/firebase.sdkAdminServiceAgent;
+# docs/DEPLOY.md §2 mentions that broader role only as a fallback for
+# projects where this narrower one isn't available/permitted — check that
+# before switching.
+resource "google_project_iam_member" "runtime_firebase_admin" {
+  project = var.project_id
+  role    = "roles/firebaseauth.admin"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
 
 # --- NOTE: Cloud Build deploy service account ---
-# cloudbuild.yaml (see repo root) does not specify a custom Cloud Build SA,
-# so builds run as the project's default Cloud Build SA
-# (<PROJECT_NUMBER>@cloudbuild.gserviceaccount.com). For `gcloud builds
-# submit` to build/push/deploy per cloudbuild.yaml, that SA needs:
+# cloudbuild.yaml (see repo root) does not specify a custom Cloud Build SA
+# (no `serviceAccount:` field / `--service-account` flag on `gcloud builds
+# submit`), so manual builds run as whichever SA GCP treats as the
+# project's "default" build identity — and which one that is depends on
+# when the project enabled cloudbuild.googleapis.com:
+#   - Projects that enabled it BEFORE ~April 2024: the legacy Cloud Build
+#     SA, <PROJECT_NUMBER>@cloudbuild.gserviceaccount.com.
+#   - Projects that enable it AFTER that date — which includes essentially
+#     any fresh client GCP project, i.e. this deploy — do NOT get that
+#     legacy SA auto-created. Builds instead run as the Compute Engine
+#     default SA, <PROJECT_NUMBER>-compute@developer.gserviceaccount.com.
+# See docs/DEPLOY.md §6.1 for a `gcloud` snippet that detects which one is
+# actually active before granting roles. Whichever SA is acting needs:
 #   - roles/run.admin                 (deploy the Cloud Run revision)
 #   - roles/iam.serviceAccountUser     (act as the runtime SA below, since
 #                                        `gcloud run deploy` attaches it)
@@ -54,25 +62,27 @@ resource "google_project_iam_member" "runtime_log_writer" {
 # Left unmanaged here (not created as a resource) because granting roles to
 # Google-managed default service accounts from a "reviewable footprint"
 # module can mask who actually holds prod deploy power; the bank's cloud
-# team should explicitly grant + track this, e.g.:
+# team should explicitly grant + track this, e.g. (substitute whichever SA
+# docs/DEPLOY.md §6.1 determines is actually active for this project):
 #
 # resource "google_project_iam_member" "cloudbuild_run_admin" {
 #   project = var.project_id
 #   role    = "roles/run.admin"
-#   member  = "serviceAccount:${data.google_project.this.number}@cloudbuild.gserviceaccount.com"
+#   member  = "serviceAccount:REPLACE_WITH_ACTING_BUILD_SA" # legacy: ${data.google_project.this.number}@cloudbuild.gserviceaccount.com; or ${data.google_project.this.number}-compute@developer.gserviceaccount.com
 # }
 # resource "google_service_account_iam_member" "cloudbuild_act_as_runtime" {
 #   service_account_id = google_service_account.runtime.name
 #   role                = "roles/iam.serviceAccountUser"
-#   member              = "serviceAccount:${data.google_project.this.number}@cloudbuild.gserviceaccount.com"
+#   member              = "serviceAccount:REPLACE_WITH_ACTING_BUILD_SA"
 # }
 # resource "google_project_iam_member" "cloudbuild_ar_writer" {
 #   project = var.project_id
 #   role    = "roles/artifactregistry.writer"
-#   member  = "serviceAccount:${data.google_project.this.number}@cloudbuild.gserviceaccount.com"
+#   member  = "serviceAccount:REPLACE_WITH_ACTING_BUILD_SA"
 # }
 #
-# (would also need: `data "google_project" "this" { project_id = var.project_id }`)
+# (would also need: `data "google_project" "this" { project_id = var.project_id }`
+# to compute PROJECT_NUMBER if using either default-SA form above.)
 
 # --- Org policy: constraints/iam.disableServiceAccountKeyCreation ---
 # Bans creation of exported SA keys org-wide. Free, high-signal for a bank

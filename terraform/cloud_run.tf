@@ -11,7 +11,7 @@ resource "google_cloud_run_v2_service" "app" {
 
   # Public ingress: access control for this app is enforced at the
   # application layer (Firebase Auth, Google sign-in restricted to the
-  # var.allowed_domain hosted domain — see docs/DEPLOY.md §4), not by
+  # var.allowed_domain hosted domain — see docs/DEPLOY.md §5), not by
   # Cloud Run/GCP IAM. This matches cloudbuild.yaml's
   # `gcloud run deploy --allow-unauthenticated`. If the bank's security
   # review requires GCP-level auth instead (e.g. fronting with Identity-Aware

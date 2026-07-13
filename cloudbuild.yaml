@@ -10,6 +10,13 @@ substitutions:
   _REGION: us-central1
   _SERVICE: eos
   _REPO: eos
+  # Image tag. ${SHORT_SHA} is only populated on triggered builds (a repo
+  # source push) — it is EMPTY on manual `gcloud builds submit` invocations,
+  # which would otherwise produce an invalid trailing-colon image reference
+  # (".../eos:"). Defaults to "manual"; pass a real value explicitly for
+  # manual builds, e.g. _TAG=$(git rev-parse --short HEAD) — see
+  # docs/DEPLOY.md §6.
+  _TAG: manual
   # Public web config (baked into the client bundle at build time — not secrets).
   _NEXT_PUBLIC_FIREBASE_API_KEY: ""
   _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ""
@@ -26,14 +33,14 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 images:
-  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${_TAG}"
 
 steps:
   - id: build
     name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${_TAG}
       - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:latest
       - --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}
       - --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
@@ -69,7 +76,7 @@ steps:
         # --no-allow-unauthenticated — see the "security levers" section of
         # docs/DEPLOY.md.
         gcloud run deploy "${_SERVICE}" \
-          --image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}" \
+          --image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${_TAG}" \
           --region="${_REGION}" \
           --platform=managed \
           --allow-unauthenticated \

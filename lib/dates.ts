@@ -56,6 +56,14 @@ export function formatWeekLabel(d: string | Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+// "2026-05-18" → "5/18/2026" (or whatever the browser's locale format is).
+// Parses with a local-midnight anchor so a date-only string never rolls back
+// a day west of UTC (`new Date("2026-05-18")` parses as UTC midnight, which
+// renders as the previous day in US timezones).
+export function formatDateOnly(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString();
+}
+
 export function durationMinutes(
   startedAt: string,
   endedAt: string | null,

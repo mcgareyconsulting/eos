@@ -65,14 +65,19 @@ export default async function MeetingDetailPage({
     .doc(mid)
     .collection("effectiveness_scores")
     .get();
-  const ratings: MeetingRating[] = ratingsSnap.docs.map((d) => {
-    const x = d.data();
-    return {
-      user_id: x.user_id ?? d.id,
-      rating: x.rating,
-      notes: x.notes ?? null,
-    };
-  });
+  const ratings: MeetingRating[] = ratingsSnap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        user_id: x.user_id ?? d.id,
+        rating: x.rating,
+        notes: x.notes ?? null,
+      };
+    })
+    // Guard against legacy/malformed docs without a numeric rating — an
+    // entry here would otherwise poison the averages (below, and in
+    // ConcludeReview) into NaN.
+    .filter((r): r is MeetingRating => Number.isFinite(r.rating));
 
   const live = !m.ended_at;
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;

@@ -8,6 +8,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
+import { formatDateOnly } from "@/lib/dates";
 import { StatusPopover } from "../../rocks/status-popover";
 import { RockTypeBadge } from "../../rocks/rock-type-badge";
 import {
@@ -171,7 +172,7 @@ export function SegmentRocks({
               {ownerName(r.owner_id)}
             </div>
             <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
-              {r.due_date ? new Date(r.due_date).toLocaleDateString() : "—"}
+              {r.due_date ? formatDateOnly(r.due_date) : "—"}
             </div>
             <div className="col-span-2 justify-self-end">
               <StatusPopover

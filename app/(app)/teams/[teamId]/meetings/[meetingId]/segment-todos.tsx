@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
+import { formatDateOnly } from "@/lib/dates";
 import { TodoCheckbox } from "../../todos/todo-row";
 import { deleteTodo } from "../../todos/actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
@@ -171,9 +172,7 @@ function Row({
         {ownerName}
       </div>
       <div className="col-span-1 text-xs text-zinc-600 dark:text-zinc-400">
-        {todo.due_date
-          ? new Date(todo.due_date).toLocaleDateString()
-          : "—"}
+        {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
       </div>
       <div className="col-span-1 justify-self-end">
         <form action={remove}>

@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-07-01 — _Pass 10_
+**Last updated:** 2026-07-13 — _Pass 11_
 
 ---
 
@@ -181,6 +181,75 @@ below for the record.
 
 ---
 
+## Pass 11 (2026-07-13) — requirements stack arrived (ninety.io config doc)
+
+The client delivered their annotated ninety.io walkthrough ("Ninety.io
+configuration requirements") — the first installment of the requirements
+stack Pass 10 was blocked on. Drift analysis vs the current app:
+
+**Confirmed already built (no action):** private to-dos; four rock
+statuses + status history; milestones w/ due dates; to-dos assignable to
+any member; issues short/long-term split; headlines incl. cascading kind;
+L10 segment list matches ninety's default agenda; segment timers +
+attendance/presence; recap w/ ratings + past-meeting history; multi-team
+membership; scorecard weekly grid w/ owners/goals/averages.
+
+**Drift (exists, differs) — being fixed this pass via subagent batch:**
+- Scorecard: 8→13-week grid; optional metric grouping (ninety-style
+  sections). [Deferred from this batch: monthly/quarterly/annual interval
+  views, warehouse-fed metrics — see "new" below.]
+- Rocks: company/department/individual type flag + ordering (extends 5a);
+  milestone progress indicator; optional descriptions (7).
+- Issues: single owner + 4-level priority gate (8) + description; voting
+  kept as meeting-time ranking. [Deferred: merge/send-to-team/convert
+  actions.]
+- Meetings: end-of-meeting vote rates the meeting, not attendees (9,
+  confirmed by ninety's per-person meeting-rating list); overrun timer
+  goes red (verify/add).
+- Home: milestones due ≤7 days surface in the To-Dos group (ninety "My
+  90" behavior).
+- To-dos: optional description (7).
+
+**Requirement changes to tabled features:**
+- Feature 1 (VTO tab) SIMPLIFIED: client wants named hyperlinks out to
+  Google Drive docs only — no in-app VTO documents. "Directory" visibility
+  question raised (Owner/Implementer-only?).
+- Feature 4 (cascading messages) refined: client dislikes ninety's
+  design; wants cascade surfaced per-user (mark-off in My 90-equivalent),
+  per-team cascade-eligible checkbox, private teams excluded.
+- Feature 3 overlap: ninety tracks per-*section* durations in past
+  meetings; client's speaking-timer ask (per-person) still stands apart.
+
+**New asks (NOT in this batch — next run):**
+- Google Tasks two-way sync for private to-dos (client's only flagged
+  Phase-1 integration; needs per-user Google OAuth + token storage —
+  security-review item).
+- Insights dashboard (meeting-rating trend, issue solve rate, to-dos
+  created/over-time, rock %, milestone trend, revised-due-date counts,
+  avg time in IDS). NOTE: the audit-log trigger already captures the
+  change-history this needs (due-date revisions etc.).
+- Custom meeting agendas: multiple templates (L10, L10 Condensed,
+  Quarterly, Annual, 1-on-1, Focus Day, Vision Building), per-team agenda
+  editor (rename/reorder/durations/custom + tool sections, push-to-all-
+  teams), scheduled/recurring meetings, archive-on-close semantics.
+  Biggest single build item.
+- Linked items + attachments + comments on rocks/to-dos/issues/headlines.
+  Attachments ⇒ Cloud Storage bucket (absent from Terraform/backups/
+  security tiers — infra follow-up).
+- Scorecard fed FROM the warehouse (Looker Studio / BigQuery metrics
+  into the app) — reverses our one-way EOS→BQ design; scoping
+  conversation needed; makes client BQ conventions more urgent.
+- Directory/admin: CSV user import; per-team last-met visibility;
+  private-team flag; richer role model (Owner/Implementer see all teams).
+- Notifications (email/web/mobile + daily digests) — client says NOT
+  phase 1. Meet-transcription→to-dos — client says not phase 1 (aligns
+  with Vertex-only AI deferral).
+
+**Strategic notes:** heavy Google integration asks (Tasks/Drive/Meet)
+confirm HPB is a Google Workspace shop → the SSO/identity-provider risk
+in CLIENT_GCP_SETUP.md §3 is effectively retired. BigQuery becomes
+two-way (export for consolidation + import for scorecard/insights).
+
 ## Cross-cutting notes
 
 ### Tabs surface identically in-meeting and standalone
@@ -307,6 +376,18 @@ It works in two primary ways:
 ---
 
 ## ▶ RESUME HERE — next session
+
+**Pass 11 (2026-07-13): the requirements stack (first installment) ARRIVED**
+— the client's annotated ninety.io config doc. See the Pass 11 section
+above for the full drift map. Drift-fix subagent batch ran this session
+(scorecard 13wk+groups, rock types+progress+desc, issue owner+priority+
+desc, meeting-rating change (#9), home 7-day milestones, todo desc).
+**Next run = the "new asks" list in Pass 11** (Google Tasks sync is the
+client's flagged phase-1 integration; custom agendas is the biggest
+build; attachments need a Cloud Storage bucket added to the Terraform
+footprint). Features 1 and 4 have client-driven scope changes noted in
+Pass 11. Client BQ conventions still outstanding but now more urgent
+(two-way BigQuery).
 
 Pass 10 (2026-07-01) resolved the session-start checklist: stack surfaced,
 audit-log capture point (Option 2), nightly cadence, and collection list

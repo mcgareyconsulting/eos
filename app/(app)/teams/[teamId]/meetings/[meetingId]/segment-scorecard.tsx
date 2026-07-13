@@ -22,6 +22,10 @@ type MetricDoc = {
   direction: "gte" | "lte" | "eq";
   owner_id: string | null;
   sort_order: number;
+  // Optional section label — see scorecard/page.tsx. Missing on metrics
+  // created before grouping existed, and on the SSR-serialized
+  // `initialMetrics` until the realtime listener below replaces it.
+  group?: string | null;
 };
 
 type EntryDoc = {
@@ -98,6 +102,62 @@ export function SegmentScorecard({
     (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
   );
 
+  const totalCols = 3 + weeks.length;
+
+  // Same section bucketing as the standalone scorecard page — ungrouped
+  // metrics render first with no header.
+  const groupedMetrics = new Map<string, typeof sorted>();
+  for (const m of sorted) {
+    const key = m.group?.trim() || "";
+    const bucket = groupedMetrics.get(key);
+    if (bucket) bucket.push(m);
+    else groupedMetrics.set(key, [m]);
+  }
+  const ungrouped = groupedMetrics.get("") ?? [];
+  const groupNames = [...groupedMetrics.keys()]
+    .filter((g) => g !== "")
+    .sort((a, b) => a.localeCompare(b));
+
+  const renderMetricRow = (m: (typeof sorted)[number]) => (
+    <tr
+      key={m.id}
+      className="border-b border-zinc-200 dark:border-zinc-800 last:border-0"
+    >
+      <td className="px-4 py-2 font-medium">{m.name}</td>
+      <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+        {ownerName(m.owner_id)}
+      </td>
+      <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
+        {formatGoal(m.goal, m.direction, m.unit)}
+      </td>
+      {weeks.map((w) => {
+        const v = byKey.get(`${m.id}__${w}`) ?? null;
+        return (
+          <td key={w} className="px-1 py-1">
+            <ValueCell
+              teamId={teamId}
+              metricId={m.id}
+              weekStartDate={w}
+              initial={v}
+              onTrack={onTrack(v, m.goal, m.direction)}
+            />
+          </td>
+        );
+      })}
+    </tr>
+  );
+
+  const renderGroupHeader = (g: string) => (
+    <tr key={`group-${g}`} className="bg-zinc-50 dark:bg-zinc-950/40">
+      <td
+        colSpan={totalCols}
+        className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+      >
+        {g}
+      </td>
+    </tr>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -132,41 +192,18 @@ export function SegmentScorecard({
             {sorted.length === 0 && (
               <tr>
                 <td
-                  colSpan={3 + weeks.length}
+                  colSpan={totalCols}
                   className="px-4 py-8 text-center text-zinc-600 dark:text-zinc-400"
                 >
                   No metrics yet.
                 </td>
               </tr>
             )}
-            {sorted.map((m) => (
-              <tr
-                key={m.id}
-                className="border-b border-zinc-200 dark:border-zinc-800 last:border-0"
-              >
-                <td className="px-4 py-2 font-medium">{m.name}</td>
-                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
-                  {ownerName(m.owner_id)}
-                </td>
-                <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                  {formatGoal(m.goal, m.direction, m.unit)}
-                </td>
-                {weeks.map((w) => {
-                  const v = byKey.get(`${m.id}__${w}`) ?? null;
-                  return (
-                    <td key={w} className="px-1 py-1">
-                      <ValueCell
-                        teamId={teamId}
-                        metricId={m.id}
-                        weekStartDate={w}
-                        initial={v}
-                        onTrack={onTrack(v, m.goal, m.direction)}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {ungrouped.map(renderMetricRow)}
+            {groupNames.flatMap((g) => [
+              renderGroupHeader(g),
+              ...groupedMetrics.get(g)!.map(renderMetricRow),
+            ])}
           </tbody>
         </table>
       </div>

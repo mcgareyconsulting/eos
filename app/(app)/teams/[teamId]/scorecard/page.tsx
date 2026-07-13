@@ -4,6 +4,7 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { mondayOf, toDateString, lastNMondays, formatWeekLabel } from "@/lib/dates";
 import { formatGoal, formatValue } from "@/lib/scorecard";
 import { ValueCell } from "./value-cell";
+import { GroupCell } from "./group-cell";
 import { addMetric, deleteMetric } from "./actions";
 
 type MetricDoc = {
@@ -14,6 +15,10 @@ type MetricDoc = {
   direction: "gte" | "lte" | "eq";
   owner_id: string | null;
   sort_order: number;
+  // Optional ninety.io-style section label ("Deposit and Loan Volume", etc).
+  // Absent on metrics created before grouping existed — treat missing/empty
+  // as ungrouped, not as an error.
+  group?: string | null;
 };
 
 type EntryDoc = {
@@ -23,7 +28,8 @@ type EntryDoc = {
   note: string | null;
 };
 
-const WEEKS = 8;
+// Client's stated standard (mirrors ninety.io's 13-week trend view).
+const WEEKS = 13;
 
 function onTrack(
   value: number | null,
@@ -85,6 +91,102 @@ export default async function ScorecardPage({
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
+  const totalCols = 4 + weeks.length + 1;
+
+  // Bucket metrics by section (ninety.io calls these "sections", e.g.
+  // "Deposit and Loan Volume"). Metrics without a group — including every
+  // metric created before this field existed — land in the "" bucket and
+  // render first, headerless, so ungrouped scorecards look unchanged.
+  const groupedMetrics = new Map<string, typeof metrics>();
+  for (const m of metrics) {
+    const key = m.group?.trim() || "";
+    const bucket = groupedMetrics.get(key);
+    if (bucket) bucket.push(m);
+    else groupedMetrics.set(key, [m]);
+  }
+  const ungrouped = groupedMetrics.get("") ?? [];
+  const groupNames = [...groupedMetrics.keys()]
+    .filter((g) => g !== "")
+    .sort((a, b) => a.localeCompare(b));
+
+  const renderMetricRow = (m: (typeof metrics)[number]) => {
+    const remove = deleteMetric.bind(null, tid, m.id);
+    const values = weeks.map(
+      (w) => entryByMetricWeek.get(`${m.id}__${w}`) ?? null,
+    );
+    const avg = average(values);
+    const avgOnTrack = onTrack(avg, m.goal, m.direction);
+    const avgColor =
+      avgOnTrack == null
+        ? "text-zinc-600 dark:text-zinc-400"
+        : avgOnTrack
+          ? "text-emerald-700 dark:text-emerald-300"
+          : "text-red-700 dark:text-red-300";
+    return (
+      <tr
+        key={m.id}
+        className="group border-b border-zinc-200 dark:border-zinc-800 last:border-0"
+      >
+        <td className="px-4 py-2 font-medium">
+          <div>{m.name}</div>
+          <GroupCell teamId={tid} metricId={m.id} initial={m.group ?? null} />
+        </td>
+        <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+          {ownerName(m.owner_id)}
+        </td>
+        <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
+          {formatGoal(m.goal, m.direction, m.unit)}
+        </td>
+        <td
+          className={`px-2 py-2 text-right font-medium tabular-nums ${avgColor}`}
+          title={
+            avg == null
+              ? "No entries yet"
+              : `Average of ${values.filter((v) => v != null).length} recorded weeks`
+          }
+        >
+          {formatValue(avg, m.unit)}
+        </td>
+        {weeks.map((w, i) => {
+          const v = values[i];
+          return (
+            <td key={w} className="px-1 py-1">
+              <ValueCell
+                teamId={tid}
+                metricId={m.id}
+                weekStartDate={w}
+                initial={v}
+                onTrack={onTrack(v, m.goal, m.direction)}
+              />
+            </td>
+          );
+        })}
+        <td className="px-2 py-2 text-right">
+          <form action={remove}>
+            <button
+              type="submit"
+              className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
+              aria-label="Delete metric"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </form>
+        </td>
+      </tr>
+    );
+  };
+
+  const renderGroupHeader = (g: string) => (
+    <tr key={`group-${g}`} className="bg-zinc-50 dark:bg-zinc-950/40">
+      <td
+        colSpan={totalCols}
+        className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
+      >
+        {g}
+      </td>
+    </tr>
+  );
+
   return (
     <div className="space-y-6">
       <header>
@@ -94,7 +196,12 @@ export default async function ScorecardPage({
         </p>
       </header>
 
-      <AddMetricForm teamId={tid} members={members} defaultOwnerId={uid} />
+      <AddMetricForm
+        teamId={tid}
+        members={members}
+        defaultOwnerId={uid}
+        groups={groupNames}
+      />
 
       <div className="overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <table className="w-full text-sm">
@@ -118,7 +225,7 @@ export default async function ScorecardPage({
           <tbody>
             {metrics.length === 0 && (
               <tr>
-                <td colSpan={4 + weeks.length + 1} className="p-0">
+                <td colSpan={totalCols} className="p-0">
                   <EmptyState
                     icon={BarChart3}
                     title="No metrics yet"
@@ -127,69 +234,11 @@ export default async function ScorecardPage({
                 </td>
               </tr>
             )}
-            {metrics.map((m) => {
-              const remove = deleteMetric.bind(null, tid, m.id);
-              const values = weeks.map(
-                (w) => entryByMetricWeek.get(`${m.id}__${w}`) ?? null,
-              );
-              const avg = average(values);
-              const avgOnTrack = onTrack(avg, m.goal, m.direction);
-              const avgColor =
-                avgOnTrack == null
-                  ? "text-zinc-600 dark:text-zinc-400"
-                  : avgOnTrack
-                    ? "text-emerald-700 dark:text-emerald-300"
-                    : "text-red-700 dark:text-red-300";
-              return (
-                <tr
-                  key={m.id}
-                  className="group border-b border-zinc-200 dark:border-zinc-800 last:border-0"
-                >
-                  <td className="px-4 py-2 font-medium">{m.name}</td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
-                    {ownerName(m.owner_id)}
-                  </td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                    {formatGoal(m.goal, m.direction, m.unit)}
-                  </td>
-                  <td
-                    className={`px-2 py-2 text-right font-medium tabular-nums ${avgColor}`}
-                    title={
-                      avg == null
-                        ? "No entries yet"
-                        : `Average of ${values.filter((v) => v != null).length} recorded weeks`
-                    }
-                  >
-                    {formatValue(avg, m.unit)}
-                  </td>
-                  {weeks.map((w, i) => {
-                    const v = values[i];
-                    return (
-                      <td key={w} className="px-1 py-1">
-                        <ValueCell
-                          teamId={tid}
-                          metricId={m.id}
-                          weekStartDate={w}
-                          initial={v}
-                          onTrack={onTrack(v, m.goal, m.direction)}
-                        />
-                      </td>
-                    );
-                  })}
-                  <td className="px-2 py-2 text-right">
-                    <form action={remove}>
-                      <button
-                        type="submit"
-                        className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
-                        aria-label="Delete metric"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              );
-            })}
+            {ungrouped.map(renderMetricRow)}
+            {groupNames.flatMap((g) => [
+              renderGroupHeader(g),
+              ...groupedMetrics.get(g)!.map(renderMetricRow),
+            ])}
           </tbody>
         </table>
       </div>
@@ -206,10 +255,12 @@ function AddMetricForm({
   teamId,
   members,
   defaultOwnerId,
+  groups,
 }: {
   teamId: string;
   members: { user_id: string; full_name: string }[];
   defaultOwnerId: string;
+  groups: string[];
 }) {
   async function action(formData: FormData) {
     "use server";
@@ -218,7 +269,7 @@ function AddMetricForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-7 gap-3"
     >
       <input
         name="name"
@@ -265,9 +316,20 @@ function AddMetricForm({
           </option>
         ))}
       </select>
+      <input
+        name="group"
+        list="scorecard-groups"
+        placeholder="Section (optional)"
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+      />
+      <datalist id="scorecard-groups">
+        {groups.map((g) => (
+          <option key={g} value={g} />
+        ))}
+      </datalist>
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        className="md:col-span-7 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         Add metric
       </button>

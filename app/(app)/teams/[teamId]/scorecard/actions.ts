@@ -22,6 +22,8 @@ export async function addMetric(teamId: string, formData: FormData) {
   const directionRaw = String(formData.get("direction") ?? "gte");
   const goalRaw = String(formData.get("goal") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const groupRaw = String(formData.get("group") ?? "").trim();
+  const group = groupRaw === "" ? null : groupRaw;
 
   if (!name) throw new Error("Name required");
 
@@ -42,9 +44,30 @@ export async function addMetric(teamId: string, formData: FormData) {
     goal,
     direction,
     owner_id,
+    group,
     sort_order: 0,
     created_at: FieldValue.serverTimestamp(),
   });
+
+  revalidatePath(pathFor(teamId));
+}
+
+// Renames/clears a metric's section. Kept as its own action (rather than a
+// general metric-update) to match the narrow, single-purpose action style
+// already used by setEntry.
+export async function setMetricGroup(
+  teamId: string,
+  metricId: string,
+  groupRaw: string,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const trimmed = groupRaw.trim();
+  const group = trimmed === "" ? null : trimmed;
+
+  await db
+    .collection("scorecard_metrics")
+    .doc(metricId)
+    .set({ group }, { merge: true });
 
   revalidatePath(pathFor(teamId));
 }

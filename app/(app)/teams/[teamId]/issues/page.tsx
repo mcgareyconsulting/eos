@@ -1,7 +1,8 @@
-import { Trash2, AlertCircle } from "lucide-react";
+import { Trash2, AlertCircle, User } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { StatusActions } from "./status-actions";
+import { EditIssuePopover } from "./edit-issue-popover";
 import { addIssue, deleteIssue } from "./actions";
 
 type IssueDoc = {
@@ -9,6 +10,7 @@ type IssueDoc = {
   title: string;
   description: string | null;
   owner_id: string | null;
+  priority: "urgent" | "high" | "medium" | "low" | null;
   votes: number;
   type: "short" | "long";
   status: "open" | "solving" | "solved" | "dropped";
@@ -31,13 +33,36 @@ const STATUS_BADGE: Record<IssueDoc["status"], string> = {
     "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
+const PRIORITY_ORDER = ["urgent", "high", "medium", "low"] as const;
+
+const PRIORITY_LABEL: Record<(typeof PRIORITY_ORDER)[number], string> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const PRIORITY_BADGE: Record<(typeof PRIORITY_ORDER)[number], string> = {
+  urgent:
+    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300",
+  high: "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950 dark:text-orange-300",
+  medium:
+    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300",
+  low: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+};
+
+function priorityRank(p: IssueDoc["priority"]) {
+  const idx = p ? PRIORITY_ORDER.indexOf(p) : -1;
+  return idx === -1 ? PRIORITY_ORDER.length : idx;
+}
+
 export default async function IssuesPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { db, team } = await requireTeamAccess(tid);
+  const { uid, db, team } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
   const issuesSnap = await db
@@ -45,13 +70,16 @@ export default async function IssuesPage({
     .where("team_id", "==", tid)
     .get();
 
-  // Voting happens in the L10 IDS segment; this page is read-only and just
-  // ranks issues by the team's vote total (most important first), with
-  // active issues above resolved ones.
+  // Voting happens in the L10 IDS segment; this page is read-only for votes
+  // and instead ranks issues by priority first (urgent → low, missing
+  // priority last), then the team's vote total, with active issues above
+  // resolved ones.
   const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
   const issues = issuesSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as IssueDoc) }))
     .sort((a, b) => {
+      const byPriority = priorityRank(a.priority) - priorityRank(b.priority);
+      if (byPriority !== 0) return byPriority;
       const byStatus =
         STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
       if (byStatus !== 0) return byStatus;
@@ -66,11 +94,12 @@ export default async function IssuesPage({
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · ranked by team votes · vote &amp; IDS during L10
+          {team.name} · ranked by priority, then team votes · vote &amp; IDS
+          during L10
         </p>
       </header>
 
-      <AddIssueForm teamId={tid} />
+      <AddIssueForm teamId={tid} members={members} defaultOwnerId={uid} />
 
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {issues.length === 0 && (
@@ -100,6 +129,13 @@ export default async function IssuesPage({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
+                  {i.priority && (
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
+                    >
+                      {PRIORITY_LABEL[i.priority]}
+                    </span>
+                  )}
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
                   >
@@ -115,11 +151,20 @@ export default async function IssuesPage({
                     {i.description}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-zinc-600">
+                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                  <User className="h-3 w-3" />
                   {ownerName(i.owner_id)}
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
+                <EditIssuePopover
+                  teamId={tid}
+                  issueId={i.id}
+                  members={members}
+                  ownerId={i.owner_id}
+                  priority={i.priority}
+                  description={i.description}
+                />
                 <StatusActions teamId={tid} issueId={i.id} status={i.status} />
                 <form action={remove}>
                   <button
@@ -139,7 +184,15 @@ export default async function IssuesPage({
   );
 }
 
-function AddIssueForm({ teamId }: { teamId: string }) {
+function AddIssueForm({
+  teamId,
+  members,
+  defaultOwnerId,
+}: {
+  teamId: string;
+  members: { user_id: string; full_name: string }[];
+  defaultOwnerId: string;
+}) {
   async function action(formData: FormData) {
     "use server";
     await addIssue(teamId, formData);
@@ -153,8 +206,30 @@ function AddIssueForm({ teamId }: { teamId: string }) {
         name="title"
         placeholder="Issue (one line)"
         required
-        className="md:col-span-5 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
+      <select
+        name="owner_id"
+        defaultValue={defaultOwnerId}
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+      >
+        {members.map((m) => (
+          <option key={m.user_id} value={m.user_id}>
+            {m.full_name}
+          </option>
+        ))}
+      </select>
+      <select
+        name="priority"
+        defaultValue=""
+        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+      >
+        <option value="">No priority</option>
+        <option value="urgent">Urgent</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
       <select
         name="type"
         defaultValue="short"

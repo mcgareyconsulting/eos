@@ -10,10 +10,27 @@ type Status = (typeof STATUSES)[number];
 const TYPES = ["short", "long"] as const;
 type Type = (typeof TYPES)[number];
 
+const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+type Priority = (typeof PRIORITIES)[number];
+
 const MAX_VOTES_PER_TEAM = 3;
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/issues`;
+}
+
+// A single, optional owner id — never a list. An empty/missing selection
+// clears the owner rather than defaulting to a made-up value.
+function readOwnerId(formData: FormData, fallback: string | null): string | null {
+  const raw = formData.get("owner_id");
+  if (raw === null) return fallback;
+  const trimmed = String(raw).trim();
+  return trimmed || null;
+}
+
+function readPriority(formData: FormData): Priority | null {
+  const raw = String(formData.get("priority") ?? "").trim();
+  return PRIORITIES.includes(raw as Priority) ? (raw as Priority) : null;
 }
 
 export async function addIssue(teamId: string, formData: FormData) {
@@ -25,6 +42,8 @@ export async function addIssue(teamId: string, formData: FormData) {
   const type: Type = TYPES.includes(typeRaw as Type)
     ? (typeRaw as Type)
     : "short";
+  const owner_id = readOwnerId(formData, uid);
+  const priority = readPriority(formData);
 
   if (!title) throw new Error("Title required");
 
@@ -32,13 +51,37 @@ export async function addIssue(teamId: string, formData: FormData) {
     team_id: teamId,
     title,
     description,
-    owner_id: uid,
+    owner_id,
+    priority,
     votes: 0,
     type,
     status: "open",
     resolved_at: null,
     resolution_todo_id: null,
     created_at: FieldValue.serverTimestamp(),
+  });
+
+  revalidatePath(pathFor(teamId));
+}
+
+// Edits the non-voting, non-status metadata on an issue: owner (exactly one
+// or none), priority, and description. Title/type/status/votes are edited
+// via their own dedicated affordances.
+export async function updateIssueMeta(
+  teamId: string,
+  issueId: string,
+  formData: FormData,
+) {
+  const { db } = await requireTeamAccess(teamId);
+
+  const owner_id = readOwnerId(formData, null);
+  const priority = readPriority(formData);
+  const description = String(formData.get("description") ?? "").trim() || null;
+
+  await db.collection("issues").doc(issueId).update({
+    owner_id,
+    priority,
+    description,
   });
 
   revalidatePath(pathFor(teamId));

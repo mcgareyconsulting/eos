@@ -22,6 +22,7 @@ type IssueDoc = {
   title: string;
   description: string | null;
   owner_id: string | null;
+  priority: "urgent" | "high" | "medium" | "low" | null;
   votes: number;
   type: "short" | "long";
   status: "open" | "solving" | "solved" | "dropped";
@@ -55,6 +56,27 @@ const STATUS_BADGE: Record<IssueDoc["status"], string> = {
 };
 
 const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
+
+// Display-only — ranking during the meeting stays vote-based (see `sorted`
+// below). This mirrors the priority badge shown on the standalone Issues tab.
+const PRIORITY_LABEL: Record<
+  NonNullable<IssueDoc["priority"]>,
+  string
+> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const PRIORITY_BADGE: Record<NonNullable<IssueDoc["priority"]>, string> = {
+  urgent:
+    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300",
+  high: "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950 dark:text-orange-300",
+  medium:
+    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300",
+  low: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+};
 
 export function SegmentIDS({
   teamId,
@@ -185,6 +207,13 @@ export function SegmentIDS({
                     <span className="inline-flex items-center gap-1 rounded-full bg-hpb-blue px-2 py-0.5 text-xs font-medium text-white">
                       <Megaphone className="h-3 w-3" />
                       Discussing
+                    </span>
+                  )}
+                  {i.priority && (
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
+                    >
+                      {PRIORITY_LABEL[i.priority]}
                     </span>
                   )}
                   <span

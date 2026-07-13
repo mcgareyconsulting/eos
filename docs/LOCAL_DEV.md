@@ -52,8 +52,21 @@ Then open <http://localhost:3000>:
 > **Why that email?** The emulator keys users by email, so seeding
 > `leader@highplainsbank.com` and signing in as `leader@highplainsbank.com` line
 > up on the same uid. If you'd rather sign in first as some other address, that
-> works too — just re-run `pnpm seed <that-email>` afterward. The seed is
+> works too — just re-run `pnpm seed <that-email>` afterward — but use an
+> `@highplainsbank.com` address (any local-part works on the emulator, e.g.
+> `you@highplainsbank.com`). Other domains fail the Workspace-domain gate in
+> `firestore.rules` (defense-in-depth, mirrors the real project's SSO
+> restriction) and cause confusing partial failures — you'll sign in fine but
+> broad reads (users/teams/team_members) will be denied. The seed is
 > idempotent and always attaches your account to the "Demo Team" as leader.
+
+### Multiplayer / second window
+
+The seed also creates real Auth accounts (fixed uids) for the four synthetic
+teammates. To see live sync (votes, the "Discussing now" pin) during a
+meeting, open a second browser or incognito window, go to `/login`, and sign
+in as one of them — e.g. `sarah.chen@highplainsbank.com` — by picking her
+from the emulator's account list. Requires the seed to have run first.
 
 ## Handy
 
@@ -91,6 +104,19 @@ emulators (the functions themselves run on the host's Node).
 - **Meetings** — conclude a meeting and rate **the meeting** 1–10 (not peers);
   the recap and history show the average plus each person's rating.
 - **Home** — milestones due within 7 days surface alongside your to-dos.
+
+## Troubleshooting
+
+- **Port already in use (8080 / 9099 / 4000).** Something else on your laptop
+  is bound to a Firestore, Auth, or Emulator UI port. Either stop the other
+  process (`lsof -i :8080`, etc.) or change the port in `firebase.json` under
+  `emulators`.
+- **`pnpm` not found.** Run `corepack enable` (ships with Node 22), or
+  `npm install -g pnpm`.
+- **Ran `pnpm seed` before `pnpm emulators`?** It now fails fast with `Could
+  not reach the Auth emulator at <host> — start it first with: pnpm
+  emulators` instead of a raw connection-refused stack. Start the emulators
+  (terminal 1) and re-run the seed.
 
 ## Pointing at a real Firebase project instead
 

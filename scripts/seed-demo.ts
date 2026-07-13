@@ -7,11 +7,13 @@
 //   • Issues — ranked by real seeded votes, mixed statuses
 //   • To-Dos — open/done/private/overdue, assigned across the team
 //   • Headlines — customer / employee / cascading
-//   • One completed L10 meeting with peer effectiveness scores
+//   • One completed L10 meeting with one meeting-rating doc per attendee
 //
 // Usage:
-//   pnpm seed <your-uid> ["Team Name"]
-// Get your UID from Firebase Console → Authentication → Users.
+//   pnpm seed <your-login-email> ["Team Name"]
+// Pass the email you sign in to the app with (a raw UID also works, but
+// email is recommended — it guarantees the data lands on a team your
+// account can actually see).
 //
 // Idempotent: clears the team's existing EOS data first, then reseeds, so you
 // can re-run it between demos for a clean slate. Does NOT touch other teams.
@@ -49,10 +51,10 @@ const SYNTHETIC_MEMBERS: {
   last_name: string;
   email: string;
 }[] = [
-  { key: "sarah", id: "demo-sarah-chen", first_name: "Sarah", last_name: "Chen", email: "sarah.chen@example.com" },
-  { key: "marcus", id: "demo-marcus-reed", first_name: "Marcus", last_name: "Reed", email: "marcus.reed@example.com" },
-  { key: "elena", id: "demo-elena-vasquez", first_name: "Elena", last_name: "Vasquez", email: "elena.vasquez@example.com" },
-  { key: "tom", id: "demo-tom-bradley", first_name: "Tom", last_name: "Bradley", email: "tom.bradley@example.com" },
+  { key: "sarah", id: "demo-sarah-chen", first_name: "Sarah", last_name: "Chen", email: "sarah.chen@highplainsbank.com" },
+  { key: "marcus", id: "demo-marcus-reed", first_name: "Marcus", last_name: "Reed", email: "marcus.reed@highplainsbank.com" },
+  { key: "elena", id: "demo-elena-vasquez", first_name: "Elena", last_name: "Vasquez", email: "elena.vasquez@highplainsbank.com" },
+  { key: "tom", id: "demo-tom-bradley", first_name: "Tom", last_name: "Bradley", email: "tom.bradley@highplainsbank.com" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -363,6 +365,70 @@ async function clearTeamData(db: Firestore, teamId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Detects "connection refused" against the Auth emulator (i.e. `pnpm seed`
+// was run before `pnpm emulators`) so we can print a friendly one-liner
+// instead of a raw ECONNREFUSED stack trace. Any other error propagates.
+function isConnRefused(err: unknown): boolean {
+  const e = err as {
+    code?: string;
+    errno?: string | number;
+    cause?: { code?: string };
+    message?: string;
+  } | null;
+  if (!e) return false;
+  return (
+    e.code === "ECONNREFUSED" ||
+    e.errno === "ECONNREFUSED" ||
+    e.cause?.code === "ECONNREFUSED" ||
+    /ECONNREFUSED/.test(String(e.message ?? ""))
+  );
+}
+
+function dieIfEmulatorDown(err: unknown): void {
+  if (isConnRefused(err)) {
+    const host = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    console.error(
+      `Could not reach the Auth emulator at ${host} — start it first with: pnpm emulators`,
+    );
+    process.exit(1);
+  }
+}
+
+// Creates real Firebase Auth users (with the EXACT fixed uids the Firestore
+// docs reference) for the synthetic teammates — emulator only, never against
+// a real project. This is what makes "sign in as a teammate" work: the
+// emulator's sign-in screen lists existing accounts, and the uid it mints
+// lines up with the seeded users/team_members docs.
+async function ensureEmulatorAuthUsers(
+  auth: import("firebase-admin/auth").Auth,
+) {
+  console.log(
+    `Creating emulator Auth users for ${SYNTHETIC_MEMBERS.length} synthetic teammates…`,
+  );
+  for (const m of SYNTHETIC_MEMBERS) {
+    try {
+      await auth.createUser({
+        uid: m.id,
+        email: m.email,
+        emailVerified: true,
+        displayName: `${m.first_name} ${m.last_name}`,
+      });
+      console.log(`  created auth user for ${m.email}`);
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      if (
+        code === "auth/uid-already-exists" ||
+        code === "auth/email-already-exists"
+      ) {
+        // Already created on a prior run — fine, keep going.
+        continue;
+      }
+      dieIfEmulatorDown(err);
+      throw err;
+    }
+  }
+}
+
 async function main() {
   const account = process.argv[2];
   const teamName = process.argv[3] || DEFAULT_TEAM_NAME;
@@ -393,7 +459,8 @@ async function main() {
       ? await auth.getUserByEmail(account)
       : await auth.getUser(account);
     uid = authUser.uid;
-  } catch {
+  } catch (err) {
+    dieIfEmulatorDown(err);
     if (account.includes("@")) {
       if (onAuthEmulator) {
         // Emulator keys users by email, so signing into the app with this same
@@ -415,6 +482,14 @@ async function main() {
     // A raw uid we couldn't look up — proceed with it as given.
   }
   console.log(`Account: ${authUser?.email ?? uid} (uid ${uid})`);
+
+  // Emulator only, NEVER against a real project: also create real Firebase
+  // Auth users for the synthetic teammates (fixed uids, matching the
+  // Firestore docs below) so signing in as one of them in a second browser
+  // actually works.
+  if (onAuthEmulator) {
+    await ensureEmulatorAuthUsers(auth);
+  }
 
   const ownerByKey: Record<MemberKey, string> = {
     me: uid,
@@ -553,7 +628,7 @@ async function main() {
     }
   }
 
-  // --- Scorecard (metrics + 8 weeks of entries) --------------------------
+  // --- Scorecard (metrics + 13 weeks of entries) --------------------------
   console.log(`Seeding ${METRICS.length} scorecard metrics × 13 weeks…`);
   const weeks = lastNMondays(13).map(toDateString); // newest first
   for (const [i, mt] of METRICS.entries()) {

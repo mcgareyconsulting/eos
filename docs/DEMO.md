@@ -22,9 +22,17 @@ owned action → wrap with a recap.** Total core run: ~8 minutes.
    scorecard, ranked issues, to-dos, headlines, and one completed meeting.
 2. **Sign in** at <http://localhost:3000/login> with the demo leader account,
    land on **Home**.
-3. **Optional wow-factor:** open a second browser (incognito) signed in as a
-   teammate and put it side-by-side — votes and the "Discussing now" pin sync
-   live between the two during IDS.
+3. **Optional wow-factor:** open a second browser (incognito) and sign in as
+   one of the seeded teammates — e.g. **sarah.chen@highplainsbank.com**. The
+   emulator sign-in screen lists existing accounts, so pick her from the list
+   (no password needed). This only works after the seed has run (step 1) —
+   it's what creates her Auth account with the fixed uid the seed data points
+   at. Put the two windows side-by-side — votes and the "Discussing now" pin
+   sync live between them during IDS.
+   On a **real Firebase project**, this beat needs a second real Workspace
+   account that has joined via `/join` and been approved by the leader — the
+   synthetic teammates are Firestore-only there (display names, no real
+   sign-in), so you can't sign in as one.
 
 Keep the left sidebar visible — it's your map: Home, Scorecard, Rocks, To-Dos,
 Issues, Headlines, Meetings, Members.

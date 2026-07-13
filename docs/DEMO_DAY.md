@@ -26,6 +26,11 @@ Open <http://localhost:3000> → **Sign in with Google** → sign in as
 Home. Full walkthrough script: [DEMO.md](DEMO.md). Setup details and
 troubleshooting: [LOCAL_DEV.md](LOCAL_DEV.md).
 
+For the multiplayer beat, open a second/incognito window and sign in as one
+of the seeded teammates (e.g. `sarah.chen@highplainsbank.com`) — the seed
+creates real emulator Auth accounts for them, so votes and the "Discussing
+now" pin sync live between the two windows.
+
 Requires **Java 11+** on your laptop (`java -version`) for the emulators —
 verify this tonight, not in the parking lot.
 
@@ -89,6 +94,12 @@ pnpm seed <your-login-email>
 
 Reload — you're on a seeded demo backed by the real project. **This is a live
 demo you can show without a full deploy.**
+
+> **Multiplayer caveat:** on the real project the synthetic teammates are
+> Firestore-only (display names, no real sign-in) — you can't sign in as one
+> like you can on the local emulator. Showing the live-sync beat here needs a
+> second real `@highplainsbank.com` Workspace account that has joined via
+> `/join` and been approved by the leader.
 
 ### B4. (Follow-up) Deploy to Cloud Run
 

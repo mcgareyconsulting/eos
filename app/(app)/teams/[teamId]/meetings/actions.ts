@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import {
   SEGMENTS,
   nextSegment,
@@ -41,7 +41,9 @@ export async function advanceSegment(
   const { db } = await requireTeamAccess(teamId);
   const ref = db.collection("meetings").doc(meetingId);
   const snap = await ref.get();
-  if (!snap.exists) throw new Error("Meeting not found");
+  if (!snap.exists || snap.data()?.team_id !== teamId) {
+    throw new Error("Meeting not found");
+  }
 
   const current = (snap.data()?.current_segment as Segment) ?? "segue";
   const target =
@@ -64,6 +66,7 @@ export async function jumpToSegment(
     throw new Error("Invalid segment");
   }
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db.collection("meetings").doc(meetingId).update({
     current_segment: target,
     segment_started_at: FieldValue.serverTimestamp(),
@@ -80,6 +83,7 @@ export async function setDiscussingIssue(
   issueId: string | null,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db
     .collection("meetings")
     .doc(meetingId)
@@ -88,6 +92,7 @@ export async function setDiscussingIssue(
 
 export async function endMeeting(teamId: string, meetingId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db.collection("meetings").doc(meetingId).update({
     current_segment: "done",
     ended_at: FieldValue.serverTimestamp(),
@@ -104,6 +109,7 @@ export async function saveMeetingNotes(
   formData: FormData,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   const notes = String(formData.get("notes") ?? "");
   await db.collection("meetings").doc(meetingId).update({ notes });
   revalidatePath(detailPath(teamId, meetingId));
@@ -119,6 +125,7 @@ export async function rateMeeting(
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   const rating = Number(formData.get("rating"));
   if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
     throw new Error("Rating must be 1–10");
@@ -147,6 +154,7 @@ export async function setAttendeeAbsence(
   absent: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   const ref = db.collection("meetings").doc(meetingId);
   await ref.update({
     absent_user_ids: absent
@@ -158,6 +166,7 @@ export async function setAttendeeAbsence(
 
 export async function deleteMeeting(teamId: string, meetingId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
   const scores = await db
     .collection("meetings")
     .doc(meetingId)

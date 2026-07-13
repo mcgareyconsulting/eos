@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 
 const KINDS = ["customer", "employee", "cascading"] as const;
 type Kind = (typeof KINDS)[number];
@@ -38,6 +38,7 @@ export async function addHeadline(teamId: string, formData: FormData) {
 
 export async function deleteHeadline(teamId: string, headlineId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "headlines", headlineId, teamId);
   await db.collection("headlines").doc(headlineId).delete();
   revalidatePath(pathFor(teamId));
 }

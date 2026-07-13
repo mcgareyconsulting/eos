@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 
 const UNITS = ["number", "currency", "percent", "yesno", "time"] as const;
 type Unit = (typeof UNITS)[number];
@@ -61,6 +61,7 @@ export async function setMetricGroup(
   groupRaw: string,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const trimmed = groupRaw.trim();
   const group = trimmed === "" ? null : trimmed;
 
@@ -79,6 +80,7 @@ export async function setEntry(
   valueRaw: string,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const trimmed = valueRaw.trim();
   const value = trimmed === "" ? null : Number(trimmed);
   if (value !== null && Number.isNaN(value))
@@ -104,6 +106,7 @@ export async function setEntry(
 
 export async function deleteMetric(teamId: string, metricId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   // Delete the metric. Entries are orphaned but harmless; can clean up later.
   await db.collection("scorecard_metrics").doc(metricId).delete();
   revalidatePath(pathFor(teamId));

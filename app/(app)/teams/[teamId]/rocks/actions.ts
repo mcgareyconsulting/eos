@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { endOfQuarter, toDateString } from "@/lib/dates";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
@@ -51,6 +51,7 @@ export async function updateRockTitle(
   if (!trimmed) throw new Error("Title required");
 
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
   await db.collection("rocks").doc(rockId).update({ title: trimmed });
 
   revalidatePath(pathFor(teamId));
@@ -66,6 +67,7 @@ export async function updateRockDescription(
   const trimmed = description.trim() || null;
 
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
   await db
     .collection("rocks")
     .doc(rockId)
@@ -82,6 +84,7 @@ export async function setRockType(
   if (!isRockType(rockType)) throw new Error("Bad rock type");
 
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
   await db.collection("rocks").doc(rockId).update({ rock_type: rockType });
 
   revalidatePath(pathFor(teamId));
@@ -102,6 +105,7 @@ export async function setRockStatus(
   }
 
   const { uid, db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
 
   const batch = db.batch();
   batch.update(db.collection("rocks").doc(rockId), { status });
@@ -122,6 +126,7 @@ export async function setRockStatus(
 // Single batch so a partial failure can't orphan milestones.
 export async function deleteRock(teamId: string, rockId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
 
   const milestonesSnap = await db
     .collection("todos")
@@ -148,6 +153,7 @@ export async function addMilestone(
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
 
   const title = String(formData.get("title") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
@@ -188,6 +194,7 @@ export async function updateMilestoneDescription(
   const trimmed = description.trim() || null;
 
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", milestoneId, teamId);
   await db
     .collection("todos")
     .doc(milestoneId)

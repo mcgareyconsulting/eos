@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -73,6 +73,7 @@ export async function updateIssueMeta(
   formData: FormData,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "issues", issueId, teamId);
 
   const owner_id = readOwnerId(formData, null);
   const priority = readPriority(formData);
@@ -105,8 +106,15 @@ export async function castVote(
     const voteRef = db.collection("issue_votes").doc(voteId);
     const issueRef = db.collection("issues").doc(issueId);
 
-    // Reads first (Firestore transaction rule).
-    const voteSnap = await tx.get(voteRef);
+    // Reads first (Firestore transaction rule). Also reads the issue itself
+    // so we can verify it belongs to this team before voting on it.
+    const [voteSnap, issueSnap] = await Promise.all([
+      tx.get(voteRef),
+      tx.get(issueRef),
+    ]);
+    if (!issueSnap.exists || issueSnap.data()?.team_id !== teamId) {
+      throw new Error("Issue not found");
+    }
     const currentCount = voteSnap.exists
       ? Number(voteSnap.data()?.count ?? 0)
       : 0;
@@ -159,6 +167,7 @@ export async function setIssueStatus(
 ) {
   if (!STATUSES.includes(status as Status)) throw new Error("Bad status");
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "issues", issueId, teamId);
   const update: Record<string, unknown> = { status };
   if (status === "solved" || status === "dropped") {
     update.resolved_at = FieldValue.serverTimestamp();
@@ -169,6 +178,7 @@ export async function setIssueStatus(
 
 export async function deleteIssue(teamId: string, issueId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "issues", issueId, teamId);
   // Cascade: delete the issue + any votes for it
   const votes = await db
     .collection("issue_votes")

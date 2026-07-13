@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 
 const VISIBILITIES = ["team", "private"] as const;
 type Visibility = (typeof VISIBILITIES)[number];
@@ -50,6 +50,7 @@ export async function toggleTodo(
   currentlyComplete: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", todoId, teamId);
   await db
     .collection("todos")
     .doc(todoId)
@@ -67,6 +68,7 @@ export async function updateTodoTitle(
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Title required");
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", todoId, teamId);
   await db.collection("todos").doc(todoId).update({ title: trimmed });
   revalidatePath(pathFor(teamId));
 }
@@ -78,6 +80,7 @@ export async function updateTodoDescription(
 ) {
   const trimmed = description.trim();
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", todoId, teamId);
   await db
     .collection("todos")
     .doc(todoId)
@@ -87,6 +90,7 @@ export async function updateTodoDescription(
 
 export async function deleteTodo(teamId: string, todoId: string) {
   const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", todoId, teamId);
   await db.collection("todos").doc(todoId).delete();
   revalidatePath(pathFor(teamId));
 }

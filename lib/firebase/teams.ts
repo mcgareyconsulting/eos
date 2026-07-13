@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
+import type { Firestore } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "./auth";
 
 // Mirror of lib/teams.ts `requireTeamAccess()` for Firebase. Verifies the
@@ -50,6 +51,26 @@ export const requireTeamLeader = cache(async (teamId: string) => {
     },
   };
 });
+
+// Fetches `${collection}/${id}` and verifies it belongs to `teamId`, 404ing
+// (matching requireTeamAccess/requireTeamLeader, and the read-path guard
+// pattern already used on e.g. the meeting detail page) if the doc doesn't
+// exist or was created for a different team. Callers are expected to have
+// already verified the *caller's* membership in `teamId` via
+// requireTeamAccess/requireTeamLeader — this closes the other half of that
+// check: that the entity being mutated actually lives in that team, not a
+// team_id smuggled in alongside a foreign entity id. Returns the snapshot so
+// callers that need the data can reuse this read instead of fetching twice.
+export async function requireTeamDoc(
+  db: Firestore,
+  collection: string,
+  id: string,
+  teamId: string,
+) {
+  const snap = await db.collection(collection).doc(id).get();
+  if (!snap.exists || snap.data()?.team_id !== teamId) notFound();
+  return snap;
+}
 
 export type TeamMember = {
   user_id: string;

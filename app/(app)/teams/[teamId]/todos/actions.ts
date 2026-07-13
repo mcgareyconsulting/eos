@@ -17,6 +17,7 @@ export async function addTodo(teamId: string, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const due_date = String(formData.get("due_date") ?? "").trim() || null;
+  const description = String(formData.get("description") ?? "").trim() || null;
   const visibilityRaw = String(formData.get("visibility") ?? "team");
   const visibility: Visibility = VISIBILITIES.includes(
     visibilityRaw as Visibility,
@@ -29,6 +30,7 @@ export async function addTodo(teamId: string, formData: FormData) {
   await db.collection("todos").add({
     team_id: teamId,
     title,
+    description,
     owner_id,
     due_date,
     completed_at: null,
@@ -66,6 +68,20 @@ export async function updateTodoTitle(
   if (!trimmed) throw new Error("Title required");
   const { db } = await requireTeamAccess(teamId);
   await db.collection("todos").doc(todoId).update({ title: trimmed });
+  revalidatePath(pathFor(teamId));
+}
+
+export async function updateTodoDescription(
+  teamId: string,
+  todoId: string,
+  description: string,
+) {
+  const trimmed = description.trim();
+  const { db } = await requireTeamAccess(teamId);
+  await db
+    .collection("todos")
+    .doc(todoId)
+    .update({ description: trimmed || null });
   revalidatePath(pathFor(teamId));
 }
 

@@ -103,7 +103,32 @@ export default async function HomePage() {
     (t) => t.source_rock_id && t.owner_id === user.id,
   );
 
-  const sortedTodos = mineFirst(pureTodos);
+  // Further split milestones by due date: milestones due within 7 days (or
+  // overdue) appear in Active To-Dos; others stay in Rock Milestones.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sevenDaysFromNow = new Date(today);
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+  const dueSoonMilestones = myMilestones.filter((m) => {
+    if (!m.due_date) return false;
+    const dueDate = new Date(m.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    return dueDate <= sevenDaysFromNow;
+  });
+
+  const futureMilestones = myMilestones.filter((m) => {
+    // No due date -> stays in Rock Milestones rather than dropping the
+    // milestone from the page entirely.
+    if (!m.due_date) return true;
+    const dueDate = new Date(m.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    return dueDate > sevenDaysFromNow;
+  });
+
+  // Combine pure todos with due-soon milestones for the Active To-Dos section
+  const allActiveTodos = [...pureTodos, ...dueSoonMilestones];
+  const sortedActiveTodos = mineFirst(allActiveTodos.sort(byDue));
   const sortedRocks = mineFirst(rocks);
 
   return (
@@ -118,36 +143,52 @@ export default async function HomePage() {
 
       <section>
         <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
-          Active To-Dos ({sortedTodos.length})
+          Active To-Dos ({sortedActiveTodos.length})
         </h2>
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-          {sortedTodos.length === 0 && <Empty>No open to-dos.</Empty>}
-          {sortedTodos.map((t) => (
-            <Link
-              key={t.id}
-              href={`/teams/${t.team_id}/todos`}
-              className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-            >
-              <Circle className="w-4 h-4 text-zinc-300" />
-              <div className="flex-1 min-w-0 truncate">{t.title}</div>
-              <OwnerLabel
-                isMine={t.owner_id === user.id}
-                name={t.owner_id ? nameByUserId.get(t.owner_id) ?? null : null}
-              />
-              <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
-              <DueLabel due={t.due_date} />
-            </Link>
-          ))}
+          {sortedActiveTodos.length === 0 && <Empty>No open to-dos.</Empty>}
+          {sortedActiveTodos.map((t) => {
+            const isMilestone = Boolean(t.source_rock_id);
+            return (
+              <Link
+                key={t.id}
+                href={`/teams/${t.team_id}/${isMilestone ? "rocks" : "todos"}`}
+                className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              >
+                {isMilestone ? (
+                  <Flag className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
+                ) : (
+                  <Circle className="w-4 h-4 text-zinc-300" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{t.title}</div>
+                  {isMilestone && (
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
+                      {rockTitleById.get(t.source_rock_id ?? "") ?? "—"}
+                    </div>
+                  )}
+                </div>
+                {!isMilestone && (
+                  <OwnerLabel
+                    isMine={t.owner_id === user.id}
+                    name={t.owner_id ? nameByUserId.get(t.owner_id) ?? null : null}
+                  />
+                )}
+                <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
+                <DueLabel due={t.due_date} />
+              </Link>
+            );
+          })}
         </div>
       </section>
 
-      {myMilestones.length > 0 && (
+      {futureMilestones.length > 0 && (
         <section>
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
-            Rock Milestones ({myMilestones.length})
+            Rock Milestones ({futureMilestones.length})
           </h2>
           <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-            {myMilestones.map((m) => (
+            {mineFirst(futureMilestones).map((m) => (
               <Link
                 key={m.id}
                 href={`/teams/${m.team_id}/rocks`}

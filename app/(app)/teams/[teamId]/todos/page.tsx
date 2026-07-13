@@ -3,11 +3,12 @@ import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { TodoCheckbox } from "./todo-row";
-import { addTodo, deleteTodo, updateTodoTitle } from "./actions";
+import { addTodo, deleteTodo, updateTodoTitle, updateTodoDescription } from "./actions";
 
 type TodoDoc = {
   team_id: string;
   title: string;
+  description: string | null;
   owner_id: string | null;
   due_date: string | null;
   completed_at: { toDate: () => Date } | null;
@@ -106,23 +107,36 @@ function Row({
   ownerName: string;
 }) {
   const renameTitle = updateTodoTitle.bind(null, teamId, todo.id);
+  const updateDesc = updateTodoDescription.bind(null, teamId, todo.id);
   const remove = deleteTodo.bind(null, teamId, todo.id);
   const completed = !!todo.completed_at;
   return (
-    <div className="group grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm">
-      <div className="col-span-1">
+    <div className="group grid grid-cols-12 gap-3 px-4 py-3 text-sm">
+      <div className="col-span-1 flex items-start pt-0.5">
         <TodoCheckbox teamId={teamId} todoId={todo.id} completed={completed} />
       </div>
       <div className="col-span-7 min-w-0">
-        <EditableText
-          value={todo.title}
-          onSave={renameTitle}
-          className={completed ? "text-zinc-500 line-through" : ""}
-        />
-        {todo.visibility === "private" && (
-          <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-500">
-            <Lock className="h-3 w-3" /> private
-          </span>
+        <div>
+          <EditableText
+            value={todo.title}
+            onSave={renameTitle}
+            className={completed ? "text-zinc-500 line-through" : ""}
+          />
+          {todo.visibility === "private" && (
+            <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-500">
+              <Lock className="h-3 w-3" /> private
+            </span>
+          )}
+        </div>
+        {todo.description && (
+          <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+            <EditableText
+              value={todo.description}
+              onSave={updateDesc}
+              placeholder="Add description..."
+              multiline={true}
+            />
+          </div>
         )}
       </div>
       <div className="col-span-2 text-zinc-600 dark:text-zinc-400">
@@ -216,6 +230,12 @@ function AddTodoForm({
         <option value="team">Team</option>
         <option value="private">Private</option>
       </select>
+      <textarea
+        name="description"
+        placeholder="Add notes or context (optional)"
+        rows={2}
+        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm resize-none"
+      />
       <button
         type="submit"
         className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"

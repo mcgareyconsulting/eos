@@ -1,0 +1,84 @@
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import {
+  SEGMENTS,
+  SEGMENT_DURATION_SECONDS,
+  TOTAL_MEETING_SECONDS,
+  nextSegment,
+  prevSegment,
+  isSegment,
+} from "./segments";
+
+// This file is the single source of truth every L10 UI piece trusts (segment
+// order, timing, labels). These tests exist to catch the two mistakes most
+// likely when reordering/adding/resizing segments: breaking a boundary
+// clamp, or letting the per-segment durations drift from the advertised
+// meeting total.
+
+describe("nextSegment / prevSegment", () => {
+  test("steps forward through the normal sequence", () => {
+    assert.equal(nextSegment("segue"), "scorecard");
+    assert.equal(nextSegment("scorecard"), "rocks");
+  });
+
+  test("steps backward through the normal sequence", () => {
+    assert.equal(prevSegment("rocks"), "scorecard");
+    assert.equal(prevSegment("scorecard"), "segue");
+  });
+
+  test("clamps at the end instead of overflowing past 'done'", () => {
+    assert.equal(nextSegment("done"), "done");
+  });
+
+  test("clamps at the start instead of underflowing past 'segue'", () => {
+    assert.equal(prevSegment("segue"), "segue");
+  });
+
+  test("next/prev are inverses at every interior step", () => {
+    for (let i = 1; i < SEGMENTS.length - 1; i++) {
+      const s = SEGMENTS[i];
+      assert.equal(prevSegment(nextSegment(s)), s);
+    }
+  });
+});
+
+describe("isSegment", () => {
+  test("accepts every real segment value", () => {
+    for (const s of SEGMENTS) assert.equal(isSegment(s), true);
+  });
+
+  test("rejects unknown strings and empty/nullish input", () => {
+    assert.equal(isSegment("not-a-segment"), false);
+    assert.equal(isSegment(""), false);
+    assert.equal(isSegment(null), false);
+    assert.equal(isSegment(undefined), false);
+  });
+});
+
+describe("meeting structure invariants", () => {
+  test("'done' is a terminal marker: exactly one, and last in SEGMENTS", () => {
+    const doneCount = SEGMENTS.filter((s) => s === "done").length;
+    assert.equal(doneCount, 1);
+    assert.equal(SEGMENTS[SEGMENTS.length - 1], "done");
+    // meeting-live.tsx derives its visible stage list via
+    // SEGMENTS.filter(s => s !== "done") — if this assumption ever breaks,
+    // that filter silently produces the wrong tab strip.
+  });
+
+  test("active-segment durations sum to the advertised meeting total", () => {
+    const sum = SEGMENTS.filter((s) => s !== "done").reduce(
+      (total, s) => total + SEGMENT_DURATION_SECONDS[s],
+      0,
+    );
+    assert.equal(sum, TOTAL_MEETING_SECONDS);
+  });
+
+  test("no active segment has a non-positive duration", () => {
+    for (const s of SEGMENTS.filter((x) => x !== "done")) {
+      assert.ok(
+        SEGMENT_DURATION_SECONDS[s] > 0,
+        `${s} must have a positive duration budget`,
+      );
+    }
+  });
+});

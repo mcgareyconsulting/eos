@@ -43,7 +43,11 @@ export function getClientAuth(): Auth {
 
 let firestoreEmulatorConnected = false;
 export function getClientDb(): Firestore {
-  const db = getFirestore(getClientApp());
+  const app = getClientApp();
+  // Prod uses a *named* database (e.g. "hpb-eos-prod-db"); local/emulator leaves
+  // this unset and talks to "(default)". Same var drives the Admin SDK.
+  const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
+  const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
   if (USE_EMULATOR && !firestoreEmulatorConnected) {
     firestoreEmulatorConnected = true;
     connectFirestoreEmulator(db, "127.0.0.1", 8080);

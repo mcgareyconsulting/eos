@@ -33,6 +33,8 @@ ARG NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
 ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN
+# Optional: set only when the project's Firestore DB is named (not "(default)").
+ARG NEXT_PUBLIC_FIREBASE_DATABASE_ID
 
 # Fail fast instead of shipping a build that 500s at first sign-in:
 # cloudbuild.yaml defaults every _NEXT_PUBLIC_FIREBASE_* substitution to ""
@@ -60,9 +62,17 @@ ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID \
     NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID \
     NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=$NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN \
+    NEXT_PUBLIC_FIREBASE_DATABASE_ID=$NEXT_PUBLIC_FIREBASE_DATABASE_ID \
     NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm build
+
+# Guarantee a public/ dir exists so the runner-stage COPY below never fails.
+# Next.js `output: "standalone"` does not emit public/, and this app ships no
+# static assets, so /app/public may not exist — an unconditional
+# `COPY /app/public` then aborts the build with "stat app/public: file does
+# not exist". mkdir -p is a no-op when the app *does* have a public/ dir.
+RUN mkdir -p public
 
 # ---- Runner ---------------------------------------------------------------
 # `output: "standalone"` (next.config.ts) traces only the files each route

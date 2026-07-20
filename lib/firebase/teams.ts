@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import type { Firestore } from "firebase-admin/firestore";
+import type { DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "./auth";
 
 // Mirror of lib/teams.ts `requireTeamAccess()` for Firebase. Verifies the
@@ -20,12 +20,30 @@ export const requireTeamAccess = cache(async (teamId: string) => {
   return {
     uid,
     db,
-    team: {
-      id: teamSnap.id,
-      name: (teamSnap.data()?.name as string) ?? "Team",
-    },
+    team: teamFrom(teamSnap),
   };
 });
+
+// Shape returned to callers for the current team. `meeting_driver_id` names the
+// member designated to drive the live L10 (label-only — anyone can still
+// advance the stage); `meet_link` is the team's standing Google Meet URL used
+// by the Join button. Both are optional and null until a leader sets them.
+export type TeamSummary = {
+  id: string;
+  name: string;
+  meetingDriverId: string | null;
+  meetLink: string | null;
+};
+
+function teamFrom(snap: DocumentSnapshot): TeamSummary {
+  const data = snap.data() ?? {};
+  return {
+    id: snap.id,
+    name: (data.name as string) ?? "Team",
+    meetingDriverId: (data.meeting_driver_id as string) ?? null,
+    meetLink: (data.meet_link as string) ?? null,
+  };
+}
 
 // Like requireTeamAccess, but additionally requires the current user to be a
 // team *leader* (role === "leader"). Used to gate member management — e.g.
@@ -45,10 +63,7 @@ export const requireTeamLeader = cache(async (teamId: string) => {
   return {
     uid,
     db,
-    team: {
-      id: teamSnap.id,
-      name: (teamSnap.data()?.name as string) ?? "Team",
-    },
+    team: teamFrom(teamSnap),
   };
 });
 

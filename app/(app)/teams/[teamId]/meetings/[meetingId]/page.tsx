@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { FileText, Video } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
@@ -59,6 +59,11 @@ export default async function MeetingDetailPage({
 
   const members = await getTeamMembers(tid);
   const absentUserIds = m.absent_user_ids ?? [];
+
+  // Designated facilitator (label-only) for the live control bar.
+  const driverName =
+    members.find((mm) => mm.user_id === team.meetingDriverId)?.full_name ??
+    null;
 
   const ratingsSnap = await db
     .collection("meetings")
@@ -257,6 +262,21 @@ export default async function MeetingDetailPage({
               displayName={displayName}
             />
           )}
+          {/* Join the team's Google Meet room. DEMO: opens the standing team
+              Meet link a leader set in Members → Meeting settings. In the real
+              integration this href would be a per-meeting URL minted by the
+              Meet REST API (spaces.create) at meeting start. */}
+          {live && team.meetLink && (
+            <a
+              href={team.meetLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+            >
+              <Video className="h-4 w-4" />
+              Join Google Meet
+            </a>
+          )}
           {live && (
             <form action={endMeeting.bind(null, tid, mid)}>
               <button
@@ -287,6 +307,7 @@ export default async function MeetingDetailPage({
         initialSegment={m.current_segment}
         initialStartedAtMs={segmentStartedAtMs}
         initialEnded={!live}
+        driverName={driverName}
       />
 
       {/* Segment content follows the locally-viewed stage (peek-aware). */}

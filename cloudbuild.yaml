@@ -25,6 +25,10 @@ substitutions:
   _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ""
   _NEXT_PUBLIC_FIREBASE_APP_ID: ""
   _NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN: ""
+  # Named Firestore database (e.g. "hpb-eos-prod-db"). Leave "" if the project
+  # uses the "(default)" database. Baked into client+server bundles at build
+  # time — must be a build arg, not just a runtime env. See docs/DEPLOY.md §3.1.
+  _NEXT_PUBLIC_FIREBASE_DATABASE_ID: ""
   # Dedicated least-privilege runtime SA (see docs/DEPLOY.md). Empty = Cloud
   # Run's default compute SA, which is broader than needed.
   _RUNTIME_SERVICE_ACCOUNT: ""
@@ -49,6 +53,7 @@ steps:
       - --build-arg=NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
       - --build-arg=NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}
       - --build-arg=NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=${_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_DATABASE_ID=${_NEXT_PUBLIC_FIREBASE_DATABASE_ID}
       - "."
 
   - id: push

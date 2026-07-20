@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\"",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-hpb-eos",
     "emulators:all": "npm --prefix functions run build && firebase emulators:start --only auth,firestore,functions --project demo-hpb-eos",
     "seed": "tsx scripts/seed-demo.ts",

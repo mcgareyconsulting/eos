@@ -8,6 +8,7 @@ import {
   Megaphone,
   Calendar,
   Users,
+  Plug,
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -67,6 +68,7 @@ export function AppShell({
         <div className="flex-1 overflow-y-auto">
           <nav className="px-2 py-3 space-y-0.5">
             <NavLink href="/home" icon={Home} label="Home" />
+            <NavLink href="/integrations" icon={Plug} label="Integrations" />
           </nav>
 
           {team && (

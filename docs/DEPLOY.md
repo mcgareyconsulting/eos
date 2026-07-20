@@ -7,6 +7,11 @@ is authenticated against that project (`gcloud config set project <PROJECT_ID>`)
 > [`CLIENT_GCP_SETUP.md`](./CLIENT_GCP_SETUP.md) instead — it's the
 > non-engineer checklist of what they need to do/provide before this runbook
 > is runnable (GCP project, IAM access, sign-in domain, security tier).
+>
+> **Moving from the trial project to the client's real one?** Use
+> [`CUTOVER_CHECKLIST.md`](./CUTOVER_CHECKLIST.md) instead of running this
+> runbook from scratch — it's the ordered diff of exactly what values change
+> between the two, validated end-to-end against the trial project.
 
 > **Terraform alternative:** everything in sections 0–2 (APIs, Artifact
 > Registry, runtime service account) plus the optional security levers can be
@@ -67,6 +72,10 @@ Dedicated, least-privilege — **no exported JSON keys**. Cloud Run attaches
 this SA to the running service, and the app authenticates to Firestore/Auth
 via Application Default Credentials (ADC) using that attached identity.
 
+This exact grant set (and the reasoning behind each role) is codified in
+[`terraform/iam.tf`](../terraform/iam.tf) — the commands below are its manual
+equivalent; keep the two in sync if either changes.
+
 ```bash
 gcloud iam service-accounts create eos-runtime \
   --display-name="EOS Cloud Run runtime"
@@ -78,12 +87,19 @@ SA="eos-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${SA}" --role="roles/datastore.user"
 
-# Firebase Auth admin operations (session verification, user management via
-# firebase-admin). If your org restricts broad Firebase Admin roles, scope
-# down to roles/firebaseauth.admin instead — check what's actually available/
-# permitted in this project and prefer the narrower role.
+# Cloud Logging writer so app logs land in Cloud Logging (Cloud Run grants
+# this to its *default* SA automatically, but this runtime SA is custom so
+# it needs it explicitly).
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SA}" --role="roles/firebase.sdkAdminServiceAgent"
+  --member="serviceAccount:${SA}" --role="roles/logging.logWriter"
+
+# Firebase Auth admin: firebase-admin's createSessionCookie() (this app's
+# session-cookie auth flow) requires this role on the calling identity —
+# without it, the ID-token exchange succeeds but session cookie creation
+# 500s, so sign-in is broken. If your org restricts this role and it isn't
+# available/permitted, fall back to the broader roles/firebase.sdkAdminServiceAgent.
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${SA}" --role="roles/firebaseauth.admin"
 ```
 
 No `GOOGLE_APPLICATION_CREDENTIALS` or `FIREBASE_SERVICE_ACCOUNT_JSON` should
@@ -128,6 +144,19 @@ the initial rules):
 ```bash
 firebase deploy --only firestore:rules,firestore:indexes --project "$PROJECT_ID"
 ```
+
+> **Deploying to a project with a *different* database name/shape than
+> `firebase.json` declares** (e.g. a trial/rehearsal project using the
+> `(default)` database, while `firebase.json#firestore.database` is
+> hardcoded to this repo's real target, `hpb-eos-prod-db`): `firebase deploy`
+> always reads the database id from `firebase.json`, not from a CLI flag or
+> env var, and the `--project` flag alone doesn't change *which database
+> within that project* gets targeted. Don't re-architect this file to be
+> dynamic — the hardcoded value is correct for the one real target. Instead,
+> for a one-off rehearsal deploy: temporarily edit the `"database"` value,
+> run the `firebase deploy` command above, then **revert the edit** before
+> committing anything else. Verified working end-to-end this way against a
+> trial project during the deploy rehearsal.
 
 ## 4. Audit log function
 
@@ -203,6 +232,14 @@ adding it to **Authorized domains** is a post-deploy step, §6.3 below (and
 ## 6. Build and deploy
 
 ### 6.1 Grant the build service account deploy permissions (one-time)
+
+> **Terraform alternative:** this whole step is one variable on a fresh
+> project. `terraform apply -var="project_id=<PROJECT_ID>" -var="grant_cloudbuild_deploy_permissions=true"`
+> grants the exact same 4 roles (see `terraform/iam.tf`) to the Compute
+> Engine default SA — correct with certainty on a fresh project, since
+> `terraform/apis.tf` is what enables `cloudbuild.googleapis.com` in the
+> first place. Left off by default so it stays a deliberate decision, not
+> bundled into every apply. Skip straight to §6.2 if you use this.
 
 `cloudbuild.yaml` doesn't specify a custom Cloud Build service account, so
 `gcloud builds submit` runs as whichever SA GCP treats as this project's

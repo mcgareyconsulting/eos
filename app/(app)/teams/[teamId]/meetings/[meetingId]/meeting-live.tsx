@@ -28,6 +28,7 @@ export function MeetingLive({
   initialSegment,
   initialStartedAtMs,
   initialEnded,
+  driverName,
 }: {
   teamId: string;
   meetingId: string;
@@ -36,6 +37,7 @@ export function MeetingLive({
   initialSegment: Segment;
   initialStartedAtMs: number | null;
   initialEnded: boolean;
+  driverName: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -190,11 +192,20 @@ export function MeetingLive({
       {!ended && activeSegment !== "done" && (
         <div className="mt-3 flex items-start justify-between gap-4">
           <div className="flex-1">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <div className="text-lg font-semibold">
                 {SEGMENT_LABELS[activeSegment]}
               </div>
               <SegmentTimer segment={activeSegment} startedAtMs={startedAtMs} />
+              {driverName && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30"
+                  title="Designated meeting driver"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
+                  {driverName} is driving
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
               {SEGMENT_HINTS[activeSegment]}

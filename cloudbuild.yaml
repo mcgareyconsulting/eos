@@ -64,7 +64,12 @@ steps:
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
 
   - id: deploy
-    name: gcr.io/google-cloud-sdk/slim
+    # NOT gcr.io/google-cloud-sdk/slim — that path is dead (doesn't resolve
+    # via anonymous manifest inspect) and caused repeated
+    # "retry budget exhausted (10 attempts)" build failures during rehearsal.
+    # This is the current actively-maintained Cloud SDK image per Google's own
+    # Cloud Build migration guidance (verified live, not just documented).
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: bash
     args:
       - -c

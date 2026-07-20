@@ -114,7 +114,13 @@ resource "google_kms_crypto_key" "app" {
 # service-<PROJECT_NUMBER>@gcp-sa-artifactregistry.iam.gserviceaccount.com
 # convention.
 resource "google_project_service_identity" "artifactregistry" {
-  count = var.enable_cmek ? 1 : 0
+  # google_project_service_identity is beta-only in the hashicorp/google v6.x
+  # provider, so this resource must run under google-beta (declared in
+  # versions.tf). Without the explicit provider, `terraform plan` fails with
+  # "provider hashicorp/google does not support resource type
+  # google_project_service_identity" even when this lever is OFF.
+  provider = google-beta
+  count    = var.enable_cmek ? 1 : 0
 
   project = var.project_id
   service = "artifactregistry.googleapis.com"

@@ -67,6 +67,13 @@ ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
 
 RUN pnpm build
 
+# Guarantee a public/ dir exists so the runner-stage COPY below never fails.
+# Next.js `output: "standalone"` does not emit public/, and this app ships no
+# static assets, so /app/public may not exist — an unconditional
+# `COPY /app/public` then aborts the build with "stat app/public: file does
+# not exist". mkdir -p is a no-op when the app *does* have a public/ dir.
+RUN mkdir -p public
+
 # ---- Runner ---------------------------------------------------------------
 # `output: "standalone"` (next.config.ts) traces only the files each route
 # needs -- including a pruned node_modules -- into .next/standalone, plus a

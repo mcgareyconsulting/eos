@@ -10,6 +10,15 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    # google-beta is required only by the CMEK lever's
+    # `google_project_service_identity.artifactregistry` resource (levers.tf),
+    # which is beta-only in the v6.x provider. Declaring it here keeps
+    # `terraform plan`/`validate` green even with the CMEK lever OFF —
+    # Terraform type-checks every resource block regardless of `count`.
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 6.0"
+    }
   }
 
   # Remote state backend — uncomment and fill in once the client provisions a
@@ -25,6 +34,14 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+# Only consumed by beta-only resources (currently the CMEK lever's Artifact
+# Registry service-identity lookup in levers.tf). Same project/region as the
+# GA provider.
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }

@@ -1,5 +1,6 @@
 {
   "firestore": {
+    "database": "hpb-eos-prod-db",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },

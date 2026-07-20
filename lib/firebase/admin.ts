@@ -35,5 +35,11 @@ export function getAdminAuth(): Auth {
 }
 
 export function getAdminDb(): Firestore {
-  return getFirestore(getAdminApp());
+  const app = getAdminApp();
+  // Read lazily (not at module load): the seed script loads .env.local via
+  // dotenv AFTER this module is imported, so a top-level const would be stale.
+  // Prod uses a *named* database (e.g. "hpb-eos-prod-db"); local/emulator leaves
+  // this unset and talks to "(default)". Same var drives the client SDK.
+  const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
+  return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }

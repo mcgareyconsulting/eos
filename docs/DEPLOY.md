@@ -94,6 +94,14 @@ falls back to ADC.
 
 ### 3.1 Create the Firestore database (one-time, BLOCKER)
 
+> **ALREADY DONE for `hpb-eos-prod`.** This project's database exists as a
+> *named* database, **`hpb-eos-prod-db`** (verify with
+> `firebase firestore:databases:list --project "$PROJECT_ID"`). Do **not** run
+> the create command below against this project — it creates a `(default)`
+> database and you'd end up with two. The app targets the named database via
+> `NEXT_PUBLIC_FIREBASE_DATABASE_ID` (see §6.2 and `firebase.json#firestore.database`).
+> The rest of this section applies only when standing up a brand-new project.
+
 > **PERMANENT CHOICE — confirm with the client before running this.** The
 > database location cannot be changed later without a full export/import
 > migration. This is the client's decision, not an engineering default —
@@ -102,10 +110,13 @@ falls back to ADC.
 > single region). Do not run this command until that's confirmed.
 
 ```bash
+# For a NAMED database (this project's convention), pass --database:
 gcloud firestore databases create \
+  --database=hpb-eos-prod-db \
   --location=nam5 \
   --type=firestore-native \
   --project "$PROJECT_ID"
+# Omit --database for a "(default)" database.
 ```
 
 ### 3.2 Deploy Firestore rules + indexes
@@ -251,8 +262,15 @@ _NEXT_PUBLIC_FIREBASE_PROJECT_ID=...,\
 _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...,\
 _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...,\
 _NEXT_PUBLIC_FIREBASE_APP_ID=...,\
-_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=highplainsbank.com
+_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=highplainsbank.com,\
+_NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 ```
+
+> **Named database:** `hpb-eos-prod` uses a *named* Firestore database
+> (`hpb-eos-prod-db`), not `(default)`. `_NEXT_PUBLIC_FIREBASE_DATABASE_ID` is
+> baked into the bundle at build time (same as the other `NEXT_PUBLIC_*` values);
+> omitting it ships an app that targets `(default)` and fails every read with
+> `5 NOT_FOUND`. Leave it empty only for a `(default)`-database project.
 
 `_TAG` defaults to `manual` in `cloudbuild.yaml` if omitted — set it
 explicitly (as above) so each manual build produces a traceable,

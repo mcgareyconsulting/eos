@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { TodoCheckbox } from "./todo-row";
+import { AddTodoSubmit } from "./todo-submit-button";
 import { addTodo, deleteTodo, updateTodoTitle, updateTodoDescription } from "./actions";
 
 type TodoDoc = {
@@ -236,12 +237,7 @@ function AddTodoForm({
         rows={2}
         className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm resize-none"
       />
-      <button
-        type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
-        Add to-do
-      </button>
+      <AddTodoSubmit />
     </form>
   );
 }

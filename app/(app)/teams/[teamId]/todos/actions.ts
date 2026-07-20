@@ -3,6 +3,28 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import {
+  upsertTaskForTodo,
+  deleteTaskForTodo,
+  type TodoMirror,
+} from "@/lib/google/tasks";
+
+// Build the Google Tasks mirror payload from a to-do doc's fields plus any
+// just-applied overrides. Every to-do write passes the *complete* current
+// state so a PATCH never reverts an unspecified field. (To mirror only a
+// specific owner's to-dos, gate the upsert calls below on `owner_id`.)
+function mirrorFrom(
+  data: FirebaseFirestore.DocumentData,
+  overrides: Partial<TodoMirror> = {},
+): TodoMirror {
+  return {
+    title: data.title ?? "",
+    notes: data.description ?? null,
+    dueDate: data.due_date ?? null,
+    completed: !!data.completed_at,
+    ...overrides,
+  };
+}
 
 const VISIBILITIES = ["team", "private"] as const;
 type Visibility = (typeof VISIBILITIES)[number];
@@ -27,7 +49,7 @@ export async function addTodo(teamId: string, formData: FormData) {
 
   if (!title) throw new Error("Title required");
 
-  await db.collection("todos").add({
+  const ref = await db.collection("todos").add({
     team_id: teamId,
     title,
     description,
@@ -38,8 +60,18 @@ export async function addTodo(teamId: string, formData: FormData) {
     source_issue_id: null,
     source_meeting_id: null,
     source_rock_id: null,
+    google_task_id: null,
     created_at: FieldValue.serverTimestamp(),
   });
+
+  // Mirror to Google Tasks (best-effort; no-op if not connected).
+  const taskId = await upsertTaskForTodo({
+    title,
+    notes: description,
+    dueDate: due_date,
+    completed: false,
+  });
+  if (taskId) await ref.update({ google_task_id: taskId });
 
   revalidatePath(pathFor(teamId));
 }
@@ -50,13 +82,23 @@ export async function toggleTodo(
   currentlyComplete: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", todoId, teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
+  const nowComplete = !currentlyComplete;
   await db
     .collection("todos")
     .doc(todoId)
     .update({
-      completed_at: currentlyComplete ? null : FieldValue.serverTimestamp(),
+      completed_at: nowComplete ? FieldValue.serverTimestamp() : null,
     });
+
+  const taskId = await upsertTaskForTodo(
+    mirrorFrom(data, { completed: nowComplete }),
+    data.google_task_id,
+  );
+  if (taskId && taskId !== data.google_task_id) {
+    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+  }
   revalidatePath(pathFor(teamId));
 }
 
@@ -68,8 +110,17 @@ export async function updateTodoTitle(
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Title required");
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", todoId, teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
   await db.collection("todos").doc(todoId).update({ title: trimmed });
+
+  const taskId = await upsertTaskForTodo(
+    mirrorFrom(data, { title: trimmed }),
+    data.google_task_id,
+  );
+  if (taskId && taskId !== data.google_task_id) {
+    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+  }
   revalidatePath(pathFor(teamId));
 }
 
@@ -80,17 +131,28 @@ export async function updateTodoDescription(
 ) {
   const trimmed = description.trim();
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", todoId, teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
   await db
     .collection("todos")
     .doc(todoId)
     .update({ description: trimmed || null });
+
+  const taskId = await upsertTaskForTodo(
+    mirrorFrom(data, { notes: trimmed || null }),
+    data.google_task_id,
+  );
+  if (taskId && taskId !== data.google_task_id) {
+    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+  }
   revalidatePath(pathFor(teamId));
 }
 
 export async function deleteTodo(teamId: string, todoId: string) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", todoId, teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
   await db.collection("todos").doc(todoId).delete();
+  await deleteTaskForTodo(data.google_task_id);
   revalidatePath(pathFor(teamId));
 }

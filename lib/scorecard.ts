@@ -48,21 +48,37 @@ export function average(values: (number | null)[]): number | null {
 
 /**
  * Coarse status for the left "trend" column.
- * - ok: recent recorded weeks all on-track (or no goal yet)
- * - watch: mixed recent results
- * - off: majority of recent recorded weeks off-track
- * - empty: nothing entered yet
+ * Labels map to the client's existing system:
+ * - off   → Off-track
+ * - watch → At-risk
+ * - ok    → On-track
+ * - empty → no recent scores
+ *
+ * Status uses the N most recently *populated* scores (default 3),
+ * matching ninety's Trends rule — empty weeks don't count.
  */
 export type TrendStatus = "ok" | "watch" | "off" | "empty";
+
+export const TREND_STATUS_LABEL: Record<TrendStatus, string> = {
+  off: "Off-track",
+  watch: "At-risk",
+  ok: "On-track",
+  empty: "No data",
+};
 
 export function trendStatus(
   valuesNewestFirst: (number | null)[],
   goal: number | null,
   direction: GoalDirection,
-  lookback = 4,
+  populatedLookback = 3,
 ): TrendStatus {
-  const recent = valuesNewestFirst.slice(0, lookback);
-  const recorded = recent.filter((v): v is number => v != null);
+  const recorded: number[] = [];
+  for (const v of valuesNewestFirst) {
+    if (v != null) {
+      recorded.push(v);
+      if (recorded.length >= populatedLookback) break;
+    }
+  }
   if (recorded.length === 0) return "empty";
   if (goal == null) return "ok";
 
@@ -71,7 +87,7 @@ export function trendStatus(
     if (onTrack(v, goal, direction) === false) off += 1;
   }
   if (off === 0) return "ok";
-  // Strict majority off-track (ties count as "watch").
+  // Strict majority off-track (ties count as at-risk).
   if (off > recorded.length / 2) return "off";
   return "watch";
 }
@@ -84,4 +100,44 @@ export function parseWeekRange(raw: string | undefined | null): WeekRange {
   const n = Number(raw);
   if (n === 8 || n === 13 || n === 26) return n;
   return 13;
+}
+
+/** Client-side status filter (Trends-style). */
+export type StatusFilter = "all" | TrendStatus;
+
+export const STATUS_FILTER_OPTIONS: {
+  value: StatusFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "All statuses" },
+  { value: "off", label: "Off-track" },
+  { value: "watch", label: "At-risk" },
+  { value: "ok", label: "On-track" },
+  { value: "empty", label: "No data" },
+];
+
+export type SortOption =
+  | "status"
+  | "name"
+  | "owner"
+  | "average-asc"
+  | "average-desc";
+
+export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "status", label: "Status (off-track first)" },
+  { value: "name", label: "Name A–Z" },
+  { value: "owner", label: "Owner A–Z" },
+  { value: "average-desc", label: "Average high → low" },
+  { value: "average-asc", label: "Average low → high" },
+];
+
+const STATUS_SORT_RANK: Record<TrendStatus, number> = {
+  off: 0,
+  watch: 1,
+  empty: 2,
+  ok: 3,
+};
+
+export function statusSortRank(status: TrendStatus): number {
+  return STATUS_SORT_RANK[status];
 }

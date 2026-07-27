@@ -1,8 +1,7 @@
 import { Suspense } from "react";
 import { BarChart3 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { ScorecardGrid } from "@/components/scorecard/scorecard-grid";
-import { ScorecardToolbar } from "@/components/scorecard/scorecard-toolbar";
+import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { mondayOf, toDateString, lastNMondays } from "@/lib/dates";
 import { parseWeekRange, type GoalDirection } from "@/lib/scorecard";
@@ -98,33 +97,24 @@ export default async function ScorecardPage({
         </p>
       </header>
 
-      <Suspense
-        fallback={
-          <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
-        }
-      >
-        <ScorecardToolbar weekRange={weekRange} teamLabel={team.name} />
-      </Suspense>
-
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold tracking-tight">Weekly</h2>
-          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-200 px-2 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-            {metrics.length}
-          </span>
+      {metrics.length === 0 ? (
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+          <EmptyState
+            icon={BarChart3}
+            title="No metrics yet"
+            hint="Add your team's weekly KPIs with the form below to start tracking."
+          />
         </div>
-
-        {metrics.length === 0 ? (
-          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-            <EmptyState
-              icon={BarChart3}
-              title="No metrics yet"
-              hint="Add your team's weekly KPIs with the form below to start tracking."
-            />
-          </div>
-        ) : (
-          <ScorecardGrid
+      ) : (
+        <Suspense
+          fallback={
+            <div className="h-40 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+          }
+        >
+          <ScorecardPanel
             teamId={tid}
+            teamLabel={team.name}
+            weekRange={weekRange}
             weeks={weeks}
             metrics={metrics}
             entryByMetricWeek={entryRecord}
@@ -132,8 +122,8 @@ export default async function ScorecardPage({
             showDelete
             showGroupEditor
           />
-        )}
-      </section>
+        </Suspense>
+      )}
 
       <AddMetricForm
         teamId={tid}

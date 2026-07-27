@@ -29,11 +29,16 @@ describe("average", () => {
 });
 
 describe("trendStatus", () => {
-  it("flags off-track majorities", () => {
+  it("uses the 3 most recently populated scores", () => {
     // newest first
     assert.equal(trendStatus([10, 10, 10, 10], 5, "gte"), "ok");
     assert.equal(trendStatus([1, 1, 1, 1], 5, "gte"), "off");
-    assert.equal(trendStatus([10, 1, 10, 1], 5, "gte"), "watch");
+    // 2 of 3 off among last populated → off (majority)
+    assert.equal(trendStatus([1, 1, 10, 10], 5, "gte"), "off");
+    // 1 of 3 off → at-risk (watch)
+    assert.equal(trendStatus([1, 10, 10], 5, "gte"), "watch");
+    // empty weeks skipped when gathering populated lookback
+    assert.equal(trendStatus([null, 10, null, 10, 10], 5, "gte"), "ok");
     assert.equal(trendStatus([null, null], 5, "gte"), "empty");
   });
 });

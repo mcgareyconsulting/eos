@@ -74,23 +74,23 @@ function TrendIcon({ status }: { status: TrendStatus }) {
     return (
       <CheckCircle2
         className="h-4 w-4 text-emerald-500 dark:text-emerald-400"
-        aria-label="On track"
+        aria-label="On-track"
       />
     );
   }
   if (status === "off") {
     return (
       <AlertTriangle
-        className="h-4 w-4 text-amber-500 dark:text-amber-400"
-        aria-label="Off track"
+        className="h-4 w-4 text-red-500 dark:text-red-400"
+        aria-label="Off-track"
       />
     );
   }
   if (status === "watch") {
     return (
       <AlertTriangle
-        className="h-4 w-4 text-amber-400/80 dark:text-amber-500/80"
-        aria-label="Mixed results"
+        className="h-4 w-4 text-amber-500 dark:text-amber-400"
+        aria-label="At-risk"
       />
     );
   }
@@ -116,7 +116,11 @@ export function ScorecardGrid({
   showDelete = false,
   showGroupEditor = true,
   compact = false,
-  initialSearch = "",
+  /** When true, skip the grid's own search strip (parent owns filters). */
+  hideLocalSearch = false,
+  /** Preserve metric order; skip section regrouping. */
+  flatList = false,
+  emptyHint,
 }: {
   teamId: string;
   /** Newest first (YYYY-MM-DD Mondays). */
@@ -127,9 +131,11 @@ export function ScorecardGrid({
   showDelete?: boolean;
   showGroupEditor?: boolean;
   compact?: boolean;
-  initialSearch?: string;
+  hideLocalSearch?: boolean;
+  flatList?: boolean;
+  emptyHint?: string;
 }) {
-  const [search, setSearch] = useState(initialSearch);
+  const [search, setSearch] = useState("");
   const currentWeek = toDateString(mondayOf());
 
   const entryMap = useMemo(() => {
@@ -141,6 +147,7 @@ export function ScorecardGrid({
     id ? (members.find((m) => m.user_id === id)?.full_name ?? "—") : "—";
 
   const filtered = useMemo(() => {
+    if (hideLocalSearch) return metrics;
     const q = search.trim().toLowerCase();
     if (!q) return metrics;
     return metrics.filter((m) => {
@@ -153,23 +160,25 @@ export function ScorecardGrid({
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metrics, search, members]);
+  }, [metrics, search, members, hideLocalSearch]);
 
   const groupedMetrics = useMemo(() => {
     const map = new Map<string, ScorecardMetric[]>();
     for (const m of filtered) {
-      const key = m.group?.trim() || "";
+      const key = flatList ? "" : m.group?.trim() || "";
       const bucket = map.get(key);
       if (bucket) bucket.push(m);
       else map.set(key, [m]);
     }
     return map;
-  }, [filtered]);
+  }, [filtered, flatList]);
 
   const ungrouped = groupedMetrics.get("") ?? [];
-  const groupNames = [...groupedMetrics.keys()]
-    .filter((g) => g !== "")
-    .sort((a, b) => a.localeCompare(b));
+  const groupNames = flatList
+    ? []
+    : [...groupedMetrics.keys()]
+        .filter((g) => g !== "")
+        .sort((a, b) => a.localeCompare(b));
 
   // Year spans for the week header row (e.g. a single "2026" bar).
   const yearSpans = useMemo(() => {
@@ -344,24 +353,25 @@ export function ScorecardGrid({
 
   return (
     <div className="space-y-3">
-      {/* Familiar filter strip — search + live count. Team lives in the shell. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search measurables…"
-            className="w-full rounded-full border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            aria-label="Search measurables"
-          />
+      {!hideLocalSearch && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search measurables…"
+              className="w-full rounded-full border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              aria-label="Search measurables"
+            />
+          </div>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {filtered.length} measurable{filtered.length === 1 ? "" : "s"}
+            {search.trim() ? ` matching “${search.trim()}”` : ""}
+          </span>
         </div>
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
-          {filtered.length} measurable{filtered.length === 1 ? "" : "s"}
-          {search.trim() ? ` matching “${search.trim()}”` : ""}
-        </span>
-      </div>
+      )}
 
       <div
         className={cn(
@@ -485,8 +495,8 @@ export function ScorecardGrid({
                   className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400"
                 >
                   {metrics.length === 0
-                    ? "No metrics yet."
-                    : "No measurables match your search."}
+                    ? (emptyHint ?? "No metrics yet.")
+                    : (emptyHint ?? "No measurables match your search.")}
                 </td>
               </tr>
             )}

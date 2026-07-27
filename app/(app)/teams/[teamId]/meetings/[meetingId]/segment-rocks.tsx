@@ -71,7 +71,6 @@ function sortRocks(rocks: RockDoc[]): RockDoc[] {
 export function SegmentRocks({
   teamId,
   meetingId,
-  quarter,
   defaultDue,
   initialRocks,
   initialTodos,
@@ -80,7 +79,6 @@ export function SegmentRocks({
 }: {
   teamId: string;
   meetingId: string;
-  quarter: string;
   defaultDue: string;
   initialRocks: RockDoc[];
   initialTodos: TodoDoc[];
@@ -149,14 +147,20 @@ export function SegmentRocks({
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  const visible = sortRocks(rocks.filter((r) => r.quarter === quarter));
+  // Show every non-cancelled rock. This used to filter on
+  // r.quarter === currentQuarter(), but `quarter` is a free-text label —
+  // imported rocks carry the client's own fiscal wording ("Q2 FY 2026"),
+  // which never string-matches "2026-Q3", so the segment rendered empty
+  // while the Rocks tab (which doesn't filter) looked fine. The meeting
+  // reviews the rocks the team actually has; cancelled ones stay out.
+  const visible = sortRocks(rocks.filter((r) => r.status !== "cancelled"));
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          {visible.length} rock{visible.length === 1 ? "" : "s"} · {quarter} ·
-          off-track? drop to IDS
+          {visible.length} rock{visible.length === 1 ? "" : "s"} ·
+          off-track? drop to Issues
         </div>
         <QuickAddIssue teamId={teamId} prefill="Off-track rock: " compact />
       </div>
@@ -164,7 +168,7 @@ export function SegmentRocks({
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {visible.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            No rocks for {quarter}.
+            No rocks yet — add them on the Rocks tab.
           </div>
         )}
         {visible.map((r) => {

@@ -128,29 +128,18 @@ export function MeetingLive({
 
   const activeIndex = SEGMENTS.indexOf(activeSegment);
   const peeking = viewSegment !== activeSegment;
-  const pct = Math.min(
-    ((activeIndex + 1) / (SEGMENTS.length - 1)) * 100,
-    100,
-  );
 
   return (
     <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+      {/* No percent/progress bar here (removed per client feedback): segments
+          have wildly different budgets (Segue 5 min vs Issues 60 min), so an
+          index-based bar overstated progress all meeting. The step pills below
+          carry position; the SegmentTimer carries time. */}
       {!ended && (
-        <>
-          <div className="mb-3 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
-            <span>
-              Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
-              {SEGMENTS.length - 1}
-            </span>
-            <span>{Math.round(pct)}%</span>
-          </div>
-          <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-            <div
-              className="h-full bg-hpb-blue transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </>
+        <div className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">
+          Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
+          {SEGMENTS.length - 1}
+        </div>
       )}
 
       <div className="flex items-center gap-2 overflow-x-auto pb-2">

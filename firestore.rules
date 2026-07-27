@@ -20,14 +20,17 @@ service cloud.firestore {
       return authed() && request.auth.token.role == "admin";
     }
 
-    // Workspace-domain perimeter (defense-in-depth). Primary enforcement is at
-    // the Firebase Auth provider (Console → Authentication → Sign-in method →
-    // Google → "Restrict by domain" = highplainsbank.com). These rules also gate
-    // the broad org/user/team reads below so a token from outside the Workspace
-    // can't enumerate them. HPB domain only — no external allowlist.
+    // Sign-in perimeter (defense-in-depth). Primary enforcement is the
+    // server-side SIGN_IN_ALLOWLIST check in createSession()
+    // (lib/firebase/session.ts) — the provider-level domain restriction can't
+    // express "HPB domain plus the consultant account", so it is NOT used.
+    // These rules mirror that allowlist to gate the broad org/user/team reads
+    // below, so a token from outside the perimeter can't enumerate them.
+    // Keep this list in lockstep with the deployed SIGN_IN_ALLOWLIST value.
     function inDomain() {
       return authed()
-        && request.auth.token.email.matches(".*@highplainsbank[.]com$");
+        && (request.auth.token.email.matches(".*@highplainsbank[.]com$")
+            || request.auth.token.email == "mcgareyconsulting@gmail.com");
     }
 
     function isMember(teamId) {

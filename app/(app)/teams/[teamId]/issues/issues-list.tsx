@@ -95,7 +95,7 @@ export function IssuesList({
         <EmptyState
           icon={AlertCircle}
           title="No issues yet"
-          hint="Capture team blockers above, then vote to rank them and solve the top ones in the L10 IDS segment."
+          hint="Capture team blockers above, then vote to rank them and solve the top ones in the L10 Issues segment."
         />
       </div>
     );

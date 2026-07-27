@@ -91,7 +91,7 @@ export function SegmentTodos({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          Anything not done after 1 week → drop to IDS
+          Anything not done after 1 week → drop to Issues
         </div>
         <QuickAddIssue
           teamId={teamId}

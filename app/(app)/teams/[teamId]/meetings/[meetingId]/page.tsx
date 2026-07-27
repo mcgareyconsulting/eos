@@ -7,7 +7,6 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { type Segment, isSegment } from "@/lib/l10/segments";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import {
-  currentQuarter,
   endOfQuarter,
   lastNMondays,
   toDateString,
@@ -502,7 +501,6 @@ async function SegmentContent({
       <SegmentRocks
         teamId={teamId}
         meetingId={meetingId}
-        quarter={currentQuarter()}
         defaultDue={toDateString(endOfQuarter())}
         initialRocks={initialRocks}
         initialTodos={initialTodos}

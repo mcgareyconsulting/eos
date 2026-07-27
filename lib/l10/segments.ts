@@ -31,7 +31,10 @@ export const SEGMENT_LABELS: Record<Segment, string> = {
   rocks: "Rocks",
   headlines: "Headlines",
   todos: "To-Dos",
-  ids: "IDS",
+  // Client preference (L10 backlog 2026-07-27): the segment is labeled
+  // "Issues", not the EOS jargon "IDS". Key stays "ids" — it's stored on
+  // meeting docs, so renaming it would strand in-flight meetings.
+  ids: "Issues",
   conclude: "Conclude",
   done: "Done",
 };

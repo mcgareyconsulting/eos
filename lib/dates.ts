@@ -56,6 +56,42 @@ export function formatWeekLabel(d: string | Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+function parseLocalDate(d: string | Date): Date {
+  return typeof d === "string" ? new Date(d + "T00:00:00") : d;
+}
+
+// Monday week start → "Jul 27 – Aug 2" (Mon–Sun range, ninety-style).
+export function formatWeekRange(weekStart: string | Date): string {
+  const start = parseLocalDate(weekStart);
+  const end = addDays(start, 6);
+  const sameMonth = start.getMonth() === end.getMonth();
+  const left = `${SHORT_MONTHS[start.getMonth()]} ${start.getDate()}`;
+  const right = sameMonth
+    ? String(end.getDate())
+    : `${SHORT_MONTHS[end.getMonth()]} ${end.getDate()}`;
+  return `${left} – ${right}`;
+}
+
+// Year of a week-start Monday (for column-group headers).
+export function weekYear(weekStart: string | Date): number {
+  return parseLocalDate(weekStart).getFullYear();
+}
+
 // "2026-05-18" → "5/18/2026" (or whatever the browser's locale format is).
 // Parses with a local-midnight anchor so a date-only string never rolls back
 // a day west of UTC (`new Date("2026-05-18")` parses as UTC midnight, which

@@ -2,6 +2,7 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import { setEntry } from "./actions";
+import { cn } from "@/lib/utils";
 
 export function ValueCell({
   teamId,
@@ -9,12 +10,14 @@ export function ValueCell({
   weekStartDate,
   initial,
   onTrack,
+  isCurrentWeek = false,
 }: {
   teamId: string;
   metricId: string;
   weekStartDate: string;
   initial: number | null;
   onTrack: boolean | null;
+  isCurrentWeek?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(initial == null ? "" : String(initial));
@@ -24,13 +27,19 @@ export function ValueCell({
     (_state, next: number | null) => next,
   );
 
-  const display = optimisticValue == null ? "—" : optimisticValue.toLocaleString();
-  const color =
+  const display =
+    optimisticValue == null ? "—" : optimisticValue.toLocaleString();
+
+  // Soft cell tints match the client's existing mental model (green = hit
+  // goal, red = missed) without the harsh solid fills of the legacy tool.
+  const tone =
     onTrack == null
-      ? "text-zinc-600 dark:text-zinc-400"
+      ? isCurrentWeek
+        ? "bg-sky-50/60 dark:bg-sky-950/20 text-zinc-600 dark:text-zinc-400"
+        : "text-zinc-600 dark:text-zinc-400"
       : onTrack
-        ? "text-emerald-700 dark:text-emerald-300"
-        : "text-red-700 dark:text-red-300";
+        ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+        : "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300";
 
   if (!editing) {
     return (
@@ -40,7 +49,10 @@ export function ValueCell({
           setDraft(optimisticValue == null ? "" : String(optimisticValue));
           setEditing(true);
         }}
-        className={`w-full text-right rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 tabular-nums ${color}`}
+        className={cn(
+          "w-full min-w-[4.5rem] rounded-md px-2 py-1.5 text-right tabular-nums hover:ring-1 hover:ring-inset hover:ring-zinc-300 dark:hover:ring-zinc-600",
+          tone,
+        )}
       >
         {display}
       </button>
@@ -78,7 +90,7 @@ export function ValueCell({
           setEditing(false);
         }
       }}
-      className="w-full min-w-0 text-right rounded bg-white dark:bg-zinc-900 px-2 py-1 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-zinc-900"
+      className="w-full min-w-[4.5rem] text-right rounded-md bg-white dark:bg-zinc-900 px-2 py-1.5 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-hpb-blue dark:focus:ring-hpb-gold"
     />
   );
 }

@@ -1,0 +1,66 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  average,
+  formatGoal,
+  onTrack,
+  parseWeekRange,
+  trendStatus,
+} from "./scorecard";
+import { formatWeekRange } from "./dates";
+
+describe("onTrack", () => {
+  it("handles gte / lte / eq and nulls", () => {
+    assert.equal(onTrack(5, 5, "gte"), true);
+    assert.equal(onTrack(4, 5, "gte"), false);
+    assert.equal(onTrack(5, 5, "lte"), true);
+    assert.equal(onTrack(6, 5, "lte"), false);
+    assert.equal(onTrack(5, 5, "eq"), true);
+    assert.equal(onTrack(null, 5, "gte"), null);
+    assert.equal(onTrack(5, null, "gte"), null);
+  });
+});
+
+describe("average", () => {
+  it("ignores empty weeks", () => {
+    assert.equal(average([1, null, 3]), 2);
+    assert.equal(average([null, null]), null);
+  });
+});
+
+describe("trendStatus", () => {
+  it("flags off-track majorities", () => {
+    // newest first
+    assert.equal(trendStatus([10, 10, 10, 10], 5, "gte"), "ok");
+    assert.equal(trendStatus([1, 1, 1, 1], 5, "gte"), "off");
+    assert.equal(trendStatus([10, 1, 10, 1], 5, "gte"), "watch");
+    assert.equal(trendStatus([null, null], 5, "gte"), "empty");
+  });
+});
+
+describe("formatGoal", () => {
+  it("uses ascii comparators for familiarity", () => {
+    assert.equal(formatGoal(5, "gte", "number"), ">= 5");
+    assert.equal(formatGoal(63, "lte", "number"), "<= 63");
+  });
+});
+
+describe("parseWeekRange", () => {
+  it("defaults to 13 and accepts 8/13/26", () => {
+    assert.equal(parseWeekRange(undefined), 13);
+    assert.equal(parseWeekRange("8"), 8);
+    assert.equal(parseWeekRange("26"), 26);
+    assert.equal(parseWeekRange("99"), 13);
+  });
+});
+
+describe("formatWeekRange", () => {
+  it("renders Mon–Sun range labels", () => {
+    // 2026-07-27 is a Monday
+    assert.equal(formatWeekRange("2026-07-27"), "Jul 27 – Aug 2");
+    // Cross-month week (Mon Jun 29 → Sun Jul 5)
+    assert.equal(formatWeekRange("2026-06-29"), "Jun 29 – Jul 5");
+    // Same-month week
+    assert.equal(formatWeekRange("2026-07-06"), "Jul 6 – 12");
+  });
+});

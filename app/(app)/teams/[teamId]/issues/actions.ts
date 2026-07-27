@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -12,8 +13,6 @@ type Type = (typeof TYPES)[number];
 
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 type Priority = (typeof PRIORITIES)[number];
-
-const MAX_VOTES_PER_TEAM = 3;
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/issues`;

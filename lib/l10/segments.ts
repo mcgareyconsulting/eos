@@ -42,7 +42,7 @@ export const SEGMENT_HINTS: Record<Segment, string> = {
   rocks: "Quick on-track / off-track per rock. Off-track → Issues.",
   headlines: "Customer wins, customer losses, employee news. Headlines, not discussions.",
   todos: "Check off prior week's to-dos. Anything not done after 1 week → Issues.",
-  ids: "Identify the real issue, Discuss it, Solve it. Capture the next step as a to-do (the Assistant can add it).",
+  ids: "Identify the real issue, Discuss it, Solve it. Capture the next step as a to-do before you move on.",
   conclude: "Recap new to-dos, identify cascading messages, rate the meeting 1-10.",
   done: "Meeting complete.",
 };

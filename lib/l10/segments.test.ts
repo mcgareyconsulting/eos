@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   SEGMENTS,
   SEGMENT_DURATION_SECONDS,
+  SEGMENT_HINTS,
+  SEGMENT_LABELS,
   TOTAL_MEETING_SECONDS,
   nextSegment,
   prevSegment,
@@ -78,6 +80,35 @@ describe("meeting structure invariants", () => {
       assert.ok(
         SEGMENT_DURATION_SECONDS[s] > 0,
         `${s} must have a positive duration budget`,
+      );
+    }
+  });
+
+  test("'segue' is first — the stage every new meeting opens on", () => {
+    // startMeeting() writes current_segment: "segue", advanceSegment() falls
+    // back to it, and meeting-live.tsx disables Back there. All three assume
+    // it sits at index 0.
+    assert.equal(SEGMENTS[0], "segue");
+  });
+});
+
+describe("segment copy", () => {
+  test("every segment has a label and a hint", () => {
+    for (const s of SEGMENTS) {
+      assert.ok(SEGMENT_LABELS[s]?.trim(), `${s} is missing a label`);
+      assert.ok(SEGMENT_HINTS[s]?.trim(), `${s} is missing a hint`);
+    }
+  });
+
+  test("hints never promise a removed assistant/AI feature", () => {
+    // The Gemini assistant was pulled from the app (see the standing
+    // constraints in CLAUDE.md). The IDS hint used to end with "(the
+    // Assistant can add it)" and shipped that dead promise to the screen for
+    // the whole IDS segment. Copy must not reintroduce it.
+    for (const s of SEGMENTS) {
+      assert.ok(
+        !/assistant|gemini/i.test(SEGMENT_HINTS[s]),
+        `${s} hint references a removed feature`,
       );
     }
   });

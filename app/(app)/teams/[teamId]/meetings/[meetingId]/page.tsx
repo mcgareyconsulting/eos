@@ -5,6 +5,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { type Segment, isSegment } from "@/lib/l10/segments";
+import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import {
   currentQuarter,
   endOfQuarter,
@@ -14,6 +15,7 @@ import {
 import { endMeeting } from "../actions";
 import { MeetingPresence } from "@/components/meeting-presence";
 import { MeetingLive } from "./meeting-live";
+import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
 import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
@@ -36,6 +38,8 @@ type MeetingDoc = {
   current_issue_id?: string | null;
   notes: string | null;
   absent_user_ids?: string[];
+  speaking_order?: string[];
+  speaking_index?: number;
 };
 
 const SCORECARD_WEEKS = 13;
@@ -59,6 +63,12 @@ export default async function MeetingDetailPage({
 
   const members = await getTeamMembers(tid);
   const absentUserIds = m.absent_user_ids ?? [];
+
+  // Meetings started before the speaking order shipped have no stored order;
+  // reconciling against the roster gives them the alphabetical fallback rather
+  // than an empty rail, so no backfill is needed.
+  const speakingOrder = reconcileSpeakingOrder(m.speaking_order, members);
+  const speakerIndex = m.speaking_index ?? 0;
 
   // Designated facilitator (label-only) for the live control bar.
   const driverName =
@@ -308,10 +318,14 @@ export default async function MeetingDetailPage({
         initialStartedAtMs={segmentStartedAtMs}
         initialEnded={!live}
         driverName={driverName}
+        members={members}
+        initialSpeakingOrder={speakingOrder}
+        initialSpeakerIndex={speakerIndex}
+        initialAbsentUserIds={absentUserIds}
       />
 
       {/* Segment content follows the locally-viewed stage (peek-aware). */}
-      {live && viewSegment !== "done" && viewSegment !== "segue" && (
+      {live && viewSegment !== "done" && (
         <section>
           <SegmentContent
             teamId={tid}
@@ -320,6 +334,9 @@ export default async function MeetingDetailPage({
             segment={viewSegment}
             currentIssueId={m.current_issue_id ?? null}
             members={members}
+            absentUserIds={absentUserIds}
+            speakingOrder={speakingOrder}
+            speakerIndex={speakerIndex}
           />
         </section>
       )}
@@ -364,6 +381,9 @@ async function SegmentContent({
   segment,
   currentIssueId,
   members,
+  absentUserIds,
+  speakingOrder,
+  speakerIndex,
 }: {
   teamId: string;
   userId: string;
@@ -371,7 +391,26 @@ async function SegmentContent({
   segment: Segment;
   currentIssueId: string | null;
   members: { user_id: string; full_name: string }[];
+  absentUserIds: string[];
+  speakingOrder: string[];
+  speakerIndex: number;
 }) {
+  // The roster is already in scope from the page's getTeamMembers call, so
+  // Segue needs no fetch of its own.
+  if (segment === "segue") {
+    return (
+      <SegmentSegue
+        teamId={teamId}
+        meetingId={meetingId}
+        userId={userId}
+        members={members}
+        initialSpeakingOrder={speakingOrder}
+        initialSpeakerIndex={speakerIndex}
+        initialAbsentUserIds={absentUserIds}
+      />
+    );
+  }
+
   const { db } = await requireTeamAccess(teamId);
 
   if (segment === "scorecard") {
@@ -462,11 +501,13 @@ async function SegmentContent({
     return (
       <SegmentRocks
         teamId={teamId}
+        meetingId={meetingId}
         quarter={currentQuarter()}
         defaultDue={toDateString(endOfQuarter())}
         initialRocks={initialRocks}
         initialTodos={initialTodos}
         members={members}
+        initialAbsentUserIds={absentUserIds}
       />
     );
   }

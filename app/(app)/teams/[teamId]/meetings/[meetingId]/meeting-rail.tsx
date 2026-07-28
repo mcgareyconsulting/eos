@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight, Check } from "lucide-react";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -44,6 +45,7 @@ export function MeetingRail({
   initialSegment,
   initialStartedAtMs,
   meetingStartedAtMs,
+  startedAtLabel,
   initialEnded,
   driverName,
   members,
@@ -60,6 +62,9 @@ export function MeetingRail({
   /** Meeting `started_at` — fixed for the life of the meeting, so a plain
    *  prop is enough; it never needs to come off the snapshot. */
   meetingStartedAtMs: number | null;
+  /** Server-formatted "Jul 28, 1:27 PM" — rendered verbatim so server and
+   *  client can't disagree on locale. */
+  startedAtLabel: string | null;
   initialEnded: boolean;
   driverName: string | null;
   members: { user_id: string; full_name: string }[];
@@ -211,6 +216,28 @@ export function MeetingRail({
               </span>
             </span>
           </div>
+          {/* Time-based 90-minute bar (distinct from the segment-index bar
+              removed per client feedback — that one overstated progress
+              because segment budgets are wildly uneven; elapsed wall-clock
+              over a fixed total can't). */}
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-1000 ease-linear",
+                totalElapsed !== null && totalElapsed > TOTAL_MEETING_SECONDS
+                  ? "bg-red-500"
+                  : "bg-hpb-blue",
+              )}
+              style={{
+                width: `${Math.min(100, ((totalElapsed ?? 0) / TOTAL_MEETING_SECONDS) * 100)}%`,
+              }}
+            />
+          </div>
+          {startedAtLabel && (
+            <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+              Started {startedAtLabel}
+            </div>
+          )}
 
           <div className="mt-3">
             <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -385,6 +412,16 @@ export function MeetingRail({
             >
               {armed ? "End meeting?" : "Finish"}
             </button>
+            {/* The way out without ending the meeting. Lives here (not in
+                the page header) because the global nav is hidden on this
+                route and exit belongs with the other leave-the-meeting
+                action. */}
+            <Link
+              href={`/teams/${teamId}/meetings`}
+              className="block text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              ← Back to Meetings
+            </Link>
           </div>
         )}
       </div>

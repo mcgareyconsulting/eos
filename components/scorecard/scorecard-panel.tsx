@@ -30,9 +30,11 @@ export function ScorecardPanel({
   members,
   showDelete = true,
   showGroupEditor = true,
+  compact = false,
+  toolbarExtra,
 }: {
   teamId: string;
-  teamLabel: string;
+  teamLabel?: string;
   weekRange: WeekRange;
   weeks: string[];
   metrics: ScorecardMetric[];
@@ -40,6 +42,9 @@ export function ScorecardPanel({
   members: ScorecardMember[];
   showDelete?: boolean;
   showGroupEditor?: boolean;
+  /** Embedded contexts (the L10 segment): no period tabs or section heading. */
+  compact?: boolean;
+  toolbarExtra?: React.ReactNode;
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [ownerId, setOwnerId] = useState("");
@@ -127,15 +132,19 @@ export function ScorecardPanel({
         onSearchChange={setSearch}
         visibleCount={filtered.length}
         totalCount={metrics.length}
+        compact={compact}
+        extra={toolbarExtra}
       />
 
-      <div className="flex items-center gap-2">
-        <h2 className="text-base font-semibold tracking-tight">Weekly</h2>
-        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-200 px-2 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-          {filtered.length}
-          {filtered.length !== metrics.length ? `/${metrics.length}` : ""}
-        </span>
-      </div>
+      {!compact && (
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold tracking-tight">Weekly</h2>
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-200 px-2 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            {filtered.length}
+            {filtered.length !== metrics.length ? `/${metrics.length}` : ""}
+          </span>
+        </div>
+      )}
 
       <ScorecardGrid
         teamId={teamId}
@@ -145,6 +154,7 @@ export function ScorecardPanel({
         members={members}
         showDelete={showDelete}
         showGroupEditor={showGroupEditor}
+        compact={compact}
         // Filtering lives in the panel; grid is presentation-only.
         hideLocalSearch
         // Preserve the panel's sort order. Grouped sections re-sort by

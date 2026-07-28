@@ -42,19 +42,28 @@ export type ScorecardMember = {
 // Fixed left-column widths so sticky offsets stay aligned while weeks scroll.
 const COL = {
   trend: 40,
-  title: 240,
-  goal: 88,
-  avg: 72,
+  title: 250,
+  owner: 44,
+  goal: 80,
+  avg: 76,
 } as const;
 
 const LEFT = {
   trend: 0,
   title: COL.trend,
-  goal: COL.trend + COL.title,
-  avg: COL.trend + COL.title + COL.goal,
+  owner: COL.trend + COL.title,
+  goal: COL.trend + COL.title + COL.owner,
+  avg: COL.trend + COL.title + COL.owner + COL.goal,
 } as const;
 
-const FROZEN_WIDTH = COL.trend + COL.title + COL.goal + COL.avg;
+const FROZEN_WIDTH = COL.trend + COL.title + COL.owner + COL.goal + COL.avg;
+
+/** Count of frozen columns — keep in sync with COL. */
+const FROZEN_COLS = 5;
+
+// Faint separators between week columns — without them the wide value area
+// reads as loose numbers floating in whitespace.
+const weekDivider = "border-l border-zinc-100 dark:border-zinc-800/60";
 
 function ownerInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -190,7 +199,7 @@ export function ScorecardGrid({
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
 
   const headerBg = "bg-zinc-50 dark:bg-zinc-950";
-  const totalCols = 4 + weeks.length + (showDelete ? 1 : 0);
+  const totalCols = FROZEN_COLS + weeks.length + (showDelete ? 1 : 0);
 
   const renderMetricRow = (m: ScorecardMetric) => {
     const values = weeks.map((w) => entryMap.get(`${m.id}__${w}`) ?? null);
@@ -212,7 +221,7 @@ export function ScorecardGrid({
         className="group border-b border-zinc-200 dark:border-zinc-800 last:border-0"
       >
         <td
-          className={cn(stickyCell(), "z-10 px-2 py-2 text-center")}
+          className={cn(stickyCell(), "z-10 px-2 py-2.5 align-middle")}
           style={{ left: LEFT.trend, width: COL.trend, minWidth: COL.trend }}
         >
           <div className="flex justify-center">
@@ -221,7 +230,7 @@ export function ScorecardGrid({
         </td>
 
         <td
-          className={cn(stickyCell(), "z-10 px-3 py-2")}
+          className={cn(stickyCell(), "z-10 px-3 py-2.5 align-middle")}
           style={{
             left: LEFT.title,
             width: COL.title,
@@ -232,41 +241,44 @@ export function ScorecardGrid({
             maxWidth: COL.title,
           }}
         >
-          <div className="flex items-start gap-2.5">
+          {/* Wraps rather than truncates — but clamped at two lines so a
+              paragraph-length measurable can't make its row twice the height
+              of its neighbors. Full text on hover. */}
+          <div
+            className="line-clamp-2 break-words font-medium text-zinc-900 dark:text-zinc-100"
+            title={m.name}
+          >
+            {m.name}
+          </div>
+          {showGroupEditor && (
+            <div className="mt-0.5">
+              <GroupCell
+                teamId={teamId}
+                metricId={m.id}
+                initial={m.group ?? null}
+              />
+            </div>
+          )}
+        </td>
+
+        <td
+          className={cn(stickyCell(), "z-10 px-1 py-2.5 align-middle")}
+          style={{ left: LEFT.owner, width: COL.owner, minWidth: COL.owner }}
+        >
+          <div className="flex justify-center">
             <span
-              className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
               title={owner}
             >
               {ownerInitials(owner === "—" ? m.name : owner)}
             </span>
-            <div className="min-w-0 flex-1">
-              {/* Wraps rather than truncates: the whole point of the row is
-                  to read the measurable, and a truncated name plus a column
-                  that stretched to fit pushed the 13 week columns off
-                  screen. The cell's maxWidth keeps the wrap honest. */}
-              <div className="font-medium break-words text-zinc-900 dark:text-zinc-100">
-                {m.name}
-              </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {owner}
-                </span>
-                {showGroupEditor && (
-                  <GroupCell
-                    teamId={teamId}
-                    metricId={m.id}
-                    initial={m.group ?? null}
-                  />
-                )}
-              </div>
-            </div>
           </div>
         </td>
 
         <td
           className={cn(
             stickyCell(),
-            "z-10 px-2 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-400",
+            "z-10 px-2 py-2.5 text-right align-middle tabular-nums text-zinc-600 dark:text-zinc-400",
           )}
           style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
         >
@@ -277,7 +289,7 @@ export function ScorecardGrid({
           className={cn(
             stickyCell(),
             stickyShadow,
-            "z-10 px-2 py-2 text-right font-medium tabular-nums",
+            "z-10 px-2 py-2.5 text-right align-middle font-medium tabular-nums",
             avgTone,
           )}
           style={{ left: LEFT.avg, width: COL.avg, minWidth: COL.avg }}
@@ -297,7 +309,8 @@ export function ScorecardGrid({
             <td
               key={w}
               className={cn(
-                "px-1 py-1",
+                "px-1 py-1 align-middle",
+                weekDivider,
                 isCurrent && "bg-sky-50/40 dark:bg-sky-950/15",
               )}
             >
@@ -385,7 +398,7 @@ export function ScorecardGrid({
             {/* Year band across week columns only */}
             <tr className={headerBg}>
               <th
-                colSpan={4}
+                colSpan={FROZEN_COLS}
                 className={cn(
                   "sticky left-0 z-40 border-b border-zinc-200 dark:border-zinc-800",
                   headerBg,
@@ -450,6 +463,19 @@ export function ScorecardGrid({
               <th
                 className={cn(
                   stickyCell(headerBg),
+                  "z-40 border-b border-zinc-200 px-1 py-2 font-medium dark:border-zinc-800",
+                )}
+                style={{
+                  left: LEFT.owner,
+                  width: COL.owner,
+                  minWidth: COL.owner,
+                }}
+              >
+                <span className="sr-only">Owner</span>
+              </th>
+              <th
+                className={cn(
+                  stickyCell(headerBg),
                   "z-40 border-b border-zinc-200 px-2 py-2 text-right font-medium dark:border-zinc-800",
                 )}
                 style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
@@ -474,6 +500,7 @@ export function ScorecardGrid({
                     className={cn(
                       "border-b border-zinc-200 px-2 py-2 text-center font-medium tabular-nums dark:border-zinc-800",
                       headerBg,
+                      weekDivider,
                       isCurrent && "text-hpb-blue dark:text-hpb-gold",
                     )}
                   >

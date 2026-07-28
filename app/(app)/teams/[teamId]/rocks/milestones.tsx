@@ -44,43 +44,52 @@ export function MilestonesDisclosure({
   defaultDue: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The add form is opt-in, not part of the disclosure: expanding to *read*
+  // milestones during an L10 shouldn't shove an entry form into the room.
+  const [adding, setAdding] = useState(false);
   const count = milestones.length;
   const doneCount = milestones.filter((m) => m.completed).length;
   const allDone = count > 0 && doneCount === count;
 
   return (
     <div className="col-span-12">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
-      >
-        <ChevronRight
-          className={
-            "h-3.5 w-3.5 transition-transform " + (open ? "rotate-90" : "")
-          }
-        />
-        {count === 0 ? (
-          <span className="inline-flex items-center gap-1">
-            <Plus className="h-3 w-3" />
-            Add milestones
-          </span>
-        ) : (
-          <>
-            <span>Milestones</span>
-            <span
-              className={
-                "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset " +
-                (allDone
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          <ChevronRight
+            className={
+              "h-3.5 w-3.5 transition-transform " + (open ? "rotate-90" : "")
+            }
+          />
+          <span>Milestones</span>
+          <span
+            className={
+              "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset " +
+              (count === 0
+                ? "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700"
+                : allDone
                   ? "bg-hpb-green/10 text-hpb-green ring-hpb-green/30"
                   : "bg-hpb-gold/15 text-hpb-brown dark:text-hpb-gold ring-hpb-gold/30")
-              }
-            >
-              {doneCount}/{count}
-            </span>
-          </>
-        )}
-      </button>
+            }
+          >
+            {doneCount}/{count}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(true);
+            setOpen(true);
+          }}
+          className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-100"
+        >
+          <Plus className="h-3 w-3" />
+          Add milestone
+        </button>
+      </div>
 
       {open && (
         <div className="mt-2 ml-5 space-y-2 border-l border-zinc-300 dark:border-zinc-800 pl-4">
@@ -110,20 +119,22 @@ export function MilestonesDisclosure({
               milestone={m}
               ownerName={
                 m.owner_id
-                  ? members.find((x) => x.user_id === m.owner_id)?.full_name ??
-                    "—"
+                  ? (members.find((x) => x.user_id === m.owner_id)?.full_name ??
+                    "—")
                   : "—"
               }
             />
           ))}
 
-          <AddMilestoneForm
-            teamId={teamId}
-            rockId={rockId}
-            members={members}
-            defaultOwnerId={rockOwnerId ?? members[0]?.user_id ?? ""}
-            defaultDue={defaultDue}
-          />
+          {adding && (
+            <AddMilestoneForm
+              teamId={teamId}
+              rockId={rockId}
+              members={members}
+              defaultOwnerId={rockOwnerId ?? members[0]?.user_id ?? ""}
+              defaultDue={defaultDue}
+            />
+          )}
         </div>
       )}
     </div>

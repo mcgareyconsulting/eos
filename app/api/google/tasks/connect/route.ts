@@ -9,11 +9,11 @@ import {
 
 const STATE_COOKIE = "g_tasks_oauth_state";
 
-// Kicks off the Google OAuth consent flow for the Tasks connector. Gated on a
-// valid EOS session so a random visitor can't initiate a connection. The
-// redirect URI is derived from the request origin, so the same code works on
-// localhost and Cloud Run — just register both callback URLs on the OAuth
-// client.
+// Kicks off the Google OAuth consent flow for the current EOS user's Tasks
+// connector. Gated on a valid session so a random visitor can't initiate a
+// connection; the resulting tokens are stored under that user's uid. Prefer
+// GOOGLE_OAUTH_REDIRECT_URI in prod; locally the redirect falls back to the
+// request origin — register both callback URLs on the OAuth client.
 export async function GET(request: NextRequest) {
   const session = await verifySession();
   if (!session)

@@ -76,8 +76,18 @@ live-database config — it refuses to build from sandbox config, so a deploy
 can never ship an app pointed at test data), tags the image with the current
 git commit, and runs Cloud Build — which builds, pushes to Artifact Registry,
 and rolls the Cloud Run service. It refuses to deploy config for one project
-into another, and flags a dirty working tree in the image tag. Runtime env
-vars already on the service (allowlist, `ENV_LABEL`) are preserved.
+into another, and flags a dirty working tree in the image tag.
+
+After a successful roll it also **merges** a small allowlist of runtime keys
+from the same env file onto the Cloud Run service (today:
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_OAUTH_REDIRECT_URI` — only keys that are set). Other service env
+(`SIGN_IN_ALLOWLIST`, `ENV_LABEL`, …) is left alone. To push those keys
+without a rebuild:
+
+```bash
+pnpm ship -- --sync-env
+```
 
 Because images are tagged by commit, "what's running" always answers to
 "which commit," and rollback is redeploying a previous tag — old images stay

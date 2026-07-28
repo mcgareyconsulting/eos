@@ -46,6 +46,12 @@ resource "google_cloud_run_v2_service" "app" {
       template[0].containers[0].image,
       client,
       client_version,
+      # Service-level scaling (distinct from template.scaling above, which we
+      # do manage). The API always returns this block zero-populated, so with
+      # nothing declared here Terraform plans to remove it on every run and
+      # the API puts it straight back — a diff that never converges and would
+      # mask real drift. Instance counts stay controlled by template.scaling.
+      scaling,
     ]
   }
 }

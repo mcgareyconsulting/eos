@@ -3,11 +3,12 @@
 import { useMemo } from "react";
 import {
   collection,
+  doc,
   query as fsQuery,
   where,
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
-import { useCollection } from "@/lib/firebase/use-collection";
+import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import { formatDateOnly } from "@/lib/dates";
 import { StatusPopover } from "../../rocks/status-popover";
 import { RockTypeBadge } from "../../rocks/rock-type-badge";
@@ -69,18 +70,20 @@ function sortRocks(rocks: RockDoc[]): RockDoc[] {
 
 export function SegmentRocks({
   teamId,
-  quarter,
+  meetingId,
   defaultDue,
   initialRocks,
   initialTodos,
   members,
+  initialAbsentUserIds,
 }: {
   teamId: string;
-  quarter: string;
+  meetingId: string;
   defaultDue: string;
   initialRocks: RockDoc[];
   initialTodos: TodoDoc[];
   members: Member[];
+  initialAbsentUserIds: string[];
 }) {
   const db = getClientDb();
 
@@ -103,6 +106,20 @@ export function SegmentRocks({
 
   const rocks = useCollection<RockDoc>(rocksQuery, initialRocks);
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
+
+  // Attendance is set on the Segue stage and lives on the meeting doc, so
+  // subscribe rather than relying on the server-rendered value — marking
+  // someone absent should dim their rocks for everyone immediately.
+  const meetingRef = useMemo(
+    () => doc(db, "meetings", meetingId),
+    [db, meetingId],
+  );
+  const meeting = useDoc<{ absent_user_ids?: string[] }>(
+    meetingRef,
+    { absent_user_ids: initialAbsentUserIds },
+    "segment-rocks",
+  );
+  const absent = new Set(meeting.absent_user_ids ?? []);
 
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
   for (const t of todos) {
@@ -130,14 +147,20 @@ export function SegmentRocks({
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  const visible = sortRocks(rocks.filter((r) => r.quarter === quarter));
+  // Show every non-cancelled rock. This used to filter on
+  // r.quarter === currentQuarter(), but `quarter` is a free-text label —
+  // imported rocks carry the client's own fiscal wording ("Q2 FY 2026"),
+  // which never string-matches "2026-Q3", so the segment rendered empty
+  // while the Rocks tab (which doesn't filter) looked fine. The meeting
+  // reviews the rocks the team actually has; cancelled ones stay out.
+  const visible = sortRocks(rocks.filter((r) => r.status !== "cancelled"));
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          {visible.length} rock{visible.length === 1 ? "" : "s"} · {quarter} ·
-          off-track? drop to IDS
+          {visible.length} rock{visible.length === 1 ? "" : "s"} ·
+          off-track? drop to Issues
         </div>
         <QuickAddIssue teamId={teamId} prefill="Off-track rock: " compact />
       </div>
@@ -145,13 +168,21 @@ export function SegmentRocks({
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {visible.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            No rocks for {quarter}.
+            No rocks yet — add them on the Rocks tab.
           </div>
         )}
-        {visible.map((r) => (
+        {visible.map((r) => {
+          // Owner isn't in the room. Dim the row so the group can see at a
+          // glance what's actually reportable this week — but keep it fully
+          // readable and interactive. This is a cue, not a lock.
+          const ownerAbsent = !!r.owner_id && absent.has(r.owner_id);
+          return (
           <div
             key={r.id}
-            className="group grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm"
+            className={
+              "group grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm " +
+              (ownerAbsent ? "bg-zinc-50 opacity-70 dark:bg-zinc-900/50" : "")
+            }
           >
             <div className="col-span-6 min-w-0">
               <div className="font-medium">{r.title}</div>
@@ -170,6 +201,11 @@ export function SegmentRocks({
             </div>
             <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
               {ownerName(r.owner_id)}
+              {ownerAbsent && (
+                <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                  Absent
+                </div>
+              )}
             </div>
             <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
               {r.due_date ? formatDateOnly(r.due_date) : "—"}
@@ -191,7 +227,8 @@ export function SegmentRocks({
               defaultDue={defaultDue}
             />
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { EnvBanner } from "@/components/env-badge";
 
 type Team = { id: string; name: string };
 type Profile = {
@@ -52,7 +53,12 @@ export function AppShell({
     : [];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // Column wrapper so the environment banner can span the full width above
+    // both the sidebar and the main pane. Without a label it renders nothing
+    // and this collapses to the original single-row layout.
+    <div className="flex h-screen flex-col overflow-hidden">
+      <EnvBanner />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="px-4 py-5 border-b border-zinc-300 dark:border-zinc-800">
           <Link href="/home" className="block">
@@ -113,6 +119,7 @@ export function AppShell({
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">{children}</div>
       </main>
+      </div>
     </div>
   );
 }

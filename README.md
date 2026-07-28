@@ -73,6 +73,27 @@ Pass the **email or UID of the account you sign in to the app with** — using y
 
 See **[docs/DEMO.md](docs/DEMO.md)** for the 5–10 minute walkthrough script.
 
+### 6. Import real data (optional)
+
+To seed a team from a client's actual numbers instead of the synthetic demo
+set, `pnpm import:csv` loads scorecards, rocks, and milestones from
+ninety.io-style CSV, TSV, or .xlsx exports (or any spreadsheet with the same
+columns):
+
+```bash
+pnpm import:csv --team "Enterprise Systems & Data" --create-team \
+  --leader <your-login-email> \
+  --scorecard scorecard.csv --rocks rocks.csv --milestones milestones.csv --dry-run
+```
+
+`--create-team` creates the team, `--leader` puts your account on it, and every
+distinct `Owner` in the files becomes a team member — so an export is enough to
+stand up a whole team.
+
+See **[docs/CSV_IMPORT.md](docs/CSV_IMPORT.md)** for the column reference,
+owner matching, and re-run behavior. Templates live in
+[`scripts/csv-templates/`](scripts/csv-templates).
+
 ## Deploy (Cloud Run)
 
 The app deploys to Cloud Run in the client's GCP project — see
@@ -93,7 +114,7 @@ rolling (GCP project, IAM access, sign-in domain, security tier), send them
 
 ## Security
 
-Access is gated on team membership in Firestore rules (`firestore.rules`), mirrored by `requireTeamAccess()` on the server. As defense-in-depth, the broad org/user/team reads are gated to the Workspace domain (`highplainsbank.com`). App sign-in is **HPB SSO only** — there is no email allowlist and no break-glass app account. Admin in-app is the Identity Platform `role: "admin"` custom claim, granted by HPB. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login. The authoritative domain perimeter is the Firebase Auth provider's domain restriction.
+Access is gated on team membership in Firestore rules (`firestore.rules`), mirrored by `requireTeamAccess()` on the server. The **sign-in perimeter** is the server-enforced `SIGN_IN_ALLOWLIST` checked in `createSession()` (`lib/firebase/session.ts`): a comma-separated list of allowed domains (`@highplainsbank.com`) and exact emails (the consultant's account, for the duration of the engagement). Accounts outside it are refused a session — the client-side `hd` hint and the provider's domain restriction are not used for enforcement, since neither can express "domain plus one account". Unset, sign-in is open (emulator/trial). As defense-in-depth, the broad org/user/team reads in `firestore.rules` (`inDomain()`) mirror the same perimeter — keep the two in lockstep. Admin in-app is the Identity Platform `role: "admin"` custom claim, granted by HPB. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login.
 
 ## Project structure
 

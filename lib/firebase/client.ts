@@ -55,12 +55,22 @@ export function getClientDb(): Firestore {
   return db;
 }
 
-// Google provider preconfigured with hosted-domain hint (if set).
-// The hint scopes the account picker; the *real* perimeter is enforced at
-// the Firebase Auth provider config in the console.
+// Google provider for the sign-in popup.
+//
+// The `hd` hint only pre-filters the account chooser and can't express "domain
+// plus one account", so it's optional and off by default. The actual perimeter
+// is the server-side SIGN_IN_ALLOWLIST check in createSession()
+// (lib/firebase/session.ts) — nothing here is enforcement.
+//
+// `prompt: "select_account"` is always sent. Without it Google silently reuses
+// whichever account the browser is already signed into, so anyone whose
+// default is a personal account gets refused by the allowlist and then hits
+// the identical refusal on every retry — the picker never reappears and the
+// only way out is an incognito window. Forcing the chooser makes "sign in
+// with the other one" the obvious next click.
 export function googleProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
   const hd = process.env.NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN;
-  if (hd) provider.setCustomParameters({ hd });
+  provider.setCustomParameters({ prompt: "select_account", ...(hd ? { hd } : {}) });
   return provider;
 }

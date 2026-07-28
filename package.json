@@ -8,12 +8,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\"",
+    "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-hpb-eos",
     "emulators:all": "npm --prefix functions run build && firebase emulators:start --only auth,firestore,functions --project demo-hpb-eos",
     "seed": "tsx scripts/seed-demo.ts",
     "reset": "tsx scripts/reset-demo.ts",
-    "team:info": "tsx scripts/team-info.ts"
+    "team:info": "tsx scripts/team-info.ts",
+    "import:csv": "tsx scripts/import-csv.ts",
+    "team:delete": "tsx scripts/delete-team.ts",
+    "accounts:create": "tsx scripts/create-accounts.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

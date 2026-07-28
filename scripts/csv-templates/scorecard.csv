@@ -1,0 +1,7 @@
+Group Name,Status,Title,Description,Owner,Goal,Average,Jul 27 - Aug 2,Jul 20 - Jul 26,Jul 13 - Jul 19,Jul 6 - Jul 12,Jun 29 - Jul 5,Jun 22 - Jun 28,Jun 15 - Jun 21,Jun 8 - Jun 14,Jun 1 - Jun 7,May 25 - May 31,May 18 - May 24,May 11 - May 17,May 4 - May 10
+Deposit and Loan Volume,Active,New deposit accounts,Consumer + business accounts opened,Sarah Chen,≥ 40,41,44,38,45,41,39,47,36,42,40,43,38,44,41
+Deposit and Loan Volume,Active,Loan originations,Closed and funded,Marcus Reed,"≥ $1,200,000","$1,310,000","$1,450,000","$1,180,000","$1,390,000","$1,240,000","$1,510,000","$1,120,000","$1,340,000","$1,270,000","$1,420,000","$1,190,000","$1,360,000","$1,280,000","$1,300,000"
+Service,Active,Avg loan decision time (days),Application received to decision,Tom Bradley,≤ 7,6.8,5.9,6.4,7.2,6.1,6.8,7.4,6.2,7.1,6.6,7.3,6.9,6.5,7.0
+Service,Active,Customer complaints,Logged in the CRM,Elena Vasquez,≤ 3,2.4,1,3,2,4,2,1,3,2,3,2,4,2,2
+People,Active,Weekly 1-on-1s completed,Every direct report,Sarah Chen,Yes,,Yes,Yes,No,Yes,Yes,Yes,Yes,No,Yes,Yes,Yes,Yes,Yes
+People,Archived,Old headcount metric,Replaced by the HR dashboard,Tom Bradley,≥ 12,,,,,,,,,,,,,,

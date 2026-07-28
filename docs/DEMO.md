@@ -67,10 +67,14 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   meeting."
 
 ### 2:45 — Issues · "The list we actually work"
-- **DO:** Sidebar → **Issues**. Show issues ranked by team votes, mixed
-  statuses (Open / Solving / Solved / Dropped).
-- **SAY:** "Every problem, prioritized by the team's votes. We don't solve these
-  ad hoc — we solve the top ones, together, in the Level 10."
+- **DO:** Sidebar → **Issues**. Two tables: **Short-term** on top, ranked by
+  team votes, with the +/− vote control on every row and your remaining
+  credits in the header; **Long-term** parked below it, ranked by priority.
+  Click **+** on an issue and watch it climb the list immediately.
+- **SAY:** "Every problem, prioritized by the team's votes — and you can vote
+  any time, not just in the meeting. Short-term is what we work this week;
+  long-term is parked where it won't crowd the hour. We don't solve these ad
+  hoc — we solve the top ones, together, in the Level 10."
 
 ### 3:15 — Start the Level 10 · "The 90-minute heartbeat"
 - **DO:** Sidebar → **Meetings**. Note the one completed meeting with its team
@@ -78,6 +82,20 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   **Segue** with the agenda timer running.
 - **SAY:** "This is the engine. A timed, 90-minute agenda the team runs every
   week. Same order, every time — that consistency is the whole point of EOS."
+
+### 3:30 — Segue · "Who's here, and who's up"
+- **DO:** On **Segue**, show the numbered **speaking order**. Click
+  **Next speaker →** once or twice — the highlight moves and everyone in the
+  meeting sees it. Move someone with **▲/▼**. Then mark one teammate
+  **absent** (the person icon on their row).
+- **SAY:** "Segue is good news, 30 to 60 seconds each — the order is the
+  team's, and it carries over week to week so nobody wonders who's next. We
+  mark who's actually in the room here, and that follows us through the rest
+  of the meeting."
+- **Note:** the order stays visible as a strip on *every* later stage — Rocks,
+  Headlines and To-Dos are round-robin reports too. And if you click ahead to
+  another stage, a **"Group is on X — Catch up"** pill floats at the bottom of
+  the screen: peeking is private, and one click puts you back with the group.
 
 ### 3:45 — Scorecard & Rocks segments · "Drop problems into the list"
 - **DO:** Advance to the **Scorecard** segment (top nav / Next). On the

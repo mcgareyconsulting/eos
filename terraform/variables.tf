@@ -45,6 +45,22 @@ variable "max_instances" {
   default     = 2
 }
 
+variable "grant_cloudbuild_deploy_permissions" {
+  description = <<-EOT
+    Grant the Cloud Build deploy identity (Compute Engine default SA on any
+    fresh project this module is first applied to — see iam.tf) the roles
+    cloudbuild.yaml needs to actually deploy: roles/run.admin,
+    roles/artifactregistry.writer, roles/iam.serviceAccountUser (to act as
+    the runtime SA), and roles/logging.logWriter. Default OFF so this stays a
+    deliberate decision by the bank's cloud team rather than something
+    bundled into every apply. Without it, `terraform apply` succeeds but the
+    first `gcloud builds submit` fails until these are granted manually
+    (see docs/DEPLOY.md §6.1).
+  EOT
+  type        = bool
+  default     = false
+}
+
 # --- Optional security levers (Tier 1, see docs/ROADMAP.md Pass 10 + ---
 # --- terraform/levers.tf). All default OFF; the app runs fine without ---
 # --- any of them. Flip on per the bank's security review requirements. ---

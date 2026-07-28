@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useAuthUid } from "@/lib/firebase/use-collection";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/l10/segments";
 import { advanceSegment } from "../actions";
 import { SegmentTimer } from "./segment-timer";
+import { SpeakingOrderRail } from "./speaking-order-rail";
 
 const VISIBLE = SEGMENTS.filter((s) => s !== "done");
 
@@ -29,6 +31,10 @@ export function MeetingLive({
   initialStartedAtMs,
   initialEnded,
   driverName,
+  members,
+  initialSpeakingOrder,
+  initialSpeakerIndex,
+  initialAbsentUserIds,
 }: {
   teamId: string;
   meetingId: string;
@@ -38,6 +44,10 @@ export function MeetingLive({
   initialStartedAtMs: number | null;
   initialEnded: boolean;
   driverName: string | null;
+  members: { user_id: string; full_name: string }[];
+  initialSpeakingOrder: string[];
+  initialSpeakerIndex: number;
+  initialAbsentUserIds: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -51,6 +61,9 @@ export function MeetingLive({
     segment: Segment;
     startedAtMs: number | null;
     ended: boolean;
+    speakingOrder: string[];
+    speakerIndex: number;
+    absentUserIds: string[];
   } | null>(null);
   const uid = useAuthUid();
 
@@ -70,6 +83,9 @@ export function MeetingLive({
           segment: (x.current_segment as Segment) ?? "segue",
           startedAtMs: ts?.toMillis?.() ?? null,
           ended: x.ended_at != null,
+          speakingOrder: (x.speaking_order as string[]) ?? [],
+          speakerIndex: (x.speaking_index as number) ?? 0,
+          absentUserIds: (x.absent_user_ids as string[]) ?? [],
         });
       },
       (e) => console.error("[meeting-live] subscribe:", e),
@@ -80,6 +96,9 @@ export function MeetingLive({
   const activeSegment = live?.segment ?? initialSegment;
   const startedAtMs = live?.startedAtMs ?? initialStartedAtMs;
   const ended = live?.ended ?? initialEnded;
+  const speakingOrder = live?.speakingOrder ?? initialSpeakingOrder;
+  const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
+  const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
 
   // Followers: when the group moves to a stage we're not showing, reload the
   // page so the new stage's content renders. (Peekers are left alone.)
@@ -109,29 +128,18 @@ export function MeetingLive({
 
   const activeIndex = SEGMENTS.indexOf(activeSegment);
   const peeking = viewSegment !== activeSegment;
-  const pct = Math.min(
-    ((activeIndex + 1) / (SEGMENTS.length - 1)) * 100,
-    100,
-  );
 
   return (
     <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+      {/* No percent/progress bar here (removed per client feedback): segments
+          have wildly different budgets (Segue 5 min vs Issues 60 min), so an
+          index-based bar overstated progress all meeting. The step pills below
+          carry position; the SegmentTimer carries time. */}
       {!ended && (
-        <>
-          <div className="mb-3 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
-            <span>
-              Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
-              {SEGMENTS.length - 1}
-            </span>
-            <span>{Math.round(pct)}%</span>
-          </div>
-          <div className="mb-3 h-1 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-            <div
-              className="h-full bg-hpb-blue transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </>
+        <div className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">
+          Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
+          {SEGMENTS.length - 1}
+        </div>
       )}
 
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -171,19 +179,33 @@ export function MeetingLive({
         })}
       </div>
 
-      {/* Peek banner — you're viewing a stage the group isn't on. */}
+      {/* Peek banner — you're viewing a stage the group isn't on. Context
+          only: the catch-up control is the floating pill below, so there
+          aren't two competing buttons for the same action. */}
       {!ended && peeking && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-hpb-blue/5 px-3 py-2 text-xs text-zinc-600 dark:bg-hpb-blue/10 dark:text-zinc-300">
           <span>
             Peeking at <strong>{SEGMENT_LABELS[viewSegment]}</strong> · group is
             on <strong>{SEGMENT_LABELS[activeSegment]}</strong>
           </span>
+        </div>
+      )}
+
+      {/* Floating catch-up. Deliberately `fixed`, not `sticky`: the page
+          scrolls inside <main> (see components/app-shell.tsx), so a control
+          living in this card scrolls out of reach exactly when a peeker
+          reading segment content needs it. This only ever moves *you* to the
+          group — it never moves the group. */}
+      {!ended && peeking && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
           <button
             type="button"
             onClick={goLive}
-            className="font-medium text-hpb-blue hover:underline"
+            className="inline-flex items-center gap-2 rounded-full bg-hpb-blue px-4 py-2 text-sm font-medium text-white shadow-lg shadow-black/20 ring-1 ring-inset ring-white/20 transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/50"
           >
-            Return to live
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+            Group is on {SEGMENT_LABELS[activeSegment]} — Catch up
+            <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -230,6 +252,19 @@ export function MeetingLive({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Whose turn it is, on every stage. Hidden on Segue, where the full
+          interactive rotation control is already on screen. */}
+      {!ended && viewSegment !== "segue" && (
+        <SpeakingOrderRail
+          teamId={teamId}
+          meetingId={meetingId}
+          order={speakingOrder}
+          speakerIndex={speakerIndex}
+          absentUserIds={absentUserIds}
+          members={members}
+        />
       )}
     </div>
   );

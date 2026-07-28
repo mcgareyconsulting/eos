@@ -261,6 +261,9 @@ settled, your engineers (or ours, with the access from §2) can follow:
   Terraform flags backing the §5 tiers above.
 - [`docs/ROADMAP.md`](./ROADMAP.md) — longer-running architecture notes,
   including the Firestore → BigQuery data flow design referenced in §6.
+- [`docs/CUTOVER_CHECKLIST.md`](./CUTOVER_CHECKLIST.md) — the ordered,
+  value-by-value checklist for §7 above: exactly what changes moving from
+  our demo project to yours, and in what order.
 
 ## Open decisions
 

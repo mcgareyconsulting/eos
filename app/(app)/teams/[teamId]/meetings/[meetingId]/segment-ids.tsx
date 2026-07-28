@@ -10,6 +10,20 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
+import {
+  MAX_VOTES_PER_TEAM,
+  PRIORITY_BADGE,
+  PRIORITY_LABEL,
+  STATUS_BADGE,
+  STATUS_LABEL,
+  rankLongTerm,
+  rankShortTerm,
+  splitIssuesByTerm,
+  voteCredits,
+  type IssuePriority,
+  type IssueStatus,
+  type IssueType,
+} from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
 import { StatusActions } from "../../issues/status-actions";
 import { deleteIssue } from "../../issues/actions";
@@ -22,10 +36,10 @@ type IssueDoc = {
   title: string;
   description: string | null;
   owner_id: string | null;
-  priority: "urgent" | "high" | "medium" | "low" | null;
+  priority: IssuePriority | null;
   votes: number;
-  type: "short" | "long";
-  status: "open" | "solving" | "solved" | "dropped";
+  type: IssueType;
+  status: IssueStatus;
 };
 
 type VoteDoc = {
@@ -37,46 +51,6 @@ type VoteDoc = {
 };
 
 type Member = { user_id: string; full_name: string };
-
-const STATUS_LABEL: Record<IssueDoc["status"], string> = {
-  open: "Open",
-  solving: "Solving",
-  solved: "Solved",
-  dropped: "Dropped",
-};
-
-const STATUS_BADGE: Record<IssueDoc["status"], string> = {
-  open: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300",
-  solving:
-    "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950 dark:text-blue-300",
-  solved:
-    "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300",
-  dropped:
-    "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
-};
-
-const STATUS_ORDER = ["open", "solving", "solved", "dropped"];
-
-// Display-only — ranking during the meeting stays vote-based (see `sorted`
-// below). This mirrors the priority badge shown on the standalone Issues tab.
-const PRIORITY_LABEL: Record<
-  NonNullable<IssueDoc["priority"]>,
-  string
-> = {
-  urgent: "Urgent",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-};
-
-const PRIORITY_BADGE: Record<NonNullable<IssueDoc["priority"]>, string> = {
-  urgent:
-    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950 dark:text-red-300",
-  high: "bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-950 dark:text-orange-300",
-  medium:
-    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300",
-  low: "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
-};
 
 export function SegmentIDS({
   teamId,
@@ -124,24 +98,17 @@ export function SegmentIDS({
   );
   const discussingId = meetingLive.current_issue_id ?? null;
 
-  const myVoteByIssue = new Map<string, number>();
-  let myVotesUsed = 0;
-  for (const v of votes) {
-    const c = Number(v.count ?? 1);
-    myVoteByIssue.set(v.issue_id, c);
-    myVotesUsed += c;
-  }
-  const myVotesRemaining = Math.max(0, 3 - myVotesUsed);
+  const {
+    byIssue: myVoteByIssue,
+    used: myVotesUsed,
+    remaining: myVotesRemaining,
+  } = voteCredits(votes);
 
-  const sorted = [...issues].sort((a, b) => {
-    // The issue being discussed pins to the very top for everyone.
-    if (a.id === discussingId) return -1;
-    if (b.id === discussingId) return 1;
-    const byStatus =
-      STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
-    if (byStatus !== 0) return byStatus;
-    return (b.votes ?? 0) - (a.votes ?? 0);
-  });
+  // Short-term is the IDS list the hour actually works; long-term is parked
+  // below it so it doesn't compete for attention during the meeting.
+  const { short, long } = splitIssuesByTerm(issues);
+  const rankedShort = rankShortTerm(short, discussingId);
+  const rankedLong = rankLongTerm(long);
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -158,24 +125,24 @@ export function SegmentIDS({
                 : "text-zinc-700 dark:text-zinc-300")
             }
           >
-            {myVotesUsed}/3
+            {myVotesUsed}/{MAX_VOTES_PER_TEAM}
           </span>{" "}
           of your votes used
           {myVotesRemaining === 0
             ? " · out of votes — tap − on an issue to re-allocate"
-            : " · stack up to 3 on a single issue"}{" "}
+            : ` · stack up to ${MAX_VOTES_PER_TEAM} on a single issue`}{" "}
           · sorted by team votes
         </div>
         <QuickAddIssue teamId={teamId} compact />
       </div>
 
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-        {sorted.length === 0 && (
+        {rankedShort.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            No issues yet. Drop one from any segment.
+            No short-term issues. Drop one from any segment.
           </div>
         )}
-        {sorted.map((i) => {
+        {rankedShort.map((i) => {
           const remove = deleteIssue.bind(null, teamId, i.id);
           const isDiscussing = i.id === discussingId;
           const toggleDiscuss = setDiscussingIssue.bind(
@@ -220,9 +187,6 @@ export function SegmentIDS({
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
                   >
                     {STATUS_LABEL[i.status]}
-                  </span>
-                  <span className="text-xs text-zinc-500">
-                    {i.type === "long" ? "Long-term" : "Short-term"}
                   </span>
                 </div>
                 <div className="mt-1 font-medium">{i.title}</div>
@@ -275,6 +239,72 @@ export function SegmentIDS({
           );
         })}
       </div>
+
+      {/* Long-term issues are parked below the IDS list: visible for context,
+          but not votable and not part of the hour's ranking. */}
+      {rankedLong.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            Long-term
+            <span className="ml-2 font-normal">
+              {rankedLong.length} · parked · ranked by priority
+            </span>
+          </div>
+          <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            {rankedLong.map((i) => {
+              const remove = deleteIssue.bind(null, teamId, i.id);
+              return (
+                <div
+                  key={i.id}
+                  className="group flex items-start gap-3 px-4 py-3 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {i.priority && (
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
+                        >
+                          {PRIORITY_LABEL[i.priority]}
+                        </span>
+                      )}
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                      >
+                        {STATUS_LABEL[i.status]}
+                      </span>
+                    </div>
+                    <div className="mt-1 font-medium">{i.title}</div>
+                    {i.description && (
+                      <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
+                        {i.description}
+                      </div>
+                    )}
+                    <div className="mt-1 text-xs text-zinc-600">
+                      {ownerName(i.owner_id)}
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <StatusActions
+                      teamId={teamId}
+                      issueId={i.id}
+                      status={i.status}
+                    />
+                    <form action={remove}>
+                      <button
+                        type="submit"
+                        className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                        aria-label="Delete issue"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -98,7 +98,7 @@ export function SegmentScorecard({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          last {weeks.length} weeks · off-track? drop to IDS
+          last {weeks.length} weeks · off-track? drop to Issues
         </div>
         <QuickAddIssue
           teamId={teamId}

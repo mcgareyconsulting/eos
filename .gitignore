@@ -25,6 +25,19 @@
 *.pem
 HPB Branding for McGarey.pdf
 
+# AI-assistant local state. Ignored by a global gitignore on the author's
+# machine, which does NOT travel with the repo — pinned here so a fresh clone
+# or a CI checkout can't commit it into the client's repository.
+.claude/
+
+# Throwaway diagnostic scripts. One-off Firestore/Auth queries need to sit
+# inside the repo to resolve firebase-admin, so they land here rather than in
+# a temp dir; these patterns keep them from being committed by a `git add -A`.
+/scratch/
+/.scratch*
+/.*.ts
+!/.eslintrc*.ts
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -33,6 +46,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The template is the one env file that belongs in the repo. It survives the
+# rule above today only because it's already tracked (git ignores .gitignore
+# for indexed paths) — this negation is what keeps it if it's ever removed and
+# re-added.
+!.env.example
 
 # typescript
 *.tsbuildinfo

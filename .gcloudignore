@@ -1,0 +1,18 @@
+# Trims what `gcloud builds submit` tars and uploads as build source. When
+# this file exists gcloud uses it INSTEAD of its default (which is .git +
+# .gitignore patterns) — so the include line below keeps honoring .gitignore,
+# and the rest catches what .gitignore misses.
+.gcloudignore
+.git
+#!include:.gitignore
+
+# .gitignore's /node_modules pattern is root-anchored, so the functions
+# package's own dependency tree (plus its build output) was riding along in
+# every upload — the bulk of the ~80 MB / 6k files.
+functions/node_modules/
+functions/lib/
+
+# Not consumed by the Docker build.
+docs/
+terraform/
+*.md

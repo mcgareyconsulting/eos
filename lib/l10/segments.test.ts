@@ -62,9 +62,9 @@ describe("meeting structure invariants", () => {
     const doneCount = SEGMENTS.filter((s) => s === "done").length;
     assert.equal(doneCount, 1);
     assert.equal(SEGMENTS[SEGMENTS.length - 1], "done");
-    // meeting-live.tsx derives its visible stage list via
+    // meeting-rail.tsx derives its visible stage list via
     // SEGMENTS.filter(s => s !== "done") — if this assumption ever breaks,
-    // that filter silently produces the wrong tab strip.
+    // that filter silently produces the wrong agenda.
   });
 
   test("active-segment durations sum to the advertised meeting total", () => {
@@ -86,7 +86,7 @@ describe("meeting structure invariants", () => {
 
   test("'segue' is first — the stage every new meeting opens on", () => {
     // startMeeting() writes current_segment: "segue", advanceSegment() falls
-    // back to it, and meeting-live.tsx disables Back there. All three assume
+    // back to it, and meeting-rail.tsx disables Back there. All three assume
     // it sits at index 0.
     assert.equal(SEGMENTS[0], "segue");
   });

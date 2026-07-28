@@ -1,16 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  collection,
-  query as fsQuery,
-  where,
-} from "firebase/firestore";
+import { collection, query as fsQuery, where } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { ScorecardGrid } from "@/components/scorecard/scorecard-grid";
+import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { QuickAddIssue } from "@/components/quick-add-issue";
-import type { GoalDirection } from "@/lib/scorecard";
+import type { GoalDirection, WeekRange } from "@/lib/scorecard";
 
 type MetricDoc = {
   id: string;
@@ -38,12 +34,14 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentScorecard({
   teamId,
+  weekRange,
   weeks,
   initialMetrics,
   initialEntries,
   members,
 }: {
   teamId: string;
+  weekRange: WeekRange;
   weeks: string[]; // newest first, YYYY-MM-DD Mondays
   initialMetrics: MetricDoc[];
   initialEntries: EntryDoc[];
@@ -94,29 +92,23 @@ export function SegmentScorecard({
     [metrics],
   );
 
+  // Same filter shell as the standalone Scorecard page (range / status /
+  // owner / sort / search), minus the period tabs — data stays live via the
+  // subscriptions above.
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          last {weeks.length} weeks · off-track? drop to Issues
-        </div>
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="Off-track metric: "
-          compact
-        />
-      </div>
-
-      <ScorecardGrid
-        teamId={teamId}
-        weeks={weeks}
-        metrics={sorted}
-        entryByMetricWeek={entryRecord}
-        members={members}
-        showDelete={false}
-        showGroupEditor={false}
-        compact
-      />
-    </div>
+    <ScorecardPanel
+      teamId={teamId}
+      weekRange={weekRange}
+      weeks={weeks}
+      metrics={sorted}
+      entryByMetricWeek={entryRecord}
+      members={members}
+      showDelete={false}
+      showGroupEditor={false}
+      compact
+      toolbarExtra={
+        <QuickAddIssue teamId={teamId} prefill="Off-track metric: " compact />
+      }
+    />
   );
 }

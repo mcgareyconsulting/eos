@@ -126,11 +126,9 @@ export function SegmentSegue({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-        <span>
-          Personal + professional. 30–60 seconds each. No discussion — if it
-          needs discussing, park it.
-        </span>
+      {/* The stage's own coaching line lives in the page heading now — this
+          row would have repeated it verbatim right underneath. */}
+      <div className="flex justify-end">
         <QuickAddIssue teamId={teamId} prefill="From segue: " compact />
       </div>
 

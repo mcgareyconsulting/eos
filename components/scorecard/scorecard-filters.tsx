@@ -84,6 +84,8 @@ export function ScorecardFilters({
   onSearchChange,
   visibleCount,
   totalCount,
+  compact = false,
+  extra,
 }: {
   weekRange: WeekRange;
   teamLabel?: string;
@@ -98,6 +100,10 @@ export function ScorecardFilters({
   onSearchChange: (v: string) => void;
   visibleCount: number;
   totalCount: number;
+  /** Embedded contexts (the L10 segment): filters only, no period tabs. */
+  compact?: boolean;
+  /** Rendered at the end of the filter row (e.g. a quick-add button). */
+  extra?: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -128,32 +134,34 @@ export function ScorecardFilters({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800">
-        {PERIODS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            disabled={!p.enabled}
-            className={cn(
-              "relative px-3 py-2 text-sm font-medium transition-colors",
-              p.id === "weekly"
-                ? "text-hpb-blue dark:text-hpb-gold"
-                : "text-zinc-400 dark:text-zinc-500",
-              !p.enabled && "cursor-not-allowed opacity-60",
-            )}
-            title={
-              p.enabled
-                ? undefined
-                : "Coming soon — weekly is the live operating view"
-            }
-          >
-            {p.label}
-            {p.id === "weekly" && (
-              <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
-            )}
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800">
+          {PERIODS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={!p.enabled}
+              className={cn(
+                "relative px-3 py-2 text-sm font-medium transition-colors",
+                p.id === "weekly"
+                  ? "text-hpb-blue dark:text-hpb-gold"
+                  : "text-zinc-400 dark:text-zinc-500",
+                !p.enabled && "cursor-not-allowed opacity-60",
+              )}
+              title={
+                p.enabled
+                  ? undefined
+                  : "Coming soon — weekly is the live operating view"
+              }
+            >
+              {p.label}
+              {p.id === "weekly" && (
+                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* One filter line — scrolls horizontally on narrow viewports */}
       <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin]">
@@ -247,8 +255,8 @@ export function ScorecardFilters({
 
         <span className="hidden shrink-0 tabular-nums text-[11px] text-zinc-500 sm:inline dark:text-zinc-400">
           {visibleCount}
-          {visibleCount !== totalCount ? `/${totalCount}` : ""}{" "}
-          measurable{totalCount === 1 ? "" : "s"}
+          {visibleCount !== totalCount ? `/${totalCount}` : ""} measurable
+          {totalCount === 1 ? "" : "s"}
         </span>
 
         {!defaults && (
@@ -262,6 +270,8 @@ export function ScorecardFilters({
             Clear
           </button>
         )}
+
+        {extra && <div className="shrink-0">{extra}</div>}
       </div>
     </div>
   );

@@ -38,8 +38,11 @@ export function ValueCell({
         ? "bg-sky-50/60 dark:bg-sky-950/20 text-zinc-600 dark:text-zinc-400"
         : "text-zinc-600 dark:text-zinc-400"
       : onTrack
-        ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-        : "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300";
+        ? // Half-strength washes: 13 tinted columns at full bg-*-50 read as
+          // alarm wallpaper. The text color carries the signal; the wash is
+          // only a hint.
+          "bg-emerald-50/50 text-emerald-800 dark:bg-emerald-950/25 dark:text-emerald-300"
+        : "bg-red-50/50 text-red-800 dark:bg-red-950/25 dark:text-red-300";
 
   if (!editing) {
     return (

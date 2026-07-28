@@ -45,10 +45,10 @@ export function QuickAddIssue({
           "inline-flex items-center gap-1 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 " +
           (compact ? "" : "")
         }
-        title="Drop a new issue into the IDS list"
+        title="Drop a new issue into the Issues list"
       >
         <Plus className="h-3 w-3" />
-        Drop to IDS
+        Drop to Issues
       </button>
     );
   }
@@ -91,9 +91,7 @@ export function QuickAddIssue({
       >
         <X className="h-3 w-3" />
       </button>
-      {error && (
-        <span className="text-[10px] text-red-600 ml-1">{error}</span>
-      )}
+      {error && <span className="text-[10px] text-red-600 ml-1">{error}</span>}
     </div>
   );
 }

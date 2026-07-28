@@ -2,18 +2,17 @@ import Link from "next/link";
 import { FileText, Video } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Timestamp } from "firebase-admin/firestore";
-import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { type Segment, isSegment } from "@/lib/l10/segments";
-import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import {
-  endOfQuarter,
-  lastNMondays,
-  toDateString,
-} from "@/lib/dates";
-import { endMeeting } from "../actions";
-import { MeetingPresence } from "@/components/meeting-presence";
-import { MeetingLive } from "./meeting-live";
+  type Segment,
+  isSegment,
+  SEGMENT_HINTS,
+  SEGMENT_LABELS,
+} from "@/lib/l10/segments";
+import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
+import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
+import { endOfQuarter, lastNMondays, toDateString } from "@/lib/dates";
+import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
 import { SegmentRocks } from "./segment-rocks";
@@ -41,20 +40,19 @@ type MeetingDoc = {
   speaking_index?: number;
 };
 
-const SCORECARD_WEEKS = 13;
-
 export default async function MeetingDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ teamId: string; meetingId: string }>;
-  searchParams: Promise<{ recap?: string; view?: string }>;
+  searchParams: Promise<{ recap?: string; view?: string; weeks?: string }>;
 }) {
   const { teamId: tid, meetingId: mid } = await params;
-  const { recap, view } = await searchParams;
+  const { recap, view, weeks: weeksParam } = await searchParams;
+  // Scorecard range filter (?weeks=8|13|26) — same param the standalone
+  // Scorecard page uses, so the filter strip works identically here.
+  const scorecardWeekRange = parseWeekRange(weeksParam);
   const { uid, db, team } = await requireTeamAccess(tid);
-  const { name, email } = await requireFirebaseUser();
-  const displayName = (name ?? email ?? "Member").trim();
 
   const meetingSnap = await db.collection("meetings").doc(mid).get();
   if (!meetingSnap.exists || meetingSnap.data()?.team_id !== tid) notFound();
@@ -95,10 +93,20 @@ export default async function MeetingDetailPage({
 
   const live = !m.ended_at;
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
+  const meetingStartedAtMs = m.started_at?.toMillis?.() ?? null;
+  // Server-formatted so the rail can render it verbatim (no locale drift
+  // between server and client → no hydration mismatch).
+  const startedAtLabel =
+    m.started_at?.toDate?.()?.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }) ?? null;
 
   // Which stage THIS client is showing. With no ?view we follow the shared
   // active stage; a valid ?view lets the user peek elsewhere without moving
-  // the group. The live active stage is reconciled client-side in MeetingLive.
+  // the group. The live active stage is reconciled client-side in MeetingRail.
   const viewParam = isSegment(view) && view !== "done" ? view : null;
   const viewSegment: Segment = viewParam ?? m.current_segment;
   const following = viewParam === null;
@@ -110,9 +118,7 @@ export default async function MeetingDetailPage({
     m.started_at && m.ended_at
       ? Math.max(
           1,
-          Math.round(
-            (m.ended_at.toMillis() - m.started_at.toMillis()) / 60000,
-          ),
+          Math.round((m.ended_at.toMillis() - m.started_at.toMillis()) / 60000),
         )
       : null;
 
@@ -133,7 +139,7 @@ export default async function MeetingDetailPage({
     const startedMs = m.started_at.toMillis();
     const endedMs = m.ended_at.toMillis();
     const memberName = (id: string | null | undefined) =>
-      id ? members.find((mm) => mm.user_id === id)?.full_name ?? null : null;
+      id ? (members.find((mm) => mm.user_id === id)?.full_name ?? null) : null;
     const inWindow = (ts: Timestamp | null | undefined) => {
       const ms = ts?.toMillis?.() ?? 0;
       return ms >= startedMs && ms <= endedMs;
@@ -183,8 +189,7 @@ export default async function MeetingDetailPage({
     issuesSolved = allIssues
       .filter(
         ({ x }) =>
-          x.status === "solved" &&
-          inWindow(x.resolved_at as Timestamp | null),
+          x.status === "solved" && inWindow(x.resolved_at as Timestamp | null),
       )
       .map(({ id, x }) => ({
         id,
@@ -204,9 +209,7 @@ export default async function MeetingDetailPage({
       totalTrackedIssues: openNow,
       issuesSolvedToday: solvedToday,
       solveRatePercent:
-        denominator > 0
-          ? Math.round((solvedToday / denominator) * 100)
-          : null,
+        denominator > 0 ? Math.round((solvedToday / denominator) * 100) : null,
     };
 
     newHeadlines = headlinesSnap.docs
@@ -237,137 +240,154 @@ export default async function MeetingDetailPage({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="text-xs">
-        <Link
-          href={`/teams/${tid}/meetings`}
-          className="text-hpb-blue hover:underline"
-        >
-          ← Meetings
-        </Link>
-      </div>
+    // Two columns during a live meeting: the timing/agenda rail is pinned on
+    // the left while the segment content scrolls beside it. Completed
+    // meetings render the rail-less single column (the rail has nothing to
+    // drive), which the `live &&` below handles on its own.
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      {/* Focus mode, read by AppShell via :has() — a running L10 is a
+          full-screen tool, and the global nav next to the meeting's own rail
+          cost enough width that the Scorecard clipped its week columns. Only
+          while live: a finished meeting is an ordinary page you browse to. */}
+      {live && <div data-meeting-focus hidden />}
 
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {team.name} L10
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Started{" "}
-            {m.started_at?.toDate?.()?.toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }) ?? "—"}
-            {live ? " · in progress" : " · completed"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {live && (
-            <MeetingPresence
-              meetingId={mid}
-              userId={uid}
-              displayName={displayName}
-            />
-          )}
-          {/* Join the team's Google Meet room. DEMO: opens the standing team
-              Meet link a leader set in Members → Meeting settings. In the real
-              integration this href would be a per-meeting URL minted by the
-              Meet REST API (spaces.create) at meeting start. */}
-          {live && team.meetLink && (
-            <a
-              href={team.meetLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
-            >
-              <Video className="h-4 w-4" />
-              Join Google Meet
-            </a>
-          )}
-          {live && (
-            <form action={endMeeting.bind(null, tid, mid)}>
-              <button
-                type="submit"
-                className="rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
-              >
-                End meeting
-              </button>
-            </form>
-          )}
-          {!live && (
-            <Link
-              href={`/teams/${tid}/meetings/${mid}?recap=1`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-            >
-              <FileText className="h-4 w-4" />
-              View recap
-            </Link>
-          )}
-        </div>
-      </header>
-
-      <MeetingLive
-        teamId={tid}
-        meetingId={mid}
-        viewSegment={viewSegment}
-        following={following}
-        initialSegment={m.current_segment}
-        initialStartedAtMs={segmentStartedAtMs}
-        initialEnded={!live}
-        driverName={driverName}
-        members={members}
-        initialSpeakingOrder={speakingOrder}
-        initialSpeakerIndex={speakerIndex}
-        initialAbsentUserIds={absentUserIds}
-      />
-
-      {/* Segment content follows the locally-viewed stage (peek-aware). */}
-      {live && viewSegment !== "done" && (
-        <section>
-          <SegmentContent
-            teamId={tid}
-            userId={uid}
-            meetingId={mid}
-            segment={viewSegment}
-            currentIssueId={m.current_issue_id ?? null}
-            members={members}
-            absentUserIds={absentUserIds}
-            speakingOrder={speakingOrder}
-            speakerIndex={speakerIndex}
-          />
-        </section>
-      )}
-
-      {/* Meeting review — notes + end-of-meeting meeting rating.
-          Only surfaced in the Conclude segment (live) or on the completed
-          meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
-      {showConclude && (
-        <ConcludeReview
+      {live && (
+        <MeetingRail
           teamId={tid}
           meetingId={mid}
-          currentUserId={uid}
+          viewSegment={viewSegment}
+          following={following}
+          initialSegment={m.current_segment}
+          initialStartedAtMs={segmentStartedAtMs}
+          meetingStartedAtMs={meetingStartedAtMs}
+          startedAtLabel={startedAtLabel}
+          initialEnded={!live}
+          driverName={driverName}
           members={members}
-          absentUserIds={absentUserIds}
-          ratings={ratings}
-          notes={m.notes ?? null}
+          initialSpeakingOrder={speakingOrder}
+          initialSpeakerIndex={speakerIndex}
+          initialAbsentUserIds={absentUserIds}
         />
       )}
 
-      <RecapModal
-        meetingMinutes={meetingMinutes}
-        notes={m.notes ?? null}
-        newRocks={newRocks}
-        newTodos={newTodos}
-        newIssues={newIssues}
-        issuesSolved={issuesSolved}
-        newHeadlines={newHeadlines}
-        stats={recapStats}
-        attendeeRatings={attendeeRatings}
-        overallAverageRating={overallAverageRating}
-        autoOpen={recap === "1"}
-      />
+      <div className="min-w-0 flex-1 space-y-6">
+        {/* Live: one compact header line — the stage is the headline, the
+            team L10 is context. Everything static (start time, back link)
+            lives in the rail, so content starts ~150px higher than when this
+            page stacked breadcrumb + h1 + started-at + stage + hint. */}
+        {live && viewSegment !== "done" && (
+          <header className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  {SEGMENT_LABELS[viewSegment]}
+                </h1>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {team.name} L10
+                </span>
+              </div>
+              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+                {SEGMENT_HINTS[viewSegment]}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              {/* Join the team's Google Meet room. DEMO: opens the standing
+                team Meet link a leader set in Members → Meeting settings. In
+                the real integration this href would be a per-meeting URL
+                minted by the Meet REST API (spaces.create) at meeting start. */}
+              {team.meetLink && (
+                <a
+                  href={team.meetLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+                >
+                  <Video className="h-4 w-4" />
+                  Join Google Meet
+                </a>
+              )}
+            </div>
+          </header>
+        )}
+
+        {/* Completed: an ordinary page with the ordinary chrome. */}
+        {!live && (
+          <>
+            <div className="text-xs">
+              <Link
+                href={`/teams/${tid}/meetings`}
+                className="text-hpb-blue hover:underline"
+              >
+                ← Meetings
+              </Link>
+            </div>
+            <header className="flex items-end justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  {team.name} L10
+                </h1>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Started {startedAtLabel ?? "—"} · completed
+                </p>
+              </div>
+              <Link
+                href={`/teams/${tid}/meetings/${mid}?recap=1`}
+                className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+              >
+                <FileText className="h-4 w-4" />
+                View recap
+              </Link>
+            </header>
+          </>
+        )}
+
+        {/* Segment content follows the locally-viewed stage (peek-aware). */}
+        {live && viewSegment !== "done" && (
+          <section>
+            <SegmentContent
+              teamId={tid}
+              userId={uid}
+              meetingId={mid}
+              segment={viewSegment}
+              currentIssueId={m.current_issue_id ?? null}
+              members={members}
+              absentUserIds={absentUserIds}
+              speakingOrder={speakingOrder}
+              speakerIndex={speakerIndex}
+              scorecardWeekRange={scorecardWeekRange}
+            />
+          </section>
+        )}
+
+        {/* Meeting review — notes + end-of-meeting meeting rating.
+          Only surfaced in the Conclude segment (live) or on the completed
+          meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
+        {showConclude && (
+          <ConcludeReview
+            teamId={tid}
+            meetingId={mid}
+            currentUserId={uid}
+            members={members}
+            absentUserIds={absentUserIds}
+            ratings={ratings}
+            notes={m.notes ?? null}
+          />
+        )}
+
+        <RecapModal
+          meetingMinutes={meetingMinutes}
+          notes={m.notes ?? null}
+          newRocks={newRocks}
+          newTodos={newTodos}
+          newIssues={newIssues}
+          issuesSolved={issuesSolved}
+          newHeadlines={newHeadlines}
+          stats={recapStats}
+          attendeeRatings={attendeeRatings}
+          overallAverageRating={overallAverageRating}
+          autoOpen={recap === "1"}
+        />
+      </div>
     </div>
   );
 }
@@ -383,6 +403,7 @@ async function SegmentContent({
   absentUserIds,
   speakingOrder,
   speakerIndex,
+  scorecardWeekRange,
 }: {
   teamId: string;
   userId: string;
@@ -393,6 +414,7 @@ async function SegmentContent({
   absentUserIds: string[];
   speakingOrder: string[];
   speakerIndex: number;
+  scorecardWeekRange: WeekRange;
 }) {
   // The roster is already in scope from the page's getTeamMembers call, so
   // Segue needs no fetch of its own.
@@ -431,7 +453,7 @@ async function SegmentContent({
         sort_order: x.sort_order ?? 0,
       };
     });
-    const weeks = lastNMondays(SCORECARD_WEEKS).map(toDateString);
+    const weeks = lastNMondays(scorecardWeekRange).map(toDateString);
     const oldest = weeks[weeks.length - 1];
     const entrySnap = initialMetrics.length
       ? await db
@@ -457,6 +479,7 @@ async function SegmentContent({
     return (
       <SegmentScorecard
         teamId={teamId}
+        weekRange={scorecardWeekRange}
         weeks={weeks}
         initialMetrics={initialMetrics}
         initialEntries={initialEntries}

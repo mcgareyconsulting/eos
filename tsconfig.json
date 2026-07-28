@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Cloud Functions is its own package (functions/package.json) with
+    // firebase-functions etc. Excluding it stops `next build` typecheck from
+    // walking functions/src and failing on modules the web app never installs.
+    "functions"
+  ]
 }

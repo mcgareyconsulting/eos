@@ -16,7 +16,8 @@
     "team:info": "tsx scripts/team-info.ts",
     "import:csv": "tsx scripts/import-csv.ts",
     "team:delete": "tsx scripts/delete-team.ts",
-    "accounts:create": "tsx scripts/create-accounts.ts"
+    "accounts:create": "tsx scripts/create-accounts.ts",
+    "ship": "bash scripts/deploy.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

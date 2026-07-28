@@ -48,21 +48,32 @@ of change it is — they have different blast radii and different tools.
 ### 1. App code (pages, components, logic)
 
 ```
-edit code → pnpm test → pnpm dev to eyeball it → commit
-→ Cloud Build → new Cloud Run revision → verify at the URL
+edit code → pnpm test → pnpm dev to eyeball it → commit → pnpm ship
 ```
 
-The deploy step is one command — Cloud Build builds the image, pushes it, and
-rolls Cloud Run to it (full command with all substitutions: `DEPLOY.md` §6.2):
+**Local testing needs no deploy and no emulator.** `pnpm dev` runs the app on
+`http://localhost:3000` against the real Firebase project that `.env.local`
+points at — real sign-in, real data, hot reload on every file save. Iterate
+there; deploy when it's right. (Requires `gcloud auth application-default
+login` once, so the server side has credentials.)
+
+The deploy step is one command:
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml --project <PROJECT_ID> \
-  --substitutions=_REGION=us-east1,_TAG=$(git rev-parse --short HEAD),…
+pnpm ship                # build + push + roll Cloud Run, config from .env.local
+pnpm ship -- --dry-run   # print what would run, run nothing
 ```
 
-Tag images with the git commit (`_TAG=$(git rev-parse --short HEAD)`) so
-"what's running" always answers to "which commit." Rollback is redeploying a
-previous tag — the old images stay in Artifact Registry.
+`scripts/deploy.sh` reads the `NEXT_PUBLIC_*` config from `.env.local` (so the
+deployed bundle matches what you just tested locally), tags the image with the
+current git commit, and runs Cloud Build — which builds, pushes to Artifact
+Registry, and rolls the Cloud Run service. It refuses to deploy config for one
+project into another, and flags a dirty working tree in the image tag.
+Runtime env vars already on the service (allowlist, `ENV_LABEL`) are preserved.
+
+Because images are tagged by commit, "what's running" always answers to
+"which commit," and rollback is redeploying a previous tag — old images stay
+in Artifact Registry. (Raw gcloud equivalent: `DEPLOY.md` §6.2.)
 
 ### 2. Runtime configuration (no rebuild)
 

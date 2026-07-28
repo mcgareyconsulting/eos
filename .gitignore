@@ -48,4 +48,7 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/*.tfvars
-terraform/crash.logterraform/*.tfplan
+terraform/crash.log
+# Plan files embed a full tfstate — resource attributes in the clear, including
+# Cloud Run env vars. Never commit one.
+terraform/*.tfplan

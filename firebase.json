@@ -1,9 +1,16 @@
 {
-  "firestore": {
-    "database": "hpb-eos-prod-db",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
+  "firestore": [
+    {
+      "database": "hpb-eos-prod-db",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    },
+    {
+      "database": "hpb-eos-sandbox-db",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    }
+  ],
   "functions": {
     "source": "functions",
     "runtime": "nodejs22",

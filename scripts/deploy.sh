@@ -6,10 +6,11 @@
 #   pnpm ship                 # deploy to the project .env.local points at
 #   pnpm ship -- --dry-run    # print the gcloud command, run nothing
 #
-# The env file is the single source of truth for the NEXT_PUBLIC_* values —
-# the same config local `pnpm dev` runs against is what gets baked into the
-# image, so localhost and the deployed service can't drift apart. Deploying
-# to a different project therefore means pointing at a different env file
+# The env file is the single source of truth for the NEXT_PUBLIC_* values
+# baked into the image. Deploys read .env.prod (live database); .env.local is
+# the DEV config and points at the sandbox database — that's why it is NOT
+# the default here, and why a sandbox database id is refused outright below.
+# Deploying to a different project means pointing at a different env file
 # (--env-file), not overriding values one by one.
 #
 # Runtime env vars on the service (SIGN_IN_ALLOWLIST, ENV_LABEL, ...) are
@@ -21,7 +22,7 @@ cd "$(dirname "$0")/.."
 
 REGION=us-east1
 SERVICE=eos
-ENV_FILE=.env.local
+ENV_FILE=.env.prod
 PROJECT=""
 RUNTIME_SA=""
 DRY_RUN=false
@@ -31,7 +32,7 @@ usage() {
 Usage: pnpm ship [-- options]
   --project <id>          GCP project (default: NEXT_PUBLIC_FIREBASE_PROJECT_ID from the env file)
   --region <region>       Cloud Run region (default: us-east1)
-  --env-file <path>       Env file to read NEXT_PUBLIC_* config from (default: .env.local)
+  --env-file <path>       Env file to read NEXT_PUBLIC_* config from (default: .env.prod)
   --service-account <sa>  Runtime SA (default: eos-runtime@<project>.iam.gserviceaccount.com)
   --dry-run               Print the build command instead of running it
 USAGE
@@ -65,6 +66,17 @@ PROJECT="${PROJECT:-$ENV_PROJECT}"
 if [[ "$PROJECT" != "$ENV_PROJECT" ]]; then
   echo "Refusing: $ENV_FILE is configured for '$ENV_PROJECT' but the deploy target is '$PROJECT'."
   echo "Pass --env-file with that project's config instead."
+  exit 1
+fi
+
+# The database id is baked into the bundle at build time, so a bundle built
+# from sandbox config would ship an app reading/writing test data no matter
+# what the service's runtime env says. There is no override flag on purpose:
+# if you genuinely mean it, put it in a differently-named env file.
+DB_ID="$(envval NEXT_PUBLIC_FIREBASE_DATABASE_ID)"
+if [[ "$DB_ID" == *sandbox* ]]; then
+  echo "Refusing: $ENV_FILE points at sandbox database '$DB_ID'."
+  echo "Deploys read the live-database config (.env.prod)."
   exit 1
 fi
 

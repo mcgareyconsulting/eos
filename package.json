@@ -17,6 +17,7 @@
     "import:csv": "tsx scripts/import-csv.ts",
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
+    "db:copy": "tsx scripts/copy-db.ts",
     "ship": "bash scripts/deploy.sh"
   },
   "pnpm": {

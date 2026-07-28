@@ -4,12 +4,11 @@ import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
-import { RockTypeBadge } from "./rock-type-badge";
 import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
 import { OwnerFilter } from "./owner-filter";
 import { AddRockDrawer } from "./add-rock-drawer";
 import { deleteRock, updateRockTitle } from "./actions";
-import { ROCK_TYPE_ORDER, normalizeRockType } from "./rock-type";
+import { isTeamRock } from "./rock-type";
 
 type RockDoc = {
   team_id: string;
@@ -37,20 +36,14 @@ type TodoDoc = {
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
-// Company rocks first, then department, then individual — existing
-// status/due-date ordering applies as the secondary sort within each type.
+// Within a section: status, then due date.
 function sortRocks<
   T extends {
     status: string;
     due_date: string | null;
-    rock_type?: string | null;
   },
 >(rocks: T[]): T[] {
   return [...rocks].sort((a, b) => {
-    const byType =
-      ROCK_TYPE_ORDER.indexOf(normalizeRockType(a.rock_type)) -
-      ROCK_TYPE_ORDER.indexOf(normalizeRockType(b.rock_type));
-    if (byType !== 0) return byType;
     const byStatus =
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byStatus !== 0) return byStatus;
@@ -114,22 +107,112 @@ export default async function RocksPage({
     });
   }
 
-  const filter = ownerParam || "all";
-  const isAll = filter === "all";
-  const isMine = filter === "mine";
-  const filteredRocks = isAll
-    ? allRocks
-    : isMine
-      ? allRocks.filter((r) => r.owner_id === uid)
-      : allRocks.filter((r) => r.owner_id === filter);
-
-  const myRocks = sortRocks(filteredRocks.filter((r) => r.owner_id === uid));
-  const teamRocks = sortRocks(filteredRocks.filter((r) => r.owner_id !== uid));
+  // Filter: all | team | self | others (legacy mine → self).
+  const filterRaw = ownerParam || "all";
+  const filter =
+    filterRaw === "mine"
+      ? "self"
+      : filterRaw === "team" ||
+          filterRaw === "self" ||
+          filterRaw === "others" ||
+          filterRaw === "all"
+        ? filterRaw
+        : "all";
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  function renderRow(r: { id: string } & RockDoc) {
+  // Tab order: Team → Self → Others (A–Z). L10 is Team → speaker order
+  // (see segment-rocks.tsx).
+  type RockWithId = { id: string } & RockDoc;
+  type RockGroup = {
+    key: string;
+    title: string;
+    rocks: RockWithId[];
+  };
+
+  function groupByOwnerSections(
+    rocks: RockWithId[],
+    opts: { includeTeam: boolean; includeSelf: boolean; includeOthers: boolean },
+  ): RockGroup[] {
+    const teamRocks: RockWithId[] = [];
+    const selfRocks: RockWithId[] = [];
+    const otherRocks: RockWithId[] = [];
+    for (const r of rocks) {
+      if (isTeamRock(r.owner_id)) teamRocks.push(r);
+      else if (r.owner_id === uid) selfRocks.push(r);
+      else otherRocks.push(r);
+    }
+
+    const groups: RockGroup[] = [];
+    if (opts.includeTeam && teamRocks.length > 0) {
+      groups.push({
+        key: "team",
+        title: "Team",
+        rocks: sortRocks(teamRocks),
+      });
+    }
+    if (opts.includeSelf && selfRocks.length > 0) {
+      groups.push({
+        key: "self",
+        title: "Self",
+        rocks: sortRocks(selfRocks),
+      });
+    }
+    if (opts.includeOthers) {
+      const byOwner = new Map<string, RockWithId[]>();
+      for (const r of otherRocks) {
+        const id = r.owner_id as string;
+        const list = byOwner.get(id) ?? [];
+        list.push(r);
+        byOwner.set(id, list);
+      }
+
+      const named = members
+        .filter((m) => m.user_id !== uid)
+        .slice()
+        .sort((a, b) => a.full_name.localeCompare(b.full_name));
+      for (const m of named) {
+        const list = byOwner.get(m.user_id);
+        if (!list || list.length === 0) continue;
+        groups.push({
+          key: m.user_id,
+          title: m.full_name,
+          rocks: sortRocks(list),
+        });
+      }
+
+      // Owners not on the current roster (left the team, stale id).
+      const memberIds = new Set(members.map((m) => m.user_id));
+      const orphanIds = [...byOwner.keys()].filter(
+        (id) => id !== uid && !memberIds.has(id),
+      );
+      orphanIds.sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
+      for (const id of orphanIds) {
+        const list = byOwner.get(id)!;
+        groups.push({
+          key: id,
+          title: ownerName(id),
+          rocks: sortRocks(list),
+        });
+      }
+    }
+
+    return groups;
+  }
+
+  const sectionOpts =
+    filter === "team"
+      ? { includeTeam: true, includeSelf: false, includeOthers: false }
+      : filter === "self"
+        ? { includeTeam: false, includeSelf: true, includeOthers: false }
+        : filter === "others"
+          ? { includeTeam: false, includeSelf: false, includeOthers: true }
+          : { includeTeam: true, includeSelf: true, includeOthers: true };
+
+  const sections = groupByOwnerSections(allRocks, sectionOpts);
+
+  function renderRow(r: RockWithId) {
     const renameTitle = updateRockTitle.bind(null, teamId, r.id);
     const remove = deleteRock.bind(null, teamId, r.id);
     const milestones = milestonesByRock.get(r.id) ?? [];
@@ -138,7 +221,7 @@ export default async function RocksPage({
         key={r.id}
         className="group grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm"
       >
-        <div className="col-span-6 min-w-0">
+        <div className="col-span-9 min-w-0">
           <EditableText
             value={r.title}
             onSave={renameTitle}
@@ -149,15 +232,9 @@ export default async function RocksPage({
               {r.description}
             </div>
           )}
-          <div className="flex items-center gap-2 mt-0.5">
-            <RockTypeBadge teamId={teamId} rockId={r.id} rockType={r.rock_type} />
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">
-              {r.quarter}
-            </span>
+          <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
+            {r.quarter}
           </div>
-        </div>
-        <div className="col-span-3 text-zinc-600 dark:text-zinc-400">
-          {ownerName(r.owner_id)}
         </div>
         <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
           {r.due_date ? new Date(r.due_date).toLocaleDateString() : "—"}
@@ -187,6 +264,15 @@ export default async function RocksPage({
     );
   }
 
+  const emptyMessage =
+    filter === "team"
+      ? "No team rocks."
+      : filter === "self"
+        ? "None assigned to you."
+        : filter === "others"
+          ? "No rocks for other owners."
+          : "No rocks yet.";
+
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between gap-4">
@@ -197,7 +283,7 @@ export default async function RocksPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <OwnerFilter members={members} currentUserId={uid} />
+          <OwnerFilter />
           <AddRockDrawer
             teamId={teamId}
             members={members}
@@ -208,34 +294,17 @@ export default async function RocksPage({
         </div>
       </header>
 
-      {isAll ? (
-        <>
-          <RockSection title={`My Rocks (${myRocks.length})`}>
-            {myRocks.length === 0 ? (
-              <Empty>None assigned to you.</Empty>
-            ) : (
-              myRocks.map(renderRow)
-            )}
-          </RockSection>
-
-          <RockSection title={`Team Rocks (${teamRocks.length})`}>
-            {teamRocks.length === 0 ? (
-              <Empty>No team rocks.</Empty>
-            ) : (
-              teamRocks.map(renderRow)
-            )}
-          </RockSection>
-        </>
-      ) : (
-        <RockSection title={`Rocks (${filteredRocks.length})`}>
-          {filteredRocks.length === 0 ? (
-            <Empty>No rocks for this owner.</Empty>
-          ) : (
-            sortRocks(filteredRocks).map(renderRow)
-          )}
+      {sections.length === 0 ? (
+        <RockSection title="Rocks">
+          <Empty>{emptyMessage}</Empty>
         </RockSection>
+      ) : (
+        sections.map((g) => (
+          <RockSection key={g.key} title={`${g.title} (${g.rocks.length})`}>
+            {g.rocks.map(renderRow)}
+          </RockSection>
+        ))
       )}
-
     </div>
   );
 }
@@ -249,7 +318,7 @@ function RockSection({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
+      <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200 mb-3">
         {title}
       </h2>
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">

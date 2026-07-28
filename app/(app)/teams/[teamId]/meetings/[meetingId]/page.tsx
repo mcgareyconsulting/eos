@@ -523,6 +523,8 @@ async function SegmentContent({
         initialTodos={initialTodos}
         members={members}
         initialAbsentUserIds={absentUserIds}
+        initialSpeakingOrder={speakingOrder}
+        initialSpeakerIndex={speakerIndex}
       />
     );
   }

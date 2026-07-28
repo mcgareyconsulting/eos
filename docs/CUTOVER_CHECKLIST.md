@@ -248,6 +248,11 @@ _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 
 ### 9. OAuth connectors (Meet / Google Tasks), if shipped by then
 
+Google Tasks is **per-user**: each person connects their own Google account
+on `/integrations`. Tokens are stored under `google_tasks_connections/{uid}`
+(admin SDK only). Missing `GOOGLE_OAUTH_*` on the Cloud Run service shows as
+"Not configured — set GOOGLE_OAUTH_CLIENT_ID / _SECRET" on that page.
+
 - [ ] Create a **new** OAuth 2.0 Web client in the client's project
       (Console → APIs & Services → Credentials) — do not reuse the trial's
 - [ ] Add the client's real callback URL as the sole authorized redirect URI
@@ -259,7 +264,10 @@ _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 - [ ] Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_REDIRECT_URI` (pinned,
       exact HTTPS value — see the comment in `lib/google/tasks.ts` for why
       this must be pinned rather than derived on Cloud Run) as Cloud Run env
-      vars, and `GOOGLE_OAUTH_CLIENT_SECRET` as a secret mount
+      vars, and `GOOGLE_OAUTH_CLIENT_SECRET` as a secret mount. `pnpm ship`
+      does **not** set these — update the service explicitly (see
+      `.env.example`). Without them, Integrations shows the client-id/secret
+      error and all Task pushes are no-ops.
 
 ### 10. Custom domain (optional)
 

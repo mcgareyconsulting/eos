@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
       refreshToken: tokens.refresh_token,
       accessToken: tokens.access_token,
       expiresInSec: tokens.expires_in,
+      // Tokens are stored under this EOS user's uid so each person gets
+      // their own Google Tasks list (not a single shared app account).
       uid: session.uid,
       email: session.email ?? null,
     });

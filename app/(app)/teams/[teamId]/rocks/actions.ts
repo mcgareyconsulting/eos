@@ -19,11 +19,16 @@ export async function addRock(teamId: string, formData: FormData) {
   const due_date =
     String(formData.get("due_date") ?? "").trim() ||
     toDateString(endOfQuarter());
-  const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const description =
     String(formData.get("description") ?? "").trim() || null;
+  // Team ownership is owner_id only (Owner = Team → null). rock_type is
+  // optional legacy/import metadata; new rocks default to individual.
   const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
   const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
+
+  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
+  // Owner = Team → null owner_id (Team Rocks section). Else person, default me.
+  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
 
   if (!title || !quarter) throw new Error("Title and quarter required");
 

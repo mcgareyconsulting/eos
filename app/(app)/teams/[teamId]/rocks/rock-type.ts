@@ -2,6 +2,9 @@
 // server actions, the rock-type badge, and list ordering. Existing rock docs
 // predate this field, so a missing/invalid value is always treated as
 // "individual" — never write undefined, always normalize on read.
+//
+// Team ownership is NOT a rock type — it's owner_id === null (Owner = Team).
+// See isTeamRock / TEAM_OWNER_VALUE.
 
 export const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
@@ -21,12 +24,15 @@ export const ROCK_TYPE_STYLES: Record<RockType, string> = {
     "bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 ring-zinc-200 dark:ring-zinc-700",
 };
 
-// Sort priority for team-view ordering: company, then department, then individual.
+// Sort priority within a section: company, then department, then individual.
 export const ROCK_TYPE_ORDER: readonly RockType[] = [
   "company",
   "department",
   "individual",
 ];
+
+/** Form/owner-select sentinel: assign the rock to the whole team (owner_id null). */
+export const TEAM_OWNER_VALUE = "team";
 
 export function isRockType(v: string): v is RockType {
   return (ROCK_TYPES as readonly string[]).includes(v);
@@ -35,4 +41,9 @@ export function isRockType(v: string): v is RockType {
 // Existing rocks predate this field — treat missing/invalid as "individual".
 export function normalizeRockType(v: string | null | undefined): RockType {
   return v && isRockType(v) ? v : "individual";
+}
+
+// Team Rocks are identified by ownership, not rock_type: no person owner_id.
+export function isTeamRock(ownerId: string | null | undefined): boolean {
+  return ownerId == null || ownerId === "";
 }

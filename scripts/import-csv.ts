@@ -29,7 +29,12 @@
 //                        of creating a placeholder for them.
 //   --no-create-owners   Never create placeholder members; skip rows whose owner
 //                        can't be resolved (unless --owner-fallback is set).
-//   --include-archived   Import scorecard rows whose Status says archived/inactive.
+//   --include-archived   Import rows the export marks archived — scorecard rows
+//                        whose Status says archived/inactive, and to-dos or
+//                        milestones carrying an "Archived Date".
+//   --completed-since <YYYY-MM-DD>
+//                        Back-import cutoff: drop to-dos/milestones completed
+//                        before this date. Open rows always import, however old.
 //   --rock-team <value>  Import only rocks/milestones whose "Team" column matches.
 //
 // Standing up a fresh team from an export, with you on it:
@@ -95,6 +100,7 @@ type Args = {
   ownerFallback?: string;
   createOwners: boolean;
   includeArchived: boolean;
+  completedSince: string | null;
   rockTeam?: string;
 };
 
@@ -137,6 +143,15 @@ function parseArgs(argv: string[]): Args {
     process.exit(1);
   }
 
+  // Compared as a plain YYYY-MM-DD string against parseDateOnly output, so it
+  // has to be exactly that shape — a Date parse would accept "Jan 2024" and
+  // then compare wrong.
+  const completedSince = str("completed-since") ?? null;
+  if (completedSince && !/^\d{4}-\d{2}-\d{2}$/.test(completedSince)) {
+    console.error(`--completed-since must be YYYY-MM-DD (got "${completedSince}")`);
+    process.exit(1);
+  }
+
   if (!str("scorecard") && !str("rocks") && !str("milestones") && !str("todos")) {
     console.error(
       "Nothing to import — pass at least one of --scorecard / --rocks / --milestones / --todos.",
@@ -166,6 +181,7 @@ function parseArgs(argv: string[]): Args {
     ownerFallback: str("owner-fallback"),
     createOwners: !flags.has("no-create-owners"),
     includeArchived: flags.has("include-archived"),
+    completedSince,
     rockTeam: str("rock-team"),
   };
 }
@@ -539,6 +555,37 @@ async function importRocks(
 }
 
 // ---------------------------------------------------------------------------
+// Shared row helpers for the to-do-shaped exports (milestones + to-dos)
+// ---------------------------------------------------------------------------
+
+// ninety.io exports carry archived rows inline, marked only by a non-empty
+// "Archived Date" — there's no Status column to key off the way the scorecard
+// has. An archived to-do has no completion date either, so importing it lands
+// it in the *open* list forever and buries the live items under dead ones.
+function isArchived(row: Record<string, string>, headers: string[]): boolean {
+  const archivedOn = cell(row, headers, "Archived Date", "Archived On", "Archived");
+  if (archivedOn) return true;
+  return /archiv|deleted/i.test(cell(row, headers, "Status"));
+}
+
+// History cutoff for a back-import. Only *completed* rows are subject to it —
+// an old open to-do is still live work and always comes in. Both the To-Dos
+// page and the live L10 segment render the Done list unbounded and oldest
+// first, so importing years of closed rows pushes the real work off screen.
+function isStaleCompletion(completedOn: string | null, since: string | null): boolean {
+  return !!since && !!completedOn && completedOn < since;
+}
+
+// Use the export's own creation date when it has one, so age and "created"
+// ordering survive the import. Falls back to the server clock for new docs.
+function createdAtFrom(row: Record<string, string>, headers: string[]) {
+  const created = parseDateOnly(cell(row, headers, "Created Date", "Created On", "Created"));
+  return created
+    ? Timestamp.fromDate(new Date(`${created}T00:00:00`))
+    : FieldValue.serverTimestamp();
+}
+
+// ---------------------------------------------------------------------------
 // Milestones (todos with source_rock_id)
 // ---------------------------------------------------------------------------
 
@@ -551,10 +598,14 @@ async function importMilestones(
     existingIds: Set<string>;
     rockIdByTitle: Map<string, string>;
     rockTeam?: string;
+    includeArchived: boolean;
+    completedSince: string | null;
   },
 ) {
   let imported = 0;
   let skipped = 0;
+  let archived = 0;
+  let stale = 0;
   const missingRocks = new Set<string>();
 
   for (const row of table.rows) {
@@ -562,6 +613,11 @@ async function importMilestones(
     const rockName = cell(row, table.headers, "Rock Name", "Rock", "Parent Rock");
     if (!title) {
       skipped++;
+      continue;
+    }
+
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
       continue;
     }
 
@@ -581,6 +637,11 @@ async function importMilestones(
     }
 
     const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
+    if (isStaleCompletion(completedOn, ctx.completedSince)) {
+      stale++;
+      continue;
+    }
+
     const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
     const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
     const isNew = !ctx.existingIds.has(todoId);
@@ -598,12 +659,16 @@ async function importMilestones(
       source_rock_id: rockId,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { created_at: FieldValue.serverTimestamp() } : {}),
+      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
   }
 
-  console.log(`  milestones: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}`);
+  console.log(
+    `  milestones: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}` +
+      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
+      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
+  );
   if (missingRocks.size > 0) {
     console.warn(
       `  ⚠ ${missingRocks.size} milestone(s) reference a rock that isn't in the target team:\n` +
@@ -624,16 +689,34 @@ async function importTodos(
     writer: Writer;
     owners: OwnerResolver;
     existingIds: Set<string>;
+    includeArchived: boolean;
+    completedSince: string | null;
   },
 ) {
   let imported = 0;
   let skipped = 0;
+  let archived = 0;
+  let stale = 0;
+  const recurring: string[] = [];
 
   for (const row of table.rows) {
     const title = cell(row, table.headers, "Title", "Name", "To-Do", "Todo", "Task");
     if (!title) {
       skipped++;
       continue;
+    }
+
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
+      continue;
+    }
+
+    // No recurrence in the data model — a repeating to-do imports as a single
+    // item on its next due date. Collected so the run reports what needs
+    // re-creating by hand rather than dropping it silently.
+    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
+    if (repeat && !/^(no|none|never|one[- ]?time)$/i.test(repeat)) {
+      recurring.push(`${title} (${repeat})`);
     }
 
     const ownerId = await ctx.owners.resolve(
@@ -645,6 +728,11 @@ async function importTodos(
     }
 
     const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
+    if (isStaleCompletion(completedOn, ctx.completedSince)) {
+      stale++;
+      continue;
+    }
+
     const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
     // Private to-dos are the owner's alone; anything else is visible to the
     // team, which is what makes it show up in the L10 To-Dos segment.
@@ -668,12 +756,22 @@ async function importTodos(
       source_rock_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { created_at: FieldValue.serverTimestamp() } : {}),
+      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
   }
 
-  console.log(`  to-dos: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}`);
+  console.log(
+    `  to-dos: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}` +
+      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
+      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
+  );
+  if (recurring.length > 0) {
+    console.warn(
+      `  ⚠ ${recurring.length} to-do(s) repeat on a schedule, imported as one-offs:\n` +
+        recurring.map((r) => `      • ${r}`).join("\n"),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -921,6 +1019,8 @@ async function main() {
       existingIds,
       rockIdByTitle,
       rockTeam: args.rockTeam,
+      includeArchived: args.includeArchived,
+      completedSince: args.completedSince,
     });
   }
 
@@ -930,6 +1030,8 @@ async function main() {
       writer,
       owners,
       existingIds,
+      includeArchived: args.includeArchived,
+      completedSince: args.completedSince,
     });
   }
 

@@ -121,7 +121,8 @@ makes his eight rows resolve to his real login instead of a placeholder.
 | `--as-of <YYYY-MM-DD>` | Anchor for undated week headers. Defaults to today — set it when importing an export that's more than a few months stale. |
 | `--owner-fallback <email\|uid\|name>` | Park rows whose owner isn't on the team on this existing member. |
 | `--no-create-owners` | Don't create placeholder members; skip rows with an unresolvable owner instead. |
-| `--include-archived` | Also import scorecard rows whose `Status` says archived/inactive (skipped by default). |
+| `--include-archived` | Also import rows the export marks archived — scorecard rows whose `Status` says archived/inactive, and to-dos/milestones carrying an `Archived Date` (all skipped by default). |
+| `--completed-since <YYYY-MM-DD>` | Back-import cutoff: drop to-dos/milestones completed before this date. Open rows always import. |
 | `--rock-team <value>` | With a multi-team export, import only rows whose `Team` column matches. |
 
 ## Excel workbooks
@@ -226,6 +227,48 @@ owner's to-do list.
 either from the rocks file in the same run or a rock already on the team. Rows
 that don't match are skipped and listed at the end of the run. Import rocks and
 milestones together and this takes care of itself.
+
+Milestones honor `Archived Date` and `Created Date` the same way to-dos do —
+see below.
+
+### To-Dos
+
+```
+Owner, Title, Description, Due Date, Repeat, Team, Attachment Names,
+Completed On, Link, Created Date, Archived Date
+```
+
+Standalone to-dos — same `todos` collection as milestones, but with no
+`source_rock_id`, so they show only in the owner's list and the L10 To-Dos
+segment.
+
+- **Completed On** sets `completed_at`, which is what splits the app's *Open*
+  and *Done* lists. Blank = open.
+- **Archived Date** — any value means the row is **skipped**. Archived to-dos
+  carry no completion date, so importing them would park them in the *open*
+  list permanently and bury the live items. Pass `--include-archived` to bring
+  them in anyway. The run reports how many were held back.
+- **Created Date** is used for `created_at` when the doc is new, so age and
+  creation ordering survive the import instead of everything looking like it
+  was created at import time. Blank falls back to the server clock.
+- **`--completed-since <YYYY-MM-DD>`** is the back-import cutoff: rows completed
+  before that date are dropped. Open rows always import, however old — an old
+  open to-do is still live work. Both the To-Dos page and the live L10 To-Dos
+  segment render the *Done* list unbounded and oldest-first, so a multi-year
+  export without a cutoff pushes the real work below a wall of closed items.
+  For a live meeting, a cutoff at the start of the current quarter is usually
+  right.
+- **Due Date** blank → end of the current quarter.
+- **Repeat** is **not** imported — there's no recurrence in the data model, so
+  a repeating to-do lands as a single item on its next due date. The run lists
+  every recurring row by name and cadence so you can re-create the schedule by
+  hand rather than discovering the gap later.
+- **Visibility** — a `Visibility`/`Private` column starting with "priv" makes
+  the to-do private to its owner; anything else (including a missing column) is
+  team-visible, which is what puts it in the L10 segment.
+- **Attachment Names** is not imported (no attachments feature yet).
+- **Team** is ignored here — every row lands on `--team`. (`--rock-team` filters
+  rocks and milestones only.)
 
 ## Owners
 

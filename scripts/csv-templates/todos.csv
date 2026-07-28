@@ -1,0 +1,6 @@
+Owner,Title,Description,Due Date,Repeat,Team,Attachment Names,Completed On,Link,Created Date,Archived Date
+Sarah Chen,Draft Q4 vendor renewal summary,Core processor and card network,2026-08-07,,Enterprise Systems & Data,,,https://app.ninety.io/todos/t1,2026-07-24,
+Marcus Reed,Send deposit campaign results to leadership,,2026-08-01,,Enterprise Systems & Data,,2026-07-31,https://app.ninety.io/todos/t2,2026-07-18,
+Tom Bradley,Review loan ops staffing plan,,2026-08-14,,Enterprise Systems & Data,,,https://app.ninety.io/todos/t3,2026-07-25,
+Sarah Chen,Weekly uptime report to the board,Recurring — recreate the schedule by hand after import,2026-08-03,Weekly,Enterprise Systems & Data,,,https://app.ninety.io/todos/t4,2026-06-01,
+Tom Bradley,Old branch signage refresh,Superseded — skipped unless --include-archived,2026-06-30,,Enterprise Systems & Data,,,https://app.ninety.io/todos/t5,2026-05-12,2026-07-02

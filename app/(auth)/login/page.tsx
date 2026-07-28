@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { verifySession } from "@/lib/firebase/session";
+import { EnvBadge } from "@/components/env-badge";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -16,6 +17,7 @@ export default async function LoginPage({
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-sm">
         <div className="mb-6">
+          <EnvBadge className="mb-3" />
           <h1 className="text-2xl font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
             High Plains Bank
           </h1>

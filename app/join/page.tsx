@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { signOut } from "@/app/(app)/sign-out-action";
+import { EnvBadge } from "@/components/env-badge";
 import { requestToJoin } from "./actions";
 
 type RequestStatus = "pending" | "approved" | "denied";
@@ -38,6 +39,7 @@ export default async function JoinPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-zinc-50 dark:bg-zinc-950">
       <div className="w-full max-w-lg">
         <div className="mb-6 text-center">
+          <EnvBadge className="mb-3" />
           <span className="block text-lg font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
             High Plains Bank
           </span>

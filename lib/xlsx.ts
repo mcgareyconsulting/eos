@@ -79,26 +79,40 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, "&");
 }
 
+// OOXML may be written with or without namespace prefixes — `<sheet>` and
+// `<x:sheet>` are the same element, and exporters differ (ninety's rocks
+// workbook is unprefixed; its to-dos workbook is prefixed with `x:`). Every
+// tag pattern here allows an optional prefix, or a whole file silently reads
+// as empty.
+const P = "(?:[A-Za-z_][\\w.-]*:)?";
+
 // Element matchers put the self-closing form FIRST: `[^>]*` happily consumes
 // the "/" of `<c r="I2"/>`, so an open-tag alternative tried first would match
 // it and then run on to the *next* element's closing tag, swallowing a cell.
 const EL = (tag: string) =>
-  new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, "g");
+  new RegExp(
+    `<${P}${tag}\\b[^>]*/>|<${P}${tag}\\b[^>]*>[\\s\\S]*?</${P}${tag}>`,
+    "g",
+  );
 const CELL_RE = EL("c");
 const ROW_RE = EL("row");
 const SI_RE = EL("si");
 const T_RE = EL("t");
 
+// Attribute names can be prefixed too (`r:id`). An unprefixed request matches
+// either form, so callers don't have to know which the exporter used.
 function attr(tag: string, name: string): string | undefined {
-  return tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1];
+  return tag.match(new RegExp(`\\b${P}${name}="([^"]*)"`))?.[1];
 }
 
 // Concatenates the <t> runs of one string-table entry (rich text splits a
 // single value across runs). Self-closing <t/> contributes an empty string.
 function textRuns(xml: string): string {
   const runs = xml.match(T_RE) ?? [];
+  const selfClosing = new RegExp(`<${P}t\\b[^>]*/>`);
+  const tags = new RegExp(`<${P}t\\b[^>]*>|</${P}t>`, "g");
   return runs
-    .map((r) => decodeEntities(r.replace(/<t\b[^>]*\/>/, "").replace(/<t\b[^>]*>|<\/t>/g, "")))
+    .map((r) => decodeEntities(r.replace(selfClosing, "").replace(tags, "")))
     .join("");
 }
 
@@ -146,7 +160,7 @@ function parseDateStyles(stylesXml: string): boolean[] {
   // Attributes are read by name, not position — exporters write them in any
   // order (ninety puts formatCode before numFmtId).
   const customDate = new Map<number, boolean>();
-  for (const tag of stylesXml.match(/<numFmt\b[^>]*\/?>/g) ?? []) {
+  for (const tag of stylesXml.match(new RegExp(`<${P}numFmt\\b[^>]*/?>`, "g")) ?? []) {
     const id = attr(tag, "numFmtId");
     const code = attr(tag, "formatCode");
     if (id !== undefined && code !== undefined) {
@@ -154,9 +168,10 @@ function parseDateStyles(stylesXml: string): boolean[] {
     }
   }
 
-  const cellXfs = stylesXml.match(/<cellXfs\b[^>]*>[\s\S]*?<\/cellXfs>/)?.[0] ?? "";
+  const cellXfs =
+    stylesXml.match(new RegExp(`<${P}cellXfs\\b[^>]*>[\\s\\S]*?</${P}cellXfs>`))?.[0] ?? "";
   const out: boolean[] = [];
-  for (const xf of cellXfs.match(/<xf\b[^>]*\/?>/g) ?? []) {
+  for (const xf of cellXfs.match(new RegExp(`<${P}xf\\b[^>]*/?>`, "g")) ?? []) {
     const id = Number(attr(xf, "numFmtId") ?? 0);
     out.push(customDate.get(id) ?? BUILTIN_DATE_FORMATS.has(id));
   }
@@ -183,7 +198,8 @@ export function parseSheetXml(
       if (type === "inlineStr") {
         value = textRuns(cellXml);
       } else {
-        const raw = cellXml.match(/<v>([\s\S]*?)<\/v>/)?.[1] ?? "";
+        const raw =
+          cellXml.match(new RegExp(`<${P}v\\b[^>]*>([\\s\\S]*?)</${P}v>`))?.[1] ?? "";
         if (raw === "") value = "";
         else if (type === "s") value = shared[Number(raw)] ?? "";
         else if (type === "str" || type === "e") value = decodeEntities(raw);
@@ -231,21 +247,30 @@ export function readXlsx(buf: Buffer): XlsxSheet[] {
   // Sheet order and names live in workbook.xml; the file each one lives in is
   // resolved through the relationship ids in workbook.xml.rels.
   const rels = new Map<string, string>();
-  for (const m of (read("xl/_rels/workbook.xml.rels") ?? "").matchAll(
-    /<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g,
-  )) {
-    rels.set(m[1], m[2].replace(/^\/?xl\//, "").replace(/^\.\//, ""));
+  for (const tag of (read("xl/_rels/workbook.xml.rels") ?? "").match(
+    new RegExp(`<${P}Relationship\\b[^>]*/?>`, "g"),
+  ) ?? []) {
+    const id = attr(tag, "Id");
+    const target = attr(tag, "Target");
+    if (id && target) {
+      rels.set(id, target.replace(/^\/?xl\//, "").replace(/^\.\//, ""));
+    }
   }
 
+  // Attributes are read by name rather than matched in sequence — writers
+  // order them freely, and a positional pattern silently yields no sheets on
+  // one that puts r:id before name.
   const sheets: XlsxSheet[] = [];
-  for (const [i, m] of [
-    ...workbook.matchAll(/<sheet\b[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/?>/g),
-  ].entries()) {
-    const name = decodeEntities(m[1]);
-    const target = rels.get(m[2]) ?? `worksheets/sheet${i + 1}.xml`;
+  for (const [i, tag] of (
+    workbook.match(new RegExp(`<${P}sheet\\b[^>]*/?>`, "g")) ?? []
+  ).entries()) {
+    const rawName = attr(tag, "name");
+    const relId = attr(tag, "id");
+    if (!rawName) continue;
+    const target = (relId && rels.get(relId)) || `worksheets/sheet${i + 1}.xml`;
     const xml = read(`xl/${target}`);
     if (!xml) continue;
-    sheets.push({ name, rows: parseSheetXml(xml, shared, dateStyles) });
+    sheets.push({ name: decodeEntities(rawName), rows: parseSheetXml(xml, shared, dateStyles) });
   }
   return sheets;
 }

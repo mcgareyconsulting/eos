@@ -576,6 +576,23 @@ function isStaleCompletion(completedOn: string | null, since: string | null): bo
   return !!since && !!completedOn && completedOn < since;
 }
 
+// Does a Repeat cell describe an actual schedule? The column is populated even
+// for one-off items — ninety writes the literal "Don't repeat" — so a mere
+// non-empty check reports every to-do as recurring and the warning becomes
+// noise. Apostrophes are stripped before matching because exports mix straight
+// and curly ones.
+function isRecurring(raw: string): boolean {
+  const s = raw
+    .toLowerCase()
+    .replace(/[''`‘’]/g, "")
+    .replace(/[\s_-]+/g, " ")
+    .trim();
+  if (!s) return false;
+  return !/^(no|none|never|off|one time|no repeat|dont repeat|doesnt repeat|does not repeat|do not repeat)$/.test(
+    s,
+  );
+}
+
 // Use the export's own creation date when it has one, so age and "created"
 // ordering survive the import. Falls back to the server clock for new docs.
 function createdAtFrom(row: Record<string, string>, headers: string[]) {
@@ -715,7 +732,7 @@ async function importTodos(
     // item on its next due date. Collected so the run reports what needs
     // re-creating by hand rather than dropping it silently.
     const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
-    if (repeat && !/^(no|none|never|one[- ]?time)$/i.test(repeat)) {
+    if (repeat && isRecurring(repeat)) {
       recurring.push(`${title} (${repeat})`);
     }
 

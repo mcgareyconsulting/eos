@@ -96,6 +96,39 @@ describe("parseSheetXml", () => {
     );
     assert.deepEqual(rows, [["Owner", "", "", "Steph Benes"]]);
   });
+
+  // Namespace prefixes are legal OOXML and exporters disagree: ninety writes
+  // its rocks workbook unprefixed and its to-dos workbook with `x:`. A parser
+  // that only matches the bare form reads the prefixed file as *empty* rather
+  // than failing loudly, so both forms are pinned.
+  test("reads namespace-prefixed elements identically", () => {
+    const rows = parseSheetXml(
+      '<x:sheetData><x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c>' +
+        '<x:c r="B1" t="s"><x:v>1</x:v></x:c></x:row></x:sheetData>',
+      shared,
+      dateStyles,
+    );
+    assert.deepEqual(rows, [["Owner", "Steph Benes"]]);
+  });
+
+  test("reads prefixed inline strings and self-closing cells", () => {
+    const rows = parseSheetXml(
+      '<x:sheetData><x:row r="1"><x:c r="A1" t="inlineStr"><x:is><x:t>Hello</x:t></x:is></x:c>' +
+        '<x:c r="B1"/><x:c r="C1" t="s"><x:v>1</x:v></x:c></x:row></x:sheetData>',
+      shared,
+      dateStyles,
+    );
+    assert.deepEqual(rows, [["Hello", "", "Steph Benes"]]);
+  });
+});
+
+describe("parseSharedStrings", () => {
+  test("handles namespace-prefixed string tables", () => {
+    assert.deepEqual(
+      parseSharedStrings('<x:sst><x:si><x:t>Owner</x:t></x:si><x:si><x:t>Title</x:t></x:si></x:sst>'),
+      ["Owner", "Title"],
+    );
+  });
 });
 
 describe("pickSheet", () => {

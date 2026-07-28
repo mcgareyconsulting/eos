@@ -257,6 +257,24 @@ export function MeetingRail({
           )}
         </div>
 
+        {/* Whose turn it is, on every stage including Segue. It duplicates
+            the rotation segment-segue.tsx renders in the content column, but
+            the rail is the one place the answer is always in the same spot —
+            a section that vanishes on stage 1 costs more than the repeat.
+            Sits directly under the clocks: who's up and how long they have
+            are the two things a facilitator reads together, and the agenda
+            below is reference rather than something you watch. */}
+        {running && (
+          <SpeakingOrderRail
+            teamId={teamId}
+            meetingId={meetingId}
+            order={speakingOrder}
+            speakerIndex={speakerIndex}
+            absentUserIds={absentUserIds}
+            members={members}
+          />
+        )}
+
         {/* Agenda. Clicking a row peeks locally (?view=) — it never moves the
             group; only Back/Next below do that. */}
         <nav className="px-2 py-2">
@@ -332,21 +350,6 @@ export function MeetingRail({
             </p>
           )}
         </nav>
-
-        {/* Whose turn it is, on every stage including Segue. It duplicates
-            the rotation segment-segue.tsx renders in the content column, but
-            the rail is the one place the answer is always in the same spot —
-            a section that vanishes on stage 1 costs more than the repeat. */}
-        {running && (
-          <SpeakingOrderRail
-            teamId={teamId}
-            meetingId={meetingId}
-            order={speakingOrder}
-            speakerIndex={speakerIndex}
-            absentUserIds={absentUserIds}
-            members={members}
-          />
-        )}
 
         {/* Transport — drives the shared stage; any user. */}
         {running && (

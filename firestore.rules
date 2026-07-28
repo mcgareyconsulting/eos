@@ -187,5 +187,13 @@ service cloud.firestore {
       allow read:  if admin();
       allow write: if false;
     }
+
+    // ---------- Google Tasks OAuth tokens (per-user, server-only) ----------
+    // Written exclusively by the Admin SDK in lib/google/tasks.ts (OAuth
+    // callback + token refresh). Clients must never read refresh tokens.
+    // Default-deny above already covers this; explicit rule documents intent.
+    match /google_tasks_connections/{uid} {
+      allow read, write: if false;
+    }
   }
 }

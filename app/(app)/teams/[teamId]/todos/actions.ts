@@ -11,8 +11,8 @@ import {
 
 // Build the Google Tasks mirror payload from a to-do doc's fields plus any
 // just-applied overrides. Every to-do write passes the *complete* current
-// state so a PATCH never reverts an unspecified field. (To mirror only a
-// specific owner's to-dos, gate the upsert calls below on `owner_id`.)
+// state so a PATCH never reverts an unspecified field. Mirroring uses the
+// to-do's owner_id — each owner must connect their own Google account.
 function mirrorFrom(
   data: FirebaseFirestore.DocumentData,
   overrides: Partial<TodoMirror> = {},
@@ -24,6 +24,10 @@ function mirrorFrom(
     completed: !!data.completed_at,
     ...overrides,
   };
+}
+
+function ownerUidOf(data: FirebaseFirestore.DocumentData): string {
+  return typeof data.owner_id === "string" ? data.owner_id : "";
 }
 
 const VISIBILITIES = ["team", "private"] as const;
@@ -64,13 +68,17 @@ export async function addTodo(teamId: string, formData: FormData) {
     created_at: FieldValue.serverTimestamp(),
   });
 
-  // Mirror to Google Tasks (best-effort; no-op if not connected).
-  const taskId = await upsertTaskForTodo({
-    title,
-    notes: description,
-    dueDate: due_date,
-    completed: false,
-  });
+  // Mirror to the owner's Google Tasks (best-effort; no-op if they
+  // haven't connected their account).
+  const taskId = await upsertTaskForTodo(
+    owner_id,
+    {
+      title,
+      notes: description,
+      dueDate: due_date,
+      completed: false,
+    },
+  );
   if (taskId) await ref.update({ google_task_id: taskId });
 
   revalidatePath(pathFor(teamId));
@@ -93,6 +101,7 @@ export async function toggleTodo(
     });
 
   const taskId = await upsertTaskForTodo(
+    ownerUidOf(data),
     mirrorFrom(data, { completed: nowComplete }),
     data.google_task_id,
   );
@@ -115,6 +124,7 @@ export async function updateTodoTitle(
   await db.collection("todos").doc(todoId).update({ title: trimmed });
 
   const taskId = await upsertTaskForTodo(
+    ownerUidOf(data),
     mirrorFrom(data, { title: trimmed }),
     data.google_task_id,
   );
@@ -139,6 +149,7 @@ export async function updateTodoDescription(
     .update({ description: trimmed || null });
 
   const taskId = await upsertTaskForTodo(
+    ownerUidOf(data),
     mirrorFrom(data, { notes: trimmed || null }),
     data.google_task_id,
   );
@@ -153,6 +164,6 @@ export async function deleteTodo(teamId: string, todoId: string) {
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
   await db.collection("todos").doc(todoId).delete();
-  await deleteTaskForTodo(data.google_task_id);
+  await deleteTaskForTodo(ownerUidOf(data), data.google_task_id);
   revalidatePath(pathFor(teamId));
 }

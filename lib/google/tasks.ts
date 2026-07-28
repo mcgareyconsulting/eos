@@ -1,22 +1,22 @@
 // Google Tasks connector — one-way push (EOS to-dos → Google Tasks).
 //
-// SCOPE (deliberately minimal, "single user" per current requirements):
-//   - ONE connected Google account for the whole app, stored in the admin-only
-//     Firestore doc `integrations/google_tasks`. No per-team/per-owner token
-//     management, no write-back from Tasks → EOS, no polling.
-//   - Every team to-do is mirrored into one "EOS · L10 To-Dos" list in that
-//     account. To mirror only a specific owner's to-dos instead, gate the
-//     callers in todos/actions.ts on `owner_id` (see note there).
+// SCOPE (per-user OAuth):
+//   - Each EOS user connects their own Google account. Tokens live in the
+//     admin-only Firestore doc `google_tasks_connections/{uid}`. No shared
+//     app-wide connection, no write-back from Tasks → EOS, no polling.
+//   - A to-do is mirrored into the **owner's** "EOS · L10 To-Dos" list when
+//     that owner has connected. If the owner hasn't connected, the push is a
+//     no-op (the EOS write still succeeds).
 //
 // No SDK dependency: OAuth token exchange/refresh and the Tasks REST calls are
 // done with plain fetch. Auth is user-OAuth (the Tasks API does not accept a
-// bare service account) — a human connects once via /api/google/tasks/connect,
-// which stores a refresh token here.
+// bare service account) — each human connects via /api/google/tasks/connect,
+// which stores a refresh token under their uid.
 //
-// SECURITY: the refresh token lives in Firestore (admin-SDK only; firestore.rules
-// denies client reads of `integrations/*`). Fine for a single-user trial; for a
-// multi-tenant/prod build move it to Secret Manager and grant the runtime SA
-// roles/secretmanager.secretAccessor.
+// SECURITY: refresh tokens live in Firestore (admin-SDK only; firestore.rules
+// default-denies client access to `google_tasks_connections/*`). Fine for a
+// small org; for a multi-tenant/prod hardening pass move tokens to Secret
+// Manager and grant the runtime SA roles/secretmanager.secretAccessor.
 
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
@@ -77,25 +77,29 @@ export function googleOAuthConfigured(): boolean {
   return clientCreds() !== null;
 }
 
-function connectionRef() {
-  return getAdminDb().collection("integrations").doc("google_tasks");
+function connectionRef(uid: string) {
+  return getAdminDb().collection("google_tasks_connections").doc(uid);
 }
 
-async function getConnection(): Promise<Connection | null> {
-  const snap = await connectionRef().get();
+async function getConnection(uid: string): Promise<Connection | null> {
+  const snap = await connectionRef(uid).get();
   const data = snap.data() as Connection | undefined;
   return data?.refresh_token ? data : null;
 }
 
-/** Connection status for UI (no secrets returned). */
-export async function getTasksStatus(): Promise<{
+/** Connection status for the given EOS user (no secrets returned). */
+export async function getTasksStatus(uid: string): Promise<{
   configured: boolean;
   connected: boolean;
   email: string | null;
 }> {
-  const conn = await getConnection().catch(() => null);
+  const configured = googleOAuthConfigured();
+  if (!configured) {
+    return { configured: false, connected: false, email: null };
+  }
+  const conn = await getConnection(uid).catch(() => null);
   return {
-    configured: googleOAuthConfigured(),
+    configured: true,
     connected: !!conn,
     email: conn?.connected_email ?? null,
   };
@@ -132,30 +136,41 @@ export async function exchangeCodeForTokens(
   return res.json();
 }
 
-/** Persist a freshly-authorized connection (overwrites any prior one). */
+/** Persist a freshly-authorized connection for this EOS user. */
 export async function saveConnection(params: {
   refreshToken: string;
   accessToken: string;
   expiresInSec: number;
-  uid: string | null;
+  uid: string;
   email: string | null;
 }): Promise<void> {
-  await connectionRef().set(
+  await connectionRef(params.uid).set(
     {
       refresh_token: params.refreshToken,
       access_token: params.accessToken,
       access_token_expiry: Date.now() + params.expiresInSec * 1000,
       connected_by_uid: params.uid,
       connected_email: params.email,
+      // Clear any prior tasklist — a reconnect may use a different Google
+      // account, so the old list id is not valid for the new tokens.
+      tasklist_id: null,
       updated_at: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
 }
 
+/** Drop this user's Google Tasks connection (tokens + cached tasklist). */
+export async function clearConnection(uid: string): Promise<void> {
+  await connectionRef(uid).delete();
+}
+
 // --- Token / tasklist plumbing ---------------------------------------------
 
-async function refreshAccessToken(refreshToken: string): Promise<string> {
+async function refreshAccessToken(
+  uid: string,
+  refreshToken: string,
+): Promise<string> {
   const creds = clientCreds();
   if (!creds) throw new Error("Google OAuth not configured");
   const res = await fetch(TOKEN_URL, {
@@ -172,7 +187,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
     throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
-  await connectionRef().set(
+  await connectionRef(uid).set(
     {
       access_token: json.access_token,
       access_token_expiry: Date.now() + json.expires_in * 1000,
@@ -203,31 +218,35 @@ async function tasksFetch(
   return res.json();
 }
 
-// Resolve a usable access token + the EOS tasklist id, refreshing/creating as
-// needed. Returns null when no account is connected.
-async function getAuthContext(): Promise<
-  { token: string; tasklistId: string } | null
-> {
+// Resolve a usable access token + the EOS tasklist id for this owner,
+// refreshing/creating as needed. Returns null when they haven't connected.
+async function getAuthContext(
+  ownerUid: string,
+): Promise<{ token: string; tasklistId: string } | null> {
   // Short-circuit before any Firestore read when the connector isn't even
   // configured — keeps the to-do write path free of overhead everywhere the
   // integration is off (prod, emulator, unconfigured trials).
   if (!googleOAuthConfigured()) return null;
 
-  const conn = await getConnection();
+  const conn = await getConnection(ownerUid);
   if (!conn) return null;
 
   let token = conn.access_token ?? null;
   const expiry = conn.access_token_expiry ?? 0;
   // Refresh a minute early to avoid mid-call expiry.
   if (!token || Date.now() > expiry - 60_000) {
-    token = await refreshAccessToken(conn.refresh_token);
+    token = await refreshAccessToken(ownerUid, conn.refresh_token);
   }
 
-  const tasklistId = conn.tasklist_id ?? (await ensureTaskList(token));
+  const tasklistId =
+    conn.tasklist_id ?? (await ensureTaskList(ownerUid, token));
   return { token, tasklistId };
 }
 
-async function ensureTaskList(accessToken: string): Promise<string> {
+async function ensureTaskList(
+  uid: string,
+  accessToken: string,
+): Promise<string> {
   const listing = await tasksFetch("/users/@me/lists", accessToken);
   const items = (listing.items ?? []) as { id: string; title: string }[];
   const existing = items.find((l) => l.title === TASKLIST_TITLE);
@@ -239,7 +258,7 @@ async function ensureTaskList(accessToken: string): Promise<string> {
     });
     id = created.id as string;
   }
-  await connectionRef().set(
+  await connectionRef(uid).set(
     { tasklist_id: id, updated_at: FieldValue.serverTimestamp() },
     { merge: true },
   );
@@ -255,18 +274,21 @@ export type TodoMirror = {
   completed: boolean;
 };
 
-// Create or update the mirrored Google Task for a to-do. Returns the Google
-// task id (new or existing), or null if not connected / not configured.
+// Create or update the mirrored Google Task for a to-do in the **owner's**
+// connected Google account. Returns the Google task id (new or existing), or
+// null if the owner is not connected / OAuth is not configured.
 // NEVER THROWS — Google being unreachable must not break an EOS to-do write.
 // Callers pass the *complete* current to-do state (title, notes, due, status)
 // so a PATCH can't accidentally revert an unspecified field (e.g. reopen a
 // completed task on a title-only edit).
 export async function upsertTaskForTodo(
+  ownerUid: string,
   todo: TodoMirror,
   existingTaskId?: string | null,
 ): Promise<string | null> {
+  if (!ownerUid) return null;
   try {
-    const auth = await getAuthContext();
+    const auth = await getAuthContext(ownerUid);
     if (!auth) return null;
 
     const body: Record<string, unknown> = {
@@ -295,14 +317,15 @@ export async function upsertTaskForTodo(
   }
 }
 
-// Delete the mirrored Google Task. No-op if there's no mirror or no connection.
-// Never throws.
+// Delete the mirrored Google Task from the owner's account. No-op if there's
+// no mirror, no connection, or OAuth is off. Never throws.
 export async function deleteTaskForTodo(
+  ownerUid: string,
   existingTaskId: string | null | undefined,
 ): Promise<void> {
-  if (!existingTaskId) return;
+  if (!ownerUid || !existingTaskId) return;
   try {
-    const auth = await getAuthContext();
+    const auth = await getAuthContext(ownerUid);
     if (!auth) return;
     await tasksFetch(
       `/lists/${auth.tasklistId}/tasks/${existingTaskId}`,

@@ -2,17 +2,17 @@ import { CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTasksStatus } from "@/lib/google/tasks";
 
-// Single-user integrations surface. Currently: the Google Tasks connector
-// (one-way push of L10 to-dos → Google Tasks). One connected account for the
-// whole app — see lib/google/tasks.ts for the scope rationale.
+// Per-user integrations surface. Currently: the Google Tasks connector
+// (one-way push of L10 to-dos → the owner's Google Tasks). Each user
+// connects their own Google account — see lib/google/tasks.ts.
 export default async function IntegrationsPage({
   searchParams,
 }: {
   searchParams: Promise<{ google?: string }>;
 }) {
-  await requireFirebaseUser(); // gate on a valid session
+  const user = await requireFirebaseUser();
   const { google } = await searchParams;
-  const status = await getTasksStatus();
+  const status = await getTasksStatus(user.uid);
 
   const banner = bannerFor(google);
 
@@ -21,7 +21,7 @@ export default async function IntegrationsPage({
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Connect external services. Connections are app-wide (single account).
+          Connect external services to your account.
         </p>
       </header>
 
@@ -39,14 +39,17 @@ export default async function IntegrationsPage({
           <div>
             <h2 className="text-base font-semibold">Google Tasks</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Pushes every L10 to-do into an “EOS · L10 To-Dos” list in the
-              connected Google account. One-way (EOS → Google Tasks).
+              Pushes to-dos you own into an “EOS · L10 To-Dos” list in your
+              Google account. One-way (EOS → Google Tasks). Each person
+              connects their own account.
             </p>
             <div className="mt-3 text-sm">
               {!status.configured ? (
                 <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="h-4 w-4" />
-                  Not configured — set GOOGLE_OAUTH_CLIENT_ID / _SECRET
+                  Not configured on this deployment — set GOOGLE_OAUTH_CLIENT_ID
+                  / _SECRET (and GOOGLE_OAUTH_REDIRECT_URI in prod) on the
+                  Cloud Run service
                 </span>
               ) : status.connected ? (
                 <span className="inline-flex items-center gap-1.5 text-hpb-green">
@@ -55,7 +58,8 @@ export default async function IntegrationsPage({
                 </span>
               ) : (
                 <span className="text-zinc-600 dark:text-zinc-400">
-                  Not connected yet.
+                  Not connected yet — only your own to-dos will sync after you
+                  connect.
                 </span>
               )}
             </div>
@@ -84,7 +88,7 @@ function bannerFor(
       return {
         cls: "bg-hpb-green/10 text-hpb-green",
         icon: <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />,
-        text: "Google Tasks connected. New and updated to-dos will now sync.",
+        text: "Google Tasks connected. To-dos you own will now sync to your list.",
       };
     case "no_refresh":
       return {

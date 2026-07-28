@@ -3,8 +3,10 @@
 # file, tags the image with the current git commit, and hands the rest to
 # cloudbuild.yaml (build -> push to Artifact Registry -> roll Cloud Run).
 #
-#   pnpm ship                 # deploy to the project .env.local points at
-#   pnpm ship -- --dry-run    # print the gcloud command, run nothing
+#   pnpm ship                 # deploy using .env.prod (live DB)
+#   pnpm ship -- --dry-run    # print what would run, run nothing
+#   pnpm ship -- --sync-env   # only push runtime keys from the env file
+#                             # (no rebuild) — useful for GOOGLE_OAUTH_* etc.
 #
 # The env file is the single source of truth for the NEXT_PUBLIC_* values
 # baked into the image. Deploys read .env.prod (live database); .env.local is
@@ -13,9 +15,9 @@
 # Deploying to a different project means pointing at a different env file
 # (--env-file), not overriding values one by one.
 #
-# Runtime env vars on the service (SIGN_IN_ALLOWLIST, ENV_LABEL, ...) are
-# untouched: the deploy step runs `gcloud run deploy` without --set-env-vars,
-# which preserves whatever is already set on the service.
+# After a successful image roll, runtime keys listed in RUNTIME_ENV_KEYS are
+# copied from the env file onto the Cloud Run service (when present). Other
+# service env (SIGN_IN_ALLOWLIST, ENV_LABEL, ...) is left alone.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -26,15 +28,26 @@ ENV_FILE=.env.prod
 PROJECT=""
 RUNTIME_SA=""
 DRY_RUN=false
+SYNC_ENV_ONLY=false
+
+# Server-only keys that may be copied from the env file onto Cloud Run after
+# a successful deploy. Add names here when a new runtime secret/config should
+# ride along with pnpm ship. Values must not contain '|' (delimiter below).
+RUNTIME_ENV_KEYS=(
+  GOOGLE_OAUTH_CLIENT_ID
+  GOOGLE_OAUTH_CLIENT_SECRET
+  GOOGLE_OAUTH_REDIRECT_URI
+)
 
 usage() {
   cat <<'USAGE'
 Usage: pnpm ship [-- options]
   --project <id>          GCP project (default: NEXT_PUBLIC_FIREBASE_PROJECT_ID from the env file)
   --region <region>       Cloud Run region (default: us-east1)
-  --env-file <path>       Env file to read NEXT_PUBLIC_* config from (default: .env.prod)
+  --env-file <path>       Env file to read config from (default: .env.prod)
   --service-account <sa>  Runtime SA (default: eos-runtime@<project>.iam.gserviceaccount.com)
-  --dry-run               Print the build command instead of running it
+  --sync-env              Only push RUNTIME_ENV_KEYS from the env file onto Cloud Run (no rebuild)
+  --dry-run               Print the command(s) instead of running them
 USAGE
 }
 
@@ -44,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --region) REGION="$2"; shift 2 ;;
     --env-file) ENV_FILE="$2"; shift 2 ;;
     --service-account) RUNTIME_SA="$2"; shift 2 ;;
+    --sync-env) SYNC_ENV_ONLY=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -53,8 +67,52 @@ done
 [[ -f "$ENV_FILE" ]] || { echo "Env file not found: $ENV_FILE"; exit 1; }
 
 # Last uncommented assignment wins, matching dotenv. Values here are plain
-# (no quotes, no commas), so no unescaping is needed.
+# (no quotes), so no unescaping is needed.
 envval() { grep -E "^${1}=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
+
+# Copy RUNTIME_ENV_KEYS that are set in the env file onto the Cloud Run
+# service. Uses --update-env-vars (merge) so unrelated service env is kept.
+# Prints key names only — never values.
+sync_runtime_env() {
+  local pairs=()
+  local key val
+  for key in "${RUNTIME_ENV_KEYS[@]}"; do
+    val="$(envval "$key")"
+    [[ -n "$val" ]] || continue
+    if [[ "$val" == *"|"* ]]; then
+      echo "Refusing: $key contains '|' which breaks the env-var delimiter."
+      exit 1
+    fi
+    pairs+=("${key}=${val}")
+  done
+
+  if [[ ${#pairs[@]} -eq 0 ]]; then
+    echo "No runtime keys to sync (none of ${RUNTIME_ENV_KEYS[*]} set in ${ENV_FILE})."
+    return 0
+  fi
+
+  # ^|^ = use | as separator so values may contain commas.
+  local joined
+  joined="$(IFS='|'; echo "${pairs[*]}")"
+  local names=()
+  for key in "${RUNTIME_ENV_KEYS[@]}"; do
+    [[ -n "$(envval "$key")" ]] && names+=("$key")
+  done
+
+  echo "Syncing runtime env onto ${SERVICE}: ${names[*]}"
+  local cmd=(
+    gcloud run services update "$SERVICE"
+    --project "$PROJECT"
+    --region "$REGION"
+    --update-env-vars "^|^${joined}"
+  )
+  if $DRY_RUN; then
+    # Don't print secret values on dry-run — only show which keys would ship.
+    echo "  (dry-run) would update: ${names[*]}"
+    return 0
+  fi
+  "${cmd[@]}"
+}
 
 ENV_PROJECT="$(envval NEXT_PUBLIC_FIREBASE_PROJECT_ID)"
 PROJECT="${PROJECT:-$ENV_PROJECT}"
@@ -82,6 +140,13 @@ fi
 
 RUNTIME_SA="${RUNTIME_SA:-eos-runtime@${PROJECT}.iam.gserviceaccount.com}"
 
+# Env-only path: push runtime keys without rebuilding the image.
+if $SYNC_ENV_ONLY; then
+  echo "Syncing runtime env for ${SERVICE} in ${PROJECT} (${REGION}) from ${ENV_FILE}"
+  sync_runtime_env
+  exit 0
+fi
+
 # Tag = short commit, so "what's running" always answers to "which commit".
 # A dirty tree gets a loud suffix rather than a lying tag.
 TAG="$(git rev-parse --short HEAD)"
@@ -108,6 +173,7 @@ CMD=(gcloud builds submit --config cloudbuild.yaml --project "$PROJECT" --substi
 
 if $DRY_RUN; then
   echo; printf '%q ' "${CMD[@]}"; echo
+  sync_runtime_env
   exit 0
 fi
 
@@ -117,3 +183,6 @@ echo
 echo "Deployed. Service URL:"
 gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" \
   --format='value(status.url)'
+
+# Keep Cloud Run runtime keys in lockstep with the env file (merge-only).
+sync_runtime_env

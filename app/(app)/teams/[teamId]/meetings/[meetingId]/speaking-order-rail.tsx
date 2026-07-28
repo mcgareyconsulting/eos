@@ -9,7 +9,7 @@ import {
 } from "@/lib/l10/speaking-order";
 import { setSpeakingIndex } from "../actions";
 
-// The speaking rotation, rendered by MeetingLive so it sits on screen for
+// The speaking rotation, rendered by MeetingRail so it sits on screen for
 // every stage — Rocks, Headlines and To-Dos are round-robin reports too, so
 // the round needs to be drivable well past Segue, not just visible.
 //
@@ -39,7 +39,7 @@ export function SpeakingOrderRail({
 
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
   const currentUid = currentSpeakerUid(order, speakerIndex, absentUserIds);
-  const currentName = currentUid ? nameById.get(currentUid) ?? "—" : "—";
+  const currentName = currentUid ? (nameById.get(currentUid) ?? "—") : "—";
 
   const jumpTo = (uid: string) =>
     start(async () => {
@@ -59,10 +59,10 @@ export function SpeakingOrderRail({
   const atEnd = currentUid === visible[visible.length - 1];
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-      <span className="text-xs text-zinc-600 dark:text-zinc-400">
+    <div className="space-y-2 px-3 py-3">
+      <div className="truncate text-xs text-zinc-600 dark:text-zinc-400">
         Now: <strong className="text-hpb-green">{currentName}</strong>
-      </span>
+      </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
         {visible.map((uid, idx) => {
@@ -88,12 +88,12 @@ export function SpeakingOrderRail({
         })}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex gap-1.5">
         <button
           type="button"
           onClick={() => step(-1)}
           disabled={pending || atStart}
-          className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           ← Prev
         </button>
@@ -101,7 +101,7 @@ export function SpeakingOrderRail({
           type="button"
           onClick={() => step(1)}
           disabled={pending || atEnd}
-          className="rounded-md bg-hpb-green px-2 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-40"
+          className="flex-1 rounded-md bg-hpb-green px-2 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-40"
         >
           Next speaker →
         </button>

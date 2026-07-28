@@ -20,14 +20,8 @@ import {
   type GoalDirection,
   type TrendStatus,
 } from "@/lib/scorecard";
-import {
-  formatWeekRange,
-  mondayOf,
-  toDateString,
-  weekYear,
-} from "@/lib/dates";
+import { formatWeekRange, mondayOf, toDateString, weekYear } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { MiniSparkline } from "./mini-sparkline";
 
 export type ScorecardMetric = {
   id: string;
@@ -196,13 +190,10 @@ export function ScorecardGrid({
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
 
   const headerBg = "bg-zinc-50 dark:bg-zinc-950";
-  const totalCols =
-    4 + weeks.length + (showDelete ? 1 : 0);
+  const totalCols = 4 + weeks.length + (showDelete ? 1 : 0);
 
   const renderMetricRow = (m: ScorecardMetric) => {
-    const values = weeks.map(
-      (w) => entryMap.get(`${m.id}__${w}`) ?? null,
-    );
+    const values = weeks.map((w) => entryMap.get(`${m.id}__${w}`) ?? null);
     const avg = average(values);
     const avgOnTrack = onTrack(avg, m.goal, m.direction);
     const status = trendStatus(values, m.goal, m.direction);
@@ -231,7 +222,15 @@ export function ScorecardGrid({
 
         <td
           className={cn(stickyCell(), "z-10 px-3 py-2")}
-          style={{ left: LEFT.title, width: COL.title, minWidth: COL.title }}
+          style={{
+            left: LEFT.title,
+            width: COL.title,
+            minWidth: COL.title,
+            // Hard cap. Without it a long measurable name grew the cell,
+            // desynced the frozen block from the year band header, and shoved
+            // the week columns out of view.
+            maxWidth: COL.title,
+          }}
         >
           <div className="flex items-start gap-2.5">
             <span
@@ -241,15 +240,12 @@ export function ScorecardGrid({
               {ownerInitials(owner === "—" ? m.name : owner)}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">
-                  {m.name}
-                </span>
-                <MiniSparkline
-                  valuesNewestFirst={values}
-                  status={status}
-                  className="hidden sm:inline-block shrink-0 opacity-80"
-                />
+              {/* Wraps rather than truncates: the whole point of the row is
+                  to read the measurable, and a truncated name plus a column
+                  that stretched to fit pushed the 13 week columns off
+                  screen. The cell's maxWidth keeps the wrap honest. */}
+              <div className="font-medium break-words text-zinc-900 dark:text-zinc-100">
+                {m.name}
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -376,7 +372,9 @@ export function ScorecardGrid({
       <div
         className={cn(
           "overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900",
-          compact ? "max-h-[min(60vh,28rem)] overflow-y-auto" : "max-h-[min(75vh,40rem)] overflow-y-auto",
+          compact
+            ? "max-h-[min(60vh,28rem)] overflow-y-auto"
+            : "max-h-[min(75vh,40rem)] overflow-y-auto",
         )}
       >
         <table
@@ -415,13 +413,22 @@ export function ScorecardGrid({
                 />
               )}
             </tr>
-            <tr className={cn(headerBg, "text-xs text-zinc-600 dark:text-zinc-400")}>
+            <tr
+              className={cn(
+                headerBg,
+                "text-xs text-zinc-600 dark:text-zinc-400",
+              )}
+            >
               <th
                 className={cn(
                   stickyCell(headerBg),
                   "z-40 border-b border-zinc-200 px-1 py-2 font-medium dark:border-zinc-800",
                 )}
-                style={{ left: LEFT.trend, width: COL.trend, minWidth: COL.trend }}
+                style={{
+                  left: LEFT.trend,
+                  width: COL.trend,
+                  minWidth: COL.trend,
+                }}
                 title="Recent trend vs goal"
               >
                 <span className="sr-only">Trend</span>
@@ -431,7 +438,12 @@ export function ScorecardGrid({
                   stickyCell(headerBg),
                   "z-40 border-b border-zinc-200 px-3 py-2 text-left font-medium dark:border-zinc-800",
                 )}
-                style={{ left: LEFT.title, width: COL.title, minWidth: COL.title }}
+                style={{
+                  left: LEFT.title,
+                  width: COL.title,
+                  minWidth: COL.title,
+                  maxWidth: COL.title,
+                }}
               >
                 Title
               </th>

@@ -83,6 +83,12 @@ Because images are tagged by commit, "what's running" always answers to
 "which commit," and rollback is redeploying a previous tag — old images stay
 in Artifact Registry. (Raw gcloud equivalent: `DEPLOY.md` §6.2.)
 
+**Ship from `main`, not a feature branch.** There's one Cloud Run service and
+it's what the client sees. `pnpm ship` runs fine from a worktree, but
+deploying unmerged code means the running tag can point at a commit that gets
+rebased away, and the next deploy from `main` silently reverts it. Develop on
+a branch against the sandbox, PR, merge, then ship.
+
 ### 2. Runtime configuration (no rebuild)
 
 Server-only settings — the sign-in allowlist, the environment label — are env

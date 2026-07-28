@@ -3,6 +3,12 @@
 Runbook for standing up this app in the client's GCP project. Assumes `gcloud`
 is authenticated against that project (`gcloud config set project <PROJECT_ID>`).
 
+> **Already deployed and just shipping a change?** You want
+> [`OPERATIONS.md`](./OPERATIONS.md) — the routine loop is `pnpm dev` against
+> the sandbox database, then `pnpm ship`. This runbook is the *first-time*
+> standup (APIs, service accounts, databases, IAM); those steps are one-time
+> and already done for `hpb-eos-prod`.
+>
 > **Sending this to the client?** Use
 > [`CLIENT_GCP_SETUP.md`](./CLIENT_GCP_SETUP.md) instead — it's the
 > non-engineer checklist of what they need to do/provide before this runbook
@@ -62,7 +68,7 @@ selected default project — keep doing that; don't rely on
 ```bash
 gcloud artifacts repositories create eos \
   --repository-format=docker \
-  --location=us-central1 \
+  --location=us-east1 \
   --description="EOS app images"
 ```
 
@@ -114,9 +120,11 @@ falls back to ADC.
 > *named* database, **`hpb-eos-prod-db`** (verify with
 > `firebase firestore:databases:list --project "$PROJECT_ID"`). Do **not** run
 > the create command below against this project — it creates a `(default)`
-> database and you'd end up with two. The app targets the named database via
-> `NEXT_PUBLIC_FIREBASE_DATABASE_ID` (see §6.2 and `firebase.json#firestore.database`).
-> The rest of this section applies only when standing up a brand-new project.
+> database and you'd end up with an extra one. The app targets a named
+> database via `NEXT_PUBLIC_FIREBASE_DATABASE_ID` (see §6.2), and
+> `firebase.json#firestore` lists both named databases this project uses —
+> live and sandbox (§3.3). The rest of this section applies only when
+> standing up a brand-new project.
 
 > **PERMANENT CHOICE — confirm with the client before running this.** The
 > database location cannot be changed later without a full export/import
@@ -145,18 +153,63 @@ the initial rules):
 firebase deploy --only firestore:rules,firestore:indexes --project "$PROJECT_ID"
 ```
 
-> **Deploying to a project with a *different* database name/shape than
-> `firebase.json` declares** (e.g. a trial/rehearsal project using the
-> `(default)` database, while `firebase.json#firestore.database` is
-> hardcoded to this repo's real target, `hpb-eos-prod-db`): `firebase deploy`
-> always reads the database id from `firebase.json`, not from a CLI flag or
-> env var, and the `--project` flag alone doesn't change *which database
-> within that project* gets targeted. Don't re-architect this file to be
-> dynamic — the hardcoded value is correct for the one real target. Instead,
-> for a one-off rehearsal deploy: temporarily edit the `"database"` value,
-> run the `firebase deploy` command above, then **revert the edit** before
-> committing anything else. Verified working end-to-end this way against a
-> trial project during the deploy rehearsal.
+`firebase.json#firestore` is an **array** of two targets —
+`hpb-eos-prod-db` and `hpb-eos-sandbox-db` — both pointed at the same
+`firestore.rules` and `firestore.indexes.json`. One `firebase deploy` run
+therefore updates both, which is the point: the sandbox is only a useful
+rehearsal surface if its rules and indexes are identical to live. The output
+names each database it released to; confirm you see both lines.
+
+> **Deploying to a project with a *different* database name than
+> `firebase.json` declares** (e.g. the trial project `hpb-eos`, which uses
+> `(default)`): `firebase deploy` always reads database ids from
+> `firebase.json`, not from a CLI flag or env var, and `--project` alone
+> doesn't change *which database within that project* gets targeted. Don't
+> re-architect this file to be dynamic — the declared values are correct for
+> the real targets. For a one-off deploy elsewhere, temporarily edit the
+> `"database"` value, run the command above, then **revert the edit** before
+> committing. Verified working end-to-end this way during the deploy
+> rehearsal.
+
+### 3.3 Sandbox database (development)
+
+`hpb-eos-prod` holds **two** Firestore databases in `us-east1`:
+
+| Database | Used by | Contents |
+|---|---|---|
+| `hpb-eos-prod-db` | the deployed Cloud Run service, via `.env.prod` | live client data |
+| `hpb-eos-sandbox-db` | local `pnpm dev` and every data script, via `.env.local` | disposable copy of live |
+
+Same project, same Auth, same rules and indexes — only the data differs. This
+is what makes local development safe: `pnpm dev` exercises real sign-in and
+real Firestore against throwaway data, so nothing you do on localhost can
+corrupt what the client sees, and `pnpm ship` refuses to build from the
+sandbox config (§6.2).
+
+Refresh the sandbox from live whenever it drifts or you've made a mess:
+
+```bash
+pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db
+pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db --dry-run   # count first
+```
+
+`scripts/copy-db.ts` walks every collection and subcollection, preserving
+document ids (so uids still match Auth), and **only ever writes into a
+database with `sandbox` in the id** — there is no flag to aim it at live.
+It's a copy, not a sync: destination-only documents survive.
+
+> Creating a second database needs `datastore.databases.create`, which
+> `roles/editor` does not carry. Grant `roles/datastore.owner` for the one
+> command, then remove it — day-to-day work doesn't need it:
+>
+> ```bash
+> gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+>   --member=user:<you> --role=roles/datastore.owner --condition=None
+> gcloud firestore databases create --database=hpb-eos-sandbox-db \
+>   --location=us-east1 --type=firestore-native --project "$PROJECT_ID"
+> gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
+>   --member=user:<you> --role=roles/datastore.owner --condition=None
+> ```
 
 ## 4. Audit log function
 
@@ -286,11 +339,45 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 ### 6.2 Run the build
 
+**Normal path — `pnpm ship`.** Once §6.1 is done, every subsequent deploy is
+one command:
+
+```bash
+pnpm ship                # build + push + roll Cloud Run
+pnpm ship -- --dry-run   # print the gcloud command it would run, run nothing
+```
+
+`scripts/deploy.sh` assembles the substitution list below from an env file so
+none of it has to be retyped. What it does for you:
+
+| Behavior | Why |
+|---|---|
+| Reads `NEXT_PUBLIC_*` from **`.env.prod`** | One source of truth for the baked-in web config. `.env.local` is the *dev* config and points at the sandbox database — see §3.3. |
+| **Refuses** an env file whose database id contains `sandbox` | The database id is compiled into the bundle; a sandbox-built image would serve test data from the client-facing URL. No override flag, deliberately. |
+| **Refuses** a `--project` that disagrees with the env file's project | Prevents shipping one project's Firebase config into another — nothing fails until sign-in does. |
+| Tags the image `$(git rev-parse --short HEAD)`, `-dirty` on an unclean tree | "What's running" always answers to "which commit." |
+| Doesn't pass `--set-env-vars` | Runtime config already on the service (`SIGN_IN_ALLOWLIST`, `ENV_LABEL`) survives the deploy. |
+| Prints the service URL on success | Saves a `gcloud run services describe`. |
+
+Flags: `--project`, `--region` (default `us-east1`), `--env-file`,
+`--service-account`, `--dry-run`.
+
+> **Deploy from `main`, not a feature branch.** There is one Cloud Run
+> service and it is what the client sees. `pnpm ship` works from any
+> worktree, but shipping unmerged code means the deployed tag can point at a
+> commit that gets rebased away, and the next deploy from `main` silently
+> reverts it. Merge first, then ship. To run a branch build in the cloud,
+> add a second service (`pnpm ship -- --service eos-dev`) rather than
+> overwriting this one.
+
+**Underlying command.** This is what `pnpm ship` runs — use it directly only
+for a project that has no env file in the repo:
+
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 
 gcloud builds submit --config cloudbuild.yaml \
-  --substitutions=_REGION=us-central1,_SERVICE=eos,_REPO=eos,\
+  --substitutions=_REGION=us-east1,_SERVICE=eos,_REPO=eos,\
 _TAG=$(git rev-parse --short HEAD),\
 _RUNTIME_SERVICE_ACCOUNT=eos-runtime@${PROJECT_ID}.iam.gserviceaccount.com,\
 _NEXT_PUBLIC_FIREBASE_API_KEY=...,\
@@ -299,9 +386,21 @@ _NEXT_PUBLIC_FIREBASE_PROJECT_ID=...,\
 _NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...,\
 _NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...,\
 _NEXT_PUBLIC_FIREBASE_APP_ID=...,\
-_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=highplainsbank.com,\
 _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 ```
+
+> `_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN` is deliberately **left empty** for
+> this project. Setting it hides every non-`highplainsbank.com` account —
+> including the operator's own `mcgareyconsulting@gmail.com` — from Google's
+> account picker, with no obvious way back. The real perimeter is the
+> server-side `SIGN_IN_ALLOWLIST` runtime env var (§5.2), not this hint.
+
+> **Source upload size:** `.gcloudignore` trims what gets tarred and sent to
+> Cloud Build (~1 MB, ~140 files). Without it gcloud falls back to
+> `.gitignore`, whose root-anchored `/node_modules` pattern misses
+> `functions/node_modules` — that shipped ~80 MB of dependencies on every
+> deploy. If you add a directory the Docker build needs, check it survives
+> with `gcloud meta list-files-for-upload`.
 
 > **Named database:** `hpb-eos-prod` uses a *named* Firestore database
 > (`hpb-eos-prod-db`), not `(default)`. `_NEXT_PUBLIC_FIREBASE_DATABASE_ID` is
@@ -334,7 +433,7 @@ security levers below if you want GCP-level auth instead).
 ### 6.3 Add the Cloud Run URL to Firebase Auth (post-deploy)
 
 Now that the service exists and has a URL (`gcloud run services describe
-eos --region=us-central1 --format='value(status.url)'`), add it to
+eos --region=us-east1 --format='value(status.url)'`), add it to
 **Authentication → Settings → Authorized domains** in the Firebase Console
 — this is the hard server-side lock referenced in §5.2. Skipping this step
 still lets the app *build* and *deploy* fine, but sign-in will not work
@@ -344,7 +443,7 @@ until the domain is authorized.
 
 ```bash
 gcloud beta run domain-mappings create \
-  --service=eos --domain=eos.highplainsbank.com --region=us-central1
+  --service=eos --domain=eos.highplainsbank.com --region=us-east1
 ```
 
 Then add the CNAME/records Cloud Run prints out at the DNS provider, and add

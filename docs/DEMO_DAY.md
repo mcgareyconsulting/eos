@@ -1,5 +1,17 @@
 # Demo day runbook
 
+> **SUPERSEDED (2026-07-28).** Written before the client's GCP project
+> existed. Plan B is now done — the app is deployed in `hpb-eos-prod` with
+> real accounts and imported data. For the current dev/deploy loop use
+> [OPERATIONS.md](OPERATIONS.md); for local work use
+> [LOCAL_DEV.md](LOCAL_DEV.md).
+>
+> **Do not run `cp .env.example .env.local`** as instructed below — it would
+> overwrite the working config that points local dev at the sandbox database.
+> The emulator path (Plan A) is retired; the offline safety net is now
+> `pnpm dev` against `hpb-eos-sandbox-db`, which needs network but not the
+> live database. Kept for the meeting-day sequence and talk track only.
+
 Goal: a working demo in front of the client, fastest path first. There are two
 plans — **run both if you can**: Plan A is your guaranteed safety net, Plan B is
 the "real thing" once the GCP project exists.

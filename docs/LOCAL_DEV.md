@@ -1,132 +1,113 @@
-# Local development — zero-cloud (Firebase emulators)
+# Local development
 
-Run the **entire app on your laptop with no GCP project and no credentials.**
-Auth and Firestore run locally in the Firebase Emulator Suite, so you can review
-changes, click through every screen, and rehearse the demo without waiting on
-any cloud setup.
+Run the app on your laptop against the **sandbox Firestore database** — real
+Google sign-in, real Firestore, real everything, on disposable data. Hot
+reload on every file save, no build, no deploy.
 
-This is the fastest way to look at what's built and the safety net for demo day
-(see [DEMO_DAY.md](DEMO_DAY.md)).
+This is the development loop. Ship with `pnpm ship` when it's right
+([OPERATIONS.md](OPERATIONS.md)).
 
 ## Prerequisites
 
-- **Node 22** and **pnpm** (already required by the app).
-- **Java 11+** — the Firebase emulators run on the JVM. Check with `java -version`.
-  If missing: macOS `brew install openjdk`, or install any Temurin/OpenJDK 11+.
-- `firebase-tools` is a dev dependency, so `pnpm install` pulls it in — no global
-  install needed. (First `pnpm emulators` run downloads the emulator jars once.)
+- **Node 22** and **pnpm**.
+- `gcloud` authenticated as an account with access to the project.
 
 ## One-time setup
 
 ```bash
 pnpm install
-cp .env.example .env.local     # ships in emulator mode — no editing needed
+gcloud auth application-default login    # credentials for the Admin SDK
 ```
 
-`.env.local` arrives preset for the emulators:
-`NEXT_PUBLIC_FIREBASE_USE_EMULATOR=true` plus the two `*_EMULATOR_HOST` lines.
-The project id is `demo-hpb-eos` — the `demo-` prefix is Firebase's convention
-for "emulator only, can never touch a real project."
+`.env.local` is already configured and **should not be overwritten** — it
+points at `hpb-eos-prod` with `NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-sandbox-db`.
+(Do not `cp .env.example .env.local`; that template is emulator-mode boilerplate
+and would blow away this config.) If you're setting up a fresh machine, copy
+`.env.local` from another machine or rebuild it from the Firebase console
+values — see [DEPLOY.md](DEPLOY.md) §6.2.
 
-## Run it (three terminals)
+## Run it
 
 ```bash
-# 1 — emulators (Auth :9099, Firestore :8080, Emulator UI :4000)
-pnpm emulators
-
-# 2 — the app
-pnpm dev
-
-# 3 — seed the demo data (run once; re-run any time for a clean slate)
-pnpm seed leader@highplainsbank.com
+pnpm dev        # http://localhost:3000
 ```
 
-Then open <http://localhost:3000>:
+Sign in with Google as your normal account. You'll land on Home with the
+sandbox data — the same teams, rocks, and to-dos as live, because the sandbox
+was seeded by copying from it.
 
-1. You'll be redirected to `/login`. Click **Sign in with Google**.
-2. A **local emulator** account screen opens (not real Google). Sign in as
-   **`leader@highplainsbank.com`** — the same address you seeded — either by
-   picking it from the list or via **Add new account**.
-3. You land on **Home** with every screen populated.
+That's the whole loop: edit a file, save, see it in the browser.
 
-> **Why that email?** The emulator keys users by email, so seeding
-> `leader@highplainsbank.com` and signing in as `leader@highplainsbank.com` line
-> up on the same uid. If you'd rather sign in first as some other address, that
-> works too — just re-run `pnpm seed <that-email>` afterward — but use an
-> `@highplainsbank.com` address (any local-part works on the emulator, e.g.
-> `you@highplainsbank.com`). Other domains fail the Workspace-domain gate in
-> `firestore.rules` (defense-in-depth, mirrors the real project's SSO
-> restriction) and cause confusing partial failures — you'll sign in fine but
-> broad reads (users/teams/team_members) will be denied. The seed is
-> idempotent and always attaches your account to the "Demo Team" as leader.
+## Two databases, one project
 
-### Multiplayer / second window
+`hpb-eos-prod` holds both:
 
-The seed also creates real Auth accounts (fixed uids) for the four synthetic
-teammates. To see live sync (votes, the "Discussing now" pin) during a
-meeting, open a second browser or incognito window, go to `/login`, and sign
-in as one of them — e.g. `sarah.chen@highplainsbank.com` — by picking her
-from the emulator's account list. Requires the seed to have run first.
+| Database | Read by | Contents |
+|---|---|---|
+| `hpb-eos-prod-db` | the deployed Cloud Run service (`.env.prod`) | live client data |
+| `hpb-eos-sandbox-db` | `pnpm dev` and every script (`.env.local`) | disposable copy |
 
-## Handy
+Same project, same Auth accounts, same rules and indexes. Only the data
+differs. Two consequences worth internalizing:
 
-- **Inspect data live:** Emulator UI at <http://127.0.0.1:4000> — browse Auth
-  users and Firestore documents, edit them by hand.
-- **Clean slate:** re-run `pnpm seed …`. It clears the Demo Team's data first.
-- **Emulator data is in-memory.** Stopping the emulators (Ctrl-C) wipes both
-  Auth users and Firestore. Just restart and re-seed — takes seconds.
+- **Nothing you do locally can corrupt live data.** Delete a team, run a bad
+  import, wipe a collection — the client's app is untouched.
+- **`pnpm ship` refuses to build from `.env.local`.** The database id is
+  compiled into the bundle, so a sandbox-built image would serve test data
+  from the client-facing URL. The guard has no override flag.
 
-### Audit-log trigger (optional)
-
-`pnpm emulators` stays lean — **auth + firestore only** — which is all the app
-needs and the fastest thing to boot for a demo. To also run the audit-log
-Cloud Function (the `onWrite` Firestore trigger that mirrors every change into
-the `audit_log` collection — see [DEPLOY.md](DEPLOY.md) §4), use:
+### Resetting the sandbox
 
 ```bash
-pnpm emulators:all      # builds functions/ + runs auth, firestore, functions
+pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db --dry-run   # count first
+pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db
 ```
 
-Then every write — from the app, `pnpm seed`, or a hand-edit in the Emulator
-UI — appends an immutable row to `audit_log`, exactly as it will in production.
-A full seed produces ~170 audit rows; browse them at
-<http://127.0.0.1:4000/firestore>. Requires the same **Java 11+** as the other
-emulators (the functions themselves run on the host's Node).
+Copies every collection and subcollection, preserving document ids so uids
+still line up with Auth. It only writes into databases with `sandbox` in the
+id — there is no flag to aim it at live. It's a copy, not a sync:
+documents that exist only in the sandbox survive, so `pnpm team:delete` first
+if you want an exact mirror.
 
-## What to look at (recent ninety.io drift changes)
+### Scripts follow `.env.local` too
 
-- **Scorecard** — 13-week grid, KPIs grouped into ninety-style sections
-  (Customer, Deposit & Loan Volume, Risk & Compliance); add/rename a group inline.
-- **Rocks** — Company / Department / Individual type badges (company first),
-  milestone progress chips, editable descriptions.
-- **Issues** — Urgent / High / Medium / Low priority badges, ranked by priority
-  then votes; edit owner/priority/description from the row.
-- **Meetings** — conclude a meeting and rate **the meeting** 1–10 (not peers);
-  the recap and history show the average plus each person's rating.
-- **Home** — milestones due within 7 days surface alongside your to-dos.
+`pnpm import:csv`, `pnpm team:info`, `pnpm team:delete`, `pnpm accounts:create`
+all read `.env.local`, so they hit the **sandbox** by default. Rehearse any
+import there, confirm the result with `pnpm team:info`, then re-run against
+live by passing `--project`/editing the env — deliberate friction, on purpose.
+
+> **`pnpm accounts:create` is the exception that isn't sandboxed.** Firebase
+> Auth is *project*-level, not per-database, so creating an account affects
+> both. That's usually what you want (the same person signs into both), but
+> it means account creation is not a reversible sandbox experiment.
 
 ## Troubleshooting
 
-- **Port already in use (8080 / 9099 / 4000).** Something else on your laptop
-  is bound to a Firestore, Auth, or Emulator UI port. Either stop the other
-  process (`lsof -i :8080`, etc.) or change the port in `firebase.json` under
-  `emulators`.
-- **`pnpm` not found.** Run `corepack enable` (ships with Node 22), or
-  `npm install -g pnpm`.
-- **Ran `pnpm seed` before `pnpm emulators`?** It now fails fast with `Could
-  not reach the Auth emulator at <host> — start it first with: pnpm
-  emulators` instead of a raw connection-refused stack. Start the emulators
-  (terminal 1) and re-run the seed.
+- **`5 NOT_FOUND` on every read.** `NEXT_PUBLIC_FIREBASE_DATABASE_ID` is
+  wrong or missing in `.env.local` — the SDK is talking to a `(default)`
+  database that doesn't exist. It should read `hpb-eos-sandbox-db`.
+- **"The query requires an index."** A composite index is still building, or
+  a new query needs one. Check with
+  `gcloud firestore indexes composite list --database=hpb-eos-sandbox-db --project hpb-eos-prod`;
+  add it to `firestore.indexes.json` and `firebase deploy --only firestore:indexes`
+  (which updates both databases).
+- **Sign-in refused.** `SIGN_IN_ALLOWLIST` is a *server* env var; locally it
+  comes from `.env.local`. Unset means open sign-in.
+- **Wrong Google account, no picker.** The account chooser is forced
+  (`prompt: "select_account"` in `lib/firebase/client.ts`). If you still land
+  on the wrong account, sign out at accounts.google.com.
+- **`pnpm` not found.** `corepack enable` (ships with Node 22).
 
-## Pointing at a real Firebase project instead
+## Emulator mode (legacy, unsupported)
 
-When you have a real project (staging or the client's), edit `.env.local`:
+The code still honors `NEXT_PUBLIC_FIREBASE_USE_EMULATOR=true` and
+`pnpm emulators` still works, but **this is not the development path** — the
+sandbox database gives you the same isolation without the JVM dependency,
+the seed-data divergence, or the "works locally, breaks in the cloud"
+surprises that come from the emulator not enforcing the same rules and index
+requirements as real Firestore.
 
-- set `NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false`
-- delete the two `*_EMULATOR_HOST` lines
-- fill the `NEXT_PUBLIC_FIREBASE_*` values from the Firebase console
-- run `gcloud auth application-default login` so the admin SDK / seed have creds
-
-Then `pnpm dev` and `pnpm seed <your-login-email>` hit the real project. See
-[DEMO_DAY.md](DEMO_DAY.md) for the full go-live sequence and
-[DEPLOY.md](DEPLOY.md) for the Cloud Run deploy.
+It survives in the codebase for one reason: a fully offline demo with no GCP
+project at all. If you need that, `pnpm emulators` (requires Java 11+) plus a
+separate env file, then `pnpm seed <your-email>`. Don't point `.env.local` at
+it.

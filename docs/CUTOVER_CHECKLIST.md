@@ -26,8 +26,8 @@ substitution, or env var, never hardcoded in source. Moving to the client's
 project is *mostly* a **configuration** exercise, with three known
 exceptions that ARE code changes:
 
-- `firebase.json#firestore.database` is a static string (currently
-  `hpb-eos-prod-db`) — see §3 below.
+- `firebase.json#firestore` is a static array of database ids (currently
+  `hpb-eos-prod-db` + `hpb-eos-sandbox-db`) — see §3 below.
 - **Sign-in allowlist** (§4–§5): "HPB domain plus specific consultant
   account" cannot be expressed by Firebase's single-domain restriction or
   the `hd` hint — it requires the server-side allowlist in
@@ -114,6 +114,15 @@ The client's confirmed convention is a **named** database
 needs temporary editing for off-target rehearsals — see the callout in
 `DEPLOY.md` §3.2).
 
+The project also carries a second named database, `hpb-eos-sandbox-db`, that
+local development writes to instead of live data (`DEPLOY.md` §3.3). It is
+listed alongside the live one in `firebase.json` so a single
+`firebase deploy` keeps both on identical rules and indexes. It has no
+bearing on what gets deployed — `pnpm ship` refuses to build from sandbox
+config — but if the client's project is stood up fresh, create it too, or
+drop the second entry from `firebase.json` and accept that local dev writes
+to live data.
+
 > **Already exists on `hpb-eos-prod`** (verified 2026-07-27):
 > `hpb-eos-prod-db`, **us-east1**, containing a stale seeded "Demo Team"
 > that must be deleted before the real import
@@ -173,6 +182,18 @@ they're sensitive):
 - [ ] All 9 values captured before the first build (§6)
 
 ### 6. Build and deploy
+
+Once the values from §5 are written into an env file (`.env.prod` for this
+repo's real target), the deploy is `pnpm ship` — it assembles every
+substitution below, tags the image with the git commit, and refuses a
+project/config mismatch. See `DEPLOY.md` §6.2.
+
+```bash
+# Deploying to a project that has its own env file in the repo:
+pnpm ship -- --env-file .env.prod --project <CLIENT_PROJECT_ID>
+```
+
+The raw equivalent, for a project with no env file yet:
 
 ```bash
 gcloud builds submit --config cloudbuild.yaml --project <CLIENT_PROJECT_ID> \

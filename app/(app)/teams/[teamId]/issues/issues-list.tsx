@@ -2,12 +2,11 @@
 
 import { useMemo } from "react";
 import { collection, query as fsQuery, where } from "firebase/firestore";
-import { Trash2, AlertCircle, User } from "lucide-react";
+import { Trash2, AlertCircle, User, ThumbsUp } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
-  MAX_VOTES_PER_TEAM,
   PRIORITY_BADGE,
   PRIORITY_LABEL,
   STATUS_BADGE,
@@ -15,7 +14,6 @@ import {
   rankLongTerm,
   rankShortTerm,
   splitIssuesByTerm,
-  voteCredits,
   type IssuePriority,
   type IssueStatus,
   type IssueType,
@@ -23,7 +21,6 @@ import {
 import { StatusActions } from "./status-actions";
 import { EditIssuePopover } from "./edit-issue-popover";
 import { IssueDetailTrigger } from "./issue-detail-modal";
-import { VoteButton } from "./vote-button";
 import { deleteIssue } from "./actions";
 
 export type IssueDoc = {
@@ -38,28 +35,19 @@ export type IssueDoc = {
   status: IssueStatus;
 };
 
-export type VoteDoc = { id: string; issue_id: string; count?: number | null };
-
 type Member = { user_id: string; full_name: string };
 
-// The Issues tab, live. Votes used to be castable only inside the L10 IDS
-// segment, which meant the list here was a static snapshot ranked by
-// priority. It now subscribes to the same two queries the meeting uses, so
-// voting works outside a meeting and every client re-ranks the moment anyone
-// votes — the team total lives denormalized on the issue doc, so one
-// subscription drives the ordering for everybody.
+// Issues tab: capture, edit, and triage outside the meeting. Voting is L10-only
+// (see segment-ids.tsx). We still rank short-term by the denormalized team vote
+// total so the list mirrors meeting order as a read-only view.
 export function IssuesList({
   teamId,
-  userId,
   members,
   initialIssues,
-  initialVotes,
 }: {
   teamId: string;
-  userId: string;
   members: Member[];
   initialIssues: IssueDoc[];
-  initialVotes: VoteDoc[];
 }) {
   const db = getClientDb();
 
@@ -67,22 +55,9 @@ export function IssuesList({
     () => fsQuery(collection(db, "issues"), where("team_id", "==", teamId)),
     [db, teamId],
   );
-  // Only ever our own vote rows — enough to show remaining credits and which
-  // issues we backed. Everyone else's votes arrive via issues.votes.
-  const votesQuery = useMemo(
-    () =>
-      fsQuery(
-        collection(db, "issue_votes"),
-        where("user_id", "==", userId),
-        where("team_id", "==", teamId),
-      ),
-    [db, teamId, userId],
-  );
 
   const issues = useCollection<IssueDoc>(issuesQuery, initialIssues, "issues");
-  const votes = useCollection<VoteDoc>(votesQuery, initialVotes, "issue-votes");
 
-  const { byIssue, used, remaining } = voteCredits(votes);
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short);
   const rankedLong = rankLongTerm(long);
@@ -96,39 +71,24 @@ export function IssuesList({
         <EmptyState
           icon={AlertCircle}
           title="No issues yet"
-          hint="Capture team blockers above, then vote to rank them and solve the top ones in the L10 Issues segment."
+          hint="Capture team blockers above. Vote and solve the top ones during the L10 Issues segment."
         />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium">
+    <div className="space-y-8">
+      <section className="space-y-3">
+        <header className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
+          <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Short-term
-            <span className="ml-2 text-xs font-normal text-zinc-600 dark:text-zinc-400">
-              {rankedShort.length} · ranked by team votes
-            </span>
           </h2>
-          <div className="text-xs text-zinc-600 dark:text-zinc-400">
-            <span
-              className={
-                "font-medium " +
-                (remaining === 0
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-zinc-700 dark:text-zinc-300")
-              }
-            >
-              {used}/{MAX_VOTES_PER_TEAM}
-            </span>{" "}
-            of your votes used
-            {remaining === 0
-              ? " · out of votes — tap − on an issue to re-allocate"
-              : ` · stack up to ${MAX_VOTES_PER_TEAM} on a single issue`}
-          </div>
-        </div>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {rankedShort.length} issue{rankedShort.length === 1 ? "" : "s"} ·
+            ordered by L10 team votes · vote only in the meeting
+          </p>
+        </header>
         <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {rankedShort.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
@@ -142,26 +102,22 @@ export function IssuesList({
               issue={issue}
               members={members}
               ownerName={ownerName}
-              vote={{
-                myCount: byIssue.get(issue.id) ?? 0,
-                myRemaining: remaining,
-              }}
+              showVoteCount
             />
           ))}
         </div>
       </section>
 
-      {/* Long-term issues are parked below the IDS list and aren't votable —
-          vote credits exist to rank the hour the team actually spends. */}
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium">
+      <section className="space-y-3">
+        <header className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
+          <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Long-term
-            <span className="ml-2 text-xs font-normal text-zinc-600 dark:text-zinc-400">
-              {rankedLong.length} · ranked by priority · not voted on
-            </span>
           </h2>
-        </div>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {rankedLong.length} issue{rankedLong.length === 1 ? "" : "s"} ·
+            ranked by priority · not voted on
+          </p>
+        </header>
         <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {rankedLong.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
@@ -188,30 +144,31 @@ function IssueRow({
   issue,
   members,
   ownerName,
-  vote,
+  showVoteCount = false,
 }: {
   teamId: string;
   issue: IssueDoc;
   members: Member[];
   ownerName: (id: string | null) => string;
-  vote?: { myCount: number; myRemaining: number };
+  showVoteCount?: boolean;
 }) {
   const remove = deleteIssue.bind(null, teamId, issue.id);
 
+  const hasDescription =
+    !!issue.description && issue.description.trim().length > 0;
+
   return (
-    <div className="group flex items-start gap-3 px-4 py-3 text-sm">
-      {vote ? (
-        <div className="w-12 shrink-0 pt-0.5">
-          <VoteButton
-            teamId={teamId}
-            issueId={issue.id}
-            count={issue.votes ?? 0}
-            myCount={vote.myCount}
-            myRemaining={vote.myRemaining}
-          />
+    <div className="group flex items-center gap-3 px-4 py-3 text-sm">
+      {showVoteCount && (
+        <div
+          className="flex w-10 shrink-0 flex-col items-center gap-0.5 text-zinc-500"
+          title="Team votes from L10 (read-only here)"
+        >
+          <ThumbsUp className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
+            {issue.votes ?? 0}
+          </span>
         </div>
-      ) : (
-        <div className="w-12 shrink-0 pt-0.5" aria-hidden />
       )}
 
       <div className="min-w-0 flex-1">
@@ -228,6 +185,9 @@ function IssueRow({
           >
             {STATUS_LABEL[issue.status]}
           </span>
+          {hasDescription && (
+            <span className="text-[11px] text-zinc-400">Has description</span>
+          )}
         </div>
         <IssueDetailTrigger
           issue={issue}
@@ -236,18 +196,13 @@ function IssueRow({
         >
           {issue.title}
         </IssueDetailTrigger>
-        {issue.description && (
-          <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-            {issue.description}
-          </div>
-        )}
         <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
           <User className="h-3 w-3" />
           {ownerName(issue.owner_id)}
         </div>
       </div>
 
-      <div className="mt-1 flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <EditIssuePopover
           teamId={teamId}
           issueId={issue.id}

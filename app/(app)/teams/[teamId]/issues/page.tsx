@@ -1,6 +1,6 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { addIssue } from "./actions";
-import { IssuesList, type IssueDoc, type VoteDoc } from "./issues-list";
+import { IssuesList, type IssueDoc } from "./issues-list";
 
 export default async function IssuesPage({
   params,
@@ -11,16 +11,12 @@ export default async function IssuesPage({
   const { uid, db, team } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
-  // Server-rendered hydration only — IssuesList re-subscribes to both of these
-  // client-side so votes re-rank the list live for everyone.
-  const [issuesSnap, votesSnap] = await Promise.all([
-    db.collection("issues").where("team_id", "==", tid).get(),
-    db
-      .collection("issue_votes")
-      .where("user_id", "==", uid)
-      .where("team_id", "==", tid)
-      .get(),
-  ]);
+  // Server-rendered hydration only — IssuesList re-subscribes client-side.
+  // Voting lives in the L10 Issues segment; this tab is capture/triage only.
+  const issuesSnap = await db
+    .collection("issues")
+    .where("team_id", "==", tid)
+    .get();
 
   // Project explicitly rather than spreading the raw doc: issues carry a
   // created_at Timestamp that is not serializable across the server/client
@@ -39,17 +35,14 @@ export default async function IssuesPage({
       status: x.status,
     };
   });
-  const initialVotes: VoteDoc[] = votesSnap.docs.map((d) => {
-    const x = d.data();
-    return { id: d.id, issue_id: x.issue_id, count: x.count ?? null };
-  });
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · short-term ranked by team votes · long-term parked below
+          {team.name} · capture & triage here · vote during the L10 Issues
+          segment
         </p>
       </header>
 
@@ -57,10 +50,8 @@ export default async function IssuesPage({
 
       <IssuesList
         teamId={tid}
-        userId={uid}
         members={members}
         initialIssues={initialIssues}
-        initialVotes={initialVotes}
       />
     </div>
   );

@@ -115,229 +115,251 @@ export function SegmentIDS({
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          <span
-            className={
-              "font-medium " +
-              (myVotesRemaining === 0
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-zinc-700 dark:text-zinc-300")
-            }
-          >
-            {myVotesUsed}/{MAX_VOTES_PER_TEAM}
-          </span>{" "}
-          of your votes used
-          {myVotesRemaining === 0
-            ? " · out of votes — tap − on an issue to re-allocate"
-            : ` · stack up to ${MAX_VOTES_PER_TEAM} on a single issue`}{" "}
-          · sorted by team votes
-        </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-end">
         <QuickAddIssue teamId={teamId} meetingId={meetingId} />
       </div>
 
-      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-        {rankedShort.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            No short-term issues. Drop one from any segment.
+      <section className="space-y-3">
+        <header className="flex flex-wrap items-end justify-between gap-3 border-b border-zinc-200 pb-2 dark:border-zinc-800">
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Short-term
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {rankedShort.length} · ranked by team votes · click title for
+              details
+            </p>
           </div>
-        )}
-        {rankedShort.map((i) => {
-          const remove = deleteIssue.bind(null, teamId, i.id);
-          const isDiscussing = i.id === discussingId;
-          const toggleDiscuss = setDiscussingIssue.bind(
-            null,
-            teamId,
-            meetingId,
-            isDiscussing ? null : i.id,
-          );
-          return (
-            <div
-              key={i.id}
+          <div className="text-xs text-zinc-600 dark:text-zinc-400">
+            <span
               className={
-                "group flex items-start gap-3 px-4 py-3 text-sm " +
-                (isDiscussing
-                  ? "bg-hpb-blue/5 dark:bg-hpb-blue/10 ring-1 ring-inset ring-hpb-blue/30"
-                  : "")
+                "font-medium " +
+                (myVotesRemaining === 0
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-zinc-700 dark:text-zinc-300")
               }
             >
-              <VoteButton
-                teamId={teamId}
-                issueId={i.id}
-                count={i.votes ?? 0}
-                myCount={myVoteByIssue.get(i.id) ?? 0}
-                myRemaining={myVotesRemaining}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  {isDiscussing && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-hpb-blue px-2 py-0.5 text-xs font-medium text-white">
-                      <Megaphone className="h-3 w-3" />
-                      Discussing
-                    </span>
-                  )}
-                  {i.priority && (
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
-                    >
-                      {PRIORITY_LABEL[i.priority]}
-                    </span>
-                  )}
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
-                  >
-                    {STATUS_LABEL[i.status]}
-                  </span>
-                </div>
-                <IssueDetailTrigger
-                  issue={i}
-                  ownerName={ownerName(i.owner_id)}
-                  className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
-                >
-                  {i.title}
-                </IssueDetailTrigger>
-                {i.description && (
-                  <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                    {i.description}
-                  </div>
-                )}
-                <div className="mt-1 text-xs text-zinc-600">
-                  {ownerName(i.owner_id)}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <form action={toggleDiscuss}>
-                  <button
-                    type="submit"
-                    title={
-                      isDiscussing
-                        ? "Stop discussing"
-                        : "Mark as discussing now"
-                    }
-                    aria-pressed={isDiscussing}
-                    className={
-                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition " +
-                      (isDiscussing
-                        ? "bg-hpb-blue/10 text-hpb-blue ring-1 ring-inset ring-hpb-blue/30"
-                        : "text-zinc-500 hover:text-hpb-blue opacity-0 group-hover:opacity-100")
-                    }
-                  >
-                    <Megaphone className="h-3.5 w-3.5" />
-                    {isDiscussing ? "Stop" : "Discuss"}
-                  </button>
-                </form>
-                <StatusActions
+              {myVotesUsed}/{MAX_VOTES_PER_TEAM}
+            </span>{" "}
+            of your votes used
+            {myVotesRemaining === 0
+              ? " · out of votes — tap − to re-allocate"
+              : ` · stack up to ${MAX_VOTES_PER_TEAM}`}
+          </div>
+        </header>
+
+        <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+          {rankedShort.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
+              No short-term issues. Drop one from any segment.
+            </div>
+          )}
+          {rankedShort.map((i) => {
+            const remove = deleteIssue.bind(null, teamId, i.id);
+            const isDiscussing = i.id === discussingId;
+            const toggleDiscuss = setDiscussingIssue.bind(
+              null,
+              teamId,
+              meetingId,
+              isDiscussing ? null : i.id,
+            );
+            const hasDescription =
+              !!i.description && i.description.trim().length > 0;
+            return (
+              <div
+                key={i.id}
+                className={
+                  "group flex items-center gap-3 px-4 py-3 text-sm " +
+                  (isDiscussing
+                    ? "bg-hpb-blue/5 dark:bg-hpb-blue/10 ring-1 ring-inset ring-hpb-blue/30"
+                    : "")
+                }
+              >
+                <VoteButton
                   teamId={teamId}
                   issueId={i.id}
-                  status={i.status}
+                  count={i.votes ?? 0}
+                  myCount={myVoteByIssue.get(i.id) ?? 0}
+                  myRemaining={myVotesRemaining}
                 />
-                <form
-                  action={remove}
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        "Delete this issue? This can't be undone.",
-                      )
-                    )
-                      e.preventDefault();
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
-                    aria-label="Delete issue"
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isDiscussing && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-hpb-blue px-2 py-0.5 text-xs font-medium text-white">
+                        <Megaphone className="h-3 w-3" />
+                        Discussing
+                      </span>
+                    )}
+                    {i.priority && (
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
+                      >
+                        {PRIORITY_LABEL[i.priority]}
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                    >
+                      {STATUS_LABEL[i.status]}
+                    </span>
+                    {hasDescription && (
+                      <span className="text-[11px] text-zinc-400">
+                        Has description
+                      </span>
+                    )}
+                  </div>
+                  <IssueDetailTrigger
+                    issue={i}
+                    ownerName={ownerName(i.owner_id)}
+                    className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </form>
+                    {i.title}
+                  </IssueDetailTrigger>
+                  <div className="mt-1 text-xs text-zinc-600">
+                    {ownerName(i.owner_id)}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <form action={toggleDiscuss}>
+                    <button
+                      type="submit"
+                      title={
+                        isDiscussing
+                          ? "Stop discussing"
+                          : "Mark as discussing now"
+                      }
+                      aria-pressed={isDiscussing}
+                      className={
+                        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition " +
+                        (isDiscussing
+                          ? "bg-hpb-blue/10 text-hpb-blue ring-1 ring-inset ring-hpb-blue/30"
+                          : "text-zinc-500 opacity-0 hover:text-hpb-blue group-hover:opacity-100")
+                      }
+                    >
+                      <Megaphone className="h-3.5 w-3.5" />
+                      {isDiscussing ? "Stop" : "Discuss"}
+                    </button>
+                  </form>
+                  <StatusActions
+                    teamId={teamId}
+                    issueId={i.id}
+                    status={i.status}
+                  />
+                  <form
+                    action={remove}
+                    onSubmit={(e) => {
+                      if (
+                        !window.confirm(
+                          "Delete this issue? This can't be undone.",
+                        )
+                      )
+                        e.preventDefault();
+                    }}
+                  >
+                    <button
+                      type="submit"
+                      className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                      aria-label="Delete issue"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </form>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Long-term issues are parked below the IDS list: visible for context,
           but not votable and not part of the hour's ranking. */}
-      {rankedLong.length > 0 && (
-        <div className="space-y-2 pt-2">
-          <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+      <section className="space-y-3">
+        <header className="border-b border-zinc-200 pb-2 dark:border-zinc-800">
+          <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Long-term
-            <span className="ml-2 font-normal">
-              {rankedLong.length} · parked · ranked by priority
-            </span>
-          </div>
-          <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-            {rankedLong.map((i) => {
-              const remove = deleteIssue.bind(null, teamId, i.id);
-              return (
-                <div
-                  key={i.id}
-                  className="group flex items-start gap-3 px-4 py-3 text-sm"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {i.priority && (
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
-                        >
-                          {PRIORITY_LABEL[i.priority]}
-                        </span>
-                      )}
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {rankedLong.length} · parked · ranked by priority · not voted on
+          </p>
+        </header>
+        <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+          {rankedLong.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
+              No long-term issues.
+            </div>
+          )}
+          {rankedLong.map((i) => {
+            const remove = deleteIssue.bind(null, teamId, i.id);
+            const hasDescription =
+              !!i.description && i.description.trim().length > 0;
+            return (
+              <div
+                key={i.id}
+                className="group flex items-center gap-3 px-4 py-3 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {i.priority && (
                       <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
                       >
-                        {STATUS_LABEL[i.status]}
+                        {PRIORITY_LABEL[i.priority]}
                       </span>
-                    </div>
-                    <IssueDetailTrigger
-                      issue={i}
-                      ownerName={ownerName(i.owner_id)}
-                      className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
-                    >
-                      {i.title}
-                    </IssueDetailTrigger>
-                    {i.description && (
-                      <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                        {i.description}
-                      </div>
                     )}
-                    <div className="mt-1 text-xs text-zinc-600">
-                      {ownerName(i.owner_id)}
-                    </div>
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                    >
+                      {STATUS_LABEL[i.status]}
+                    </span>
+                    {hasDescription && (
+                      <span className="text-[11px] text-zinc-400">
+                        Has description
+                      </span>
+                    )}
                   </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <StatusActions
-                      teamId={teamId}
-                      issueId={i.id}
-                      status={i.status}
-                    />
-                    <form
-                  action={remove}
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        "Delete this issue? This can't be undone.",
-                      )
-                    )
-                      e.preventDefault();
-                  }}
-                >
-                      <button
-                        type="submit"
-                        className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                        aria-label="Delete issue"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </form>
+                  <IssueDetailTrigger
+                    issue={i}
+                    ownerName={ownerName(i.owner_id)}
+                    className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                  >
+                    {i.title}
+                  </IssueDetailTrigger>
+                  <div className="mt-1 text-xs text-zinc-600">
+                    {ownerName(i.owner_id)}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusActions
+                    teamId={teamId}
+                    issueId={i.id}
+                    status={i.status}
+                  />
+                  <form
+                    action={remove}
+                    onSubmit={(e) => {
+                      if (
+                        !window.confirm(
+                          "Delete this issue? This can't be undone.",
+                        )
+                      )
+                        e.preventDefault();
+                    }}
+                  >
+                    <button
+                      type="submit"
+                      className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                      aria-label="Delete issue"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
+      </section>
     </div>
   );
 }

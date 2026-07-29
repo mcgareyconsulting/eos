@@ -77,9 +77,22 @@ export default async function RocksPage({
     db.collection("todos").where("team_id", "==", teamId).get(),
   ]);
 
-  const allRocks = rocksSnap.docs.map(
-    (d) => ({ id: d.id, ...(d.data() as RockDoc) }),
-  );
+  // Project plain fields only — spreading d.data() would pull created_at
+  // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
+  const allRocks = rocksSnap.docs.map((d) => {
+    const x = d.data();
+    return {
+      id: d.id,
+      team_id: x.team_id as string,
+      title: x.title as string,
+      owner_id: (x.owner_id as string | null) ?? null,
+      quarter: x.quarter as string,
+      due_date: (x.due_date as string | null) ?? null,
+      status: x.status as string,
+      description: (x.description as string | null) ?? null,
+      rock_type: (x.rock_type as string | null) ?? null,
+    };
+  });
 
   // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
   // which can't cross the Server → Client component boundary.

@@ -69,18 +69,21 @@ export function IssueDetailModal({
   ownerName: string;
   onClose: () => void;
 }) {
+  const hasDescription =
+    !!issue.description && issue.description.trim().length > 0;
+
   return (
-    <DetailModal ariaLabel={`Issue: ${issue.title}`} onClose={onClose}>
-      <div className="space-y-4 pr-6">
-        <header>
-          <h2 className="text-base font-semibold leading-snug">
+    <DetailModal ariaLabel={`Issue: ${issue.title}`} onClose={onClose} size="lg">
+      <div className="space-y-6 pr-6">
+        <header className="space-y-3">
+          <h2 className="text-lg font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
             {issue.title}
           </h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {issue.priority && (
               <span
                 className={cn(
-                  "inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                  "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
                   PRIORITY_BADGE[issue.priority],
                 )}
               >
@@ -89,56 +92,65 @@ export function IssueDetailModal({
             )}
             <span
               className={cn(
-                "inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
                 STATUS_BADGE[issue.status],
               )}
             >
               {STATUS_LABEL[issue.status]}
             </span>
-            <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+            <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
               {issue.type === "long" ? "Long-term" : "Short-term"}
             </span>
           </div>
         </header>
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-zinc-500">
-              Owner
-            </dt>
-            <dd className="mt-0.5 inline-flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[9px] font-semibold text-hpb-blue ring-1 ring-inset ring-hpb-blue/30 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:ring-hpb-gold/30">
-                {initials(ownerName) || "?"}
-              </span>
-              {ownerName}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-zinc-500">
-              Votes
-            </dt>
-            <dd className="mt-0.5 inline-flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
-              <ThumbsUp className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="tabular-nums">{issue.votes ?? 0}</span>
-              {issue.type === "long" && (
-                <span className="text-xs text-zinc-500">(not voted on)</span>
-              )}
-            </dd>
-          </div>
-        </dl>
+        <section
+          aria-label="Issue details"
+          className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
+        >
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                Owner
+              </dt>
+              <dd className="mt-1 inline-flex items-center gap-2 text-sm text-zinc-800 dark:text-zinc-200">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue ring-1 ring-inset ring-hpb-blue/30 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:ring-hpb-gold/30">
+                  {initials(ownerName) || "?"}
+                </span>
+                <span className="font-medium">{ownerName}</span>
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                Votes
+              </dt>
+              <dd className="mt-1 inline-flex items-center gap-1.5 text-sm text-zinc-800 dark:text-zinc-200">
+                <ThumbsUp className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="tabular-nums font-medium">
+                  {issue.votes ?? 0}
+                </span>
+                {issue.type === "long" && (
+                  <span className="text-xs text-zinc-500">(not voted on)</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-        {issue.description && issue.description.trim().length > 0 ? (
-          <div>
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-              Description
-            </h3>
-            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
-              {issue.description}
-            </p>
-          </div>
-        ) : (
-          <p className="text-xs text-zinc-500">No description.</p>
-        )}
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Description
+          </h3>
+          {hasDescription ? (
+            <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                {issue.description}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">No description.</p>
+          )}
+        </section>
       </div>
     </DetailModal>
   );

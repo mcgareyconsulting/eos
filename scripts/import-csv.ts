@@ -19,6 +19,7 @@
 //   --rocks <file>       Rocks export.
 //   --milestones <file>  Milestones export (linked to rocks by "Rock Name").
 //   --todos <file>       Standalone to-dos (not tied to a rock).
+//   --issues <file>      Issues export (short-term + long-term; .xlsx can be multi-sheet).
 //   --as-of <YYYY-MM-DD> Anchor for undated week headers ("Jul 27 - Aug 2").
 //                        Defaults to today; set it when importing a stale export.
 //   --dry-run            Parse, resolve, and report. Writes nothing.
@@ -90,10 +91,12 @@ type Args = {
   rocks?: string;
   milestones?: string;
   todos?: string;
+  issues?: string;
   scorecardSheet?: string;
   rocksSheet?: string;
   milestonesSheet?: string;
   todosSheet?: string;
+  issuesSheet?: string;
   asOf: Date;
   dryRun: boolean;
   ownerAliases: string[];
@@ -152,9 +155,15 @@ function parseArgs(argv: string[]): Args {
     process.exit(1);
   }
 
-  if (!str("scorecard") && !str("rocks") && !str("milestones") && !str("todos")) {
+  if (
+    !str("scorecard") &&
+    !str("rocks") &&
+    !str("milestones") &&
+    !str("todos") &&
+    !str("issues")
+  ) {
     console.error(
-      "Nothing to import — pass at least one of --scorecard / --rocks / --milestones / --todos.",
+      "Nothing to import — pass at least one of --scorecard / --rocks / --milestones / --todos / --issues.",
     );
     process.exit(1);
   }
@@ -171,10 +180,12 @@ function parseArgs(argv: string[]): Args {
     rocks: str("rocks"),
     milestones: str("milestones"),
     todos: str("todos"),
+    issues: str("issues"),
     scorecardSheet: str("scorecard-sheet"),
     rocksSheet: str("rocks-sheet"),
     milestonesSheet: str("milestones-sheet"),
     todosSheet: str("todos-sheet"),
+    issuesSheet: str("issues-sheet"),
     asOf,
     dryRun: flags.has("dry-run"),
     ownerAliases: list("owner-alias"),
@@ -208,6 +219,75 @@ function readTable(path: string, prefer: RegExp, sheetName?: string): CsvTable {
   const table = toTable(rows);
   if (table.rows.length === 0) console.warn(`⚠ ${label} has no data rows.`);
   return table;
+}
+
+// Ninety's issues export is a two-sheet workbook (Short-Term + Long-Term). When
+// no sheet is named, import every sheet that looks like issues (or all sheets
+// if none match the name heuristic).
+function readIssueTables(path: string, sheetName?: string): CsvTable[] {
+  if (!/\.xlsx$/i.test(path)) {
+    return [readTable(path, /issue|short|long/i, sheetName)];
+  }
+
+  const sheets = readXlsx(readFileSync(path));
+  if (sheetName) {
+    return [readTable(path, /issue|short|long/i, sheetName)];
+  }
+
+  const prefer = /issue|short.?term|long.?term/i;
+  const picked = sheets.filter((s) => prefer.test(s.name));
+  const use = picked.length > 0 ? picked : sheets;
+  console.log(
+    `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
+      (picked.length === 0 ? " (no issue-named sheets; using all)" : ""),
+  );
+
+  return use.map((sheet) => {
+    const table = toTable(sheet.rows);
+    if (table.rows.length === 0) {
+      console.warn(`⚠ ${path} [${sheet.name}] has no data rows.`);
+    }
+    // Stash the sheet name so Type can fall back to it when the Type cell is blank.
+    (table as CsvTable & { sheetName?: string }).sheetName = sheet.name;
+    return table;
+  });
+}
+
+function normalizeIssueType(
+  raw: string,
+  sheetName?: string,
+): "short" | "long" {
+  const s = (raw || sheetName || "").trim().toLowerCase();
+  if (/^long/.test(s) || s.includes("long-term") || s.includes("long term")) {
+    return "long";
+  }
+  return "short";
+}
+
+function normalizeIssuePriority(
+  raw: string,
+): "urgent" | "high" | "medium" | "low" | null {
+  const s = (raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (/urgent|critical|p0/.test(s)) return "urgent";
+  if (/^high|p1/.test(s)) return "high";
+  if (/^med|p2/.test(s)) return "medium";
+  if (/^low|p3/.test(s)) return "low";
+  return null;
+}
+
+function normalizeIssueStatus(
+  raw: string,
+  completedOn: string | null,
+): "open" | "solving" | "solved" | "dropped" {
+  const s = (raw ?? "").trim().toLowerCase().replace(/[-_]/g, " ");
+  if (/solv(ed|e)|done|complete|closed|resolved/.test(s) && !/solving|in progress/.test(s)) {
+    return "solved";
+  }
+  if (/drop|archiv|cancel|abandon|deleted/.test(s)) return "dropped";
+  if (/solving|in progress|ids|discuss/.test(s)) return "solving";
+  if (completedOn) return "solved";
+  return "open";
 }
 
 // ---------------------------------------------------------------------------
@@ -792,6 +872,110 @@ async function importTodos(
 }
 
 // ---------------------------------------------------------------------------
+// Issues (short-term IDS list + long-term parking lot)
+// ---------------------------------------------------------------------------
+
+async function importIssues(
+  table: CsvTable,
+  ctx: {
+    teamId: string;
+    writer: Writer;
+    owners: OwnerResolver;
+    existingIds: Set<string>;
+    includeArchived: boolean;
+    completedSince: string | null;
+    sheetName?: string;
+  },
+) {
+  let imported = 0;
+  let skipped = 0;
+  let archived = 0;
+  let stale = 0;
+  let shortCount = 0;
+  let longCount = 0;
+
+  for (const row of table.rows) {
+    const title = cell(row, table.headers, "Title", "Name", "Issue");
+    if (!title) {
+      skipped++;
+      continue;
+    }
+
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
+      continue;
+    }
+
+    const completedOn = parseDateOnly(
+      cell(row, table.headers, "Completed On", "Completed", "Resolved On"),
+    );
+    if (isStaleCompletion(completedOn, ctx.completedSince)) {
+      stale++;
+      continue;
+    }
+
+    const ownerId = await ctx.owners.resolve(
+      cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
+    );
+    if (ownerId === null) {
+      skipped++;
+      continue;
+    }
+
+    const type = normalizeIssueType(
+      cell(row, table.headers, "Type", "Term", "Horizon"),
+      ctx.sheetName,
+    );
+    const status = normalizeIssueStatus(
+      cell(row, table.headers, "Status"),
+      completedOn,
+    );
+    const priority = normalizeIssuePriority(
+      cell(row, table.headers, "Priority"),
+    );
+    const resolved = status === "solved" || status === "dropped";
+
+    // Natural key includes type so a short/long pair with the same title
+    // (rare, but possible after a promote) stay distinct docs.
+    const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
+    const isNew = !ctx.existingIds.has(issueId);
+
+    await ctx.writer.set(["issues", issueId], {
+      team_id: ctx.teamId,
+      title,
+      description: cell(row, table.headers, "Description", "Notes") || null,
+      owner_id: ownerId,
+      // Don't clobber live vote totals on re-import of an existing issue.
+      ...(isNew ? { votes: 0 } : {}),
+      type,
+      priority,
+      status,
+      resolved_at: resolved
+        ? completedOn
+          ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`))
+          : FieldValue.serverTimestamp()
+        : null,
+      resolution_todo_id: null,
+      source_meeting_id: null,
+      source_link: cell(row, table.headers, "Link", "URL") || null,
+      import_source: "csv",
+      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    imported++;
+    if (type === "long") longCount++;
+    else shortCount++;
+  }
+
+  const label = ctx.sheetName ? `issues [${ctx.sheetName}]` : "issues";
+  console.log(
+    `  ${label}: ${imported} imported (${shortCount} short, ${longCount} long)` +
+      `${skipped ? `, ${skipped} skipped` : ""}` +
+      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
+      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -993,6 +1177,7 @@ async function main() {
     "scorecard_metrics",
     "rocks",
     "todos",
+    "issues",
   ]);
 
   console.log("");
@@ -1050,6 +1235,22 @@ async function main() {
       includeArchived: args.includeArchived,
       completedSince: args.completedSince,
     });
+  }
+
+  if (args.issues) {
+    const tables = readIssueTables(args.issues, args.issuesSheet);
+    for (const table of tables) {
+      const sheetName = (table as CsvTable & { sheetName?: string }).sheetName;
+      await importIssues(table, {
+        teamId: team.id,
+        writer,
+        owners,
+        existingIds,
+        includeArchived: args.includeArchived,
+        completedSince: args.completedSince,
+        sheetName,
+      });
+    }
   }
 
   // Promoting by name runs after the imports: the member behind that name may

@@ -165,6 +165,50 @@ export async function clearConnection(uid: string): Promise<void> {
   await connectionRef(uid).delete();
 }
 
+// --- OAuth CSRF state (server-side) ---------------------------------------
+// Stored in Firestore rather than only a cookie: Cloud Run exposes multiple
+// hostnames for one service (*.a.run.app vs *.run.app). Cookies are
+// host-scoped, but the OAuth callback is pinned to GOOGLE_OAUTH_REDIRECT_URI,
+// so a cookie set on the "other" host never arrives and Connect fails with
+// state_error. Server-side state is host-independent.
+// Admin-SDK only; firestore.rules default-denies clients.
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function oauthStateRef(state: string) {
+  return getAdminDb().collection("oauth_csrf_states").doc(state);
+}
+
+/** Persist a one-time OAuth CSRF state for this uid. */
+export async function saveOAuthState(state: string, uid: string): Promise<void> {
+  await oauthStateRef(state).set({
+    uid,
+    created_at: FieldValue.serverTimestamp(),
+    expires_at_ms: Date.now() + OAUTH_STATE_TTL_MS,
+  });
+}
+
+/**
+ * Consume a one-time OAuth CSRF state. Returns true only when the doc exists,
+ * belongs to `uid`, and is unexpired. Always deletes the doc when present
+ * (success or failed ownership/expiry) so states can't be replayed.
+ */
+export async function consumeOAuthState(
+  state: string,
+  uid: string,
+): Promise<boolean> {
+  const ref = oauthStateRef(state);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const data = snap.data() as { uid?: string; expires_at_ms?: number };
+  await ref.delete().catch(() => undefined);
+  if (data.uid !== uid) return false;
+  if (typeof data.expires_at_ms === "number" && Date.now() > data.expires_at_ms) {
+    return false;
+  }
+  return true;
+}
+
 // --- Token / tasklist plumbing ---------------------------------------------
 
 async function refreshAccessToken(

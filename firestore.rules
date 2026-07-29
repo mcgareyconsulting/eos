@@ -195,5 +195,10 @@ service cloud.firestore {
     match /google_tasks_connections/{uid} {
       allow read, write: if false;
     }
+
+    // One-time OAuth CSRF states for the Tasks connector (admin SDK only).
+    match /oauth_csrf_states/{state} {
+      allow read, write: if false;
+    }
   }
 }

@@ -5,27 +5,28 @@ import {
   saveConnection,
   resolveRedirectUri,
   appOrigin,
+  consumeOAuthState,
 } from "@/lib/google/tasks";
 
-const STATE_COOKIE = "g_tasks_oauth_state";
-
-// Handles the OAuth redirect back from Google: validates the CSRF state,
-// exchanges the code for tokens, persists the refresh token, and bounces the
-// user back to /integrations with a status flag. The state cookie is always
-// cleared on the way out.
+// Handles the OAuth redirect back from Google: validates the CSRF state
+// (server-side — see saveOAuthState), exchanges the code for tokens,
+// persists the refresh token, and bounces the user back to /integrations
+// with a status flag.
 export async function GET(request: NextRequest) {
   const origin = appOrigin(request.url);
   const session = await verifySession();
-  if (!session) return NextResponse.redirect(new URL("/login", origin));
+  if (!session) {
+    const login = new URL("/login", origin);
+    login.searchParams.set("next", "/integrations");
+    return NextResponse.redirect(login);
+  }
 
   const url = new URL(request.url);
   const back = new URL("/integrations", origin);
 
   const finish = (status: string) => {
     back.searchParams.set("google", status);
-    const res = NextResponse.redirect(back);
-    res.cookies.delete(STATE_COOKIE);
-    return res;
+    return NextResponse.redirect(back);
   };
 
   const errorParam = url.searchParams.get("error");
@@ -33,8 +34,12 @@ export async function GET(request: NextRequest) {
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  const cookieState = request.cookies.get(STATE_COOKIE)?.value;
-  if (!code || !state || !cookieState || state !== cookieState) {
+  if (!code || !state) {
+    return finish("state_error");
+  }
+
+  const stateOk = await consumeOAuthState(state, session.uid);
+  if (!stateOk) {
     return finish("state_error");
   }
 

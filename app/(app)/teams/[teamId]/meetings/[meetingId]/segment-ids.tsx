@@ -134,7 +134,7 @@ export function SegmentIDS({
             : ` · stack up to ${MAX_VOTES_PER_TEAM} on a single issue`}{" "}
           · sorted by team votes
         </div>
-        <QuickAddIssue teamId={teamId} compact />
+        <QuickAddIssue teamId={teamId} meetingId={meetingId} />
       </div>
 
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -232,7 +232,17 @@ export function SegmentIDS({
                   issueId={i.id}
                   status={i.status}
                 />
-                <form action={remove}>
+                <form
+                  action={remove}
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        "Delete this issue? This can't be undone.",
+                      )
+                    )
+                      e.preventDefault();
+                  }}
+                >
                   <button
                     type="submit"
                     className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
@@ -302,7 +312,17 @@ export function SegmentIDS({
                       issueId={i.id}
                       status={i.status}
                     />
-                    <form action={remove}>
+                    <form
+                  action={remove}
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        "Delete this issue? This can't be undone.",
+                      )
+                    )
+                      e.preventDefault();
+                  }}
+                >
                       <button
                         type="submit"
                         className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"

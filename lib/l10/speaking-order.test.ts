@@ -161,9 +161,14 @@ describe("currentSpeakerUid", () => {
     assert.equal(currentSpeakerUid(order, 1, []), "u-marcus");
   });
 
-  test("falls back to the first present person when the pointer lands on someone absent", () => {
-    // Marking the current speaker absent must not blank out the highlight.
-    assert.equal(currentSpeakerUid(order, 1, ["u-marcus"]), "u-sarah");
+  test("passes the floor to the NEXT present person when the pointer lands on someone absent", () => {
+    // Marking the current speaker absent must not blank out the highlight —
+    // and must not throw the round back to person #1 either.
+    assert.equal(currentSpeakerUid(order, 1, ["u-marcus"]), "u-elena");
+  });
+
+  test("wraps to the front only when nobody after the pointer is present", () => {
+    assert.equal(currentSpeakerUid(order, 2, ["u-elena"]), "u-sarah");
   });
 
   test("returns null when the order is empty or everyone is absent", () => {

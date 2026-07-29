@@ -51,6 +51,11 @@ export async function addTodo(teamId: string, formData: FormData) {
     ? (visibilityRaw as Visibility)
     : "team";
 
+  // Durable link to the L10 the to-do was captured in (set by the in-meeting
+  // To-Dos form); null for to-dos created outside a meeting.
+  const source_meeting_id =
+    String(formData.get("source_meeting_id") ?? "").trim() || null;
+
   if (!title) throw new Error("Title required");
 
   const ref = await db.collection("todos").add({
@@ -62,7 +67,7 @@ export async function addTodo(teamId: string, formData: FormData) {
     completed_at: null,
     visibility,
     source_issue_id: null,
-    source_meeting_id: null,
+    source_meeting_id,
     source_rock_id: null,
     google_task_id: null,
     created_at: FieldValue.serverTimestamp(),

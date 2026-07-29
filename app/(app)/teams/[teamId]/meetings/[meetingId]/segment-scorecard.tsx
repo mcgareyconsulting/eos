@@ -34,6 +34,7 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentScorecard({
   teamId,
+  meetingId,
   weekRange,
   weeks,
   initialMetrics,
@@ -41,6 +42,7 @@ export function SegmentScorecard({
   members,
 }: {
   teamId: string;
+  meetingId: string;
   weekRange: WeekRange;
   weeks: string[]; // newest first, YYYY-MM-DD Mondays
   initialMetrics: MetricDoc[];
@@ -92,6 +94,18 @@ export function SegmentScorecard({
     [metrics],
   );
 
+  // An unconfigured team gets a plain pointer instead of the full filter
+  // shell wrapped around an empty table — metrics are set up on the
+  // Scorecard tab, not mid-meeting.
+  if (sorted.length === 0) {
+    return (
+      <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        No measurables yet — set up the scorecard on the Scorecard tab before
+        the meeting.
+      </div>
+    );
+  }
+
   // Same filter shell as the standalone Scorecard page (range / status /
   // owner / sort / search), minus the period tabs — data stays live via the
   // subscriptions above.
@@ -107,7 +121,11 @@ export function SegmentScorecard({
       showGroupEditor={false}
       compact
       toolbarExtra={
-        <QuickAddIssue teamId={teamId} prefill="Off-track metric: " compact />
+        <QuickAddIssue
+          teamId={teamId}
+          prefill="Off-track metric: "
+          meetingId={meetingId}
+        />
       }
     />
   );

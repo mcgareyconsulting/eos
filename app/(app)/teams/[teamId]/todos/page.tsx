@@ -1,4 +1,5 @@
 import { Trash2, Lock, CheckSquare } from "lucide-react";
+import { formatDateOnly } from "@/lib/dates";
 import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
@@ -145,7 +146,7 @@ function Row({
       </div>
       <div className="col-span-1 text-xs text-zinc-600 dark:text-zinc-400">
         {todo.due_date
-          ? new Date(todo.due_date).toLocaleDateString()
+          ? formatDateOnly(todo.due_date)
           : "—"}
       </div>
       <div className="col-span-1 justify-self-end">

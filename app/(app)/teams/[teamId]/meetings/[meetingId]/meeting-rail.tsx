@@ -13,9 +13,12 @@ import {
   SEGMENT_LABELS,
   SEGMENT_DURATION_SECONDS,
   TOTAL_MEETING_SECONDS,
+  isSegment,
   type Segment,
 } from "@/lib/l10/segments";
+import { LocalTime } from "@/components/local-time";
 import { formatClock } from "@/lib/l10/format-clock";
+import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { useNow } from "@/lib/l10/use-now";
 import { advanceSegment, endMeeting } from "../actions";
 import { SpeakingOrderRail } from "./speaking-order-rail";
@@ -115,10 +118,25 @@ export function MeetingRail({
     return unsub;
   }, [meetingId, uid]);
 
-  const activeSegment = live?.segment ?? initialSegment;
   const startedAtMs = live?.startedAtMs ?? initialStartedAtMs;
   const ended = live?.ended ?? initialEnded;
-  const speakingOrder = live?.speakingOrder ?? initialSpeakingOrder;
+  // Normalize what the snapshot claims: an unknown/legacy segment falls back
+  // to Segue, and "done" without ended_at (a legacy stuck meeting — the
+  // server no longer writes that combination) renders as Conclude so the
+  // transport and Finish stay on screen instead of stranding the room.
+  const activeSegmentRaw = live?.segment ?? initialSegment;
+  const activeSegment: Segment = !isSegment(activeSegmentRaw)
+    ? "segue"
+    : activeSegmentRaw === "done" && !ended
+      ? "conclude"
+      : activeSegmentRaw;
+  // Reconcile the snapshot's raw order against the roster, same as the Segue
+  // and Rocks segments do — otherwise a member who joined mid-quarter never
+  // appears in the rail and a departed member lingers as a "?" chip.
+  const speakingOrder = reconcileSpeakingOrder(
+    live?.speakingOrder ?? initialSpeakingOrder,
+    members,
+  );
   const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
   const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
 
@@ -128,10 +146,15 @@ export function MeetingRail({
   // would for a deliberate peek, so they see the same "Group is on X — Catch
   // up" pill and move over on their own terms.
 
-  // The meeting ending is a global event everyone should see immediately.
+  // The meeting ending is a global event everyone should see immediately —
+  // and the recap is the shared closing moment, so open it for everyone, not
+  // just the person who clicked Finish (whose server redirect does the same).
   useEffect(() => {
-    if (ended && !initialEnded) router.refresh();
-  }, [ended, initialEnded, router]);
+    if (ended && !initialEnded) {
+      router.push(`${pathname}?recap=1`);
+      router.refresh();
+    }
+  }, [ended, initialEnded, router, pathname]);
 
   const [driving, startDrive] = useTransition();
   const [finishing, startFinish] = useTransition();
@@ -173,7 +196,9 @@ export function MeetingRail({
   // so the content visibly moves with the meeting (even if they were peeking).
   const drive = (dir: "next" | "prev") =>
     startDrive(async () => {
-      await advanceSegment(teamId, meetingId, dir);
+      // Pass the segment this client believes is active so simultaneous
+      // clicks from two people advance once, not twice.
+      await advanceSegment(teamId, meetingId, dir, activeSegment);
       if (following) router.refresh();
       else router.push(pathname);
     });
@@ -242,7 +267,17 @@ export function MeetingRail({
           </div>
           {startedAtLabel && (
             <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-              Started {startedAtLabel}
+              Started{" "}
+              <LocalTime
+                ms={meetingStartedAtMs}
+                fallback={startedAtLabel}
+                options={{
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                }}
+              />
             </div>
           )}
 
@@ -400,7 +435,15 @@ export function MeetingRail({
               <button
                 type="button"
                 onClick={() => drive("next")}
-                disabled={driving}
+                // Conclude is the last stop — Finish (below) is how the
+                // meeting ends. Advancing past it used to write "done"
+                // without ended_at and blank the whole page.
+                disabled={driving || activeSegment === "conclude"}
+                title={
+                  activeSegment === "conclude"
+                    ? "This is the last segment — use Finish to end the meeting"
+                    : undefined
+                }
                 className="flex-1 rounded-md bg-hpb-blue px-2 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 disabled:opacity-60"
               >
                 Next →

@@ -266,7 +266,11 @@ export function SegmentRocks({
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
           {visible.length} rock{visible.length === 1 ? "" : "s"}
         </div>
-        <QuickAddIssue teamId={teamId} prefill="Off-track rock: " compact />
+        <QuickAddIssue
+          teamId={teamId}
+          prefill="Off-track rock: "
+          meetingId={meetingId}
+        />
       </div>
 
       {groups.length === 0 && (

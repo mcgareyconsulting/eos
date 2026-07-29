@@ -1,9 +1,10 @@
-import { Plus } from "lucide-react";
+import Link from "next/link";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { SEGMENT_LABELS } from "@/lib/l10/segments";
 import { startMeeting } from "./actions";
 import { MeetingsList, type MeetingListDoc } from "./meetings-list";
+import { StartMeetingButton } from "./start-meeting-button";
 
 type MeetingDoc = {
   team_id: string;
@@ -52,9 +53,15 @@ export default async function MeetingsPage({
         ratingsByMeeting[m.id] = null;
         return;
       }
-      const ratings = r.docs.map(
-        (d) => (d.data() as { rating: number }).rating,
-      );
+      const ratings = r.docs
+        .map((d) => (d.data() as { rating: number }).rating)
+        // Same malformed-doc guard as the detail page — one bad rating
+        // otherwise renders a NaN star badge.
+        .filter((n) => Number.isFinite(n));
+      if (ratings.length === 0) {
+        ratingsByMeeting[m.id] = null;
+        return;
+      }
       ratingsByMeeting[m.id] =
         Math.round(
           (ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10,
@@ -71,7 +78,7 @@ export default async function MeetingsPage({
             {team.name} · Level 10 weekly meetings
           </p>
         </div>
-        <StartMeetingButton teamId={tid} />
+        <HeaderAction teamId={tid} meetings={initialMeetings} />
       </header>
 
       <MeetingsList
@@ -83,20 +90,32 @@ export default async function MeetingsPage({
   );
 }
 
-function StartMeetingButton({ teamId }: { teamId: string }) {
+// "Start meeting" — or, when the team already has a live meeting, a Resume
+// link into it. The server action also guards against duplicate live
+// meetings, but the button saying the right thing matters more for a
+// latecomer scanning the page.
+function HeaderAction({
+  teamId,
+  meetings,
+}: {
+  teamId: string;
+  meetings: MeetingListDoc[];
+}) {
+  const liveMeeting = meetings.find((m) => m.ended_at == null);
+  if (liveMeeting) {
+    return (
+      <Link
+        href={`/teams/${teamId}/meetings/${liveMeeting.id}`}
+        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+      >
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+        Join live meeting
+      </Link>
+    );
+  }
   async function action() {
     "use server";
     await startMeeting(teamId);
   }
-  return (
-    <form action={action}>
-      <button
-        type="submit"
-        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-      >
-        <Plus className="h-4 w-4" />
-        Start meeting
-      </button>
-    </form>
-  );
+  return <StartMeetingButton action={action} />;
 }

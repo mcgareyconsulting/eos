@@ -10,6 +10,7 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { addHeadline, deleteHeadline } from "../../headlines/actions";
+import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 // created_at arrives as a Firestore Timestamp from onSnapshot, but as a
@@ -25,12 +26,6 @@ function tsMs(t: MaybeTimestamp): number | null {
   if (typeof t === "number") return t;
   return typeof t.toMillis === "function" ? t.toMillis() : null;
 }
-function tsDate(t: MaybeTimestamp): Date | null {
-  if (t == null) return null;
-  if (typeof t === "number") return new Date(t);
-  return typeof t.toDate === "function" ? t.toDate() : null;
-}
-
 type HeadlineDoc = {
   id: string;
   team_id: string;
@@ -69,11 +64,13 @@ const KIND_META: Record<
 
 export function SegmentHeadlines({
   teamId,
+  meetingId,
   userId,
   initialHeadlines,
   members,
 }: {
   teamId: string;
+  meetingId: string;
   userId: string;
   initialHeadlines: HeadlineDoc[];
   members: Member[];
@@ -107,7 +104,7 @@ export function SegmentHeadlines({
         <QuickAddIssue
           teamId={teamId}
           prefill="From headline: "
-          compact
+          meetingId={meetingId}
         />
       </div>
 
@@ -122,13 +119,6 @@ export function SegmentHeadlines({
         {sorted.map((h) => {
           const meta = KIND_META[h.kind] ?? KIND_META.customer;
           const remove = deleteHeadline.bind(null, teamId, h.id);
-          const when =
-            tsDate(h.created_at)?.toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }) ?? "—";
           return (
             <div
               key={h.id}
@@ -148,10 +138,29 @@ export function SegmentHeadlines({
                   </div>
                 )}
                 <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-                  {meta.label} · {creatorName(h.created_by)} · {when}
+                  {meta.label} · {creatorName(h.created_by)} ·{" "}
+                  <LocalTime
+                    ms={tsMs(h.created_at)}
+                    options={{
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    }}
+                  />
                 </div>
               </div>
-              <form action={remove}>
+              <form
+                action={remove}
+                onSubmit={(e) => {
+                  if (
+                    !window.confirm(
+                      "Delete this headline? This can't be undone.",
+                    )
+                  )
+                    e.preventDefault();
+                }}
+              >
                 <button
                   type="submit"
                   className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100 mt-1"

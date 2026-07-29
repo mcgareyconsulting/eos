@@ -2,7 +2,7 @@ import { Trash2, Target, Eye } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
+import { currentQuarter, endOfQuarter, formatDateOnly, toDateString } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
 import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
 import { OwnerFilter } from "./owner-filter";
@@ -217,7 +217,7 @@ export default async function RocksPage({
           </div>
         </div>
         <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
-          {r.due_date ? new Date(r.due_date).toLocaleDateString() : "—"}
+          {r.due_date ? formatDateOnly(r.due_date) : "—"}
         </div>
         <div className="col-span-2 justify-self-end flex items-center gap-2">
           <RockDetailTrigger

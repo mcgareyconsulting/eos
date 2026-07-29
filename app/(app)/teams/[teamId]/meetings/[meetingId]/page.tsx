@@ -12,6 +12,7 @@ import {
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
 import { endOfQuarter, lastNMondays, toDateString } from "@/lib/dates";
+import { LocalTime } from "@/components/local-time";
 import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
@@ -92,6 +93,16 @@ export default async function MeetingDetailPage({
     .filter((r): r is MeetingRating => Number.isFinite(r.rating));
 
   const live = !m.ended_at;
+  // Normalize what's stored before rendering from it: an unknown/legacy
+  // segment falls back to Segue rather than rendering an empty header, and
+  // "done" on a meeting that never got ended_at (legacy stuck state — the
+  // server no longer writes that combination) renders as Conclude so the
+  // room can actually finish.
+  const storedSegment: Segment = !isSegment(m.current_segment)
+    ? "segue"
+    : m.current_segment === "done" && live
+      ? "conclude"
+      : m.current_segment;
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
   const meetingStartedAtMs = m.started_at?.toMillis?.() ?? null;
   // Server-formatted so the rail can render it verbatim (no locale drift
@@ -108,7 +119,7 @@ export default async function MeetingDetailPage({
   // active stage; a valid ?view lets the user peek elsewhere without moving
   // the group. The live active stage is reconciled client-side in MeetingRail.
   const viewParam = isSegment(view) && view !== "done" ? view : null;
-  const viewSegment: Segment = viewParam ?? m.current_segment;
+  const viewSegment: Segment = viewParam ?? storedSegment;
   const following = viewParam === null;
   const showConclude = (live && viewSegment === "conclude") || !live;
 
@@ -199,11 +210,17 @@ export default async function MeetingDetailPage({
 
     // Short-term issue health snapshot. "Total tracked" = currently open,
     // short-term. Solve rate = solved-today / (open-at-start + solved-today).
+    // Both terms are short-term only — the issuesSolved *list* above shows
+    // everything solved, but mixing long-term solves into a short-term
+    // denominator produced >100%-flavored nonsense.
     const shortTerm = allIssues.filter(
       ({ x }) => (x.type ?? "short") === "short",
     );
     const openNow = shortTerm.filter(({ x }) => x.status === "open").length;
-    const solvedToday = issuesSolved.length;
+    const solvedToday = shortTerm.filter(
+      ({ x }) =>
+        x.status === "solved" && inWindow(x.resolved_at as Timestamp | null),
+    ).length;
     const denominator = openNow + solvedToday;
     recapStats = {
       totalTrackedIssues: openNow,
@@ -230,11 +247,18 @@ export default async function MeetingDetailPage({
       rating: ratingByUser.get(mm.user_id) ?? null,
       absent: absentUserIds.includes(mm.user_id),
     }));
+    // Average over present attendees only — a rating from someone marked
+    // absent renders as "Absent" in the list, so it must not silently move
+    // the number next to it.
+    const presentRatings = ratings.filter(
+      (r) => !absentUserIds.includes(r.user_id),
+    );
     overallAverageRating =
-      ratings.length === 0
+      presentRatings.length === 0
         ? null
         : Math.round(
-            (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length) *
+            (presentRatings.reduce((sum, r) => sum + r.rating, 0) /
+              presentRatings.length) *
               10,
           ) / 10;
   }
@@ -257,7 +281,7 @@ export default async function MeetingDetailPage({
           meetingId={mid}
           viewSegment={viewSegment}
           following={following}
-          initialSegment={m.current_segment}
+          initialSegment={storedSegment}
           initialStartedAtMs={segmentStartedAtMs}
           meetingStartedAtMs={meetingStartedAtMs}
           startedAtLabel={startedAtLabel}
@@ -327,7 +351,18 @@ export default async function MeetingDetailPage({
                   {team.name} L10
                 </h1>
                 <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                  Started {startedAtLabel ?? "—"} · completed
+                  Started{" "}
+                  <LocalTime
+                    ms={meetingStartedAtMs}
+                    fallback={startedAtLabel ?? "—"}
+                    options={{
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    }}
+                  />{" "}
+                  · completed
                 </p>
               </div>
               <Link
@@ -371,6 +406,7 @@ export default async function MeetingDetailPage({
             absentUserIds={absentUserIds}
             ratings={ratings}
             notes={m.notes ?? null}
+            readOnly={!live}
           />
         )}
 
@@ -385,7 +421,10 @@ export default async function MeetingDetailPage({
           stats={recapStats}
           attendeeRatings={attendeeRatings}
           overallAverageRating={overallAverageRating}
-          autoOpen={recap === "1"}
+          // Never auto-open on a live meeting: the data above is only
+          // fetched once ended_at exists, so a shared/stale ?recap=1 link
+          // would open an all-empty recap over the running L10.
+          autoOpen={recap === "1" && !live}
         />
       </div>
     </div>
@@ -479,6 +518,7 @@ async function SegmentContent({
     return (
       <SegmentScorecard
         teamId={teamId}
+        meetingId={meetingId}
         weekRange={scorecardWeekRange}
         weeks={weeks}
         initialMetrics={initialMetrics}
@@ -489,9 +529,16 @@ async function SegmentContent({
   }
 
   if (segment === "rocks") {
+    // Milestones are team-visible todos only — matching the client
+    // subscription's visibility filter, and keeping other members' private
+    // todo titles out of the serialized page payload.
     const [rocksSnap, todosSnap] = await Promise.all([
       db.collection("rocks").where("team_id", "==", teamId).get(),
-      db.collection("todos").where("team_id", "==", teamId).get(),
+      db
+        .collection("todos")
+        .where("team_id", "==", teamId)
+        .where("visibility", "==", "team")
+        .get(),
     ]);
     const initialRocks = rocksSnap.docs.map((d) => {
       const x = d.data();
@@ -556,6 +603,7 @@ async function SegmentContent({
     return (
       <SegmentHeadlines
         teamId={teamId}
+        meetingId={meetingId}
         userId={userId}
         initialHeadlines={initialHeadlines}
         members={members}
@@ -564,9 +612,13 @@ async function SegmentContent({
   }
 
   if (segment === "todos") {
+    // Team-visible only: the client subscription filters the same way, and
+    // an unfiltered fetch serialized other members' PRIVATE todo titles into
+    // the page payload (view-source visible) even though the UI hid them.
     const snap = await db
       .collection("todos")
       .where("team_id", "==", teamId)
+      .where("visibility", "==", "team")
       .get();
     const initialTodos = snap.docs.map((d) => {
       const x = d.data();
@@ -584,6 +636,7 @@ async function SegmentContent({
     return (
       <SegmentTodos
         teamId={teamId}
+        meetingId={meetingId}
         userId={userId}
         initialTodos={initialTodos}
         members={members}

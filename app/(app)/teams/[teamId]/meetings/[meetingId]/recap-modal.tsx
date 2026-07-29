@@ -70,7 +70,14 @@ export function RecapModal({
       if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Lock the page scroll while the sheet is open — wheel events were
+    // scrolling the meeting page behind the overlay.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -93,6 +100,7 @@ export function RecapModal({
       />
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="Past L10 condensed"
         className="absolute right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl border-l border-zinc-300 dark:border-zinc-800 flex flex-col"
       >
@@ -137,11 +145,12 @@ export function RecapModal({
             />
           </Section>
 
-          {newIssues.length > 0 && (
-            <Section title="Issues Created">
-              <ItemList items={newIssues} empty="" />
-            </Section>
-          )}
+          <Section title="Issues Created">
+            <ItemList
+              items={newIssues}
+              empty="No Issues were created during this Meeting"
+            />
+          </Section>
 
           <Section title="Short-Term Issues">
             <div className="grid grid-cols-2 gap-3">

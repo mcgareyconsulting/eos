@@ -86,6 +86,11 @@ export function SegmentSegue({
   const remaining =
     currentPos === -1 ? attending.length : attending.length - currentPos - 1;
   const roundDone = attending.length > 0 && remaining === 0;
+  // stepSpeakerIndex deliberately goes inert at the ends of the round — mirror
+  // that in the buttons (as the rail does) instead of leaving live-looking
+  // controls that silently do nothing.
+  const atStart = currentPos <= 0;
+  const atEnd = currentPos === -1 || currentPos >= attending.length - 1;
 
   // Swap with the neighbouring *attending* person, but write positions in the
   // full order so absent teammates keep their slot for when they're back.
@@ -129,7 +134,11 @@ export function SegmentSegue({
       {/* The stage's own coaching line lives in the page heading now — this
           row would have repeated it verbatim right underneath. */}
       <div className="flex justify-end">
-        <QuickAddIssue teamId={teamId} prefill="From segue: " compact />
+        <QuickAddIssue
+          teamId={teamId}
+          prefill="From segue: "
+          meetingId={meetingId}
+        />
       </div>
 
       <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -148,7 +157,7 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(-1)}
-              disabled={pending || attending.length === 0}
+              disabled={pending || attending.length === 0 || atStart}
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               ← Prev
@@ -156,7 +165,7 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(1)}
-              disabled={pending || attending.length === 0}
+              disabled={pending || attending.length === 0 || atEnd}
               className="rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-60"
             >
               Next speaker →

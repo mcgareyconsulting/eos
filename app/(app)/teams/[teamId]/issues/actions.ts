@@ -43,6 +43,11 @@ export async function addIssue(teamId: string, formData: FormData) {
     : "short";
   const owner_id = readOwnerId(formData, uid);
   const priority = readPriority(formData);
+  // Durable link back to the L10 the issue was raised in (set by in-meeting
+  // surfaces). The recap currently infers membership from the meeting time
+  // window; capturing the id from now on lets it become exact later.
+  const source_meeting_id =
+    String(formData.get("source_meeting_id") ?? "").trim() || null;
 
   if (!title) throw new Error("Title required");
 
@@ -57,6 +62,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     status: "open",
     resolved_at: null,
     resolution_todo_id: null,
+    source_meeting_id,
     created_at: FieldValue.serverTimestamp(),
   });
 

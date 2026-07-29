@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDateOnly } from "@/lib/dates";
 import { Circle, Flag, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
@@ -292,7 +293,7 @@ function DueLabel({ due }: { due: string | null }) {
         (overdue ? "text-red-600" : "text-zinc-600 dark:text-zinc-400")
       }
     >
-      Due {new Date(due).toLocaleDateString()}
+      Due {formatDateOnly(due)}
     </span>
   );
 }

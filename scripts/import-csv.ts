@@ -20,6 +20,7 @@
 //   --milestones <file>  Milestones export (linked to rocks by "Rock Name").
 //   --todos <file>       Standalone to-dos (not tied to a rock).
 //   --issues <file>      Issues export (short-term + long-term; .xlsx can be multi-sheet).
+//   --headlines <file>   Headlines + Cascading Messages (multi-sheet .xlsx OK).
 //   --as-of <YYYY-MM-DD> Anchor for undated week headers ("Jul 27 - Aug 2").
 //                        Defaults to today; set it when importing a stale export.
 //   --dry-run            Parse, resolve, and report. Writes nothing.
@@ -93,11 +94,13 @@ type Args = {
   milestones?: string;
   todos?: string;
   issues?: string;
+  headlines?: string;
   scorecardSheet?: string;
   rocksSheet?: string;
   milestonesSheet?: string;
   todosSheet?: string;
   issuesSheet?: string;
+  headlinesSheet?: string;
   asOf: Date;
   dryRun: boolean;
   ownerAliases: string[];
@@ -161,10 +164,11 @@ function parseArgs(argv: string[]): Args {
     !str("rocks") &&
     !str("milestones") &&
     !str("todos") &&
-    !str("issues")
+    !str("issues") &&
+    !str("headlines")
   ) {
     console.error(
-      "Nothing to import — pass at least one of --scorecard / --rocks / --milestones / --todos / --issues.",
+      "Nothing to import — pass at least one of --scorecard / --rocks / --milestones / --todos / --issues / --headlines.",
     );
     process.exit(1);
   }
@@ -182,11 +186,13 @@ function parseArgs(argv: string[]): Args {
     milestones: str("milestones"),
     todos: str("todos"),
     issues: str("issues"),
+    headlines: str("headlines"),
     scorecardSheet: str("scorecard-sheet"),
     rocksSheet: str("rocks-sheet"),
     milestonesSheet: str("milestones-sheet"),
     todosSheet: str("todos-sheet"),
     issuesSheet: str("issues-sheet"),
+    headlinesSheet: str("headlines-sheet"),
     asOf,
     dryRun: flags.has("dry-run"),
     ownerAliases: list("owner-alias"),
@@ -879,6 +885,159 @@ async function importTodos(
 }
 
 // ---------------------------------------------------------------------------
+// Headlines + Cascading Messages
+// ---------------------------------------------------------------------------
+
+// Ninety exports Headlines and Cascading Messages as one multi-sheet
+// workbook. Cascades from other teams (From = Transformation, etc.) still
+// land on this team's list so the L10 can surface org-wide messages; those
+// rows are marked broadcast so the UI shows them read-only.
+function normalizeHeadlineKind(
+  typeCell: string,
+  sheetName?: string,
+): "customer" | "employee" | "cascading" {
+  const s = `${typeCell} ${sheetName ?? ""}`.toLowerCase();
+  if (/cascad/.test(s)) return "cascading";
+  if (/customer|client|win/.test(s)) return "customer";
+  if (/employee|people|hr|staff/.test(s)) return "employee";
+  // Generic "Headlines" sheet → employee (team news), not customer wins.
+  return "employee";
+}
+
+function readHeadlineTables(path: string, sheetName?: string): CsvTable[] {
+  if (!/\.xlsx$/i.test(path)) {
+    return [readTable(path, /headline|cascad/i, sheetName)];
+  }
+  const sheets = readXlsx(readFileSync(path));
+  if (sheetName) {
+    return [readTable(path, /headline|cascad/i, sheetName)];
+  }
+  const prefer = /headline|cascad/i;
+  const picked = sheets.filter((s) => prefer.test(s.name));
+  const use = picked.length > 0 ? picked : sheets;
+  console.log(
+    `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
+      (picked.length === 0 ? " (no headline-named sheets; using all)" : ""),
+  );
+  return use.map((sheet) => {
+    const table = toTable(sheet.rows);
+    if (table.rows.length === 0) {
+      console.warn(`⚠ ${path} [${sheet.name}] has no data rows.`);
+    }
+    return Object.assign(table, { sheetName: sheet.name });
+  });
+}
+
+async function importHeadlines(
+  table: CsvTable & { sheetName?: string },
+  ctx: {
+    teamId: string;
+    writer: Writer;
+    owners: OwnerResolver;
+    existingIds: Set<string>;
+    includeArchived: boolean;
+    rockTeam?: string;
+  },
+) {
+  let imported = 0;
+  let skipped = 0;
+  let archived = 0;
+  let broadcast = 0;
+  const sheetName = table.sheetName;
+
+  for (const row of table.rows) {
+    const title = cell(row, table.headers, "Title", "Name", "Headline");
+    if (!title) {
+      skipped++;
+      continue;
+    }
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
+      continue;
+    }
+
+    const rowTeam = cell(row, table.headers, "Team");
+    if (
+      ctx.rockTeam &&
+      rowTeam &&
+      normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)
+    ) {
+      skipped++;
+      continue;
+    }
+
+    const kind = normalizeHeadlineKind(
+      cell(row, table.headers, "Type", "Kind", "Category"),
+      sheetName,
+    );
+
+    // Prefer resolving Owner to a team member; external cascade authors stay
+    // as display names (no placeholder members) so ESD doesn't fill with
+    // import-brian-otteman ghosts.
+    const ownerRaw = cell(
+      row,
+      table.headers,
+      "Owner",
+      "Owner Name",
+      "Accountable",
+      "From Name",
+    );
+    const createdBy = ownerRaw ? ctx.owners.lookup(ownerRaw) : null;
+    const fromLabel = cell(row, table.headers, "From", "Source", "Team From");
+    const cleanFrom =
+      fromLabel && fromLabel !== "-" && fromLabel.trim() ? fromLabel.trim() : null;
+
+    // Cascades whose owner isn't on this team are org-wide broadcast:
+    // visible here, not editable/deletable in the UI.
+    const isBroadcast = kind === "cascading" && !createdBy;
+
+    const bodyRaw = normalizeDescription(
+      cell(row, table.headers, "Description", "Notes", "Body", "Detail"),
+    );
+    let body = bodyRaw || null;
+    if (cleanFrom && isBroadcast) {
+      body = body
+        ? `From: ${cleanFrom}\n\n${body}`
+        : `From: ${cleanFrom}`;
+    }
+
+    const headlineId = importDocId(
+      "headline",
+      ctx.teamId,
+      `${kind}|${title}`,
+    );
+    const isNew = !ctx.existingIds.has(headlineId);
+
+    await ctx.writer.set(["headlines", headlineId], {
+      team_id: ctx.teamId,
+      title,
+      body,
+      kind,
+      created_by: createdBy,
+      // Empty = this team's own list; cascading still stored on the team that
+      // imported it so Firestore rules (member of team_id) allow the read.
+      target_team_ids: [] as string[],
+      from_label: cleanFrom,
+      source_owner_name: createdBy ? null : ownerRaw || null,
+      broadcast: isBroadcast,
+      source_link: cell(row, table.headers, "Link", "URL") || null,
+      import_source: "csv",
+      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    imported++;
+    if (isBroadcast) broadcast++;
+  }
+
+  const label = sheetName ? `headlines [${sheetName}]` : "headlines";
+  console.log(
+    `  ${label}: ${imported} imported` +
+      (broadcast ? ` (${broadcast} broadcast / read-only)` : "") +
+      `${skipped ? `, ${skipped} skipped` : ""}` +
+      `${archived ? `, ${archived} archived` : ""}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Issues (short-term IDS list + long-term parking lot)
 // ---------------------------------------------------------------------------
 
@@ -1188,6 +1347,7 @@ async function main() {
     "rocks",
     "todos",
     "issues",
+    "headlines",
   ]);
 
   console.log("");
@@ -1259,6 +1419,22 @@ async function main() {
         includeArchived: args.includeArchived,
         completedSince: args.completedSince,
         sheetName,
+      });
+    }
+  }
+
+  if (args.headlines) {
+    // --no-create-owners for cascade authors outside the team: lookup-only
+    // via owners.lookup; we never skip the row for a missing owner.
+    const tables = readHeadlineTables(args.headlines, args.headlinesSheet);
+    for (const table of tables) {
+      await importHeadlines(table, {
+        teamId: team.id,
+        writer,
+        owners,
+        existingIds,
+        includeArchived: args.includeArchived,
+        rockTeam: args.rockTeam,
       });
     }
   }

@@ -2,6 +2,7 @@ import { Trash2, Smile, Users, Megaphone } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { normalizeDescription } from "@/lib/csv-import";
 import { addHeadline, deleteHeadline } from "./actions";
 
 type HeadlineDoc = {
@@ -12,6 +13,10 @@ type HeadlineDoc = {
   created_by: string | null;
   target_team_ids: string[];
   created_at: Timestamp | null;
+  /** Org-wide cascade from outside this team — show, don't delete. */
+  broadcast?: boolean;
+  from_label?: string | null;
+  source_owner_name?: string | null;
 };
 
 const KIND_META: Record<
@@ -60,12 +65,15 @@ export default async function HeadlinesPage({
       return bt - at;
     });
 
-  const creatorName = (id: string | null) =>
-    id === uid
-      ? "You"
-      : id
-        ? (members.find((m) => m.user_id === id)?.full_name ?? "—")
-        : "—";
+  const creatorName = (h: HeadlineDoc) => {
+    if (h.created_by === uid) return "You";
+    if (h.created_by) {
+      return (
+        members.find((m) => m.user_id === h.created_by)?.full_name ?? "—"
+      );
+    }
+    return h.source_owner_name || h.from_label || "—";
+  };
 
   return (
     <div className="space-y-6">
@@ -73,12 +81,13 @@ export default async function HeadlinesPage({
         <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           {team.name} · customer wins, employee news, and cascading messages
+          (org-wide cascades are read-only)
         </p>
       </header>
 
       <AddHeadlineForm teamId={teamId} />
 
-      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {headlines.length === 0 && (
           <EmptyState
             icon={Megaphone}
@@ -96,6 +105,8 @@ export default async function HeadlinesPage({
               hour: "numeric",
               minute: "2-digit",
             }) ?? "—";
+          const body = normalizeDescription(h.body);
+          const readOnly = !!h.broadcast;
           return (
             <div
               key={h.id}
@@ -105,28 +116,39 @@ export default async function HeadlinesPage({
                 className={`mt-0.5 rounded-full p-1.5 ring-1 ring-inset ${meta.badge}`}
                 title={meta.label}
               >
-                <meta.Icon className="w-3.5 h-3.5" />
+                <meta.Icon className="h-3.5 w-3.5" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{h.title}</div>
-                {h.body && (
-                  <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                    {h.body}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-medium">{h.title}</div>
+                  {readOnly && (
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+                      Org-wide · read-only
+                    </span>
+                  )}
+                </div>
+                {body && (
+                  <div className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
+                    {body}
                   </div>
                 )}
                 <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-                  {meta.label} · {creatorName(h.created_by)} · {when}
+                  {meta.label}
+                  {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
+                  {creatorName(h)} · {when}
                 </div>
               </div>
-              <form action={remove}>
-                <button
-                  type="submit"
-                  className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100 mt-1"
-                  aria-label="Delete headline"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </form>
+              {!readOnly && (
+                <form action={remove}>
+                  <button
+                    type="submit"
+                    className="mt-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                    aria-label="Delete headline"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </form>
+              )}
             </div>
           );
         })}
@@ -143,18 +165,18 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-300 bg-white p-4 md:grid-cols-6 dark:border-zinc-800 dark:bg-zinc-900"
     >
       <input
         name="title"
         placeholder="Headline (one line)"
         required
-        className="md:col-span-4 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-4"
       />
       <select
         name="kind"
         defaultValue="customer"
-        className="md:col-span-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 md:col-span-2"
       >
         <option value="customer">Customer</option>
         <option value="employee">Employee</option>
@@ -164,11 +186,11 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
         name="body"
         placeholder="Detail (optional)"
         rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-6"
       />
       <button
         type="submit"
-        className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 md:col-span-6 md:justify-self-end"
       >
         Add headline
       </button>

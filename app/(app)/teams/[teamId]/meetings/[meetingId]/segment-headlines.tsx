@@ -34,6 +34,9 @@ type HeadlineDoc = {
   kind: "customer" | "employee" | "cascading";
   created_by: string | null;
   created_at: MaybeTimestamp;
+  broadcast?: boolean;
+  from_label?: string | null;
+  source_owner_name?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -88,18 +91,20 @@ export function SegmentHeadlines({
     (a, b) => (tsMs(b.created_at) ?? 0) - (tsMs(a.created_at) ?? 0),
   );
 
-  const creatorName = (id: string | null) =>
-    id === userId
-      ? "You"
-      : id
-        ? members.find((m) => m.user_id === id)?.full_name ?? "—"
-        : "—";
+  const creatorName = (h: HeadlineDoc) => {
+    if (h.created_by === userId) return "You";
+    if (h.created_by) {
+      return members.find((m) => m.user_id === h.created_by)?.full_name ?? "—";
+    }
+    return h.source_owner_name || h.from_label || "—";
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          Customer wins, employee news, cascading messages
+          Customer wins, employee news, cascading messages · org-wide cascades
+          are read-only
         </div>
         <QuickAddIssue
           teamId={teamId}
@@ -119,6 +124,7 @@ export function SegmentHeadlines({
         {sorted.map((h) => {
           const meta = KIND_META[h.kind] ?? KIND_META.customer;
           const remove = deleteHeadline.bind(null, teamId, h.id);
+          const readOnly = !!h.broadcast;
           return (
             <div
               key={h.id}
@@ -128,17 +134,26 @@ export function SegmentHeadlines({
                 className={`mt-0.5 rounded-full p-1.5 ring-1 ring-inset ${meta.badge}`}
                 title={meta.label}
               >
-                <meta.Icon className="w-3.5 h-3.5" />
+                <meta.Icon className="h-3.5 w-3.5" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{h.title}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-medium">{h.title}</div>
+                  {readOnly && (
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+                      Org-wide · read-only
+                    </span>
+                  )}
+                </div>
                 {h.body && (
-                  <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
+                  <div className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
                     {h.body}
                   </div>
                 )}
                 <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-                  {meta.label} · {creatorName(h.created_by)} ·{" "}
+                  {meta.label}
+                  {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
+                  {creatorName(h)} ·{" "}
                   <LocalTime
                     ms={tsMs(h.created_at)}
                     options={{
@@ -150,25 +165,27 @@ export function SegmentHeadlines({
                   />
                 </div>
               </div>
-              <form
-                action={remove}
-                onSubmit={(e) => {
-                  if (
-                    !window.confirm(
-                      "Delete this headline? This can't be undone.",
+              {!readOnly && (
+                <form
+                  action={remove}
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        "Delete this headline? This can't be undone.",
+                      )
                     )
-                  )
-                    e.preventDefault();
-                }}
-              >
-                <button
-                  type="submit"
-                  className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100 mt-1"
-                  aria-label="Delete headline"
+                      e.preventDefault();
+                  }}
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    className="mt-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                    aria-label="Delete headline"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </form>
+              )}
             </div>
           );
         })}

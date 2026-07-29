@@ -30,7 +30,7 @@ export default async function IssuesPage({
       description: x.description ?? null,
       owner_id: x.owner_id ?? null,
       priority: x.priority ?? null,
-      votes: x.votes ?? 0,
+      votes: Number(x.votes ?? 0),
       type: x.type,
       status: x.status,
     };

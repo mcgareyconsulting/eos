@@ -20,7 +20,7 @@ import {
   type GoalDirection,
   type TrendStatus,
 } from "@/lib/scorecard";
-import { formatWeekRange, mondayOf, toDateString, weekYear } from "@/lib/dates";
+import { formatWeekRange, mondayOf, toDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 export type ScorecardMetric = {
@@ -183,18 +183,6 @@ export function ScorecardGrid({
         .filter((g) => g !== "")
         .sort((a, b) => a.localeCompare(b));
 
-  // Year spans for the week header row (e.g. a single "2026" bar).
-  const yearSpans = useMemo(() => {
-    const spans: { year: number; count: number }[] = [];
-    for (const w of weeks) {
-      const y = weekYear(w);
-      const last = spans[spans.length - 1];
-      if (last && last.year === y) last.count += 1;
-      else spans.push({ year: y, count: 1 });
-    }
-    return spans;
-  }, [weeks]);
-
   const stickyShadow =
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
 
@@ -236,7 +224,7 @@ export function ScorecardGrid({
             width: COL.title,
             minWidth: COL.title,
             // Hard cap. Without it a long measurable name grew the cell,
-            // desynced the frozen block from the year band header, and shoved
+            // desynced the frozen block from the week header, and shoved
             // the week columns out of view.
             maxWidth: COL.title,
           }}
@@ -395,37 +383,6 @@ export function ScorecardGrid({
           style={{ minWidth: FROZEN_WIDTH + weeks.length * 88 }}
         >
           <thead className="sticky top-0 z-30">
-            {/* Year band across week columns only */}
-            <tr className={headerBg}>
-              <th
-                colSpan={FROZEN_COLS}
-                className={cn(
-                  "sticky left-0 z-40 border-b border-zinc-200 dark:border-zinc-800",
-                  headerBg,
-                )}
-                style={{ left: 0, width: FROZEN_WIDTH, minWidth: FROZEN_WIDTH }}
-              />
-              {yearSpans.map((span) => (
-                <th
-                  key={`year-${span.year}-${span.count}`}
-                  colSpan={span.count}
-                  className={cn(
-                    "border-b border-zinc-200 px-2 py-1 text-center text-xs font-semibold text-zinc-500 dark:border-zinc-800 dark:text-zinc-400",
-                    headerBg,
-                  )}
-                >
-                  {span.year}
-                </th>
-              ))}
-              {showDelete && (
-                <th
-                  className={cn(
-                    "border-b border-zinc-200 dark:border-zinc-800 w-8",
-                    headerBg,
-                  )}
-                />
-              )}
-            </tr>
             <tr
               className={cn(
                 headerBg,

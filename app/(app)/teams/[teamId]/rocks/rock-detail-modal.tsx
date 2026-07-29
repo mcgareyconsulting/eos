@@ -106,7 +106,7 @@ export function RockDetailModal({
             {status && (
               <span
                 className={cn(
-                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+                  "inline-flex h-5 w-[5.5rem] items-center justify-center rounded-full px-2.5 text-[11px] font-medium ring-1 ring-inset",
                   STATUS_STYLES[status],
                 )}
               >

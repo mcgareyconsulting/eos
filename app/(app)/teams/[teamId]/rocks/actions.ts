@@ -81,6 +81,44 @@ export async function updateRockDescription(
   revalidatePath(pathFor(teamId));
 }
 
+// Full meta edit from the Rocks tab drawer (view is read-only; this is the
+// dedicated edit surface). Title required; empty description clears to null.
+// Owner = "team" → null owner_id (Team Rocks section).
+export async function updateRockMeta(
+  teamId: string,
+  rockId: string,
+  formData: FormData,
+) {
+  const { uid, db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) throw new Error("Title required");
+
+  const quarter = String(formData.get("quarter") ?? "").trim();
+  if (!quarter) throw new Error("Quarter required");
+
+  const due_date =
+    String(formData.get("due_date") ?? "").trim() ||
+    toDateString(endOfQuarter());
+  const description =
+    String(formData.get("description") ?? "").trim() || null;
+
+  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
+  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
+
+  await db.collection("rocks").doc(rockId).update({
+    title,
+    quarter,
+    due_date,
+    description,
+    owner_id,
+  });
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
+}
+
 export async function setRockType(
   teamId: string,
   rockId: string,

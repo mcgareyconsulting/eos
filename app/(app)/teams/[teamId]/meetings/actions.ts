@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import {
   getTeamMembers,
   requireTeamAccess,
@@ -43,6 +43,11 @@ export async function startMeeting(teamId: string) {
     redirect(detailPath(teamId, activeSnap.docs[0].id));
   }
 
+  // Fresh IDS hour: clear last meeting's vote tallies + any leftover credits
+  // so ranking starts at zero. Tallies are kept on issue docs between meetings
+  // (so the Issues tab still shows how the room ranked them after Finish).
+  await resetTeamIssueVotes(db, teamId);
+
   // Take a copy of the team's durable rotation for this meeting. Reconciling
   // here (rather than trusting the stored array) means a meeting always opens
   // with an order that matches today's roster, and a team that has never set
@@ -63,7 +68,27 @@ export async function startMeeting(teamId: string) {
     speaking_order: speakingOrder,
     speaking_index: 0,
   });
+  revalidatePath(`/teams/${teamId}/issues`);
   redirect(detailPath(teamId, ref.id));
+}
+
+// Wipe per-user vote credits and denormalized issue.votes for a team.
+// Used at L10 start so each meeting re-ranks from a clean slate; not at end,
+// so the Issues tab keeps last-meeting totals until the next L10 begins.
+async function resetTeamIssueVotes(db: Firestore, teamId: string) {
+  const [voteRows, issueRows] = await Promise.all([
+    db.collection("issue_votes").where("team_id", "==", teamId).get(),
+    db.collection("issues").where("team_id", "==", teamId).get(),
+  ]);
+  // Batches cap at 500 ops; teams are well under that for votes + issues.
+  const batch = db.batch();
+  voteRows.docs.forEach((d) => batch.delete(d.ref));
+  issueRows.docs.forEach((d) => {
+    if ((d.data().votes ?? 0) !== 0) batch.update(d.ref, { votes: 0 });
+  });
+  if (!voteRows.empty || issueRows.docs.some((d) => (d.data().votes ?? 0) !== 0)) {
+    await batch.commit();
+  }
 }
 
 export async function advanceSegment(
@@ -227,25 +252,23 @@ export async function endMeeting(teamId: string, meetingId: string) {
     return true;
   });
 
-  // EOS vote credits rank THIS meeting's IDS hour — they reset when the
-  // meeting ends. Without this, the whole team opened the next L10 already
-  // "out of votes" (credits were effectively lifetime-per-team). Best-effort
-  // cleanup after the conclude write; issue docs keep their solved/dropped
-  // status, only the vote tallies reset.
+  // Personal vote credits reset at end so no one opens the next L10 already
+  // "out of votes". Team tallies (issues.votes) stay until the next Start —
+  // the Issues tab shows last meeting's ranking in between.
   if (didEnd) {
-    const [voteRows, issueRows] = await Promise.all([
-      db.collection("issue_votes").where("team_id", "==", teamId).get(),
-      db.collection("issues").where("team_id", "==", teamId).get(),
-    ]);
-    const batch = db.batch();
-    voteRows.docs.forEach((d) => batch.delete(d.ref));
-    issueRows.docs.forEach((d) => {
-      if ((d.data().votes ?? 0) !== 0) batch.update(d.ref, { votes: 0 });
-    });
-    await batch.commit();
+    const voteRows = await db
+      .collection("issue_votes")
+      .where("team_id", "==", teamId)
+      .get();
+    if (!voteRows.empty) {
+      const batch = db.batch();
+      voteRows.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
   }
   revalidatePath(detailPath(teamId, meetingId));
   revalidatePath(listPath(teamId));
+  revalidatePath(`/teams/${teamId}/issues`);
   // ?recap=1 opens the post-meeting recap modal on the next render.
   redirect(`${detailPath(teamId, meetingId)}?recap=1`);
 }

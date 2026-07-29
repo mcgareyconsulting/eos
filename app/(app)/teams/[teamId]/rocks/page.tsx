@@ -1,15 +1,12 @@
-import { Trash2, Target, Eye } from "lucide-react";
+import { Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { currentQuarter, endOfQuarter, formatDateOnly, toDateString } from "@/lib/dates";
-import { StatusPopover } from "./status-popover";
-import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
+import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
 import { AddRockDrawer } from "./add-rock-drawer";
-import { deleteRock, updateRockDescription, updateRockTitle } from "./actions";
+import { RockRow } from "./rock-row";
 import { isTeamRock } from "./rock-type";
-import { RockDetailTrigger } from "./rock-detail-modal";
+import type { MilestoneSerialized } from "./milestones";
 
 type RockDoc = {
   team_id: string;
@@ -37,10 +34,12 @@ type TodoDoc = {
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
-// Within a section: status, then due date.
+// Within a section: status, then quarter (so Q3 / Q4 sit together), then due.
+// No quarter filter — the list shows every rock on the team.
 function sortRocks<
   T extends {
     status: string;
+    quarter?: string | null;
     due_date: string | null;
   },
 >(rocks: T[]): T[] {
@@ -48,6 +47,9 @@ function sortRocks<
     const byStatus =
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byStatus !== 0) return byStatus;
+    const qa = a.quarter ?? "";
+    const qb = b.quarter ?? "";
+    if (qa !== qb) return qa.localeCompare(qb);
     if (!a.due_date && !b.due_date) return 0;
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;
@@ -202,74 +204,6 @@ export default async function RocksPage({
 
   const sections = buildSections(allRocks);
 
-  function renderRow(r: RockWithId) {
-    const renameTitle = updateRockTitle.bind(null, teamId, r.id);
-    const editDescription = updateRockDescription.bind(null, teamId, r.id);
-    const remove = deleteRock.bind(null, teamId, r.id);
-    const milestones = milestonesByRock.get(r.id) ?? [];
-    return (
-      <div
-        key={r.id}
-        className="group grid grid-cols-12 gap-3 px-4 py-3 items-start text-sm"
-      >
-        <div className="col-span-9 min-w-0">
-          <EditableText
-            value={r.title}
-            onSave={renameTitle}
-            className="font-medium"
-          />
-          <EditableText
-            value={r.description ?? ""}
-            onSave={editDescription}
-            multiline
-            placeholder="Add a description"
-            className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5"
-          />
-          <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
-            {r.quarter}
-          </div>
-        </div>
-        <div className="col-span-1 text-zinc-600 dark:text-zinc-400 text-xs">
-          {r.due_date ? formatDateOnly(r.due_date) : "—"}
-        </div>
-        <div className="col-span-2 justify-self-end flex items-center gap-2">
-          <RockDetailTrigger
-            rock={r}
-            ownerName={isTeamRock(r.owner_id) ? "Team" : ownerName(r.owner_id)}
-            milestones={milestones.map((m) => ({
-              id: m.id,
-              title: m.title,
-              due_date: m.due_date,
-              completed: m.completed,
-              owner_name: m.owner_id ? ownerName(m.owner_id) : null,
-            }))}
-            className="text-zinc-400 hover:text-hpb-blue dark:text-zinc-500 dark:hover:text-hpb-gold"
-          >
-            <Eye className="w-4 h-4" />
-          </RockDetailTrigger>
-          <StatusPopover teamId={teamId} rockId={r.id} status={r.status} />
-          <form action={remove}>
-            <button
-              type="submit"
-              className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
-              aria-label="Delete rock"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </form>
-        </div>
-        <MilestonesDisclosure
-          teamId={teamId}
-          rockId={r.id}
-          rockOwnerId={r.owner_id}
-          members={members}
-          milestones={milestones}
-          defaultDue={eoq}
-        />
-      </div>
-    );
-  }
-
   const emptyMessage =
     filter === "all" ? "No rocks yet." : `No rocks for ${ownerName(filter)}.`;
 
@@ -279,7 +213,7 @@ export default async function RocksPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {team.name} · current quarter {quarter}
+            {team.name} · all quarters · click a title to view · pencil to edit
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -301,7 +235,19 @@ export default async function RocksPage({
       ) : (
         sections.map((g) => (
           <RockSection key={g.key} title={`${g.title} (${g.rocks.length})`}>
-            {g.rocks.map(renderRow)}
+            {g.rocks.map((r) => (
+              <RockRow
+                key={r.id}
+                teamId={teamId}
+                rock={r}
+                ownerName={
+                  isTeamRock(r.owner_id) ? "Team" : ownerName(r.owner_id)
+                }
+                members={members}
+                milestones={milestonesByRock.get(r.id) ?? []}
+                defaultDue={eoq}
+              />
+            ))}
           </RockSection>
         ))
       )}
@@ -318,10 +264,10 @@ function RockSection({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200 mb-3">
+      <h2 className="mb-3 text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
         {title}
       </h2>
-      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {children}
       </div>
     </section>
@@ -331,4 +277,3 @@ function RockSection({
 function Empty({ children }: { children: React.ReactNode }) {
   return <EmptyState icon={Target} title={children} />;
 }
-

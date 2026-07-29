@@ -130,14 +130,17 @@ export function StatusPopover({
         aria-haspopup="dialog"
         aria-expanded={open}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-0.5 text-xs font-medium ring-1 ring-inset focus:outline-none focus-visible:ring-2 hover:brightness-95 dark:hover:brightness-110 hover:ring-2",
+          // Fixed width so On Track / Off Track / Done / Cancelled line up
+          // as equal pills. Label is centered; chevron is absolutely placed
+          // so it doesn't shift the text.
+          "relative inline-flex h-6 w-[6.75rem] items-center justify-center rounded-full px-2 text-xs font-medium ring-1 ring-inset focus:outline-none focus-visible:ring-2 hover:brightness-95 hover:ring-2 dark:hover:brightness-110",
           STATUS_STYLES[current],
         )}
       >
-        <span>{STATUS_LABELS[current]}</span>
+        <span className="truncate text-center">{STATUS_LABELS[current]}</span>
         <ChevronDown
           className={cn(
-            "h-3 w-3 opacity-60 transition-transform",
+            "absolute right-1.5 h-3 w-3 shrink-0 opacity-60 transition-transform",
             open && "rotate-180",
           )}
         />
@@ -166,7 +169,7 @@ export function StatusPopover({
                 />
                 <span
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                    "inline-flex h-5 w-[5.5rem] items-center justify-center rounded-full px-2 text-center text-xs font-medium ring-1 ring-inset",
                     STATUS_STYLES[s],
                   )}
                 >

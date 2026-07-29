@@ -63,12 +63,16 @@ type RockGroup = {
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
-// Within a section: status, then due date.
+// Within a section: status, then quarter, then due date. No quarter filter —
+// Q3 and Q4 (and any other labels) all stay visible.
 function sortRocks(rocks: RockDoc[]): RockDoc[] {
   return [...rocks].sort((a, b) => {
     const byStatus =
       STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     if (byStatus !== 0) return byStatus;
+    const qa = a.quarter ?? "";
+    const qb = b.quarter ?? "";
+    if (qa !== qb) return qa.localeCompare(qb);
     if (!a.due_date && !b.due_date) return 0;
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;

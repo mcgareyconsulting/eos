@@ -1,11 +1,9 @@
-import { Trash2, Lock, CheckSquare } from "lucide-react";
-import { formatDateOnly } from "@/lib/dates";
+import { CheckSquare } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { EditableText } from "@/components/editable-text";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { TodoCheckbox } from "./todo-row";
 import { AddTodoSubmit } from "./todo-submit-button";
-import { addTodo, deleteTodo, updateTodoTitle, updateTodoDescription } from "./actions";
+import { addTodo } from "./actions";
+import { TodoListRow, type TodoListItem } from "./todo-list-row";
 
 type TodoDoc = {
   team_id: string;
@@ -31,25 +29,35 @@ export default async function TodosPage({
 
   const snap = await db.collection("todos").where("team_id", "==", tid).get();
 
-  const todos = snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as TodoDoc) }))
-    // Milestones live in this collection but belong to a rock — hide them here.
-    .filter((t) => !t.source_rock_id)
-    // private items hidden from non-owners
-    .filter(
-      (t) =>
-        t.visibility === "team" ||
-        t.owner_id === uid,
-    );
+  // Project plain fields — completed_at is a Timestamp and can't cross the
+  // RSC boundary into the client list row.
+  const todos: TodoListItem[] = [];
+  for (const d of snap.docs) {
+    const t = d.data() as TodoDoc;
+    // Milestones belong on the Rocks tab.
+    if (t.source_rock_id) continue;
+    const visibility = t.visibility === "private" ? "private" : "team";
+    // Private items only for the owner.
+    if (visibility === "private" && t.owner_id !== uid) continue;
+    todos.push({
+      id: d.id,
+      title: t.title,
+      description: t.description ?? null,
+      owner_id: t.owner_id ?? null,
+      due_date: t.due_date ?? null,
+      completed: !!t.completed_at,
+      visibility,
+    });
+  }
 
-  const byDue = <T extends { due_date: string | null }>(a: T, b: T) => {
+  const byDue = (a: TodoListItem, b: TodoListItem) => {
     if (!a.due_date && !b.due_date) return 0;
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;
     return a.due_date.localeCompare(b.due_date);
   };
-  const open = todos.filter((t) => !t.completed_at).sort(byDue);
-  const done = todos.filter((t) => t.completed_at).sort(byDue);
+  const open = todos.filter((t) => !t.completed).sort(byDue);
+  const done = todos.filter((t) => t.completed).sort(byDue);
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -59,7 +67,7 @@ export default async function TodosPage({
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · 7-day action items from L10
+          {team.name} · expand to read · pencil to edit
         </p>
       </header>
 
@@ -70,11 +78,12 @@ export default async function TodosPage({
         <List>
           {open.length === 0 && <Empty>No open to-dos.</Empty>}
           {open.map((t) => (
-            <Row
+            <TodoListRow
               key={t.id}
               teamId={tid}
               todo={t}
               ownerName={ownerName(t.owner_id)}
+              members={members}
             />
           ))}
         </List>
@@ -85,11 +94,12 @@ export default async function TodosPage({
           <SectionHeader>Done ({done.length})</SectionHeader>
           <List>
             {done.map((t) => (
-              <Row
+              <TodoListRow
                 key={t.id}
                 teamId={tid}
                 todo={t}
                 ownerName={ownerName(t.owner_id)}
+                members={members}
               />
             ))}
           </List>
@@ -99,74 +109,9 @@ export default async function TodosPage({
   );
 }
 
-function Row({
-  teamId,
-  todo,
-  ownerName,
-}: {
-  teamId: string;
-  todo: { id: string } & TodoDoc;
-  ownerName: string;
-}) {
-  const renameTitle = updateTodoTitle.bind(null, teamId, todo.id);
-  const updateDesc = updateTodoDescription.bind(null, teamId, todo.id);
-  const remove = deleteTodo.bind(null, teamId, todo.id);
-  const completed = !!todo.completed_at;
-  return (
-    <div className="group grid grid-cols-12 gap-3 px-4 py-3 text-sm">
-      <div className="col-span-1 flex items-start pt-0.5">
-        <TodoCheckbox teamId={teamId} todoId={todo.id} completed={completed} />
-      </div>
-      <div className="col-span-7 min-w-0">
-        <div>
-          <EditableText
-            value={todo.title}
-            onSave={renameTitle}
-            className={completed ? "text-zinc-500 line-through" : ""}
-          />
-          {todo.visibility === "private" && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-500">
-              <Lock className="h-3 w-3" /> private
-            </span>
-          )}
-        </div>
-        {todo.description && (
-          <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-            <EditableText
-              value={todo.description}
-              onSave={updateDesc}
-              placeholder="Add description..."
-              multiline={true}
-            />
-          </div>
-        )}
-      </div>
-      <div className="col-span-2 text-zinc-600 dark:text-zinc-400">
-        {ownerName}
-      </div>
-      <div className="col-span-1 text-xs text-zinc-600 dark:text-zinc-400">
-        {todo.due_date
-          ? formatDateOnly(todo.due_date)
-          : "—"}
-      </div>
-      <div className="col-span-1 justify-self-end">
-        <form action={remove}>
-          <button
-            type="submit"
-            className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
-            aria-label="Delete to-do"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
+    <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
       {children}
     </h2>
   );
@@ -174,7 +119,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function List({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+    <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
       {children}
     </div>
   );
@@ -200,18 +145,18 @@ function AddTodoForm({
   return (
     <form
       action={action}
-      className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 grid grid-cols-1 md:grid-cols-6 gap-3"
+      className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-300 bg-white p-4 md:grid-cols-6 dark:border-zinc-800 dark:bg-zinc-900"
     >
       <input
         name="title"
         placeholder="To-Do (one line)"
         required
-        className="md:col-span-3 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-3"
       />
       <select
         name="owner_id"
         defaultValue={defaultOwnerId}
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
       >
         {members.map((m) => (
           <option key={m.user_id} value={m.user_id}>
@@ -222,12 +167,12 @@ function AddTodoForm({
       <input
         name="due_date"
         type="date"
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
       />
       <select
         name="visibility"
         defaultValue="team"
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1.5 text-sm"
+        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
@@ -236,7 +181,7 @@ function AddTodoForm({
         name="description"
         placeholder="Add notes or context (optional)"
         rows={2}
-        className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm resize-none"
+        className="resize-none rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-6"
       />
       <AddTodoSubmit />
     </form>

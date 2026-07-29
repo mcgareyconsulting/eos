@@ -18,7 +18,6 @@ import {
   type IssueStatus,
   type IssueType,
 } from "@/lib/issues";
-import { StatusActions } from "./status-actions";
 import { EditIssuePopover } from "./edit-issue-popover";
 import { IssueDetailTrigger } from "./issue-detail-modal";
 import { deleteIssue } from "./actions";
@@ -161,12 +160,12 @@ function IssueRow({
     <div className="group flex items-center gap-3 px-4 py-3 text-sm">
       {showVoteCount && (
         <div
-          className="flex w-10 shrink-0 flex-col items-center gap-0.5 text-zinc-500"
-          title="Team votes from L10 (read-only here)"
+          className="flex w-12 shrink-0 flex-col items-center gap-0.5 rounded-md bg-zinc-50 px-1.5 py-1 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-950/50 dark:ring-zinc-800"
+          title="Team votes from L10 (read-only — vote in the meeting)"
         >
-          <ThumbsUp className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
-            {issue.votes ?? 0}
+          <ThumbsUp className="h-3.5 w-3.5 text-zinc-500" />
+          <span className="text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+            {Number(issue.votes ?? 0)}
           </span>
         </div>
       )}
@@ -211,7 +210,6 @@ function IssueRow({
           priority={issue.priority}
           description={issue.description}
         />
-        <StatusActions teamId={teamId} issueId={issue.id} status={issue.status} />
         <form action={remove}>
           <button
             type="submit"

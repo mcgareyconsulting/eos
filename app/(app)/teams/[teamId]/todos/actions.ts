@@ -164,6 +164,56 @@ export async function updateTodoDescription(
   revalidatePath(pathFor(teamId));
 }
 
+// Full meta edit from the To-Dos tab drawer (list is view-first). Title
+// required; empty description clears to null. Mirrors to Google Tasks using
+// the (possibly new) owner.
+export async function updateTodoMeta(
+  teamId: string,
+  todoId: string,
+  formData: FormData,
+) {
+  const { uid, db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) throw new Error("Title required");
+
+  const owner_id = String(formData.get("owner_id") ?? "").trim() || uid;
+  const due_date = String(formData.get("due_date") ?? "").trim() || null;
+  const description =
+    String(formData.get("description") ?? "").trim() || null;
+  const visibilityRaw = String(formData.get("visibility") ?? "team");
+  const visibility: Visibility = VISIBILITIES.includes(
+    visibilityRaw as Visibility,
+  )
+    ? (visibilityRaw as Visibility)
+    : "team";
+
+  await db.collection("todos").doc(todoId).update({
+    title,
+    owner_id,
+    due_date,
+    description,
+    visibility,
+  });
+
+  const taskId = await upsertTaskForTodo(
+    owner_id,
+    mirrorFrom(data, {
+      title,
+      notes: description,
+      dueDate: due_date,
+    }),
+    data.google_task_id,
+  );
+  if (taskId && taskId !== data.google_task_id) {
+    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+  }
+  revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
+}
+
 export async function deleteTodo(teamId: string, todoId: string) {
   const { db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);

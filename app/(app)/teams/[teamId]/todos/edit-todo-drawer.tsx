@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X } from "lucide-react";
+import { normalizeDescription } from "@/lib/csv-import";
 import { updateTodoMeta } from "./actions";
 
 type Member = { user_id: string; full_name: string };
@@ -30,7 +31,9 @@ export function EditTodoDrawer({
 
   const defaultOwner = todo.owner_id ?? members[0]?.user_id ?? "";
   const [title, setTitle] = useState(todo.title);
-  const [description, setDescription] = useState(todo.description ?? "");
+  const [description, setDescription] = useState(
+    normalizeDescription(todo.description),
+  );
   const [ownerId, setOwnerId] = useState(defaultOwner);
   const [due, setDue] = useState(todo.due_date ?? "");
   const [visibility, setVisibility] = useState<"team" | "private">(
@@ -40,7 +43,7 @@ export function EditTodoDrawer({
   useEffect(() => {
     if (!open) return;
     setTitle(todo.title);
-    setDescription(todo.description ?? "");
+    setDescription(normalizeDescription(todo.description));
     setOwnerId(todo.owner_id ?? members[0]?.user_id ?? "");
     setDue(todo.due_date ?? "");
     setVisibility(todo.visibility);

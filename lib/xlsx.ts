@@ -76,7 +76,12 @@ function decodeEntities(s: string): string {
     .replace(/&apos;/g, "'")
     .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
-    .replace(/&amp;/g, "&");
+    .replace(/&amp;/g, "&")
+    // OOXML encodes control chars in shared strings as _xHHHH_ (e.g. newline
+    // is _x000A_). Without this, multiline descriptions collapse to one line.
+    .replace(/_x([0-9A-Fa-f]{4})_/g, (_, h) =>
+      String.fromCharCode(parseInt(h, 16)),
+    );
 }
 
 // OOXML may be written with or without namespace prefixes — `<sheet>` and

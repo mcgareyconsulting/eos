@@ -148,6 +148,27 @@ export function cell(
   return "";
 }
 
+// Description fields from ninety exports often lose the blank line between a
+// short label and the body (e.g. CliftonStrengths: "AnalyticalBecause of
+// your strengths…" instead of "Analytical\n\nBecause…"). Restore that break
+// for display/import; leave real multiline text alone.
+//
+// Also normalizes CRLF → LF so `whitespace-pre-wrap` renders cleanly.
+export function normalizeDescription(raw: string | null | undefined): string {
+  if (raw == null) return "";
+  let s = String(raw).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!s.includes("\n")) {
+    // One-word (optional hyphenated) label glued to a capitalized body.
+    // "Because/You/Your/Perhaps/Sometimes/Chances" covers the strengths copy
+    // and similar labeled notes without splitting normal titles.
+    const m = s.match(
+      /^([A-Z][A-Za-z]{1,24}(?:-[A-Z][A-Za-z]{1,24})?)((?:Because|You|Your|Perhaps|Sometimes|Chances)\b[\s\S]+)$/,
+    );
+    if (m) s = `${m[1]}\n\n${m[2]}`;
+  }
+  return s.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Dates
 // ---------------------------------------------------------------------------

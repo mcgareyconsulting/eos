@@ -90,11 +90,10 @@ export function RockRow({
             {rock.title}
           </RockDetailTrigger>
 
-          {!expanded && (
+          {!expanded && (rock.quarter || milestones.length > 0) && (
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {[
                 rock.quarter || null,
-                hasDescription ? "Has description" : null,
                 milestones.length > 0
                   ? `${doneCount}/${milestones.length} milestones`
                   : null,

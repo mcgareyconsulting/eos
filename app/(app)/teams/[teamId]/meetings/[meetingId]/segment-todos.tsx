@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Trash2, Lock, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -9,16 +9,21 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { addDays, formatDateOnly, toDateString } from "@/lib/dates";
-import { TodoCheckbox } from "../../todos/todo-row";
-import { addTodo, deleteTodo } from "../../todos/actions";
+import { addDays, toDateString } from "@/lib/dates";
+import { addTodo } from "../../todos/actions";
+import {
+  TodoListRow,
+  type TodoListItem,
+} from "../../todos/todo-list-row";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
+// description is included so L10 rows mirror the To-Dos tab expand/edit UX.
 type TodoDoc = {
   id: string;
   team_id: string;
   title: string;
+  description?: string | null;
   owner_id: string | null;
   due_date: string | null;
   completed_at: { toDate: () => Date } | boolean | null;
@@ -27,6 +32,18 @@ type TodoDoc = {
 };
 
 type Member = { user_id: string; full_name: string };
+
+function toListItem(t: TodoDoc): TodoListItem {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description ?? null,
+    owner_id: t.owner_id,
+    due_date: t.due_date,
+    completed: !!t.completed_at,
+    visibility: t.visibility === "private" ? "private" : "team",
+  };
+}
 
 export function SegmentTodos({
   teamId,
@@ -93,7 +110,8 @@ export function SegmentTodos({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          Anything not done after 1 week → drop to Issues
+          Anything not done after 1 week → drop to Issues · click title to
+          expand · pencil to edit
         </div>
         <QuickAddIssue
           teamId={teamId}
@@ -112,7 +130,7 @@ export function SegmentTodos({
         defaultOwnerId={userId}
       />
 
-      <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+      <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {open.length === 0 && done.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
             No to-dos.
@@ -124,24 +142,26 @@ export function SegmentTodos({
           </div>
         )}
         {open.map((t) => (
-          <Row
+          <TodoListRow
             key={t.id}
             teamId={teamId}
-            todo={t}
+            todo={toListItem(t)}
             ownerName={ownerName(t.owner_id)}
+            members={members}
           />
         ))}
         {done.length > 0 && (
-          <div className="px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-500 bg-zinc-50 dark:bg-zinc-950">
+          <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
             Done
           </div>
         )}
         {done.map((t) => (
-          <Row
+          <TodoListRow
             key={t.id}
             teamId={teamId}
-            todo={t}
+            todo={toListItem(t)}
             ownerName={ownerName(t.owner_id)}
+            members={members}
           />
         ))}
       </div>
@@ -151,7 +171,8 @@ export function SegmentTodos({
 
 // Compact in-meeting capture: title + owner + due, team visibility, tagged
 // with the meeting it came from. Deliberately smaller than the To-Dos page
-// form — private visibility and long descriptions are after-meeting work.
+// form — private visibility and long descriptions are after-meeting work
+// (or the pencil on a row).
 function AddTodoInline({
   teamId,
   meetingId,
@@ -232,68 +253,5 @@ function AddTodoInline({
       </button>
       {error && <span className="text-[10px] text-red-600">{error}</span>}
     </form>
-  );
-}
-
-function Row({
-  teamId,
-  todo,
-  ownerName,
-}: {
-  teamId: string;
-  todo: TodoDoc;
-  ownerName: string;
-}) {
-  const remove = deleteTodo.bind(null, teamId, todo.id);
-  const completed = !!todo.completed_at;
-  return (
-    <div className="group grid grid-cols-12 gap-3 px-4 py-3 items-center text-sm">
-      <div className="col-span-1">
-        <TodoCheckbox
-          teamId={teamId}
-          todoId={todo.id}
-          completed={completed}
-        />
-      </div>
-      <div className="col-span-7 min-w-0">
-        <span
-          className={
-            completed
-              ? "text-zinc-500 line-through"
-              : ""
-          }
-        >
-          {todo.title}
-        </span>
-        {todo.visibility === "private" && (
-          <span className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-500">
-            <Lock className="h-3 w-3" /> private
-          </span>
-        )}
-      </div>
-      <div className="col-span-2 text-zinc-600 dark:text-zinc-400">
-        {ownerName}
-      </div>
-      <div className="col-span-1 text-xs text-zinc-600 dark:text-zinc-400">
-        {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
-      </div>
-      <div className="col-span-1 justify-self-end">
-        <form
-          action={remove}
-          onSubmit={(e) => {
-            if (!window.confirm("Delete this to-do? This can't be undone."))
-              e.preventDefault();
-          }}
-        >
-          <button
-            type="submit"
-            className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
-            aria-label="Delete to-do"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
-    </div>
   );
 }

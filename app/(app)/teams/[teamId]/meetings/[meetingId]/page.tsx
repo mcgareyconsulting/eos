@@ -626,6 +626,7 @@ async function SegmentContent({
         id: d.id,
         team_id: x.team_id,
         title: x.title,
+        description: x.description ?? null,
         owner_id: x.owner_id ?? null,
         due_date: x.due_date ?? null,
         completed_at: x.completed_at ? true : null,

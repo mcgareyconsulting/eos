@@ -55,6 +55,14 @@ describe("parseSharedStrings", () => {
     const xml = "<sst><si><t/></si><si><t>Second</t></si></sst>";
     assert.deepEqual(parseSharedStrings(xml), ["", "Second"]);
   });
+
+  test("decodes OOXML _xHHHH_ escapes (newline, etc.)", () => {
+    const xml =
+      "<sst><si><t>Analytical_x000A__x000A_Because of your strengths</t></si></sst>";
+    assert.deepEqual(parseSharedStrings(xml), [
+      "Analytical\n\nBecause of your strengths",
+    ]);
+  });
 });
 
 describe("parseSheetXml", () => {

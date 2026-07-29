@@ -5,6 +5,7 @@ import {
   detectDelimiter,
   importDocId,
   inferUnit,
+  normalizeDescription,
   normalizeKey,
   normalizePersonKey,
   normalizeQuarter,
@@ -276,5 +277,25 @@ describe("importDocId", () => {
 describe("normalizeKey", () => {
   test("links milestones to rocks despite punctuation drift", () => {
     assert.equal(normalizeKey("Launch Mobile App v2.0"), normalizeKey("launch mobile app v2 0"));
+  });
+});
+
+describe("normalizeDescription", () => {
+  test("inserts a blank line when a label is glued to a Because-paragraph", () => {
+    const raw =
+      "AnalyticalBecause of your strengths, you may earnestly apply yourself.";
+    assert.equal(
+      normalizeDescription(raw),
+      "Analytical\n\nBecause of your strengths, you may earnestly apply yourself.",
+    );
+  });
+
+  test("leaves already-multiline text alone", () => {
+    const raw = "Analytical\n\nBecause of your strengths.";
+    assert.equal(normalizeDescription(raw), raw);
+  });
+
+  test("normalizes CRLF", () => {
+    assert.equal(normalizeDescription("Line one\r\nLine two"), "Line one\nLine two");
   });
 });

@@ -67,7 +67,7 @@ export default async function TodosPage({
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · expand to read · pencil to edit
+          {team.name} · click a title to expand · pencil to edit
         </p>
       </header>
 

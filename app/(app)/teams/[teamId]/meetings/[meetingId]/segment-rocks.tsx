@@ -377,8 +377,6 @@ function RockMeetingRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const doneCount = milestones.filter((m) => m.completed).length;
-  const hasDescription =
-    !!rock.description && rock.description.trim().length > 0;
 
   return (
     <div className="group px-4 py-2.5 text-sm">
@@ -414,16 +412,9 @@ function RockMeetingRow({
             {rock.title}
           </RockDetailTrigger>
 
-          {!expanded && (hasDescription || milestones.length > 0) && (
+          {!expanded && milestones.length > 0 && (
             <p className="mt-0.5 truncate text-xs text-zinc-500">
-              {[
-                hasDescription ? "Has description" : null,
-                milestones.length > 0
-                  ? `${doneCount}/${milestones.length} milestones`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+              {doneCount}/{milestones.length} milestones
             </p>
           )}
         </div>

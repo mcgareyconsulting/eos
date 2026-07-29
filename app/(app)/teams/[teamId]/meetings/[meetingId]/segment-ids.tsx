@@ -164,8 +164,6 @@ export function SegmentIDS({
               meetingId,
               isDiscussing ? null : i.id,
             );
-            const hasDescription =
-              !!i.description && i.description.trim().length > 0;
             return (
               <div
                 key={i.id}
@@ -203,11 +201,6 @@ export function SegmentIDS({
                     >
                       {STATUS_LABEL[i.status]}
                     </span>
-                    {hasDescription && (
-                      <span className="text-[11px] text-zinc-400">
-                        Has description
-                      </span>
-                    )}
                   </div>
                   <IssueDetailTrigger
                     issue={i}
@@ -291,8 +284,6 @@ export function SegmentIDS({
           )}
           {rankedLong.map((i) => {
             const remove = deleteIssue.bind(null, teamId, i.id);
-            const hasDescription =
-              !!i.description && i.description.trim().length > 0;
             return (
               <div
                 key={i.id}
@@ -312,11 +303,6 @@ export function SegmentIDS({
                     >
                       {STATUS_LABEL[i.status]}
                     </span>
-                    {hasDescription && (
-                      <span className="text-[11px] text-zinc-400">
-                        Has description
-                      </span>
-                    )}
                   </div>
                   <IssueDetailTrigger
                     issue={i}

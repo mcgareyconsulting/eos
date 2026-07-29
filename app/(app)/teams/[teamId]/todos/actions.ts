@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import { normalizeDescription } from "@/lib/csv-import";
 import {
   upsertTaskForTodo,
   deleteTaskForTodo,
@@ -43,7 +44,8 @@ export async function addTodo(teamId: string, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const due_date = String(formData.get("due_date") ?? "").trim() || null;
-  const description = String(formData.get("description") ?? "").trim() || null;
+  const description =
+    normalizeDescription(String(formData.get("description") ?? "")) || null;
   const visibilityRaw = String(formData.get("visibility") ?? "team");
   const visibility: Visibility = VISIBILITIES.includes(
     visibilityRaw as Visibility,
@@ -182,7 +184,7 @@ export async function updateTodoMeta(
   const owner_id = String(formData.get("owner_id") ?? "").trim() || uid;
   const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
-    String(formData.get("description") ?? "").trim() || null;
+    normalizeDescription(String(formData.get("description") ?? "")) || null;
   const visibilityRaw = String(formData.get("visibility") ?? "team");
   const visibility: Visibility = VISIBILITIES.includes(
     visibilityRaw as Visibility,

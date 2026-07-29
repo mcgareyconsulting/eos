@@ -153,9 +153,6 @@ function IssueRow({
 }) {
   const remove = deleteIssue.bind(null, teamId, issue.id);
 
-  const hasDescription =
-    !!issue.description && issue.description.trim().length > 0;
-
   return (
     <div className="group flex items-center gap-3 px-4 py-3 text-sm">
       {showVoteCount && (
@@ -184,9 +181,6 @@ function IssueRow({
           >
             {STATUS_LABEL[issue.status]}
           </span>
-          {hasDescription && (
-            <span className="text-[11px] text-zinc-400">Has description</span>
-          )}
         </div>
         <IssueDetailTrigger
           issue={issue}

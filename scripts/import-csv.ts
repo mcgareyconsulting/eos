@@ -62,6 +62,7 @@ import {
   normalizeKey,
   normalizePersonKey,
   normalizeQuarter,
+  normalizeDescription,
   normalizeRockStatus,
   normalizeRockType,
   parseDateOnly,
@@ -509,7 +510,8 @@ async function importScorecard(
       owner_id: ownerId,
       group: cell(row, table.headers, "Group Name", "Group", "Section") || null,
       // Not rendered today; kept so the note survives if the UI grows a field.
-      description: cell(row, table.headers, "Description") || null,
+      description:
+        normalizeDescription(cell(row, table.headers, "Description")) || null,
       sort_order: i,
       import_source: "csv",
       ...(isNew ? { created_at: FieldValue.serverTimestamp() } : {}),
@@ -595,7 +597,8 @@ async function importRocks(
     await ctx.writer.set(["rocks", rockId], {
       team_id: ctx.teamId,
       title,
-      description: cell(row, table.headers, "Description") || null,
+      description:
+        normalizeDescription(cell(row, table.headers, "Description")) || null,
       status,
       rock_type: normalizeRockType(cell(row, table.headers, "Level", "Type", "Rock Type")),
       quarter:
@@ -746,7 +749,8 @@ async function importMilestones(
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description: cell(row, table.headers, "Description") || null,
+      description:
+        normalizeDescription(cell(row, table.headers, "Description")) || null,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -843,7 +847,10 @@ async function importTodos(
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description: cell(row, table.headers, "Description", "Notes") || null,
+      description:
+        normalizeDescription(
+          cell(row, table.headers, "Description", "Notes"),
+        ) || null,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -943,7 +950,10 @@ async function importIssues(
     await ctx.writer.set(["issues", issueId], {
       team_id: ctx.teamId,
       title,
-      description: cell(row, table.headers, "Description", "Notes") || null,
+      description:
+        normalizeDescription(
+          cell(row, table.headers, "Description", "Notes"),
+        ) || null,
       owner_id: ownerId,
       // Don't clobber live vote totals on re-import of an existing issue.
       ...(isNew ? { votes: 0 } : {}),

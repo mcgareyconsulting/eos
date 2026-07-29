@@ -84,16 +84,20 @@ export function RockDetailModal({
   const type = normalizeRockType(rock.rock_type);
   const status = isRockStatus(rock.status) ? rock.status : null;
   const doneCount = milestones.filter((m) => m.completed).length;
+  const hasDescription =
+    !!rock.description && rock.description.trim().length > 0;
 
   return (
-    <DetailModal ariaLabel={`Rock: ${rock.title}`} onClose={onClose}>
-      <div className="space-y-4 pr-6">
-        <header>
-          <h2 className="text-base font-semibold leading-snug">{rock.title}</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+    <DetailModal ariaLabel={`Rock: ${rock.title}`} onClose={onClose} size="lg">
+      <div className="space-y-6 pr-6">
+        <header className="space-y-3">
+          <h2 className="text-lg font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
+            {rock.title}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
+                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
                 ROCK_TYPE_STYLES[type],
               )}
             >
@@ -102,7 +106,7 @@ export function RockDetailModal({
             {status && (
               <span
                 className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
                   STATUS_STYLES[status],
                 )}
               >
@@ -112,51 +116,71 @@ export function RockDetailModal({
           </div>
         </header>
 
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <Fact label="Owner">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[9px] font-semibold text-hpb-blue ring-1 ring-inset ring-hpb-blue/30 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:ring-hpb-gold/30">
-                {initials(ownerName) || "?"}
+        <section
+          aria-label="Rock details"
+          className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
+        >
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Fact label="Owner">
+              <span className="inline-flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue ring-1 ring-inset ring-hpb-blue/30 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:ring-hpb-gold/30">
+                  {initials(ownerName) || "?"}
+                </span>
+                <span className="font-medium">{ownerName}</span>
               </span>
-              {ownerName}
-            </span>
-          </Fact>
-          <Fact label="Due">
-            {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
-          </Fact>
-          <Fact label="Quarter">{rock.quarter || "—"}</Fact>
-          <Fact label="Milestones">
-            {milestones.length === 0
-              ? "None"
-              : `${doneCount}/${milestones.length} done`}
-          </Fact>
-        </dl>
+            </Fact>
+            <Fact label="Due">
+              <span className="tabular-nums">
+                {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
+              </span>
+            </Fact>
+            <Fact label="Quarter">
+              <span>{rock.quarter || "—"}</span>
+            </Fact>
+            <Fact label="Milestones">
+              {milestones.length === 0
+                ? "None"
+                : `${doneCount} of ${milestones.length} done`}
+            </Fact>
+          </dl>
+        </section>
 
-        {rock.description && rock.description.trim().length > 0 && (
-          <div>
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-              Description
-            </h3>
-            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
-              {rock.description}
-            </p>
-          </div>
-        )}
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Description
+          </h3>
+          {hasDescription ? (
+            <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                {rock.description}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">No description.</p>
+          )}
+        </section>
 
-        {milestones.length > 0 && (
-          <div>
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-              Milestones
-            </h3>
-            <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Milestones
+            {milestones.length > 0 && (
+              <span className="ml-1.5 font-normal normal-case tracking-normal text-zinc-400">
+                ({doneCount}/{milestones.length})
+              </span>
+            )}
+          </h3>
+          {milestones.length === 0 ? (
+            <p className="text-sm text-zinc-500">No milestones.</p>
+          ) : (
+            <ul className="divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
               {milestones.map((m) => (
                 <li
                   key={m.id}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm"
+                  className="flex items-start gap-3 bg-white px-4 py-3 text-sm dark:bg-zinc-900"
                 >
                   <span
                     className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
                       m.completed
                         ? "bg-hpb-green text-white ring-hpb-green"
                         : "bg-transparent ring-zinc-300 dark:ring-zinc-600",
@@ -164,27 +188,27 @@ export function RockDetailModal({
                   >
                     {m.completed && <Check className="h-3 w-3" />}
                   </span>
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate",
-                      m.completed && "text-zinc-500 line-through",
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div
+                      className={cn(
+                        "leading-snug",
+                        m.completed && "text-zinc-500 line-through",
+                      )}
+                    >
+                      {m.title}
+                    </div>
+                    {m.owner_name && (
+                      <div className="text-xs text-zinc-500">{m.owner_name}</div>
                     )}
-                  >
-                    {m.title}
-                  </span>
-                  {m.owner_name && (
-                    <span className="shrink-0 text-xs text-zinc-500">
-                      {m.owner_name}
-                    </span>
-                  )}
-                  <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+                  </div>
+                  <span className="shrink-0 pt-0.5 text-xs tabular-nums text-zinc-500">
                     {m.due_date ? formatDateOnly(m.due_date) : "—"}
                   </span>
                 </li>
               ))}
             </ul>
-          </div>
-        )}
+          )}
+        </section>
       </div>
     </DetailModal>
   );
@@ -198,11 +222,13 @@ function Fact({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <dt className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
         {label}
       </dt>
-      <dd className="mt-0.5 text-zinc-800 dark:text-zinc-200">{children}</dd>
+      <dd className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
+        {children}
+      </dd>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
-import { Users } from "lucide-react";
+import { ChevronRight, Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import { formatDateOnly } from "@/lib/dates";
@@ -21,6 +21,7 @@ import { isTeamRock } from "../../rocks/rock-type";
 import { RockDetailTrigger } from "../../rocks/rock-detail-modal";
 import { updateRockDescription } from "../../rocks/actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { cn } from "@/lib/utils";
 
 type RockDoc = {
   id: string;
@@ -333,62 +334,134 @@ export function SegmentRocks({
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {g.rocks.map((r) => (
-              <div
+              <RockMeetingRow
                 key={r.id}
-                className="group flex items-start gap-4 px-4 py-3 text-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <RockDetailTrigger
-                    rock={r}
-                    ownerName={g.title}
-                    milestones={(milestonesByRock.get(r.id) ?? []).map(
-                      (m) => ({
-                        id: m.id,
-                        title: m.title,
-                        due_date: m.due_date,
-                        completed: m.completed,
-                        owner_name: m.owner_id
-                          ? (nameById.get(m.owner_id) ?? null)
-                          : null,
-                      }),
-                    )}
-                    className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
-                  >
-                    {r.title}
-                  </RockDetailTrigger>
-                  <EditableText
-                    value={r.description ?? ""}
-                    onSave={updateRockDescription.bind(null, teamId, r.id)}
-                    multiline
-                    placeholder="Add a description"
-                    className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400"
-                  />
-                  <MilestonesDisclosure
-                    teamId={teamId}
-                    rockId={r.id}
-                    rockOwnerId={r.owner_id}
-                    members={members}
-                    milestones={milestonesByRock.get(r.id) ?? []}
-                    defaultDue={defaultDue}
-                  />
-                </div>
-                {/* Fixed-width date + status so rows line up as columns
-                    instead of floating in the card's width. */}
-                <div className="w-20 shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
-                  {r.due_date ? formatDateOnly(r.due_date) : "—"}
-                </div>
-                <div className="flex w-28 shrink-0 justify-end">
-                  <StatusPopover
-                    teamId={teamId}
-                    rockId={r.id}
-                    status={r.status}
-                  />
-                </div>
-              </div>
+                rock={r}
+                teamId={teamId}
+                ownerName={g.title}
+                members={members}
+                milestones={milestonesByRock.get(r.id) ?? []}
+                defaultDue={defaultDue}
+                nameById={nameById}
+              />
             ))}
           </div>
         </section>
       ))}
+    </div>
+  );
+}
+
+// Collapsed row = title + due + status only. Long descriptions and milestones
+// live behind expand so the L10 list stays scannable during speaking rounds.
+function RockMeetingRow({
+  rock,
+  teamId,
+  ownerName,
+  members,
+  milestones,
+  defaultDue,
+  nameById,
+}: {
+  rock: RockDoc;
+  teamId: string;
+  ownerName: string;
+  members: Member[];
+  milestones: MilestoneSerialized[];
+  defaultDue: string;
+  nameById: Map<string, string>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const doneCount = milestones.filter((m) => m.completed).length;
+  const hasDescription =
+    !!rock.description && rock.description.trim().length > 0;
+
+  return (
+    <div className="group px-4 py-2.5 text-sm">
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Collapse rock" : "Expand rock"}
+          className="mt-0.5 shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        >
+          <ChevronRight
+            className={cn(
+              "h-4 w-4 transition-transform",
+              expanded && "rotate-90",
+            )}
+          />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <RockDetailTrigger
+            rock={rock}
+            ownerName={ownerName}
+            milestones={milestones.map((m) => ({
+              id: m.id,
+              title: m.title,
+              due_date: m.due_date,
+              completed: m.completed,
+              owner_name: m.owner_id ? (nameById.get(m.owner_id) ?? null) : null,
+            }))}
+            className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+          >
+            {rock.title}
+          </RockDetailTrigger>
+
+          {!expanded && (hasDescription || milestones.length > 0) && (
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {[
+                hasDescription ? "Has description" : null,
+                milestones.length > 0
+                  ? `${doneCount}/${milestones.length} milestones`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+        </div>
+
+        {/* Fixed-width date + status so rows line up as columns. */}
+        <div className="w-20 shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+          {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
+        </div>
+        <div className="flex w-28 shrink-0 justify-end">
+          <StatusPopover
+            teamId={teamId}
+            rockId={rock.id}
+            status={rock.status}
+          />
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 ml-7 space-y-3 border-l border-zinc-200 pl-4 dark:border-zinc-800">
+          <div>
+            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Description
+            </h4>
+            <EditableText
+              value={rock.description ?? ""}
+              onSave={updateRockDescription.bind(null, teamId, rock.id)}
+              multiline
+              placeholder="Add a description"
+              className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
+            />
+          </div>
+          <MilestonesDisclosure
+            teamId={teamId}
+            rockId={rock.id}
+            rockOwnerId={rock.owner_id}
+            members={members}
+            milestones={milestones}
+            defaultDue={defaultDue}
+            alwaysOpen
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { StatusPopover } from "./status-popover";
 import { MilestonesDisclosure, type MilestoneSerialized } from "./milestones";
 import { OwnerFilter } from "./owner-filter";
 import { AddRockDrawer } from "./add-rock-drawer";
-import { deleteRock, updateRockTitle } from "./actions";
+import { deleteRock, updateRockDescription, updateRockTitle } from "./actions";
 import { isTeamRock } from "./rock-type";
 
 type RockDoc = {
@@ -214,6 +214,7 @@ export default async function RocksPage({
 
   function renderRow(r: RockWithId) {
     const renameTitle = updateRockTitle.bind(null, teamId, r.id);
+    const editDescription = updateRockDescription.bind(null, teamId, r.id);
     const remove = deleteRock.bind(null, teamId, r.id);
     const milestones = milestonesByRock.get(r.id) ?? [];
     return (
@@ -227,11 +228,13 @@ export default async function RocksPage({
             onSave={renameTitle}
             className="font-medium"
           />
-          {r.description && (
-            <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 line-clamp-1">
-              {r.description}
-            </div>
-          )}
+          <EditableText
+            value={r.description ?? ""}
+            onSave={editDescription}
+            multiline
+            placeholder="Add a description"
+            className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5"
+          />
           <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
             {r.quarter}
           </div>
@@ -255,7 +258,6 @@ export default async function RocksPage({
           teamId={teamId}
           rockId={r.id}
           rockOwnerId={r.owner_id}
-          rockDescription={r.description}
           members={members}
           milestones={milestones}
           defaultDue={eoq}

@@ -46,8 +46,23 @@ export default async function ScorecardPage({
     .where("team_id", "==", tid)
     .get();
 
+  // Project explicitly rather than spreading the raw doc: imported metrics
+  // carry extra fields (created_at is a Firestore Timestamp) that are not
+  // serializable across the server/client boundary and crash the render.
   const metrics = metricsSnap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as MetricDoc) }))
+    .map((d) => {
+      const x = d.data() as MetricDoc;
+      return {
+        id: d.id,
+        name: x.name,
+        unit: x.unit,
+        goal: x.goal ?? null,
+        direction: x.direction,
+        owner_id: x.owner_id ?? null,
+        group: x.group ?? null,
+        sort_order: x.sort_order ?? 0,
+      };
+    })
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 
   const weeks = lastNMondays(weekRange).map(toDateString); // newest first

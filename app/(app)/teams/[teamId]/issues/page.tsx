@@ -22,12 +22,27 @@ export default async function IssuesPage({
       .get(),
   ]);
 
-  const initialIssues = issuesSnap.docs.map(
-    (d) => ({ id: d.id, ...d.data() }) as IssueDoc,
-  );
-  const initialVotes = votesSnap.docs.map(
-    (d) => ({ id: d.id, ...d.data() }) as VoteDoc,
-  );
+  // Project explicitly rather than spreading the raw doc: issues carry a
+  // created_at Timestamp that is not serializable across the server/client
+  // boundary and would crash the render.
+  const initialIssues: IssueDoc[] = issuesSnap.docs.map((d) => {
+    const x = d.data();
+    return {
+      id: d.id,
+      team_id: x.team_id,
+      title: x.title,
+      description: x.description ?? null,
+      owner_id: x.owner_id ?? null,
+      priority: x.priority ?? null,
+      votes: x.votes ?? 0,
+      type: x.type,
+      status: x.status,
+    };
+  });
+  const initialVotes: VoteDoc[] = votesSnap.docs.map((d) => {
+    const x = d.data();
+    return { id: d.id, issue_id: x.issue_id, count: x.count ?? null };
+  });
 
   return (
     <div className="space-y-6">

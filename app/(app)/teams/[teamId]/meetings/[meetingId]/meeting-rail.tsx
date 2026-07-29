@@ -30,8 +30,9 @@ const CONFIRM_WINDOW_MS = 4000;
 // Live orchestrator chrome, rendered as the meeting's own left rail. The
 // active stage + timer live on the meeting doc and stream to every client
 // (last-write-wins). Each user may peek at another stage locally (?view=)
-// without moving the group; "following" users snap to the active stage
-// whenever it changes.
+// without moving the group; a follower left behind when someone else drives
+// the stage forward gets the same "Group is on X — Catch up" pill as a
+// deliberate peeker, rather than being pulled along automatically.
 //
 // This is a side panel rather than a bar above the content because vertical
 // space is the scarce resource during an L10 — the old full-width card pushed
@@ -121,11 +122,11 @@ export function MeetingRail({
   const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
   const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
 
-  // Followers: when the group moves to a stage we're not showing, reload the
-  // page so the new stage's content renders. (Peekers are left alone.)
-  useEffect(() => {
-    if (following && activeSegment !== viewSegment) router.refresh();
-  }, [following, activeSegment, viewSegment, router]);
+  // Followers are NOT force-navigated when someone else drives the stage
+  // forward — being pulled to a new segment mid-read is jarring. Instead
+  // `peeking` below (viewSegment !== activeSegment) goes true exactly as it
+  // would for a deliberate peek, so they see the same "Group is on X — Catch
+  // up" pill and move over on their own terms.
 
   // The meeting ending is a global event everyone should see immediately.
   useEffect(() => {
@@ -158,7 +159,13 @@ export function MeetingRail({
     });
   };
 
-  const goLive = () => router.push(pathname);
+  // Clear ?view= *and* refresh: a follower left behind has no ?view= to drop,
+  // so the push alone is a same-URL no-op and would strand them on the stale
+  // stage. refresh() re-renders the server content for both cases.
+  const goLive = () => {
+    router.push(pathname);
+    router.refresh();
+  };
   const peek = (s: Segment) =>
     s === activeSegment ? goLive() : router.push(`${pathname}?view=${s}`);
 

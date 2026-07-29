@@ -11,12 +11,14 @@ import {
   currentSpeakerUid,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import { EditableText } from "@/components/editable-text";
 import { StatusPopover } from "../../rocks/status-popover";
 import {
   MilestonesDisclosure,
   type MilestoneSerialized,
 } from "../../rocks/milestones";
 import { isTeamRock } from "../../rocks/rock-type";
+import { updateRockDescription } from "../../rocks/actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 type RockDoc = {
@@ -330,16 +332,17 @@ export function SegmentRocks({
               >
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{r.title}</div>
-                  {r.description && (
-                    <div className="mt-0.5 line-clamp-1 text-xs text-zinc-600 dark:text-zinc-400">
-                      {r.description}
-                    </div>
-                  )}
+                  <EditableText
+                    value={r.description ?? ""}
+                    onSave={updateRockDescription.bind(null, teamId, r.id)}
+                    multiline
+                    placeholder="Add a description"
+                    className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400"
+                  />
                   <MilestonesDisclosure
                     teamId={teamId}
                     rockId={r.id}
                     rockOwnerId={r.owner_id}
-                    rockDescription={r.description}
                     members={members}
                     milestones={milestonesByRock.get(r.id) ?? []}
                     defaultDue={defaultDue}

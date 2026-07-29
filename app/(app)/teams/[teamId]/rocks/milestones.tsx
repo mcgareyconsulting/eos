@@ -6,11 +6,7 @@ import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { EditableText } from "@/components/editable-text";
 import { TodoCheckbox } from "../todos/todo-row";
 import { deleteTodo } from "../todos/actions";
-import {
-  addMilestone,
-  updateMilestoneDescription,
-  updateRockDescription,
-} from "./actions";
+import { addMilestone, updateMilestoneDescription } from "./actions";
 
 // Plain-data shape passed from the Server Component. Firestore Timestamps
 // are class instances and can't cross the RSC boundary, so the parent serializes
@@ -30,7 +26,6 @@ export function MilestonesDisclosure({
   teamId,
   rockId,
   rockOwnerId,
-  rockDescription,
   members,
   milestones,
   defaultDue,
@@ -38,7 +33,6 @@ export function MilestonesDisclosure({
   teamId: string;
   rockId: string;
   rockOwnerId: string | null;
-  rockDescription?: string | null;
   members: Member[];
   milestones: MilestoneSerialized[];
   defaultDue: string;
@@ -93,20 +87,6 @@ export function MilestonesDisclosure({
 
       {open && (
         <div className="mt-2 ml-5 space-y-2 border-l border-zinc-300 dark:border-zinc-800 pl-4">
-          {rockDescription !== undefined && (
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500 mb-1">
-                Description
-              </div>
-              <EditableText
-                value={rockDescription ?? ""}
-                onSave={updateRockDescription.bind(null, teamId, rockId)}
-                multiline
-                placeholder="Add a note for whoever picks this up"
-                className="text-xs text-zinc-700 dark:text-zinc-300"
-              />
-            </div>
-          )}
           {milestones.length === 0 && (
             <p className="text-xs text-zinc-600 dark:text-zinc-400">
               No milestones yet.

@@ -18,6 +18,7 @@ import {
   type MilestoneSerialized,
 } from "../../rocks/milestones";
 import { isTeamRock } from "../../rocks/rock-type";
+import { RockDetailTrigger } from "../../rocks/rock-detail-modal";
 import { updateRockDescription } from "../../rocks/actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -219,6 +220,8 @@ export function SegmentRocks({
     meeting.absent_user_ids ?? [],
   );
 
+  const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
+
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
   for (const t of todos) {
     if (!t.source_rock_id) continue;
@@ -331,7 +334,24 @@ export function SegmentRocks({
                 className="group flex items-start gap-4 px-4 py-3 text-sm"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium">{r.title}</div>
+                  <RockDetailTrigger
+                    rock={r}
+                    ownerName={g.title}
+                    milestones={(milestonesByRock.get(r.id) ?? []).map(
+                      (m) => ({
+                        id: m.id,
+                        title: m.title,
+                        due_date: m.due_date,
+                        completed: m.completed,
+                        owner_name: m.owner_id
+                          ? (nameById.get(m.owner_id) ?? null)
+                          : null,
+                      }),
+                    )}
+                    className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                  >
+                    {r.title}
+                  </RockDetailTrigger>
                   <EditableText
                     value={r.description ?? ""}
                     onSave={updateRockDescription.bind(null, teamId, r.id)}

@@ -26,6 +26,7 @@ import {
 } from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
 import { StatusActions } from "../../issues/status-actions";
+import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
@@ -189,7 +190,13 @@ export function SegmentIDS({
                     {STATUS_LABEL[i.status]}
                   </span>
                 </div>
-                <div className="mt-1 font-medium">{i.title}</div>
+                <IssueDetailTrigger
+                  issue={i}
+                  ownerName={ownerName(i.owner_id)}
+                  className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                >
+                  {i.title}
+                </IssueDetailTrigger>
                 {i.description && (
                   <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
                     {i.description}
@@ -273,7 +280,13 @@ export function SegmentIDS({
                         {STATUS_LABEL[i.status]}
                       </span>
                     </div>
-                    <div className="mt-1 font-medium">{i.title}</div>
+                    <IssueDetailTrigger
+                      issue={i}
+                      ownerName={ownerName(i.owner_id)}
+                      className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                    >
+                      {i.title}
+                    </IssueDetailTrigger>
                     {i.description && (
                       <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
                         {i.description}

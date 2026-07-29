@@ -377,6 +377,13 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
+**Pass 12 (2026-07-29): pre-demo L10 audit + fix batch.** Full-flow audit of
+the L10 meeting (entry → segments → conclude → recap) the night before the
+client demo; the fixes shipped on the demo-prep PR. Deferred items,
+product-semantics questions (vote reset on conclude, recap source-of-truth),
+and the demo-morning checklist live in **`docs/L10_GAPS.md`** — read that
+before doing further L10 work.
+
 **Pass 11 (2026-07-13): the requirements stack (first installment) ARRIVED**
 — the client's annotated ninety.io config doc. See the Pass 11 section
 above for the full drift map. Drift-fix subagent batch ran this session

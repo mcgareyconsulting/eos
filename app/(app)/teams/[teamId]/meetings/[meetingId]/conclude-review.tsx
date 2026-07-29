@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { UserX, UserCheck } from "lucide-react";
+import { collection } from "firebase/firestore";
+import { getClientDb } from "@/lib/firebase/client";
+import { useCollection } from "@/lib/firebase/use-collection";
 import { RatingForm } from "@/components/l10/rating-form";
 import { saveMeetingNotes, rateMeeting, setAttendeeAbsence } from "../actions";
 
@@ -20,8 +23,9 @@ export function ConcludeReview({
   currentUserId,
   members,
   absentUserIds,
-  ratings,
+  ratings: initialRatings,
   notes,
+  readOnly = false,
 }: {
   teamId: string;
   meetingId: string;
@@ -30,17 +34,53 @@ export function ConcludeReview({
   absentUserIds: string[];
   ratings: MeetingRating[];
   notes: string | null;
+  /** Concluded meeting: history is browsable but attendance is frozen. */
+  readOnly?: boolean;
 }) {
+  const db = getClientDb();
+
+  // Ratings stream live — the end-of-meeting moment is everyone rating at
+  // once, and a one-shot server fetch left every screen stuck on its own
+  // stale average until the viewer submitted something themselves.
+  const ratingsQuery = useMemo(
+    () => collection(db, "meetings", meetingId, "effectiveness_scores"),
+    [db, meetingId],
+  );
+  const liveRatings = useCollection<{
+    id: string;
+    user_id?: string;
+    rating?: number;
+    notes?: string | null;
+  }>(ratingsQuery, initialRatings.map((r) => ({ id: r.user_id, ...r })));
+  const ratings: MeetingRating[] = liveRatings
+    .map((d) => ({
+      user_id: d.user_id ?? d.id,
+      rating: d.rating as number,
+      notes: d.notes ?? null,
+    }))
+    // Same malformed-doc guard as the server render — never let a bad doc
+    // poison the average into NaN.
+    .filter((r) => Number.isFinite(r.rating));
+
   // Peers = everyone on the team other than me — used for attendance only.
   const peers = members.filter((m) => m.user_id !== currentUserId);
   const myRating = ratings.find((r) => r.user_id === currentUserId) ?? null;
+  const absent = new Set(absentUserIds);
+  // Absent members' rows render "Absent", so their scores must not move the
+  // number shown next to them (mirrors the recap's average).
+  const presentRatings = ratings.filter((r) => !absent.has(r.user_id));
   const average =
-    ratings.length === 0
+    presentRatings.length === 0
       ? null
       : Math.round(
-          (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length) *
+          (presentRatings.reduce((sum, r) => sum + r.rating, 0) /
+            presentRatings.length) *
             10,
         ) / 10;
+  const ratedIds = new Set(ratings.map((r) => r.user_id));
+  const waitingOn = members.filter(
+    (m) => !absent.has(m.user_id) && !ratedIds.has(m.user_id),
+  );
 
   return (
     <div className="space-y-6">
@@ -52,10 +92,10 @@ export function ConcludeReview({
             Rate this meeting
           </h2>
           <span className="text-xs text-zinc-600 dark:text-zinc-400">
-            {ratings.length === 0
+            {presentRatings.length === 0
               ? "No ratings yet"
-              : `Avg ${average?.toFixed(1)} · ${ratings.length} ${
-                  ratings.length === 1 ? "rating" : "ratings"
+              : `Avg ${average?.toFixed(1)} · ${presentRatings.length} ${
+                  presentRatings.length === 1 ? "rating" : "ratings"
                 }`}
           </span>
         </header>
@@ -66,36 +106,57 @@ export function ConcludeReview({
           myRating={myRating}
         />
 
-        {ratings.length > 0 && (
-          <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800 pt-3">
-            <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
-              {ratings.map((r) => {
-                const member = members.find((m) => m.user_id === r.user_id);
-                return (
-                  <li
-                    key={r.user_id}
-                    className="text-zinc-700 dark:text-zinc-300"
-                    title={r.notes ?? undefined}
-                  >
-                    <span className="font-medium">
-                      {member?.full_name ?? "Member"}
-                    </span>{" "}
-                    <span className="text-hpb-blue font-semibold">
-                      {r.rating}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+        {(ratings.length > 0 || waitingOn.length > 0) && (
+          <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800 pt-3 space-y-2">
+            {ratings.length > 0 && (
+              <ul className="space-y-1 text-sm">
+                {ratings.map((r) => {
+                  const member = members.find((m) => m.user_id === r.user_id);
+                  return (
+                    <li
+                      key={r.user_id}
+                      className="text-zinc-700 dark:text-zinc-300"
+                    >
+                      <span className="font-medium">
+                        {member?.full_name ?? "Member"}
+                      </span>{" "}
+                      <span className="text-hpb-blue font-semibold">
+                        {r.rating}
+                      </span>
+                      {absent.has(r.user_id) && (
+                        <span className="ml-1 text-xs uppercase tracking-wide text-zinc-500">
+                          absent
+                        </span>
+                      )}
+                      {r.notes && (
+                        <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+                          — {r.notes}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {!readOnly && waitingOn.length > 0 && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Waiting on {waitingOn.map((m) => m.full_name).join(", ")}
+              </p>
+            )}
           </div>
         )}
       </section>
 
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-        <header className="mb-3">
+        <header className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Attendance
           </h2>
+          {readOnly && (
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              as recorded at the meeting
+            </span>
+          )}
         </header>
 
         {peers.length === 0 ? (
@@ -110,7 +171,8 @@ export function ConcludeReview({
                 teamId={teamId}
                 meetingId={meetingId}
                 peer={peer}
-                isAbsent={absentUserIds.includes(peer.user_id)}
+                isAbsent={absent.has(peer.user_id)}
+                readOnly={readOnly}
               />
             ))}
           </div>
@@ -148,6 +210,10 @@ function MeetingRatingWidget({
   );
 }
 
+// Debounce for notes autosave — long enough to not fire mid-sentence, short
+// enough that clicking Finish right after typing can't lose more than this.
+const NOTES_AUTOSAVE_MS = 1500;
+
 function NotesCard({
   teamId,
   meetingId,
@@ -160,16 +226,37 @@ function NotesCard({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
+  // Autosave: notes used to save only on an explicit button click, and the
+  // natural end of a meeting — type notes, hit Finish — silently discarded
+  // everything typed. Save after a pause and on blur; the button remains as
+  // reassurance.
+  const lastSaved = useRef(initialNotes ?? "");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  function persist(value: string) {
+    if (value === lastSaved.current) return;
     const fd = new FormData();
-    fd.set("notes", notes);
+    fd.set("notes", value);
     start(async () => {
       await saveMeetingNotes(teamId, meetingId, fd);
+      lastSaved.current = value;
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     });
+  }
+
+  useEffect(() => {
+    if (notes === lastSaved.current) return;
+    timer.current = setTimeout(() => persist(notes), NOTES_AUTOSAVE_MS);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
+  function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    persist(notes);
   }
 
   return (
@@ -184,9 +271,11 @@ function NotesCard({
         >
           Meeting notes
         </label>
-        {saved && (
+        {pending ? (
+          <span className="text-xs text-zinc-500">Saving…</span>
+        ) : saved ? (
           <span className="text-xs text-hpb-green">Saved</span>
-        )}
+        ) : null}
       </div>
       <textarea
         id="notes"
@@ -194,6 +283,7 @@ function NotesCard({
         rows={6}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
+        onBlur={() => persist(notes)}
         placeholder="Decisions, key discussions, anything to remember for the next L10…"
         className="block w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30"
       />
@@ -213,11 +303,13 @@ function AttendanceCard({
   meetingId,
   peer,
   isAbsent,
+  readOnly,
 }: {
   teamId: string;
   meetingId: string;
   peer: Member;
   isAbsent: boolean;
+  readOnly: boolean;
 }) {
   const router = useRouter();
   const [pendingAbsence, startAbsence] = useTransition();
@@ -259,28 +351,34 @@ function AttendanceCard({
           )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={toggleAbsence}
-        disabled={pendingAbsence}
-        className={
-          "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-50 " +
-          (isAbsent
-            ? "border-hpb-green/40 text-hpb-green hover:bg-hpb-green/10"
-            : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800")
-        }
-        aria-label={isAbsent ? "Mark present" : "Mark absent"}
-      >
-        {isAbsent ? (
-          <>
-            <UserCheck className="h-3 w-3" /> Present
-          </>
-        ) : (
-          <>
-            <UserX className="h-3 w-3" /> Absent
-          </>
-        )}
-      </button>
+      {readOnly ? (
+        <span className="text-[11px] font-medium text-zinc-500">
+          {isAbsent ? "Absent" : "Present"}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={toggleAbsence}
+          disabled={pendingAbsence}
+          className={
+            "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-50 " +
+            (isAbsent
+              ? "border-hpb-green/40 text-hpb-green hover:bg-hpb-green/10"
+              : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800")
+          }
+          aria-label={isAbsent ? "Mark present" : "Mark absent"}
+        >
+          {isAbsent ? (
+            <>
+              <UserCheck className="h-3 w-3" /> Present
+            </>
+          ) : (
+            <>
+              <UserX className="h-3 w-3" /> Absent
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }

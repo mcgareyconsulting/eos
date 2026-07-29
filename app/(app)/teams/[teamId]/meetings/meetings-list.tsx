@@ -7,6 +7,7 @@ import { collection, query as fsQuery, where } from "firebase/firestore";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
+import { LocalTime } from "@/components/local-time";
 import { SEGMENT_LABELS, SEGMENTS } from "@/lib/l10/segments";
 import { deleteMeeting } from "./actions";
 
@@ -76,14 +77,21 @@ export function MeetingsList({
         const endedMs = toMs(m.ended_at);
         const live = endedMs == null;
         const avg = ratingsByMeeting[m.id] ?? null;
+        // Floor at 1 to match the detail page/recap — a 30-second test run
+        // should read "1 min" in both places, not "0 min" here.
         const duration =
           startedMs != null && endedMs != null
-            ? Math.round((endedMs - startedMs) / 60000)
+            ? Math.max(1, Math.round((endedMs - startedMs) / 60000))
             : null;
 
         const segIdx = SEGMENTS.indexOf(m.current_segment);
         const stepNumber =
           live && segIdx >= 0 ? Math.min(segIdx + 1, segmentCount) : null;
+        const progressLabel = live
+          ? stepNumber != null
+            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[m.current_segment] ?? "—"}`
+            : "In progress"
+          : `Completed · ${duration ?? "—"} min`;
 
         return (
           <div
@@ -95,20 +103,19 @@ export function MeetingsList({
               className="flex-1 min-w-0"
             >
               <div className="font-medium">
-                {startedMs != null
-                  ? new Date(startedMs).toLocaleString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })
-                  : "—"}
+                <LocalTime
+                  ms={startedMs}
+                  options={{
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }}
+                />
               </div>
               <div className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-                {live
-                  ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[m.current_segment] ?? m.current_segment}`
-                  : `Completed · ${duration ?? "—"} min`}
+                {progressLabel}
               </div>
             </Link>
 
@@ -123,13 +130,34 @@ export function MeetingsList({
             )}
 
             {live && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
+              // The pill is the thing a latecomer's eye lands on — make it
+              // the join affordance, not just a status light.
+              <Link
+                href={`/teams/${teamId}/meetings/${m.id}`}
+                className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30 hover:bg-hpb-green/20"
+              >
                 <span className="h-1.5 w-1.5 rounded-full bg-hpb-green animate-pulse" />
-                Live
-              </span>
+                Live — join
+              </Link>
             )}
 
-            <form action={deleteMeeting.bind(null, teamId, m.id)}>
+            <form
+              action={deleteMeeting.bind(null, teamId, m.id)}
+              onSubmit={(e) => {
+                // A hover-revealed trash icon next to the row link is one
+                // stray click from destroying a meeting (and its ratings) —
+                // including the one the team is currently in.
+                if (
+                  !window.confirm(
+                    live
+                      ? "Delete this LIVE meeting for the whole team? This can't be undone."
+                      : "Delete this meeting and its ratings? This can't be undone.",
+                  )
+                ) {
+                  e.preventDefault();
+                }
+              }}
+            >
               <button
                 type="submit"
                 className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"

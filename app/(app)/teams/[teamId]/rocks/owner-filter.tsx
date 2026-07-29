@@ -2,27 +2,33 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
-const FILTERS = [
-  { value: "all", label: "All" },
-  { value: "team", label: "Team" },
-  { value: "self", label: "Self" },
-  { value: "others", label: "Others" },
-] as const;
+type Member = { user_id: string; full_name: string };
 
-export type OwnerFilterValue = (typeof FILTERS)[number]["value"];
-
-export function OwnerFilter() {
+// Owner filter: "All" plus one entry per team member. The ?owner= query value
+// is a member user_id (absent = all). Legacy values from the old
+// Team/Self/Others (and older Mine) filter still arrive via bookmarks — map
+// self/mine to the signed-in user and everything else unknown to "all".
+export function OwnerFilter({
+  members,
+  currentUserId,
+}: {
+  members: Member[];
+  currentUserId: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const raw = params.get("owner") || "all";
-  // Legacy query values from the old Mine / per-person filter.
-  const current =
-    raw === "mine"
-      ? "self"
-      : FILTERS.some((f) => f.value === raw)
-        ? raw
-        : "all";
+
+  const sorted = [...members].sort((a, b) =>
+    a.full_name.localeCompare(b.full_name),
+  );
+
+  const legacyMapped =
+    raw === "self" || raw === "mine" ? currentUserId : raw;
+  const current = sorted.some((m) => m.user_id === legacyMapped)
+    ? legacyMapped
+    : "all";
 
   function update(next: string) {
     const sp = new URLSearchParams(params.toString());
@@ -39,9 +45,11 @@ export function OwnerFilter() {
       className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
       aria-label="Filter rocks by owner"
     >
-      {FILTERS.map((f) => (
-        <option key={f.value} value={f.value}>
-          {f.label}
+      <option value="all">All</option>
+      {sorted.map((m) => (
+        <option key={m.user_id} value={m.user_id}>
+          {m.full_name}
+          {m.user_id === currentUserId ? " (you)" : ""}
         </option>
       ))}
     </select>

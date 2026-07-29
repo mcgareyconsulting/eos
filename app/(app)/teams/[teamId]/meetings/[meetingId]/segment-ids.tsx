@@ -26,6 +26,7 @@ import {
 } from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
 import { StatusActions } from "../../issues/status-actions";
+import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
@@ -133,7 +134,7 @@ export function SegmentIDS({
             : ` · stack up to ${MAX_VOTES_PER_TEAM} on a single issue`}{" "}
           · sorted by team votes
         </div>
-        <QuickAddIssue teamId={teamId} compact />
+        <QuickAddIssue teamId={teamId} meetingId={meetingId} />
       </div>
 
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -189,7 +190,13 @@ export function SegmentIDS({
                     {STATUS_LABEL[i.status]}
                   </span>
                 </div>
-                <div className="mt-1 font-medium">{i.title}</div>
+                <IssueDetailTrigger
+                  issue={i}
+                  ownerName={ownerName(i.owner_id)}
+                  className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                >
+                  {i.title}
+                </IssueDetailTrigger>
                 {i.description && (
                   <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
                     {i.description}
@@ -225,7 +232,17 @@ export function SegmentIDS({
                   issueId={i.id}
                   status={i.status}
                 />
-                <form action={remove}>
+                <form
+                  action={remove}
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        "Delete this issue? This can't be undone.",
+                      )
+                    )
+                      e.preventDefault();
+                  }}
+                >
                   <button
                     type="submit"
                     className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
@@ -273,7 +290,13 @@ export function SegmentIDS({
                         {STATUS_LABEL[i.status]}
                       </span>
                     </div>
-                    <div className="mt-1 font-medium">{i.title}</div>
+                    <IssueDetailTrigger
+                      issue={i}
+                      ownerName={ownerName(i.owner_id)}
+                      className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                    >
+                      {i.title}
+                    </IssueDetailTrigger>
                     {i.description && (
                       <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
                         {i.description}
@@ -289,7 +312,17 @@ export function SegmentIDS({
                       issueId={i.id}
                       status={i.status}
                     />
-                    <form action={remove}>
+                    <form
+                  action={remove}
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        "Delete this issue? This can't be undone.",
+                      )
+                    )
+                      e.preventDefault();
+                  }}
+                >
                       <button
                         type="submit"
                         className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"

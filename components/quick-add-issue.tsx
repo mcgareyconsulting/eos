@@ -1,22 +1,34 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Plus, X } from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Check, Plus, X } from "lucide-react";
 import { addIssue } from "@/app/(app)/teams/[teamId]/issues/actions";
 
 export function QuickAddIssue({
   teamId,
   prefill,
-  compact = false,
+  meetingId,
 }: {
   teamId: string;
   prefill?: string;
-  compact?: boolean;
+  /** When set, the created issue records this meeting as its source. */
+  meetingId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(prefill ?? "");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Success feedback: the new issue lands on the Issues segment, which is
+  // usually not the segment you dropped it from — without a beat of
+  // confirmation people click Add twice and file duplicates.
+  const [added, setAdded] = useState(false);
+  const addedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (addedTimer.current) clearTimeout(addedTimer.current);
+    },
+    [],
+  );
 
   function submit() {
     const trimmed = title.trim();
@@ -24,12 +36,15 @@ export function QuickAddIssue({
     const fd = new FormData();
     fd.set("title", trimmed);
     fd.set("type", "short");
+    if (meetingId) fd.set("source_meeting_id", meetingId);
     start(async () => {
       try {
         setError(null);
         await addIssue(teamId, fd);
         setTitle(prefill ?? "");
         setOpen(false);
+        setAdded(true);
+        addedTimer.current = setTimeout(() => setAdded(false), 2500);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -42,13 +57,24 @@ export function QuickAddIssue({
         type="button"
         onClick={() => setOpen(true)}
         className={
-          "inline-flex items-center gap-1 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 " +
-          (compact ? "" : "")
+          "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition " +
+          (added
+            ? "border-hpb-green/40 bg-hpb-green/10 text-hpb-green"
+            : "border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800")
         }
         title="Drop a new issue into the Issues list"
       >
-        <Plus className="h-3 w-3" />
-        Drop to Issues
+        {added ? (
+          <>
+            <Check className="h-3 w-3" />
+            Added to Issues
+          </>
+        ) : (
+          <>
+            <Plus className="h-3 w-3" />
+            Drop to Issues
+          </>
+        )}
       </button>
     );
   }

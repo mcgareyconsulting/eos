@@ -100,9 +100,10 @@ export function presentOrder(
   return order.filter((uid) => !absent.has(uid));
 }
 
-// Who currently holds the floor. Falls back to the first person present when
-// the stored pointer lands on someone who has since been marked absent, so the
-// highlight never disappears mid-round.
+// Who currently holds the floor. When the stored pointer lands on someone who
+// has since been marked absent, the floor passes to the NEXT person present
+// (wrapping to the front only if nobody after them remains) — marking speaker
+// #4 absent mid-round must not throw the highlight back to person #1.
 export function currentSpeakerUid(
   order: string[],
   index: number,
@@ -110,7 +111,10 @@ export function currentSpeakerUid(
 ): string | null {
   if (order.length === 0) return null;
   const absent = new Set(absentUserIds);
-  const uid = order[clampSpeakerIndex(index, order.length)];
-  if (uid && !absent.has(uid)) return uid;
-  return order.find((u) => !absent.has(u)) ?? null;
+  const from = clampSpeakerIndex(index, order.length);
+  for (let i = 0; i < order.length; i++) {
+    const uid = order[(from + i) % order.length];
+    if (uid && !absent.has(uid)) return uid;
+  }
+  return null;
 }

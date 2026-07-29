@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { formatDateOnly } from "@/lib/dates";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { EditableText } from "@/components/editable-text";
@@ -167,7 +168,7 @@ function MilestoneRow({
       </span>
       <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap w-24 text-right">
         {milestone.due_date
-          ? new Date(milestone.due_date).toLocaleDateString()
+          ? formatDateOnly(milestone.due_date)
           : "—"}
       </span>
       <form action={remove}>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Trash2, Lock } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { Trash2, Lock, Plus } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -9,9 +9,9 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { formatDateOnly } from "@/lib/dates";
+import { addDays, formatDateOnly, toDateString } from "@/lib/dates";
 import { TodoCheckbox } from "../../todos/todo-row";
-import { deleteTodo } from "../../todos/actions";
+import { addTodo, deleteTodo } from "../../todos/actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
@@ -30,11 +30,13 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentTodos({
   teamId,
+  meetingId,
   userId,
   initialTodos,
   members,
 }: {
   teamId: string;
+  meetingId: string;
   userId: string;
   initialTodos: TodoDoc[];
   members: Member[];
@@ -96,14 +98,29 @@ export function SegmentTodos({
         <QuickAddIssue
           teamId={teamId}
           prefill="Stale to-do: "
-          compact
+          meetingId={meetingId}
         />
       </div>
+
+      {/* Capturing a to-do is the most common action an L10 produces — it
+          has to work here, mid-meeting, without leaving for the To-Dos tab
+          (the sidebar is hidden in focus mode, so there is no way there). */}
+      <AddTodoInline
+        teamId={teamId}
+        meetingId={meetingId}
+        members={members}
+        defaultOwnerId={userId}
+      />
 
       <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
         {open.length === 0 && done.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
             No to-dos.
+          </div>
+        )}
+        {open.length === 0 && done.length > 0 && (
+          <div className="px-4 py-3 text-center text-sm text-hpb-green">
+            All to-dos done — nice week.
           </div>
         )}
         {open.map((t) => (
@@ -114,7 +131,7 @@ export function SegmentTodos({
             ownerName={ownerName(t.owner_id)}
           />
         ))}
-        {done.length > 0 && open.length > 0 && (
+        {done.length > 0 && (
           <div className="px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-500 bg-zinc-50 dark:bg-zinc-950">
             Done
           </div>
@@ -129,6 +146,92 @@ export function SegmentTodos({
         ))}
       </div>
     </div>
+  );
+}
+
+// Compact in-meeting capture: title + owner + due, team visibility, tagged
+// with the meeting it came from. Deliberately smaller than the To-Dos page
+// form — private visibility and long descriptions are after-meeting work.
+function AddTodoInline({
+  teamId,
+  meetingId,
+  members,
+  defaultOwnerId,
+}: {
+  teamId: string;
+  meetingId: string;
+  members: Member[];
+  defaultOwnerId: string;
+}) {
+  const defaultDue = toDateString(addDays(new Date(), 7));
+  const [pending, start] = useTransition();
+  const [title, setTitle] = useState("");
+  const [ownerId, setOwnerId] = useState(defaultOwnerId);
+  const [due, setDue] = useState(defaultDue);
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const fd = new FormData();
+    fd.set("title", title);
+    fd.set("owner_id", ownerId);
+    fd.set("due_date", due);
+    fd.set("visibility", "team");
+    fd.set("source_meeting_id", meetingId);
+    start(async () => {
+      try {
+        setError(null);
+        await addTodo(teamId, fd);
+        // The live subscription delivers the new row; just clear the form.
+        setTitle("");
+        setDue(defaultDue);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Capture a to-do…"
+        className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      <select
+        value={ownerId}
+        onChange={(e) => setOwnerId(e.target.value)}
+        aria-label="To-do owner"
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        {members.map((m) => (
+          <option key={m.user_id} value={m.user_id}>
+            {m.full_name}
+          </option>
+        ))}
+      </select>
+      <input
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+        aria-label="Due date"
+        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      <button
+        type="submit"
+        disabled={pending || !title.trim()}
+        className="inline-flex items-center gap-1 rounded-md bg-hpb-blue px-3 py-1 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50"
+      >
+        <Plus className="h-3 w-3" />
+        {pending ? "Adding…" : "Add to-do"}
+      </button>
+      {error && <span className="text-[10px] text-red-600">{error}</span>}
+    </form>
   );
 }
 
@@ -175,7 +278,13 @@ function Row({
         {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
       </div>
       <div className="col-span-1 justify-self-end">
-        <form action={remove}>
+        <form
+          action={remove}
+          onSubmit={(e) => {
+            if (!window.confirm("Delete this to-do? This can't be undone."))
+              e.preventDefault();
+          }}
+        >
           <button
             type="submit"
             className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"

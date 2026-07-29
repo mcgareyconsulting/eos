@@ -22,6 +22,7 @@ import {
 } from "@/lib/issues";
 import { StatusActions } from "./status-actions";
 import { EditIssuePopover } from "./edit-issue-popover";
+import { IssueDetailTrigger } from "./issue-detail-modal";
 import { VoteButton } from "./vote-button";
 import { deleteIssue } from "./actions";
 
@@ -228,7 +229,13 @@ function IssueRow({
             {STATUS_LABEL[issue.status]}
           </span>
         </div>
-        <div className="mt-1 font-medium">{issue.title}</div>
+        <IssueDetailTrigger
+          issue={issue}
+          ownerName={ownerName(issue.owner_id)}
+          className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+        >
+          {issue.title}
+        </IssueDetailTrigger>
         {issue.description && (
           <div className="mt-0.5 text-zinc-600 dark:text-zinc-400">
             {issue.description}

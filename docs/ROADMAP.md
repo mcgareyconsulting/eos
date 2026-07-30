@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-07-13 — _Pass 11_
+**Last updated:** 2026-07-30 — _Pass 13_
 
 ---
 
@@ -377,12 +377,54 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
+**Pass 13 (2026-07-29): live client L10 prototype test** — Enterprise
+Systems & Data L10 (Cora, Stephanie, Joe, Jessica + Daniel). Source:
+Gemini notes PDF. Actionable product feedback + bugs below; non-EOS
+ops items (picnic, conversion hours, Jack Henry pilot bandwidth) not
+tracked here.
+
+### Bugs / defects (client-reported)
+
+| # | Item | Owner / notes | Severity |
+|---|------|---------------|----------|
+| 1 | **Cannot save comments when updating a rock status to off-track** | **FIXED 2026-07-30.** Capture-phase scroll listener on the fixed status popover was closing the panel when the off-track comment textarea scrolled (or the page shifted under it), wiping the draft before Save. Now ignores in-panel scroll, repositions on page scroll, and applies flip-above `bottom` + max-height so Save stays on-screen. | ✅ fixed |
+| 2 | **System access** issues during the session | Vague in notes — confirm: allowlist, team membership, or auth domain? | 🔴 P0 until triaged |
+| 3 | **Scorecard visibility** bugs | Pair with "scorecard page limitations" below; may be metrics missing, ACL, or the silent 30-metric `in`-query cliff (`L10_GAPS` / Pass 10 known-remaining). | 🔴 |
+
+### UX / product feedback from live use
+
+| # | Item | Speakers | Map to existing plan |
+|---|------|----------|----------------------|
+| 4 | **UI feedback** (general) | Jessica, Cora, Joe | Continue collecting; no single ticket yet |
+| 5 | **Vote allocation display** unclear or wrong | Jessica, Cora, Joe | Check remaining-credits UI in IDS; related: Pass 12 vote-reset-on-conclude semantics in `L10_GAPS` |
+| 6 | **Scorecard page limitations** | Jessica, Cora, Joe | Pass 11 deferred scorecard work (interval views, warehouse-fed metrics) + 30-metric cliff |
+| 7 | **Issue management functionality** gaps | Jessica, Cora, Joe | Pass 11 deferred issue actions (merge / send-to-team / convert); in-meeting IDS "S" gap in `L10_GAPS` |
+| 8 | **Flexible meeting templates** (different durations & formats) | Stephanie | Already Pass 11 "new asks" — custom agendas (L10 / Condensed / Quarterly / 1-on-1 / …). **Client re-confirmed in live use.** Biggest build item. |
+| 9 | **Scorecard presentation order should follow participant list order** | Stephanie, Joe | Confirmed as desired behavior — verify implementation matches speaking/participant order |
+| 10 | **Active speaker highlighting during rotation** | Joe | Noted as present/working — keep as expected behavior |
+| 11 | **Absent users grayed out in interface** | Cora, Joe | Noted as present/working — keep as expected behavior |
+
+### Adjacent / not EOS product (context only)
+
+- Client Q3 rock target **Nov 2**; strategic focus includes **Gemini Enterprise** + AI use cases (aligns with our Vertex-only / AI deferred stance — do not revive key-based Gemini in-app).
+- Jack Henry data origination pilot discussed (account opening / questionnaires) — warehouse/data-org context for BigQuery conventions, not an EOS feature.
+- Joe surveying **one-on-one meeting tool** usage org-wide — if 1:1 is real demand, it feeds the custom-agenda template list (1-on-1 is already named in Pass 11).
+
+### Immediate engineering queue (from this meeting)
+
+1. **Fix rock off-track comment save bug** (Daniel) — highest-confidence client bug.
+2. Triage **system access** + **scorecard visibility** with repro steps from Cora/Joe.
+3. Verify **scorecard row order** = participant/speaking order in-meeting.
+4. Inspect **vote allocation display** for clarity bugs (not just semantics).
+5. Keep **custom meeting templates** elevated — Stephanie re-confirmed; still the largest product build on the Pass 11 list.
+
 **Pass 12 (2026-07-29): pre-demo L10 audit + fix batch.** Full-flow audit of
 the L10 meeting (entry → segments → conclude → recap) the night before the
 client demo; the fixes shipped on the demo-prep PR. Deferred items,
 product-semantics questions (vote reset on conclude, recap source-of-truth),
 and the demo-morning checklist live in **`docs/L10_GAPS.md`** — read that
-before doing further L10 work.
+before doing further L10 work. Cross-check Pass 13 client bugs against
+`L10_GAPS` before opening new tickets.
 
 **Pass 11 (2026-07-13): the requirements stack (first installment) ARRIVED**
 — the client's annotated ninety.io config doc. See the Pass 11 section

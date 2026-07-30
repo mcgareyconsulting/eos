@@ -163,6 +163,10 @@ export async function setRockStatus(
   await batch.commit();
 
   revalidatePath(pathFor(teamId));
+  // Live L10 rocks segment also shows StatusPopover; keep RSC payloads fresh
+  // for anyone who lands mid-meeting without a client subscription yet.
+  revalidatePath(`/teams/${teamId}/meetings`);
+  revalidatePath("/home");
 }
 
 // Removes the rock and any todos linked via source_rock_id (milestones).

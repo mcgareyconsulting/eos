@@ -12,9 +12,32 @@ import {
   isRockStatus,
 } from "./status";
 
-// Roughly the panel's tallest rendered height (status list + comment box +
-// actions). Only used to decide whether it fits below the trigger.
+// Preferred panel height (status list + comment box + actions). Used to decide
+// flip direction and to clamp max-height so Save stays on-screen.
 const PANEL_MAX_H = 300;
+
+type PanelCoords = {
+  top?: number;
+  bottom?: number;
+  right: number;
+  maxHeight: number;
+};
+
+function placePanel(trigger: DOMRect): PanelCoords {
+  const gap = 4;
+  const spaceBelow = window.innerHeight - trigger.bottom - gap;
+  const spaceAbove = trigger.top - gap;
+  const placeAbove = spaceBelow < PANEL_MAX_H && spaceAbove > spaceBelow;
+  const available = Math.max(placeAbove ? spaceAbove : spaceBelow, 160);
+
+  return {
+    ...(placeAbove
+      ? { bottom: window.innerHeight - trigger.top + gap }
+      : { top: trigger.bottom + gap }),
+    right: window.innerWidth - trigger.right,
+    maxHeight: Math.min(PANEL_MAX_H, available),
+  };
+}
 
 export function StatusPopover({
   teamId,
@@ -33,11 +56,12 @@ export function StatusPopover({
   const [pending, start] = useTransition();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [coords, setCoords] = useState<{
-    top?: number;
-    bottom?: number;
-    right: number;
-  } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<PanelCoords | null>(null);
+
+  // Unique radio name per rock so multiple popovers on the page never share
+  // one HTML radio group (only one panel is mounted, but keep it safe).
+  const radioName = `rock-status-${rockId}`;
 
   // Reset draft state every time the popover opens, so a previously-cancelled
   // edit doesn't leak into the next interaction. Adjusted during render
@@ -74,28 +98,43 @@ export function StatusPopover({
   // instead of `absolute` so it escapes ancestor overflow clipping — the
   // app shell's scrollable main pane and the L10 meeting's rock-group cards
   // both clip an in-flow `absolute` panel mid-row, cutting off the comment
-  // box and Save button. Fixed positioning is viewport-relative, so it also
-  // has to be recomputed on open and dropped on scroll, or it'd drift away
-  // from the trigger as the page scrolls underneath it.
+  // box and Save button.
+  //
+  // Capture-phase scroll listeners must IGNORE scrolls inside the panel
+  // (textarea overflow while typing an off-track reason). Closing on those
+  // was wiping the comment mid-edit — the client-reported "can't save
+  // off-track comments" bug.
   useEffect(() => {
     if (!open) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
-      // Flip above the trigger when the panel wouldn't fit below. A fixed
-      // panel can't be scrolled into view, so without this a rock near the
-      // bottom of the list loses its comment box and Save button off-screen
-      // — the very symptom this popover is being fixed for.
-      const below = window.innerHeight - rect.bottom - 4;
-      setCoords({
-        ...(below < PANEL_MAX_H && rect.top > below
-          ? { bottom: window.innerHeight - rect.top + 4 }
-          : { top: rect.bottom + 4 }),
-        right: window.innerWidth - rect.right,
-      });
-    }
-    const onScroll = () => setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
-    return () => window.removeEventListener("scroll", onScroll, true);
+
+    const update = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) setCoords(placePanel(rect));
+    };
+    update();
+
+    const onScrollOrResize = (e: Event) => {
+      // Textarea (and any future overflow inside the panel) fires scroll
+      // events that capture up to window — don't treat those as "page moved".
+      if (
+        e.type === "scroll" &&
+        panelRef.current &&
+        e.target instanceof Node &&
+        panelRef.current.contains(e.target)
+      ) {
+        return;
+      }
+      // Reposition while the page scrolls so the panel tracks the trigger
+      // instead of hard-closing mid-edit (hostile during L10 rock review).
+      update();
+    };
+
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
   }, [open]);
 
   const offTrackNeedsReason = draftStatus === "off_track" && !comment.trim();
@@ -148,10 +187,16 @@ export function StatusPopover({
 
       {open && coords && (
         <div
+          ref={panelRef}
           role="dialog"
           aria-label="Update rock status"
-          style={{ top: coords.top, right: coords.right }}
-          className="fixed z-40 w-64 rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-3 text-sm"
+          style={{
+            top: coords.top,
+            bottom: coords.bottom,
+            right: coords.right,
+            maxHeight: coords.maxHeight,
+          }}
+          className="fixed z-40 flex w-64 flex-col overflow-y-auto rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-3 text-sm"
         >
           <div className="space-y-1">
             {STATUSES.map((s) => (
@@ -161,7 +206,7 @@ export function StatusPopover({
               >
                 <input
                   type="radio"
-                  name="rock-status"
+                  name={radioName}
                   value={s}
                   checked={draftStatus === s}
                   onChange={() => setDraftStatus(s)}
@@ -188,9 +233,12 @@ export function StatusPopover({
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              rows={2}
+              rows={3}
               placeholder="What changed?"
-              className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+              // Stop wheel/trackpad from scrolling the page under the panel
+              // while the user is editing the reason.
+              onWheel={(e) => e.stopPropagation()}
+              className="w-full resize-y rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             />
           </div>
 

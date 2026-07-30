@@ -6,6 +6,7 @@ import {
   setMeetingDriver,
   setMeetLink,
 } from "./actions";
+import { AddMemberDrawer } from "./add-member-drawer";
 
 type JoinRequest = {
   user_id: string;
@@ -45,12 +46,15 @@ export default async function MembersPage({
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · {members.length}{" "}
-          {members.length === 1 ? "member" : "members"}
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            {team.name} · {members.length}{" "}
+            {members.length === 1 ? "member" : "members"}
+          </p>
+        </div>
+        {isLeader && <AddMemberDrawer teamId={tid} />}
       </header>
 
       {isLeader && (

@@ -5,6 +5,10 @@ import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { mondayOf, toDateString, lastNMondays } from "@/lib/dates";
 import { parseWeekRange, type GoalDirection } from "@/lib/scorecard";
+import {
+  entriesToRecord,
+  loadScorecardEntries,
+} from "@/lib/scorecard-entries";
 import { addMetric } from "./actions";
 
 type MetricDoc = {
@@ -19,13 +23,6 @@ type MetricDoc = {
   // Absent on metrics created before grouping existed — treat missing/empty
   // as ungrouped, not as an error.
   group?: string | null;
-};
-
-type EntryDoc = {
-  metric_id: string;
-  week_start_date: string;
-  value: number | null;
-  note: string | null;
 };
 
 export default async function ScorecardPage({
@@ -68,24 +65,15 @@ export default async function ScorecardPage({
   const weeks = lastNMondays(weekRange).map(toDateString); // newest first
   const oldestWeek = weeks[weeks.length - 1]!;
 
-  // Firestore `in` is capped at 30 — known limit (see ROADMAP).
-  const entriesSnap = metrics.length
-    ? await db
-        .collection("scorecard_entries")
-        .where(
-          "metric_id",
-          "in",
-          metrics.map((m) => m.id).slice(0, 30),
-        )
-        .where("week_start_date", ">=", oldestWeek)
-        .get()
-    : null;
-
-  const entryRecord: Record<string, number | null> = {};
-  entriesSnap?.docs.forEach((d) => {
-    const data = d.data() as EntryDoc;
-    entryRecord[`${data.metric_id}__${data.week_start_date}`] = data.value;
-  });
+  // Chunks past Firestore's 30-value `in` limit so metric 31+ still load
+  // values (previously silent all-dash rows — client "scorecard visibility").
+  const entryRecord = entriesToRecord(
+    await loadScorecardEntries(
+      db,
+      metrics.map((m) => m.id),
+      oldestWeek,
+    ),
+  );
 
   const groupNames = [
     ...new Set(

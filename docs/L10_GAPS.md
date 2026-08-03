@@ -123,13 +123,14 @@ practice.
 - 🟡 **`resolved_at` is stamped for `dropped` and never cleared on reopen** —
   dropped issues vanish from recap stats entirely (no "Issues Dropped"
   section), and a reopened issue keeps a stale `resolved_at`.
-- 🟡 **Scorecard 30-metric cliff**: all three scorecard surfaces
-  `slice(0, 30)` the Firestore `in` query; metrics 31+ silently render
-  all-dash rows. Check the demo team's metric count; chunk the query when
-  real data approaches 30.
+- ✅ **Scorecard 30-metric cliff (fixed 2026-08-03)**: entry loads now chunk
+  via `lib/scorecard-entries.ts` + `useScorecardEntries` (server page,
+  meeting SSR, L10 segment). Rows past metric 30 get real values instead of
+  silent dashes.
 - 🟡 **Subscription failures are console-only** (`use-collection.ts`) — if
   rules/indexes aren't deployed, the app looks fine but never updates.
-  Surface a small "live updates unavailable" indicator.
+  `LiveAuthBanner` covers the missing-client-auth case; other permission
+  errors still need a small in-UI indicator.
 - ⚪ **Legacy docs missing `visibility`** don't match the `== "team"` filters
   anywhere (consistent since tonight's payload fix, but they're invisible).
   One-off backfill script if any exist in prod.

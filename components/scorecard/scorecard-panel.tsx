@@ -48,7 +48,9 @@ export function ScorecardPanel({
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [ownerId, setOwnerId] = useState("");
-  const [sort, setSort] = useState<SortOption>("status");
+  // In-meeting: keep configured sort_order (matches participant walk-through).
+  // Standalone Trends view: off-track first is the useful default.
+  const [sort, setSort] = useState<SortOption>(compact ? "order" : "status");
   const [search, setSearch] = useState("");
 
   const entryMap = useMemo(
@@ -87,6 +89,14 @@ export function ScorecardPanel({
       id ? (members.find((x) => x.user_id === id)?.full_name ?? "") : "";
 
     rows = [...rows].sort((a, b) => {
+      // Preserve the order the parent already applied (sort_order on L10 /
+      // standalone page). Filter above keeps relative order; this is a no-op
+      // sort so "Default order" survives the sort branch.
+      if (sort === "order") {
+        return (
+          a.sort_order - b.sort_order || a.name.localeCompare(b.name)
+        );
+      }
       if (sort === "name") return a.name.localeCompare(b.name);
       if (sort === "owner") {
         return (
@@ -104,7 +114,7 @@ export function ScorecardPanel({
         const cmp = av - bv;
         return sort === "average-asc" ? cmp : -cmp;
       }
-      // Default: status (off-track first), then name.
+      // Status (off-track first), then name.
       const as = trendStatus(valuesFor(a.id), a.goal, a.direction);
       const bs = trendStatus(valuesFor(b.id), b.goal, b.direction);
       return (
@@ -158,9 +168,10 @@ export function ScorecardPanel({
         // Filtering lives in the panel; grid is presentation-only.
         hideLocalSearch
         // Preserve the panel's sort order. Grouped sections re-sort by
-        // section name and would bury off-track rows under other groups.
+        // section name and would bury off-track / custom-order rows.
+        // "order" and "name" can use section groups when no other filters.
         flatList={
-          sort !== "name" ||
+          (sort !== "name" && sort !== "order") ||
           status !== "all" ||
           ownerId !== "" ||
           !!search.trim()

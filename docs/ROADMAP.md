@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-07-30 — _Pass 13_
+**Last updated:** 2026-08-03 — _Pass 14_
 
 ---
 
@@ -377,6 +377,79 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
+**Pass 14 (2026-08-03): structured client feedback tracker** — HPB users
+filled `Daniel_Tool_Feedback_Tracker.xlsx` after hands-on time in the
+demo (22 items, 2026-07-30 → 2026-08-03). Reviewers: **Jenna Scheeler**,
+**Steph Benes**, **Jessica Teichman**. Source xlsx includes 12 screenshots
+(under `docs/feedback/pass-14-screenshots/`). Ingested below; cross-links
+Pass 11/13 so we don't double-count.
+
+> **Working priority list (merged Pass 13+14)** is agent-local on the
+> consultant machine (not in this repo). Grok/Claude load it via local rules;
+> this ROADMAP section stays the raw client log only.
+
+### Pass 14 — Feedback Log (verbatim themes → triage)
+
+| # | Date | Who | Page | Ask / bug | Map / disposition |
+|---|------|-----|------|-----------|-------------------|
+| 1 | 07-30 | Jenna | Scorecard | Weekly metrics work; **other scorecard tabs inaccessible** | **Bug / incomplete UI.** Interval tabs (monthly/annual — Feature 2) may show but not load data, or only weekly is wired. Related: Pass 13 #3/#6, Pass 11 warehouse-fed scorecard. |
+| 2 | 07-30 | Jenna | Rocks | Quarter + Due Date — **manual entry or smart logic?** | **Product clarity.** Document / improve defaults (also Steph #19). |
+| 3 | 07-30 | Jenna | Rocks | **Where does the status comment go?** (off-track note) | **UX discoverability.** Related to Pass 13 #1 (save bug fixed). Surface comment history on rock after save. |
+| 4 | 07-30 | Jenna | To-Dos | **Default due date = 7 days out**; milestones 7 days out should become to-dos — she added a milestone due today and it **did not** pull into to-dos | **Bug + product.** Home 7-day milestones (Pass 11) may not cover "milestone → to-do" auto-promote, or list filter is wrong. Verify `home` + to-dos surface. |
+| 5 | 07-30 | Jenna | To-Dos | **Done to-dos archive after the team meeting**; toggle to view archived — same pattern for Rocks, Headlines, Issues, etc. | **Product** — archive-on-close + archive tab. Rocks archive already Feature 5c; generalize across entities. Custom agendas "archive-on-close" in Pass 11 new asks. |
+| 6 | 07-30 | Jenna | Issues | Comments useful; **attachments optional** (links to Google Docs OK instead) | Pass 11 "linked items + comments + attachments" — **prioritize comments; deprioritize binary attachments** (Workspace-link-first). |
+| 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | **Product gap.** Headline discuss/done checkbox + selective archive. Not auto-clear-all. |
+| 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
+| 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | **Security / tenancy review.** Cross-team IDOR fixed on mutations (Pass 10); still need explicit privacy story for sensitive issues + role model (Pass 11 Directory/admin). |
+| 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | **Integration bug / incomplete.** Today is **one-way push** (`lib/google/tasks.ts`). Client wants **Tasks → EOS** completion sync. Elevates Pass 11 Phase-1 Tasks ask to **two-way is required**. |
+| 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
+| 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | **Product.** ST/LT move = deferred issue actions family (Pass 11/13). In-meeting edit + comments = same as #6. |
+| 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | **Confirmed product gap.** Sidebar `teams[0]` only (Pass 13 #2 remainder). **Team switcher** is now client-explicit. |
+| 14 | 08-03 | Steph | Headlines | Categorization good; add **General / FYI** category (beyond Other) | **Small product** — headline category enum. |
+| 15 | 08-03 | Steph | Headlines | **Hyperlinks + rich text** (bullets, bold) in headlines | **Product** — rich text / linkify across headlines (and issues #21). |
+| 16 | 08-03 | Steph | Headlines | **No submit loading feedback** → pressed multiple times → **4 duplicates** | **Bug — high confidence.** Disable button + pending state on create. Same pattern audit for all create forms. |
+| 17 | 08-03 | Steph | Integrations | Move Integrations out of top nav into **Settings / profile** | **UX polish** — nav hierarchy. |
+| 18 | 08-03 | Steph | Rocks | When screen full, **status dropdown at bottom is clipped / unreachable** | **Bug.** Related Pass 13 #1 popover flip/max-height — extend same treatment to status control at list bottom (collision / flip). |
+| 19 | 08-03 | Steph | Rocks | **Milestone default dates = calendar quarter end** — prefer no date or today; rock quarters need more flexibility | **Product** — smarter/flexible quarter + due defaults (pairs with Jenna #2). |
+| 20 | 08-03 | Steph | Rocks | **Cannot edit milestone dates after set** | **Bug / missing edit path.** |
+| 21 | 08-03 | Steph | Issues | **Long-term issues on separate tab** — list gets long | **Product** — ST/LT split UI (ninety-style). Related Jessica #12. |
+| 22 | 08-03 | Steph | Issues | Rich text + attachments (echo Jenna) | Same as #6 / #15. |
+
+### Pass 14 — prioritized engineering queue
+
+**Bugs / quick wins (buildable now):**
+1. **Headline (and form) double-submit** — pending/disabled state (#16).
+2. **Milestone date not editable after create** (#20).
+3. **Rock status dropdown clipped at bottom of viewport** (#18) — extend popover collision work from Pass 13 #1.
+4. **To-do default due = +7 days**; verify/fix **milestones due soon surfacing as to-dos** (#4).
+5. **Team switcher** in shell (#13) — also unblocks multi-team access complaints from Pass 13.
+6. **Status comment discoverability** after save (#3) — where does it show?
+
+**Integrations / access:**
+7. **Google Tasks two-way completion** (#10) — today one-way only; client expects Tasks→EOS.
+8. **Members / issue privacy** story for multi-team (#9) — confirm rules + product model.
+9. Ops still: allowlist + membership for access issues (Pass 13 #2).
+
+**Product (scope against Pass 11):**
+10. **Custom agendas + pick template at start** (#8) — still largest build; re-confirmed by Jenna + Steph (Pass 13).
+11. **Archive-after-meeting + archive toggle** across entities (#5); **headline discuss checkbox** (selective archive) (#7).
+12. **Issue ST↔LT move + LT tab** (#12, #21); **comments** over file attachments (#6).
+13. **Scorecard interval tabs** working (#1); **calculated + share-up metrics** (#11) — new ninety-parity big item.
+14. Headline **FYI category** (#14); **rich text / links** (#15, #22).
+15. Integrations nav → settings (#17); rock/quarter **default flexibility** (#2, #19).
+
+### Pass 13 (retained) + Pass 14 overlap
+
+| Pass 13 | Reinforced by Pass 14 |
+|---------|------------------------|
+| #2 System access / multi-team | Steph #13 team switcher |
+| #3 Scorecard visibility | Jenna #1 other tabs; Jessica #11 formulas/share-up |
+| #8 Flexible meeting templates | Jenna #8 agendas at start |
+| #1 Off-track comment save (fixed) | Jenna #3 "where does comment go?" (display) |
+| Speaking / participant order | Jenna #8 adjust sequence |
+
+---
+
 **Pass 13 (2026-07-29): live client L10 prototype test** — Enterprise
 Systems & Data L10 (Cora, Stephanie, Joe, Jessica + Daniel). Source:
 Gemini notes PDF. Actionable product feedback + bugs below; non-EOS
@@ -388,8 +461,8 @@ tracked here.
 | # | Item | Owner / notes | Severity |
 |---|------|---------------|----------|
 | 1 | **Cannot save comments when updating a rock status to off-track** | **FIXED 2026-07-30.** Capture-phase scroll listener on the fixed status popover was closing the panel when the off-track comment textarea scrolled (or the page shifted under it), wiping the draft before Save. Now ignores in-panel scroll, repositions on page scroll, and applies flip-above `bottom` + max-height so Save stays on-screen. | ✅ fixed |
-| 2 | **System access** issues during the session | Vague in notes — confirm: allowlist, team membership, or auth domain? | 🔴 P0 until triaged |
-| 3 | **Scorecard visibility** bugs | Pair with "scorecard page limitations" below; may be metrics missing, ACL, or the silent 30-metric `in`-query cliff (`L10_GAPS` / Pass 10 known-remaining). | 🔴 |
+| 2 | **System access** issues during the session | **Investigated 2026-08-03 — partial fix.** Dual auth (session cookie for SSR + client Firebase Auth for live listeners) desynced: app looks signed-in but live features die silently. Fixes: `LiveAuthBanner` when client uid missing; sign-out clears both halves; 404 copy points to join/Members. Remaining ops: ensure demo users are on the team (`Members` / join approve), `SIGN_IN_ALLOWLIST` matches HPB emails, sidebar only shows `teams[0]` (no team switcher). | 🟡 partial |
+| 3 | **Scorecard visibility** bugs | **Investigated 2026-08-03 — fixed main code path.** Silent 30-metric `in` cliff dropped entry values for metrics 31+ (all-dash rows). Chunked loads server + live. L10 default sort was "status" reshuffling the list; compact now defaults to configured `sort_order`. Remaining: owner/speaking-order grouping (product), warehouse-fed metrics (Pass 11). | ✅ fixed (code) |
 
 ### UX / product feedback from live use
 

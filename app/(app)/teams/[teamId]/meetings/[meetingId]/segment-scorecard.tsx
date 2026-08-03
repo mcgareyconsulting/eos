@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { collection, query as fsQuery, where } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
+import { useScorecardEntries } from "@/lib/firebase/use-scorecard-entries";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { GoalDirection, WeekRange } from "@/lib/scorecard";
@@ -61,22 +62,11 @@ export function SegmentScorecard({
   );
   const metrics = useCollection<MetricDoc>(metricsQuery, initialMetrics);
 
-  const metricIds = metrics.map((m) => m.id).sort();
-  const metricIdsKey = metricIds.join(",");
+  const metricIds = useMemo(() => metrics.map((m) => m.id), [metrics]);
   const oldestWeek = weeks[weeks.length - 1] ?? "";
 
-  const entriesQuery = useMemo(() => {
-    if (metricIds.length === 0) return null;
-    return fsQuery(
-      collection(db, "scorecard_entries"),
-      // Firestore `in` is capped at 30 — same constraint as the page route.
-      where("metric_id", "in", metricIds.slice(0, 30)),
-      where("week_start_date", ">=", oldestWeek),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, metricIdsKey, oldestWeek]);
-
-  const entries = useCollection<EntryDoc>(entriesQuery, initialEntries);
+  // Chunks past the 30-value `in` limit so large scorecards stay live.
+  const entries = useScorecardEntries(metricIds, oldestWeek, initialEntries);
 
   const entryRecord = useMemo(() => {
     const rec: Record<string, number | null> = {};
@@ -108,7 +98,8 @@ export function SegmentScorecard({
 
   // Same filter shell as the standalone Scorecard page (range / status /
   // owner / sort / search), minus the period tabs — data stays live via the
-  // subscriptions above.
+  // subscriptions above. Default sort is "order" (configured sort_order) so
+  // L10 presentation matches the team's list, not off-track-first reshuffle.
   return (
     <ScorecardPanel
       teamId={teamId}

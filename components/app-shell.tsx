@@ -10,9 +10,10 @@ import {
   Users,
   Plug,
 } from "lucide-react";
-import { signOut } from "@/app/(app)/sign-out-action";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { EnvBanner } from "@/components/env-badge";
+import { LiveAuthBanner } from "@/components/live-auth-banner";
+import { SignOutButton } from "@/components/sign-out-button";
 
 type Team = { id: string; name: string };
 type Profile = {
@@ -58,6 +59,7 @@ export function AppShell({
     // and this collapses to the original single-row layout.
     <div className="group/shell flex h-screen flex-col overflow-hidden">
       <EnvBanner />
+      <LiveAuthBanner />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Focus mode: a page can drop the global nav and widen the content
             by rendering `<div data-meeting-focus hidden />` anywhere inside
@@ -109,14 +111,7 @@ export function AppShell({
                 <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
                   {displayName}
                 </div>
-                <form action={signOut} className="mt-0.5">
-                  <button
-                    type="submit"
-                    className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline"
-                  >
-                    Sign out
-                  </button>
-                </form>
+                <SignOutButton className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline" />
               </div>
               <ThemeToggle />
             </div>

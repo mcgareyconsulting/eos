@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
-import { signOut } from "@/app/(app)/sign-out-action";
 import { EnvBadge } from "@/components/env-badge";
+import { SignOutButton } from "@/components/sign-out-button";
 import { requestToJoin } from "./actions";
 
 type RequestStatus = "pending" | "approved" | "denied";
@@ -105,14 +105,7 @@ export default async function JoinPage() {
         </div>
 
         <div className="mt-4 text-center">
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-xs text-zinc-600 dark:text-zinc-400 underline-offset-2 hover:underline"
-            >
-              Sign out
-            </button>
-          </form>
+          <SignOutButton className="text-xs text-zinc-600 dark:text-zinc-400 underline-offset-2 hover:underline" />
         </div>
       </div>
     </div>

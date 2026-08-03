@@ -117,17 +117,20 @@ export function ScorecardFilters({
     router.push(q ? `${pathname}?${q}` : pathname);
   };
 
+  // Standalone Trends defaults to status sort; L10 compact keeps configured order.
+  const defaultSort: SortOption = compact ? "order" : "status";
+
   const defaults =
     status === "all" &&
     ownerId === "" &&
-    sort === "status" &&
+    sort === defaultSort &&
     weekRange === 13 &&
     search.trim() === "";
 
   const clearAll = () => {
     onStatusChange("all");
     onOwnerChange("");
-    onSortChange("status");
+    onSortChange(defaultSort);
     onSearchChange("");
     if (weekRange !== 13) setWeekRange(13);
   };

@@ -11,15 +11,25 @@ export default function NotFound() {
         </div>
         <h1 className="mt-2 text-base font-semibold">Page not found</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          This page doesn&apos;t exist or you don&apos;t have access to it —
-          the meeting or team may have been deleted.
+          This page doesn&apos;t exist, or your account isn&apos;t on that
+          team. If you just signed in, ask a team leader to add you under{" "}
+          <span className="font-medium">Members</span>, or request access
+          from the join page.
         </p>
-        <Link
-          href="/home"
-          className="mt-4 inline-block rounded-md bg-hpb-blue px-4 py-1.5 text-sm font-medium text-white hover:brightness-110"
-        >
-          Back to Home
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <Link
+            href="/home"
+            className="inline-block rounded-md bg-hpb-blue px-4 py-1.5 text-sm font-medium text-white hover:brightness-110"
+          >
+            Back to Home
+          </Link>
+          <Link
+            href="/join"
+            className="inline-block rounded-md border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Request team access
+          </Link>
+        </div>
       </div>
     </div>
   );

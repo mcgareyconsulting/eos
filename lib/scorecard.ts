@@ -117,6 +117,7 @@ export const STATUS_FILTER_OPTIONS: {
 ];
 
 export type SortOption =
+  | "order"
   | "status"
   | "name"
   | "owner"
@@ -124,6 +125,9 @@ export type SortOption =
   | "average-desc";
 
 export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  // Preserves the team's configured sort_order (and L10 presentation order).
+  // Default in-meeting so metrics aren't reshuffled to "off-track first".
+  { value: "order", label: "Default order" },
   { value: "status", label: "Status (off-track first)" },
   { value: "name", label: "Name A–Z" },
   { value: "owner", label: "Owner A–Z" },

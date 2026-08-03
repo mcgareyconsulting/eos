@@ -11,6 +11,7 @@ import {
 } from "@/lib/l10/segments";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
+import { loadScorecardEntries } from "@/lib/scorecard-entries";
 import { endOfQuarter, lastNMondays, toDateString } from "@/lib/dates";
 import { LocalTime } from "@/components/local-time";
 import { MeetingRail } from "./meeting-rail";
@@ -493,28 +494,12 @@ async function SegmentContent({
       };
     });
     const weeks = lastNMondays(scorecardWeekRange).map(toDateString);
-    const oldest = weeks[weeks.length - 1];
-    const entrySnap = initialMetrics.length
-      ? await db
-          .collection("scorecard_entries")
-          .where(
-            "metric_id",
-            "in",
-            initialMetrics.map((m) => m.id).slice(0, 30),
-          )
-          .where("week_start_date", ">=", oldest)
-          .get()
-      : null;
-    const initialEntries =
-      entrySnap?.docs.map((d) => {
-        const x = d.data();
-        return {
-          id: d.id,
-          metric_id: x.metric_id,
-          week_start_date: x.week_start_date,
-          value: x.value ?? null,
-        };
-      }) ?? [];
+    const oldest = weeks[weeks.length - 1]!;
+    const initialEntries = await loadScorecardEntries(
+      db,
+      initialMetrics.map((m) => m.id),
+      oldest,
+    );
     return (
       <SegmentScorecard
         teamId={teamId}

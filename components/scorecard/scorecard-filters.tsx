@@ -100,7 +100,7 @@ export function ScorecardFilters({
   onSearchChange: (v: string) => void;
   visibleCount: number;
   totalCount: number;
-  /** Embedded contexts (the L10 segment): no period tabs. */
+  /** L10: tighter filter defaults (e.g. Default order = speaking order). */
   compact?: boolean;
   /** Rendered at the end of the filter row (e.g. a quick-add button). */
   extra?: React.ReactNode;
@@ -158,38 +158,37 @@ export function ScorecardFilters({
 
   return (
     <div className="space-y-2.5">
-      {!compact && (
-        <div
-          className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800"
-          role="tablist"
-          aria-label="Scorecard interval"
-        >
-          {SCORECARD_PERIODS.map((id) => {
-            const selected = period === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setPeriod(id)}
-                className={cn(
-                  "relative px-3 py-2 text-sm font-medium transition-colors",
-                  selected
-                    ? "text-hpb-blue dark:text-hpb-gold"
-                    : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100",
-                )}
-                title={`Show ${PERIOD_LABELS[id].toLowerCase()} measurables`}
-              >
-                {PERIOD_LABELS[id]}
-                {selected && (
-                  <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Period tabs on standalone and L10 — each interval is its own metric set. */}
+      <div
+        className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800"
+        role="tablist"
+        aria-label="Scorecard interval"
+      >
+        {SCORECARD_PERIODS.map((id) => {
+          const selected = period === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setPeriod(id)}
+              className={cn(
+                "relative px-3 py-2 text-sm font-medium transition-colors",
+                selected
+                  ? "text-hpb-blue dark:text-hpb-gold"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100",
+              )}
+              title={`Show ${PERIOD_LABELS[id].toLowerCase()} measurables`}
+            >
+              {PERIOD_LABELS[id]}
+              {selected && (
+                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin]">
         {teamLabel && (

@@ -1,5 +1,6 @@
 import { Trash2, Smile, Users, Megaphone } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
@@ -188,12 +189,11 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
         rows={2}
         className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-6"
       />
-      <button
-        type="submit"
+      <PendingSubmitButton
+        idleLabel="Add headline"
+        pendingLabel="Adding…"
         className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 md:col-span-6 md:justify-self-end"
-      >
-        Add headline
-      </button>
+      />
     </form>
   );
 }

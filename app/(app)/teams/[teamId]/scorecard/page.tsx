@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { BarChart3 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { mondayOf, toDateString, lastNMondays } from "@/lib/dates";
@@ -217,12 +218,11 @@ function AddMetricForm({
           <option key={g} value={g} />
         ))}
       </datalist>
-      <button
-        type="submit"
+      <PendingSubmitButton
+        idleLabel="Add metric"
+        pendingLabel="Adding…"
         className="md:col-span-7 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
-        Add metric
-      </button>
+      />
     </form>
   );
 }

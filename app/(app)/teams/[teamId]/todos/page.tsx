@@ -1,6 +1,7 @@
-import { CheckSquare } from "lucide-react";
+import { CheckSquare, Flag } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { daysFromNow, formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { AddTodoSubmit } from "./todo-submit-button";
 import { addTodo } from "./actions";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
@@ -18,6 +19,14 @@ type TodoDoc = {
   source_rock_id: string | null;
 };
 
+type MilestoneDueSoon = {
+  id: string;
+  title: string;
+  owner_id: string | null;
+  due_date: string | null;
+  rock_title: string;
+};
+
 export default async function TodosPage({
   params,
 }: {
@@ -27,15 +36,39 @@ export default async function TodosPage({
   const { uid, db, team } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
-  const snap = await db.collection("todos").where("team_id", "==", tid).get();
+  const [snap, rocksSnap] = await Promise.all([
+    db.collection("todos").where("team_id", "==", tid).get(),
+    db.collection("rocks").where("team_id", "==", tid).get(),
+  ]);
+
+  const rockTitleById = new Map(
+    rocksSnap.docs.map((d) => [d.id, String(d.data().title ?? "Rock")]),
+  );
 
   // Project plain fields — completed_at is a Timestamp and can't cross the
   // RSC boundary into the client list row.
   const todos: TodoListItem[] = [];
+  // Milestones due within 7 days (or overdue) surface here so they don't
+  // live only under Rocks — Jenna reported a due-today milestone never
+  // appeared on To-Dos (P0-4 / P14-4).
+  const dueSoonMilestones: MilestoneDueSoon[] = [];
   for (const d of snap.docs) {
     const t = d.data() as TodoDoc;
-    // Milestones belong on the Rocks tab.
-    if (t.source_rock_id) continue;
+    if (t.source_rock_id) {
+      if (
+        !t.completed_at &&
+        isDueWithinDays(t.due_date, 7)
+      ) {
+        dueSoonMilestones.push({
+          id: d.id,
+          title: t.title,
+          owner_id: t.owner_id ?? null,
+          due_date: t.due_date ?? null,
+          rock_title: rockTitleById.get(t.source_rock_id) ?? "Rock",
+        });
+      }
+      continue;
+    }
     const visibility = t.visibility === "private" ? "private" : "team";
     // Private items only for the owner.
     if (visibility === "private" && t.owner_id !== uid) continue;
@@ -50,7 +83,7 @@ export default async function TodosPage({
     });
   }
 
-  const byDue = (a: TodoListItem, b: TodoListItem) => {
+  const byDue = <T extends { due_date: string | null }>(a: T, b: T) => {
     if (!a.due_date && !b.due_date) return 0;
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;
@@ -58,9 +91,12 @@ export default async function TodosPage({
   };
   const open = todos.filter((t) => !t.completed).sort(byDue);
   const done = todos.filter((t) => t.completed).sort(byDue);
+  dueSoonMilestones.sort(byDue);
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+
+  const defaultDue = daysFromNow(7);
 
   return (
     <div className="space-y-6">
@@ -71,7 +107,49 @@ export default async function TodosPage({
         </p>
       </header>
 
-      <AddTodoForm teamId={tid} members={members} defaultOwnerId={uid} />
+      <AddTodoForm
+        teamId={tid}
+        members={members}
+        defaultOwnerId={uid}
+        defaultDue={defaultDue}
+      />
+
+      {dueSoonMilestones.length > 0 && (
+        <section>
+          <SectionHeader>
+            Due soon · milestones ({dueSoonMilestones.length})
+          </SectionHeader>
+          <List>
+            {dueSoonMilestones.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-3 px-4 py-3 text-sm"
+              >
+                <Flag
+                  className="h-4 w-4 shrink-0 text-zinc-500"
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{m.title}</div>
+                  <div className="truncate text-xs text-zinc-500">
+                    Milestone · {m.rock_title}
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
+                  {ownerName(m.owner_id)}
+                </span>
+                <span className="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+                  {m.due_date ? formatDateOnly(m.due_date) : "—"}
+                </span>
+              </div>
+            ))}
+          </List>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Check off milestones on the Rocks tab. Shown here when due within 7
+            days.
+          </p>
+        </section>
+      )}
 
       <section>
         <SectionHeader>Open ({open.length})</SectionHeader>
@@ -133,10 +211,13 @@ function AddTodoForm({
   teamId,
   members,
   defaultOwnerId,
+  defaultDue,
 }: {
   teamId: string;
   members: { user_id: string; full_name: string }[];
   defaultOwnerId: string;
+  /** YYYY-MM-DD — client expects +7 days (P0-4 / P14-4). */
+  defaultDue: string;
 }) {
   async function action(formData: FormData) {
     "use server";
@@ -167,6 +248,7 @@ function AddTodoForm({
       <input
         name="due_date"
         type="date"
+        defaultValue={defaultDue}
         className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
       />
       <select

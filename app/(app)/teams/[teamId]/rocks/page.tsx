@@ -7,6 +7,7 @@ import { AddRockDrawer } from "./add-rock-drawer";
 import { RockRow } from "./rock-row";
 import { isTeamRock } from "./rock-type";
 import type { MilestoneSerialized } from "./milestones";
+import type { StatusUpdateSerialized } from "./status-history";
 
 type RockDoc = {
   team_id: string;
@@ -72,11 +73,16 @@ export default async function RocksPage({
   const quarter = currentQuarter();
   const eoq = toDateString(endOfQuarter());
 
-  // Fetch rocks and team todos in parallel — milestones live in todos with
-  // source_rock_id set, so one query covers both surfaces.
-  const [rocksSnap, todosSnap] = await Promise.all([
+  // Fetch rocks, todos (milestones), and status history in parallel.
+  // Status comments live in rock_status_updates (append-only); they were
+  // written on save but never rendered — P0-5 / Jenna P14-3.
+  const [rocksSnap, todosSnap, statusSnap] = await Promise.all([
     db.collection("rocks").where("team_id", "==", teamId).get(),
     db.collection("todos").where("team_id", "==", teamId).get(),
+    db
+      .collection("rock_status_updates")
+      .where("team_id", "==", teamId)
+      .get(),
   ]);
 
   // Project plain fields only — spreading d.data() would pull created_at
@@ -114,6 +120,32 @@ export default async function RocksPage({
     list.push(m);
     milestonesByRock.set(t.source_rock_id, list);
   }
+  const statusByRock = new Map<string, StatusUpdateSerialized[]>();
+  for (const d of statusSnap.docs) {
+    const x = d.data();
+    const rockId = x.rock_id as string | undefined;
+    if (!rockId) continue;
+    const created = x.created_at as { toMillis?: () => number } | null;
+    const entry: StatusUpdateSerialized = {
+      id: d.id,
+      status: String(x.status ?? ""),
+      comment: (x.comment as string | null) ?? null,
+      user_id: (x.user_id as string | null) ?? null,
+      created_at_ms: created?.toMillis?.() ?? null,
+      author_name: x.user_id
+        ? (members.find((m) => m.user_id === x.user_id)?.full_name ?? "—")
+        : "—",
+    };
+    const list = statusByRock.get(rockId) ?? [];
+    list.push(entry);
+    statusByRock.set(rockId, list);
+  }
+  for (const list of statusByRock.values()) {
+    list.sort(
+      (a, b) => (b.created_at_ms ?? 0) - (a.created_at_ms ?? 0),
+    );
+  }
+
   for (const list of milestonesByRock.values()) {
     list.sort((a, b) => {
       if (!a.due_date && !b.due_date) return 0;
@@ -246,6 +278,7 @@ export default async function RocksPage({
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={eoq}
+                statusHistory={statusByRock.get(r.id) ?? []}
               />
             ))}
           </RockSection>

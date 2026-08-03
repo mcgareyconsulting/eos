@@ -13,6 +13,11 @@ import {
   MilestonesDisclosure,
   type MilestoneSerialized,
 } from "./milestones";
+import {
+  LatestStatusComment,
+  StatusHistoryList,
+  type StatusUpdateSerialized,
+} from "./status-history";
 
 type Rock = {
   id: string;
@@ -37,6 +42,7 @@ export function RockRow({
   members,
   milestones,
   defaultDue,
+  statusHistory = [],
 }: {
   teamId: string;
   rock: Rock;
@@ -44,6 +50,8 @@ export function RockRow({
   members: Member[];
   milestones: MilestoneSerialized[];
   defaultDue: string;
+  /** Append-only status comments (newest first). P0-5 discoverability. */
+  statusHistory?: StatusUpdateSerialized[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const doneCount = milestones.filter((m) => m.completed).length;
@@ -85,6 +93,7 @@ export function RockRow({
             rock={rock}
             ownerName={displayOwner}
             milestones={detailMilestones}
+            statusHistory={statusHistory}
             className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
           >
             {rock.title}
@@ -102,6 +111,7 @@ export function RockRow({
                 .join(" · ")}
             </p>
           )}
+          {!expanded && <LatestStatusComment updates={statusHistory} />}
         </div>
 
         <div className="w-20 shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
@@ -149,6 +159,13 @@ export function RockRow({
                 No description — edit the rock to add one.
               </p>
             )}
+          </div>
+
+          <div>
+            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Status history
+            </h4>
+            <StatusHistoryList updates={statusHistory} />
           </div>
 
           <MilestonesDisclosure

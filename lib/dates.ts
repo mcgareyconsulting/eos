@@ -100,6 +100,38 @@ export function formatDateOnly(d: string): string {
   return new Date(d + "T00:00:00").toLocaleDateString();
 }
 
+// Date-only `YYYY-MM-DD` (or a Date) as local midnight. Prefer this over
+// `new Date("YYYY-MM-DD")` for due-date comparisons — UTC midnight shifts a
+// day west of the Atlantic. (Not the same as csv-import's parseDateOnly,
+// which normalizes free-text → YYYY-MM-DD string.)
+export function toLocalDate(d: string | Date): Date {
+  if (d instanceof Date) {
+    const out = new Date(d);
+    out.setHours(0, 0, 0, 0);
+    return out;
+  }
+  return new Date(d + "T00:00:00");
+}
+
+// True when `due` is on or before today + `withinDays` (inclusive).
+// Missing due dates never count as "due soon".
+export function isDueWithinDays(
+  due: string | null | undefined,
+  withinDays: number,
+  from: Date = new Date(),
+): boolean {
+  if (!due) return false;
+  const dueDate = toLocalDate(due);
+  const end = toLocalDate(from);
+  end.setDate(end.getDate() + withinDays);
+  return dueDate.getTime() <= end.getTime();
+}
+
+// Today + N days as YYYY-MM-DD (local). Used for to-do default due dates.
+export function daysFromNow(days: number, from: Date = new Date()): string {
+  return toDateString(addDays(toLocalDate(from), days));
+}
+
 export function durationMinutes(
   startedAt: string,
   endedAt: string | null,

@@ -9,6 +9,10 @@ import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { GoalDirection, WeekRange } from "@/lib/scorecard";
 import { buildScorecardColumns } from "@/lib/scorecard-periods";
+import {
+  compareBySpeakingOrder,
+  reconcileSpeakingOrder,
+} from "@/lib/l10/speaking-order";
 
 type MetricDoc = {
   id: string;
@@ -43,6 +47,8 @@ export function SegmentScorecard({
   initialMetrics,
   initialEntries,
   members,
+  speakingOrder: speakingOrderProp,
+  absentUserIds = [],
 }: {
   teamId: string;
   meetingId: string;
@@ -51,6 +57,9 @@ export function SegmentScorecard({
   initialMetrics: MetricDoc[];
   initialEntries: EntryDoc[];
   members: Member[];
+  /** Meeting/team speaking order — drives Default order (P1-4). */
+  speakingOrder?: string[];
+  absentUserIds?: string[];
 }) {
   const db = getClientDb();
 
@@ -78,12 +87,17 @@ export function SegmentScorecard({
     return rec;
   }, [entries]);
 
+  const speakingOrder = useMemo(
+    () => reconcileSpeakingOrder(speakingOrderProp, members),
+    [speakingOrderProp, members],
+  );
+
   const sorted = useMemo(
     () =>
-      [...metrics].sort(
-        (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+      [...metrics].sort((a, b) =>
+        compareBySpeakingOrder(a, b, speakingOrder, absentUserIds),
       ),
-    [metrics],
+    [metrics, speakingOrder, absentUserIds],
   );
 
   // L10 stays on the weekly grid (period tabs hidden via compact).
@@ -116,6 +130,8 @@ export function SegmentScorecard({
       showDelete={false}
       showGroupEditor={false}
       compact
+      speakingOrder={speakingOrder}
+      absentUserIds={absentUserIds}
       toolbarExtra={
         <QuickAddIssue
           teamId={teamId}

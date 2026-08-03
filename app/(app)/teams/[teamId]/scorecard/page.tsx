@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { mondayOf, toDateString } from "@/lib/dates";
 import { parseWeekRange, type GoalDirection } from "@/lib/scorecard";
 import {
   entriesToRecord,
@@ -85,21 +84,13 @@ export default async function ScorecardPage({
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Scorecard</h1>
-        <div className="flex flex-col items-end gap-2">
-          <AddMetricModal
-            teamId={tid}
-            members={members}
-            defaultOwnerId={uid}
-            groups={groupNames}
-            activePeriod={period}
-          />
-          <p className="text-xs text-zinc-500 tabular-nums">
-            Current week starts{" "}
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              {toDateString(mondayOf())}
-            </span>
-          </p>
-        </div>
+        <AddMetricModal
+          teamId={tid}
+          members={members}
+          defaultOwnerId={uid}
+          groups={groupNames}
+          activePeriod={period}
+        />
       </header>
 
       <Suspense

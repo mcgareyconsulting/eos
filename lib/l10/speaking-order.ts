@@ -100,6 +100,29 @@ export function presentOrder(
   return order.filter((uid) => !absent.has(uid));
 }
 
+/**
+ * Owner sections for L10 lists (Rocks, etc.): present members first in
+ * speaking order, then absentees (still in speaking order, dimmed).
+ * Keeps an absentee from appearing *above* someone who is in the room —
+ * matching the rail's present-first mental model without hiding their rocks.
+ */
+export function ownersPresentThenAbsent(
+  order: string[],
+  absentUserIds: string[] | Set<string>,
+): string[] {
+  const absent =
+    absentUserIds instanceof Set
+      ? absentUserIds
+      : new Set(absentUserIds);
+  const present: string[] = [];
+  const missing: string[] = [];
+  for (const uid of order) {
+    if (absent.has(uid)) missing.push(uid);
+    else present.push(uid);
+  }
+  return [...present, ...missing];
+}
+
 // Who currently holds the floor. When the stored pointer lands on someone who
 // has since been marked absent, the floor passes to the NEXT person present
 // (wrapping to the front only if nobody after them remains) — marking speaker
@@ -117,4 +140,27 @@ export function currentSpeakerUid(
     if (uid && !absent.has(uid)) return uid;
   }
   return null;
+}
+
+/**
+ * Sort scorecard (or similar) rows by owner following speaking order, then
+ * each owner's configured sort_order / name. Owner-less rows sort last.
+ * When absentees are provided, present owners rank first (same as Rocks).
+ */
+export function compareBySpeakingOrder(
+  a: { owner_id: string | null; sort_order: number; name: string },
+  b: { owner_id: string | null; sort_order: number; name: string },
+  speakingOrder: string[],
+  absentUserIds: string[] = [],
+): number {
+  const sectionOrder = ownersPresentThenAbsent(speakingOrder, absentUserIds);
+  const rank = new Map(sectionOrder.map((uid, i) => [uid, i]));
+  const rankOf = (ownerId: string | null) => {
+    if (ownerId == null) return Number.POSITIVE_INFINITY;
+    return rank.get(ownerId) ?? sectionOrder.length + 1;
+  };
+  const ar = rankOf(a.owner_id);
+  const br = rankOf(b.owner_id);
+  if (ar !== br) return ar - br;
+  return a.sort_order - b.sort_order || a.name.localeCompare(b.name);
 }

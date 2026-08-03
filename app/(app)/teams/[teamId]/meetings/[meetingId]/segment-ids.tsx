@@ -122,15 +122,12 @@ export function SegmentIDS({
 
       <section className="space-y-3">
         <header className="flex flex-wrap items-end justify-between gap-3 border-b border-zinc-200 pb-2 dark:border-zinc-800">
-          <div>
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Short-term
-            </h3>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              {rankedShort.length} · ranked by team votes · click title for
-              details
-            </p>
-          </div>
+          <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Short-term
+            <span className="ml-1.5 font-normal text-zinc-500">
+              {rankedShort.length}
+            </span>
+          </h3>
           <div className="text-xs text-zinc-600 dark:text-zinc-400">
             <span
               className={
@@ -142,10 +139,7 @@ export function SegmentIDS({
             >
               {myVotesUsed}/{MAX_VOTES_PER_TEAM}
             </span>{" "}
-            of your votes used
-            {myVotesRemaining === 0
-              ? " · out of votes — tap − to re-allocate"
-              : ` · stack up to ${MAX_VOTES_PER_TEAM}`}
+            votes used
           </div>
         </header>
 
@@ -271,10 +265,10 @@ export function SegmentIDS({
         <header className="border-b border-zinc-200 pb-2 dark:border-zinc-800">
           <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Long-term
+            <span className="ml-1.5 font-normal text-zinc-500">
+              {rankedLong.length}
+            </span>
           </h3>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {rankedLong.length} · parked · ranked by priority · not voted on
-          </p>
         </header>
         <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {rankedLong.length === 0 && (

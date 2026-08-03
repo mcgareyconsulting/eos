@@ -6,14 +6,12 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import {
   type Segment,
   isSegment,
-  SEGMENT_HINTS,
   SEGMENT_LABELS,
 } from "@/lib/l10/segments";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
 import { loadScorecardEntries } from "@/lib/scorecard-entries";
 import { endOfQuarter, lastNMondays, toDateString } from "@/lib/dates";
-import { LocalTime } from "@/components/local-time";
 import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
@@ -311,9 +309,6 @@ export default async function MeetingDetailPage({
                   {team.name} L10
                 </span>
               </div>
-              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                {SEGMENT_HINTS[viewSegment]}
-              </p>
             </div>
             <div className="flex shrink-0 items-center gap-3">
               {/* Join the team's Google Meet room. DEMO: opens the standing
@@ -351,20 +346,6 @@ export default async function MeetingDetailPage({
                 <h1 className="text-2xl font-semibold tracking-tight">
                   {team.name} L10
                 </h1>
-                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                  Started{" "}
-                  <LocalTime
-                    ms={meetingStartedAtMs}
-                    fallback={startedAtLabel ?? "—"}
-                    options={{
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    }}
-                  />{" "}
-                  · completed
-                </p>
               </div>
               <Link
                 href={`/teams/${tid}/meetings/${mid}?recap=1`}
@@ -510,6 +491,8 @@ async function SegmentContent({
         initialMetrics={initialMetrics}
         initialEntries={initialEntries}
         members={members}
+        speakingOrder={speakingOrder}
+        absentUserIds={absentUserIds}
       />
     );
   }
@@ -627,6 +610,9 @@ async function SegmentContent({
         userId={userId}
         initialTodos={initialTodos}
         members={members}
+        initialSpeakingOrder={speakingOrder}
+        initialAbsentUserIds={absentUserIds}
+        initialSpeakerIndex={speakerIndex}
       />
     );
   }

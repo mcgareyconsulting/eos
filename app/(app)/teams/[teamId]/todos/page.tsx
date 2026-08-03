@@ -33,7 +33,7 @@ export default async function TodosPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const { uid, db } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
   const [snap, rocksSnap] = await Promise.all([
@@ -102,9 +102,6 @@ export default async function TodosPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · click a title to expand · pencil to edit
-        </p>
       </header>
 
       <AddTodoForm

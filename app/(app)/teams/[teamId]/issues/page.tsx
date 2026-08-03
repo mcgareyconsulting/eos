@@ -9,7 +9,7 @@ export default async function IssuesPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const { uid, db } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
   // Server-rendered hydration only — IssuesList re-subscribes client-side.
@@ -41,10 +41,6 @@ export default async function IssuesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · capture & triage here · vote during the L10 Issues
-          segment
-        </p>
       </header>
 
       <AddIssueForm teamId={tid} members={members} defaultOwnerId={uid} />

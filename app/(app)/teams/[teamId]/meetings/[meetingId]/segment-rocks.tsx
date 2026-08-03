@@ -9,6 +9,7 @@ import { formatDateOnly } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
+  ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
 import { EditableText } from "@/components/editable-text";
@@ -80,9 +81,9 @@ function sortRocks(rocks: RockDoc[]): RockDoc[] {
   });
 }
 
-// L10 Rocks: optional Team Rocks section first (owner_id null), then person
-// sections in speaking order. Absent owners stay visible but dimmed; current
-// speaker is highlighted.
+// L10 Rocks: Team section first, then person sections.
+// Order = present members in speaking order, then absentees (dimmed) so an
+// absent owner never sits above someone still in the room (matches rail).
 function groupRocksForMeeting(
   rocks: RockDoc[],
   members: Member[],
@@ -120,7 +121,10 @@ function groupRocksForMeeting(
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
   const placed = new Set<string>();
 
-  for (const uid of speakingOrder) {
+  // Present first (speaking order), then absentees — never interleave.
+  const sectionOrder = ownersPresentThenAbsent(speakingOrder, absent);
+
+  for (const uid of sectionOrder) {
     const list = byOwner.get(uid);
     if (!list || list.length === 0) continue;
     placed.add(uid);
@@ -135,10 +139,14 @@ function groupRocksForMeeting(
   }
 
   // Owners with rocks who aren't in the reconciled order (stale owner_id).
+  // Present orphans before absent orphans; alpha within each bucket.
   const orphans = [...byOwner.keys()].filter((id) => !placed.has(id));
-  orphans.sort((a, b) =>
-    (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—"),
-  );
+  orphans.sort((a, b) => {
+    const aAbs = absent.has(a) ? 1 : 0;
+    const bAbs = absent.has(b) ? 1 : 0;
+    if (aAbs !== bAbs) return aAbs - bAbs;
+    return (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—");
+  });
   for (const uid of orphans) {
     const list = byOwner.get(uid)!;
     groups.push({

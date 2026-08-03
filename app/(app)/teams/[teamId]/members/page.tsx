@@ -7,6 +7,7 @@ import {
   setMeetLink,
 } from "./actions";
 import { AddMemberDrawer } from "./add-member-drawer";
+import { SpeakingOrderEditor } from "./speaking-order-editor";
 
 type JoinRequest = {
   user_id: string;
@@ -47,13 +48,7 @@ export default async function MembersPage({
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {team.name} · {members.length}{" "}
-            {members.length === 1 ? "member" : "members"}
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
         {isLeader && <AddMemberDrawer teamId={tid} />}
       </header>
 
@@ -133,6 +128,13 @@ export default async function MembersPage({
                 </button>
               </div>
             </form>
+
+            <SpeakingOrderEditor
+              teamId={tid}
+              members={members}
+              storedOrder={team.speakingOrder}
+              canEdit
+            />
           </div>
 
           <h2 className="pt-2 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">

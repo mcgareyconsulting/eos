@@ -2,8 +2,10 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   clampSpeakerIndex,
+  compareBySpeakingOrder,
   currentSpeakerUid,
   firstPresentIndex,
+  ownersPresentThenAbsent,
   presentOrder,
   reconcileSpeakingOrder,
   stepSpeakerIndex,
@@ -154,6 +156,24 @@ describe("presentOrder", () => {
   });
 });
 
+describe("ownersPresentThenAbsent", () => {
+  const order = ["u-sarah", "u-marcus", "u-elena", "u-tom"];
+
+  test("moves absentees after all present people, preserving relative order", () => {
+    // Marcus absent but was #2 — must not sit above Elena/Tom who are present.
+    assert.deepEqual(ownersPresentThenAbsent(order, ["u-marcus"]), [
+      "u-sarah",
+      "u-elena",
+      "u-tom",
+      "u-marcus",
+    ]);
+  });
+
+  test("keeps full speaking order when nobody is absent", () => {
+    assert.deepEqual(ownersPresentThenAbsent(order, []), order);
+  });
+});
+
 describe("currentSpeakerUid", () => {
   const order = ["u-sarah", "u-marcus", "u-elena"];
 
@@ -178,5 +198,26 @@ describe("currentSpeakerUid", () => {
 
   test("clamps an out-of-range pointer instead of returning undefined", () => {
     assert.equal(currentSpeakerUid(order, 99, []), "u-elena");
+  });
+});
+
+describe("compareBySpeakingOrder", () => {
+  const order = ["u-marcus", "u-sarah", "u-elena"];
+
+  test("orders rows by owner speaking sequence, then sort_order", () => {
+    const rows = [
+      { owner_id: "u-elena", sort_order: 0, name: "E1" },
+      { owner_id: "u-marcus", sort_order: 1, name: "M2" },
+      { owner_id: "u-marcus", sort_order: 0, name: "M1" },
+      { owner_id: "u-sarah", sort_order: 0, name: "S1" },
+      { owner_id: null, sort_order: 0, name: "Team" },
+    ];
+    const sorted = [...rows].sort((a, b) =>
+      compareBySpeakingOrder(a, b, order),
+    );
+    assert.deepEqual(
+      sorted.map((r) => r.name),
+      ["M1", "M2", "S1", "E1", "Team"],
+    );
   });
 });

@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-03 — _Pass 14_
+**Last updated:** 2026-08-03 — _Pass 15 (P1-1 + P1-3 shipped)_
 
 ---
 
@@ -377,6 +377,29 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
+**Pass 15 (2026-08-03): client-feedback build batch** on
+`feature/p1-roadmap` (after P0 trust bugs on `feature/p0-roadmap`).
+
+**Shipped this session (Session B):**
+- **P1-1 Team switcher** — sidebar lists all memberships; switch preserves
+  section path; preference in `localStorage` (`components/team-nav.tsx`).
+- **P1-3 Scorecard metric intervals** (Jenna #1) — tabs are **filters by
+  `metric.interval`**, not rollups of weekly data. Weekly / Monthly /
+  Quarterly / Annual each own their measurables + editable period columns.
+  Add measurable is a header modal; interval defaults to the active tab.
+  L10 scorecard remains weekly-only.
+- **P1-4 L10 scorecard order** (P13-9) — Default order walks **owner
+  speaking sequence** (then metric `sort_order`), not status reshuffle.
+- **P1-5 Speaking order editor** (P14-8) — Members → Meeting settings;
+  leaders reorder with ↑↓; durable `teams.speaking_order`. UI copy:
+  configured order, **not join order**.
+
+**Next:** P1-2 ops checklist, or Session C product (headlines discuss,
+issues ST/LT, comments). Working priority list is agent-local — not in
+this repo.
+
+---
+
 **Pass 14 (2026-08-03): structured client feedback tracker** — HPB users
 filled `Daniel_Tool_Feedback_Tracker.xlsx` after hands-on time in the
 demo (22 items, 2026-07-30 → 2026-08-03). Reviewers: **Jenna Scheeler**,
@@ -392,7 +415,7 @@ Pass 11/13 so we don't double-count.
 
 | # | Date | Who | Page | Ask / bug | Map / disposition |
 |---|------|-----|------|-----------|-------------------|
-| 1 | 07-30 | Jenna | Scorecard | Weekly metrics work; **other scorecard tabs inaccessible** | **Bug / incomplete UI.** Interval tabs (monthly/annual — Feature 2) may show but not load data, or only weekly is wired. Related: Pass 13 #3/#6, Pass 11 warehouse-fed scorecard. |
+| 1 | 07-30 | Jenna | Scorecard | Weekly metrics work; **other scorecard tabs inaccessible** | ✅ **Done Pass 15 (P1-3).** Metric `interval` model: tabs filter weekly/monthly/quarterly/annual measurables (not weekly rollups). Calculated/share-up still P3-1; warehouse trends P3-5. |
 | 2 | 07-30 | Jenna | Rocks | Quarter + Due Date — **manual entry or smart logic?** | **Product clarity.** Document / improve defaults (also Steph #19). |
 | 3 | 07-30 | Jenna | Rocks | **Where does the status comment go?** (off-track note) | **UX discoverability.** Related to Pass 13 #1 (save bug fixed). Surface comment history on rock after save. |
 | 4 | 07-30 | Jenna | To-Dos | **Default due date = 7 days out**; milestones 7 days out should become to-dos — she added a milestone due today and it **did not** pull into to-dos | **Bug + product.** Home 7-day milestones (Pass 11) may not cover "milestone → to-do" auto-promote, or list filter is wrong. Verify `home` + to-dos surface. |
@@ -404,7 +427,7 @@ Pass 11/13 so we don't double-count.
 | 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | **Integration bug / incomplete.** Today is **one-way push** (`lib/google/tasks.ts`). Client wants **Tasks → EOS** completion sync. Elevates Pass 11 Phase-1 Tasks ask to **two-way is required**. |
 | 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
 | 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | **Product.** ST/LT move = deferred issue actions family (Pass 11/13). In-meeting edit + comments = same as #6. |
-| 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | **Confirmed product gap.** Sidebar `teams[0]` only (Pass 13 #2 remainder). **Team switcher** is now client-explicit. |
+| 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | ✅ **Done Pass 15 (P1-1).** Sidebar team switcher over all memberships. |
 | 14 | 08-03 | Steph | Headlines | Categorization good; add **General / FYI** category (beyond Other) | **Small product** — headline category enum. |
 | 15 | 08-03 | Steph | Headlines | **Hyperlinks + rich text** (bullets, bold) in headlines | **Product** — rich text / linkify across headlines (and issues #21). |
 | 16 | 08-03 | Steph | Headlines | **No submit loading feedback** → pressed multiple times → **4 duplicates** | **Bug — high confidence.** Disable button + pending state on create. Same pattern audit for all create forms. |
@@ -418,12 +441,12 @@ Pass 11/13 so we don't double-count.
 ### Pass 14 — prioritized engineering queue
 
 **Bugs / quick wins (buildable now):**
-1. **Headline (and form) double-submit** — pending/disabled state (#16).
-2. **Milestone date not editable after create** (#20).
-3. **Rock status dropdown clipped at bottom of viewport** (#18) — extend popover collision work from Pass 13 #1.
-4. **To-do default due = +7 days**; verify/fix **milestones due soon surfacing as to-dos** (#4).
-5. **Team switcher** in shell (#13) — also unblocks multi-team access complaints from Pass 13.
-6. **Status comment discoverability** after save (#3) — where does it show?
+1. **Headline (and form) double-submit** — pending/disabled state (#16). ✅ Pass 15 P0
+2. **Milestone date not editable after create** (#20). ✅ Pass 15 P0
+3. **Rock status dropdown clipped at bottom of viewport** (#18). ✅ Pass 15 P0
+4. **To-do default due = +7 days**; milestones due soon as to-dos (#4). ✅ Pass 15 P0
+5. **Team switcher** in shell (#13). ✅ Pass 15 P1-1
+6. **Status comment discoverability** after save (#3). ✅ Pass 15 P0
 
 **Integrations / access:**
 7. **Google Tasks two-way completion** (#10) — today one-way only; client expects Tasks→EOS.
@@ -434,7 +457,7 @@ Pass 11/13 so we don't double-count.
 10. **Custom agendas + pick template at start** (#8) — still largest build; re-confirmed by Jenna + Steph (Pass 13).
 11. **Archive-after-meeting + archive toggle** across entities (#5); **headline discuss checkbox** (selective archive) (#7).
 12. **Issue ST↔LT move + LT tab** (#12, #21); **comments** over file attachments (#6).
-13. **Scorecard interval tabs** working (#1); **calculated + share-up metrics** (#11) — new ninety-parity big item.
+13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1).
 14. Headline **FYI category** (#14); **rich text / links** (#15, #22).
 15. Integrations nav → settings (#17); rock/quarter **default flexibility** (#2, #19).
 

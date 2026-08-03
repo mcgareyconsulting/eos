@@ -125,10 +125,6 @@ export default async function HomePage() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Open to-dos and active rocks across {teams.length}{" "}
-          {teams.length === 1 ? "team" : "teams"}.
-        </p>
       </header>
 
       <section>

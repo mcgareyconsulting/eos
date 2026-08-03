@@ -21,6 +21,7 @@ import {
   type ScorecardColumn,
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
+import { compareBySpeakingOrder } from "@/lib/l10/speaking-order";
 
 /**
  * Client shell for the standalone scorecard: filter state + metric filter by
@@ -38,6 +39,10 @@ export function ScorecardPanel({
   showDelete = true,
   showGroupEditor = true,
   compact = false,
+  /** L10: when set, Default order walks owner speaking order (P1-4). */
+  speakingOrder,
+  /** L10: absentees sort after present owners (same as Rocks). */
+  absentUserIds,
   toolbarExtra,
 }: {
   teamId: string;
@@ -53,6 +58,8 @@ export function ScorecardPanel({
   showGroupEditor?: boolean;
   /** L10 segment: weekly-only, no period tabs. */
   compact?: boolean;
+  speakingOrder?: string[];
+  absentUserIds?: string[];
   toolbarExtra?: React.ReactNode;
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -106,12 +113,31 @@ export function ScorecardPanel({
 
     rows = [...rows].sort((a, b) => {
       if (sort === "order") {
+        // L10: participant/speaking order (not status reshuffle). Standalone
+        // keeps configured sort_order only.
+        if (speakingOrder && speakingOrder.length > 0) {
+          return compareBySpeakingOrder(
+            a,
+            b,
+            speakingOrder,
+            absentUserIds ?? [],
+          );
+        }
         return (
           a.sort_order - b.sort_order || a.name.localeCompare(b.name)
         );
       }
       if (sort === "name") return a.name.localeCompare(b.name);
       if (sort === "owner") {
+        // Prefer speaking order when available (same as L10 default).
+        if (speakingOrder && speakingOrder.length > 0) {
+          return compareBySpeakingOrder(
+            a,
+            b,
+            speakingOrder,
+            absentUserIds ?? [],
+          );
+        }
         return (
           ownerName(a.owner_id).localeCompare(ownerName(b.owner_id)) ||
           a.name.localeCompare(b.name)
@@ -135,7 +161,18 @@ export function ScorecardPanel({
 
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervalMetrics, members, entryMap, columns, status, ownerId, sort, search]);
+  }, [
+    intervalMetrics,
+    members,
+    entryMap,
+    columns,
+    status,
+    ownerId,
+    sort,
+    search,
+    speakingOrder,
+    absentUserIds,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -182,7 +219,9 @@ export function ScorecardPanel({
         showGroupEditor={showGroupEditor}
         compact={compact}
         hideLocalSearch
+        // L10 speaking order must not be reshuffled by section groups.
         flatList={
+          Boolean(speakingOrder?.length) ||
           (sort !== "name" && sort !== "order") ||
           status !== "all" ||
           ownerId !== "" ||

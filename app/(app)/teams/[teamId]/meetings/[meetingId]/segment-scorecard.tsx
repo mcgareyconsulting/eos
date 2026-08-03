@@ -8,6 +8,7 @@ import { useScorecardEntries } from "@/lib/firebase/use-scorecard-entries";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { GoalDirection, WeekRange } from "@/lib/scorecard";
+import { buildScorecardColumns } from "@/lib/scorecard-periods";
 
 type MetricDoc = {
   id: string;
@@ -22,6 +23,7 @@ type MetricDoc = {
   // created before grouping existed, and on the SSR-serialized
   // `initialMetrics` until the realtime listener below replaces it.
   group?: string | null;
+  interval?: string | null;
 };
 
 type EntryDoc = {
@@ -84,6 +86,12 @@ export function SegmentScorecard({
     [metrics],
   );
 
+  // L10 stays on the weekly grid (period tabs hidden via compact).
+  const columns = useMemo(
+    () => buildScorecardColumns("weekly", weeks, weekRange),
+    [weeks, weekRange],
+  );
+
   // An unconfigured team gets a plain pointer instead of the full filter
   // shell wrapped around an empty table — metrics are set up on the
   // Scorecard tab, not mid-meeting.
@@ -96,15 +104,12 @@ export function SegmentScorecard({
     );
   }
 
-  // Same filter shell as the standalone Scorecard page (range / status /
-  // owner / sort / search), minus the period tabs — data stays live via the
-  // subscriptions above. Default sort is "order" (configured sort_order) so
-  // L10 presentation matches the team's list, not off-track-first reshuffle.
   return (
     <ScorecardPanel
       teamId={teamId}
+      period="weekly"
       weekRange={weekRange}
-      weeks={weeks}
+      columns={columns}
       metrics={sorted}
       entryByMetricWeek={entryRecord}
       members={members}

@@ -11,13 +11,11 @@ import {
   type StatusFilter,
   type WeekRange,
 } from "@/lib/scorecard";
-
-const PERIODS = [
-  { id: "weekly", label: "Weekly", enabled: true },
-  { id: "monthly", label: "Monthly", enabled: false },
-  { id: "quarterly", label: "Quarterly", enabled: false },
-  { id: "annual", label: "Annual", enabled: false },
-] as const;
+import {
+  PERIOD_LABELS,
+  SCORECARD_PERIODS,
+  type ScorecardPeriod,
+} from "@/lib/scorecard-periods";
 
 function FilterSelect({
   id,
@@ -66,11 +64,12 @@ function FilterSelect({
 }
 
 /**
- * Single-line filter strip inspired by ninety's Trends + Weekly chrome,
- * tightened into one row: range · status · owner · sort · search.
- * Team is route-scoped (read-only chip — pick team from the sidebar).
+ * Period tabs filter metrics by `metric.interval` (weekly/monthly/…).
+ * Each tab is its own set of measurables + columns at that grain — not a
+ * rollup view of weekly data.
  */
 export function ScorecardFilters({
+  period,
   weekRange,
   teamLabel,
   members,
@@ -87,6 +86,7 @@ export function ScorecardFilters({
   compact = false,
   extra,
 }: {
+  period: ScorecardPeriod;
   weekRange: WeekRange;
   teamLabel?: string;
   members: { user_id: string; full_name: string }[];
@@ -100,7 +100,7 @@ export function ScorecardFilters({
   onSearchChange: (v: string) => void;
   visibleCount: number;
   totalCount: number;
-  /** Embedded contexts (the L10 segment): filters only, no period tabs. */
+  /** Embedded contexts (the L10 segment): no period tabs. */
   compact?: boolean;
   /** Rendered at the end of the filter row (e.g. a quick-add button). */
   extra?: React.ReactNode;
@@ -109,15 +109,27 @@ export function ScorecardFilters({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const setWeekRange = (n: WeekRange) => {
+  const pushParams = (mutate: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (n === 13) params.delete("weeks");
-    else params.set("weeks", String(n));
+    mutate(params);
     const q = params.toString();
     router.push(q ? `${pathname}?${q}` : pathname);
   };
 
-  // Standalone Trends defaults to status sort; L10 compact keeps configured order.
+  const setPeriod = (p: ScorecardPeriod) => {
+    pushParams((params) => {
+      if (p === "weekly") params.delete("period");
+      else params.set("period", p);
+    });
+  };
+
+  const setWeekRange = (n: WeekRange) => {
+    pushParams((params) => {
+      if (n === 13) params.delete("weeks");
+      else params.set("weeks", String(n));
+    });
+  };
+
   const defaultSort: SortOption = compact ? "order" : "status";
 
   const defaults =
@@ -135,38 +147,50 @@ export function ScorecardFilters({
     if (weekRange !== 13) setWeekRange(13);
   };
 
+  const rangeHint =
+    period === "weekly"
+      ? null
+      : period === "monthly"
+        ? "Last 12 months"
+        : period === "quarterly"
+          ? "Last 8 quarters"
+          : "Last 5 years";
+
   return (
     <div className="space-y-2.5">
       {!compact && (
-        <div className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800">
-          {PERIODS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              disabled={!p.enabled}
-              className={cn(
-                "relative px-3 py-2 text-sm font-medium transition-colors",
-                p.id === "weekly"
-                  ? "text-hpb-blue dark:text-hpb-gold"
-                  : "text-zinc-400 dark:text-zinc-500",
-                !p.enabled && "cursor-not-allowed opacity-60",
-              )}
-              title={
-                p.enabled
-                  ? undefined
-                  : "Coming soon — weekly is the live operating view"
-              }
-            >
-              {p.label}
-              {p.id === "weekly" && (
-                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
-              )}
-            </button>
-          ))}
+        <div
+          className="flex flex-wrap items-end gap-0.5 border-b border-zinc-200 dark:border-zinc-800"
+          role="tablist"
+          aria-label="Scorecard interval"
+        >
+          {SCORECARD_PERIODS.map((id) => {
+            const selected = period === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setPeriod(id)}
+                className={cn(
+                  "relative px-3 py-2 text-sm font-medium transition-colors",
+                  selected
+                    ? "text-hpb-blue dark:text-hpb-gold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100",
+                )}
+                title={`Show ${PERIOD_LABELS[id].toLowerCase()} measurables`}
+              >
+                {PERIOD_LABELS[id]}
+                {selected && (
+                  <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* One filter line — scrolls horizontally on narrow viewports */}
       <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin]">
         {teamLabel && (
           <span
@@ -180,19 +204,25 @@ export function ScorecardFilters({
           </span>
         )}
 
-        <FilterSelect
-          id="sc-range"
-          label="Date range"
-          value={String(weekRange)}
-          active={weekRange !== 13}
-          onChange={(v) => setWeekRange(Number(v) as WeekRange)}
-        >
-          {WEEK_RANGE_OPTIONS.map((n) => (
-            <option key={n} value={n}>
-              Last {n} weeks
-            </option>
-          ))}
-        </FilterSelect>
+        {period === "weekly" ? (
+          <FilterSelect
+            id="sc-range"
+            label="Date range"
+            value={String(weekRange)}
+            active={weekRange !== 13}
+            onChange={(v) => setWeekRange(Number(v) as WeekRange)}
+          >
+            {WEEK_RANGE_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                Last {n} weeks
+              </option>
+            ))}
+          </FilterSelect>
+        ) : (
+          <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+            {rangeHint}
+          </span>
+        )}
 
         <FilterSelect
           id="sc-status"

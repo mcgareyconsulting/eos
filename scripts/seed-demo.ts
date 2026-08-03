@@ -641,6 +641,7 @@ async function main() {
       direction: mt.direction,
       owner_id: ownerByKey[mt.owner],
       group: mt.group ?? null,
+      interval: "weekly",
       sort_order: i,
       created_at: FieldValue.serverTimestamp(),
     });

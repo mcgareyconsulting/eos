@@ -490,6 +490,7 @@ async function SegmentContent({
         direction: x.direction,
         owner_id: x.owner_id ?? null,
         group: x.group ?? null,
+        interval: (x.interval as string | null | undefined) ?? "weekly",
         sort_order: x.sort_order ?? 0,
       };
     });

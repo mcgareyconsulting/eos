@@ -6,14 +6,17 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import {
   type Segment,
   isSegment,
-  SEGMENT_HINTS,
   SEGMENT_LABELS,
 } from "@/lib/l10/segments";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
 import { loadScorecardEntries } from "@/lib/scorecard-entries";
-import { endOfQuarter, lastNMondays, toDateString } from "@/lib/dates";
-import { LocalTime } from "@/components/local-time";
+import {
+  oldestPeriodStart,
+  parseScorecardPeriod,
+  type ScorecardPeriod,
+} from "@/lib/scorecard-periods";
+import { endOfQuarter, toDateString } from "@/lib/dates";
 import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
@@ -47,13 +50,20 @@ export default async function MeetingDetailPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string; meetingId: string }>;
-  searchParams: Promise<{ recap?: string; view?: string; weeks?: string }>;
+  searchParams: Promise<{
+    recap?: string;
+    view?: string;
+    weeks?: string;
+    period?: string;
+  }>;
 }) {
   const { teamId: tid, meetingId: mid } = await params;
-  const { recap, view, weeks: weeksParam } = await searchParams;
-  // Scorecard range filter (?weeks=8|13|26) — same param the standalone
-  // Scorecard page uses, so the filter strip works identically here.
+  const { recap, view, weeks: weeksParam, period: periodParam } =
+    await searchParams;
+  // Scorecard range + interval tabs (?weeks=, ?period=) — same params as the
+  // standalone Scorecard page so L10 filters match.
   const scorecardWeekRange = parseWeekRange(weeksParam);
+  const scorecardPeriod = parseScorecardPeriod(periodParam);
   const { uid, db, team } = await requireTeamAccess(tid);
 
   const meetingSnap = await db.collection("meetings").doc(mid).get();
@@ -311,9 +321,6 @@ export default async function MeetingDetailPage({
                   {team.name} L10
                 </span>
               </div>
-              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                {SEGMENT_HINTS[viewSegment]}
-              </p>
             </div>
             <div className="flex shrink-0 items-center gap-3">
               {/* Join the team's Google Meet room. DEMO: opens the standing
@@ -351,20 +358,6 @@ export default async function MeetingDetailPage({
                 <h1 className="text-2xl font-semibold tracking-tight">
                   {team.name} L10
                 </h1>
-                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                  Started{" "}
-                  <LocalTime
-                    ms={meetingStartedAtMs}
-                    fallback={startedAtLabel ?? "—"}
-                    options={{
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    }}
-                  />{" "}
-                  · completed
-                </p>
               </div>
               <Link
                 href={`/teams/${tid}/meetings/${mid}?recap=1`}
@@ -391,6 +384,7 @@ export default async function MeetingDetailPage({
               speakingOrder={speakingOrder}
               speakerIndex={speakerIndex}
               scorecardWeekRange={scorecardWeekRange}
+              scorecardPeriod={scorecardPeriod}
             />
           </section>
         )}
@@ -444,6 +438,7 @@ async function SegmentContent({
   speakingOrder,
   speakerIndex,
   scorecardWeekRange,
+  scorecardPeriod,
 }: {
   teamId: string;
   userId: string;
@@ -455,6 +450,7 @@ async function SegmentContent({
   speakingOrder: string[];
   speakerIndex: number;
   scorecardWeekRange: WeekRange;
+  scorecardPeriod: ScorecardPeriod;
 }) {
   // The roster is already in scope from the page's getTeamMembers call, so
   // Segue needs no fetch of its own.
@@ -490,11 +486,11 @@ async function SegmentContent({
         direction: x.direction,
         owner_id: x.owner_id ?? null,
         group: x.group ?? null,
+        interval: (x.interval as string | null | undefined) ?? "weekly",
         sort_order: x.sort_order ?? 0,
       };
     });
-    const weeks = lastNMondays(scorecardWeekRange).map(toDateString);
-    const oldest = weeks[weeks.length - 1]!;
+    const oldest = oldestPeriodStart(scorecardPeriod, scorecardWeekRange);
     const initialEntries = await loadScorecardEntries(
       db,
       initialMetrics.map((m) => m.id),
@@ -505,10 +501,12 @@ async function SegmentContent({
         teamId={teamId}
         meetingId={meetingId}
         weekRange={scorecardWeekRange}
-        weeks={weeks}
+        period={scorecardPeriod}
         initialMetrics={initialMetrics}
         initialEntries={initialEntries}
         members={members}
+        speakingOrder={speakingOrder}
+        absentUserIds={absentUserIds}
       />
     );
   }
@@ -626,6 +624,9 @@ async function SegmentContent({
         userId={userId}
         initialTodos={initialTodos}
         members={members}
+        initialSpeakingOrder={speakingOrder}
+        initialAbsentUserIds={absentUserIds}
+        initialSpeakerIndex={speakerIndex}
       />
     );
   }

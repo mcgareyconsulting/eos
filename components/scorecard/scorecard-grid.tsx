@@ -20,7 +20,7 @@ import {
   type GoalDirection,
   type TrendStatus,
 } from "@/lib/scorecard";
-import { formatWeekRange, mondayOf, toDateString } from "@/lib/dates";
+import { type ScorecardColumn } from "@/lib/scorecard-periods";
 import { cn } from "@/lib/utils";
 
 export type ScorecardMetric = {
@@ -32,6 +32,8 @@ export type ScorecardMetric = {
   owner_id: string | null;
   sort_order: number;
   group?: string | null;
+  /** weekly | monthly | quarterly | annual — missing = weekly */
+  interval?: string | null;
 };
 
 export type ScorecardMember = {
@@ -112,7 +114,7 @@ function stickyCell(extra?: string) {
 
 export function ScorecardGrid({
   teamId,
-  weeks,
+  columns,
   metrics,
   entryByMetricWeek,
   members,
@@ -126,8 +128,8 @@ export function ScorecardGrid({
   emptyHint,
 }: {
   teamId: string;
-  /** Newest first (YYYY-MM-DD Mondays). */
-  weeks: string[];
+  /** Newest first — weekly columns or rolled-up period columns. */
+  columns: ScorecardColumn[];
   metrics: ScorecardMetric[];
   entryByMetricWeek: Map<string, number | null> | Record<string, number | null>;
   members: ScorecardMember[];
@@ -139,7 +141,6 @@ export function ScorecardGrid({
   emptyHint?: string;
 }) {
   const [search, setSearch] = useState("");
-  const currentWeek = toDateString(mondayOf());
 
   const entryMap = useMemo(() => {
     if (entryByMetricWeek instanceof Map) return entryByMetricWeek;
@@ -187,10 +188,12 @@ export function ScorecardGrid({
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
 
   const headerBg = "bg-zinc-50 dark:bg-zinc-950";
-  const totalCols = FROZEN_COLS + weeks.length + (showDelete ? 1 : 0);
+  const totalCols = FROZEN_COLS + columns.length + (showDelete ? 1 : 0);
 
   const renderMetricRow = (m: ScorecardMetric) => {
-    const values = weeks.map((w) => entryMap.get(`${m.id}__${w}`) ?? null);
+    const values = columns.map(
+      (c) => entryMap.get(`${m.id}__${c.id}`) ?? null,
+    );
     const avg = average(values);
     const avgOnTrack = onTrack(avg, m.goal, m.direction);
     const status = trendStatus(values, m.goal, m.direction);
@@ -284,18 +287,20 @@ export function ScorecardGrid({
           title={
             avg == null
               ? "No entries yet"
-              : `Average of ${values.filter((v) => v != null).length} recorded weeks`
+              : `Average of ${values.filter((v) => v != null).length} recorded periods`
           }
         >
           {formatValue(avg, m.unit)}
         </td>
 
-        {weeks.map((w, i) => {
+        {columns.map((col, i) => {
           const v = values[i] ?? null;
-          const isCurrent = w === currentWeek;
+          const isCurrent = col.isCurrent;
+          // period start key (weekly Monday / month 1st / …)
+          const periodStart = col.id;
           return (
             <td
-              key={w}
+              key={col.id}
               className={cn(
                 "px-1 py-1 align-middle",
                 weekDivider,
@@ -305,7 +310,7 @@ export function ScorecardGrid({
               <ValueCell
                 teamId={teamId}
                 metricId={m.id}
-                weekStartDate={w}
+                weekStartDate={periodStart}
                 initial={v}
                 onTrack={onTrack(v, m.goal, m.direction)}
                 isCurrentWeek={isCurrent}
@@ -380,7 +385,7 @@ export function ScorecardGrid({
       >
         <table
           className="w-max min-w-full border-separate border-spacing-0 text-sm"
-          style={{ minWidth: FROZEN_WIDTH + weeks.length * 88 }}
+          style={{ minWidth: FROZEN_WIDTH + columns.length * 88 }}
         >
           <thead className="sticky top-0 z-30">
             <tr
@@ -449,11 +454,11 @@ export function ScorecardGrid({
               >
                 Average
               </th>
-              {weeks.map((w) => {
-                const isCurrent = w === currentWeek;
+              {columns.map((col) => {
+                const isCurrent = col.isCurrent;
                 return (
                   <th
-                    key={w}
+                    key={col.id}
                     className={cn(
                       "border-b border-zinc-200 px-2 py-2 text-center font-medium tabular-nums dark:border-zinc-800",
                       headerBg,
@@ -464,12 +469,10 @@ export function ScorecardGrid({
                     {isCurrent && (
                       <span className="mb-0.5 flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-wide">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
-                        Current week
+                        Current
                       </span>
                     )}
-                    <span className="block whitespace-nowrap">
-                      {formatWeekRange(w)}
-                    </span>
+                    <span className="block whitespace-nowrap">{col.label}</span>
                   </th>
                 );
               })}

@@ -20,7 +20,7 @@ export default async function MeetingsPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { db, team } = await requireTeamAccess(tid);
+  const { db } = await requireTeamAccess(tid);
 
   const snap = await db.collection("meetings").where("team_id", "==", tid).get();
 
@@ -72,12 +72,7 @@ export default async function MeetingsPage({
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {team.name} · Level 10 weekly meetings
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
         <HeaderAction teamId={tid} meetings={initialMeetings} />
       </header>
 

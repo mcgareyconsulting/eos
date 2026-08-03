@@ -125,8 +125,8 @@ export type SortOption =
   | "average-desc";
 
 export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  // Preserves the team's configured sort_order (and L10 presentation order).
-  // Default in-meeting so metrics aren't reshuffled to "off-track first".
+  // Standalone: configured sort_order. L10 (with speakingOrder): owner
+  // speaking sequence so the walk matches Segue/Rocks (P1-4).
   { value: "order", label: "Default order" },
   { value: "status", label: "Status (off-track first)" },
   { value: "name", label: "Name A–Z" },

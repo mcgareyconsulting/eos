@@ -515,6 +515,8 @@ async function importScorecard(
       direction: parsed.direction,
       owner_id: ownerId,
       group: cell(row, table.headers, "Group Name", "Group", "Section") || null,
+      // ninety weekly exports → weekly; other cadences need a dedicated column later.
+      interval: "weekly",
       // Not rendered today; kept so the note survives if the UI grows a field.
       description:
         normalizeDescription(cell(row, table.headers, "Description")) || null,

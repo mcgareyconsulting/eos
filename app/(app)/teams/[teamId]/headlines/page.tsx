@@ -50,7 +50,7 @@ export default async function HeadlinesPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = await params;
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const snap = await db
@@ -80,10 +80,6 @@ export default async function HeadlinesPage({
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {team.name} · customer wins, employee news, and cascading messages
-          (org-wide cascades are read-only)
-        </p>
       </header>
 
       <AddHeadlineForm teamId={teamId} />

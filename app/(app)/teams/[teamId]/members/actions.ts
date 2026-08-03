@@ -4,10 +4,32 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
 import { getAdminAuth } from "@/lib/firebase/admin";
-import { requireTeamLeader } from "@/lib/firebase/teams";
+import {
+  getTeamMembers,
+  requireTeamLeader,
+} from "@/lib/firebase/teams";
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/members`;
+}
+
+/**
+ * Durable L10 speaking order on the team (P1-5). Leaders only.
+ * Must be a full permutation of the current roster.
+ */
+export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
+  const { db } = await requireTeamLeader(teamId);
+  const members = await getTeamMembers(teamId);
+  const memberIds = new Set(members.map((m) => m.user_id));
+  const unique = new Set(uids);
+  const isPermutation =
+    uids.length === members.length &&
+    unique.size === uids.length &&
+    uids.every((uid) => memberIds.has(uid));
+  if (!isPermutation) throw new Error("Invalid speaking order");
+
+  await db.collection("teams").doc(teamId).update({ speaking_order: uids });
+  revalidatePath(pathFor(teamId));
 }
 
 // Loose but practical address check. We normalize to lowercase before use;

@@ -67,7 +67,7 @@ export default async function RocksPage({
 }) {
   const { teamId } = await params;
   const { owner: ownerParam } = await searchParams;
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const quarter = currentQuarter();
@@ -242,12 +242,7 @@ export default async function RocksPage({
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {team.name} · all quarters · click a title to view · pencil to edit
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
         <div className="flex items-center gap-2">
           <OwnerFilter members={members} currentUserId={uid} />
           <AddRockDrawer

@@ -101,11 +101,7 @@ export function SegmentHeadlines({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          Customer wins, employee news, cascading messages · org-wide cascades
-          are read-only
-        </div>
+      <div className="flex items-center justify-end">
         <QuickAddIssue
           teamId={teamId}
           prefill="From headline: "

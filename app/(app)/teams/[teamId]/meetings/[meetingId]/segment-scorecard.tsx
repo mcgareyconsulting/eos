@@ -8,6 +8,15 @@ import { useScorecardEntries } from "@/lib/firebase/use-scorecard-entries";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { GoalDirection, WeekRange } from "@/lib/scorecard";
+import {
+  buildScorecardColumns,
+  oldestPeriodStart,
+  type ScorecardPeriod,
+} from "@/lib/scorecard-periods";
+import {
+  compareBySpeakingOrder,
+  reconcileSpeakingOrder,
+} from "@/lib/l10/speaking-order";
 
 type MetricDoc = {
   id: string;
@@ -22,6 +31,7 @@ type MetricDoc = {
   // created before grouping existed, and on the SSR-serialized
   // `initialMetrics` until the realtime listener below replaces it.
   group?: string | null;
+  interval?: string | null;
 };
 
 type EntryDoc = {
@@ -37,18 +47,24 @@ export function SegmentScorecard({
   teamId,
   meetingId,
   weekRange,
-  weeks,
+  period = "weekly",
   initialMetrics,
   initialEntries,
   members,
+  speakingOrder: speakingOrderProp,
+  absentUserIds = [],
 }: {
   teamId: string;
   meetingId: string;
   weekRange: WeekRange;
-  weeks: string[]; // newest first, YYYY-MM-DD Mondays
+  /** Weekly / monthly / quarterly / annual — same as standalone scorecard. */
+  period?: ScorecardPeriod;
   initialMetrics: MetricDoc[];
   initialEntries: EntryDoc[];
   members: Member[];
+  /** Meeting/team speaking order — drives Default order (P1-4). */
+  speakingOrder?: string[];
+  absentUserIds?: string[];
 }) {
   const db = getClientDb();
 
@@ -63,10 +79,14 @@ export function SegmentScorecard({
   const metrics = useCollection<MetricDoc>(metricsQuery, initialMetrics);
 
   const metricIds = useMemo(() => metrics.map((m) => m.id), [metrics]);
-  const oldestWeek = weeks[weeks.length - 1] ?? "";
+  // Load far enough back for the active interval (annual = multi-year).
+  const oldest = useMemo(
+    () => oldestPeriodStart(period, weekRange),
+    [period, weekRange],
+  );
 
   // Chunks past the 30-value `in` limit so large scorecards stay live.
-  const entries = useScorecardEntries(metricIds, oldestWeek, initialEntries);
+  const entries = useScorecardEntries(metricIds, oldest, initialEntries);
 
   const entryRecord = useMemo(() => {
     const rec: Record<string, number | null> = {};
@@ -76,12 +96,22 @@ export function SegmentScorecard({
     return rec;
   }, [entries]);
 
+  const speakingOrder = useMemo(
+    () => reconcileSpeakingOrder(speakingOrderProp, members),
+    [speakingOrderProp, members],
+  );
+
   const sorted = useMemo(
     () =>
-      [...metrics].sort(
-        (a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+      [...metrics].sort((a, b) =>
+        compareBySpeakingOrder(a, b, speakingOrder, absentUserIds),
       ),
-    [metrics],
+    [metrics, speakingOrder, absentUserIds],
+  );
+
+  const columns = useMemo(
+    () => buildScorecardColumns(period, undefined, weekRange),
+    [period, weekRange],
   );
 
   // An unconfigured team gets a plain pointer instead of the full filter
@@ -96,21 +126,20 @@ export function SegmentScorecard({
     );
   }
 
-  // Same filter shell as the standalone Scorecard page (range / status /
-  // owner / sort / search), minus the period tabs — data stays live via the
-  // subscriptions above. Default sort is "order" (configured sort_order) so
-  // L10 presentation matches the team's list, not off-track-first reshuffle.
   return (
     <ScorecardPanel
       teamId={teamId}
+      period={period}
       weekRange={weekRange}
-      weeks={weeks}
+      columns={columns}
       metrics={sorted}
       entryByMetricWeek={entryRecord}
       members={members}
       showDelete={false}
       showGroupEditor={false}
       compact
+      speakingOrder={speakingOrder}
+      absentUserIds={absentUserIds}
       toolbarExtra={
         <QuickAddIssue
           teamId={teamId}

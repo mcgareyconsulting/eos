@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import {
+  SCORECARD_PERIODS,
+  type MetricInterval,
+} from "@/lib/scorecard-periods";
 
 const UNITS = ["number", "currency", "percent", "yesno", "time"] as const;
 type Unit = (typeof UNITS)[number];
@@ -24,6 +28,12 @@ export async function addMetric(teamId: string, formData: FormData) {
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const groupRaw = String(formData.get("group") ?? "").trim();
   const group = groupRaw === "" ? null : groupRaw;
+  const intervalRaw = String(formData.get("interval") ?? "weekly");
+  const interval: MetricInterval = (
+    SCORECARD_PERIODS as readonly string[]
+  ).includes(intervalRaw)
+    ? (intervalRaw as MetricInterval)
+    : "weekly";
 
   if (!name) throw new Error("Name required");
 
@@ -45,6 +55,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     direction,
     owner_id,
     group,
+    interval,
     sort_order: 0,
     created_at: FieldValue.serverTimestamp(),
   });

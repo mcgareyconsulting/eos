@@ -1,11 +1,10 @@
 import { CheckSquare, Flag } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { daysFromNow, formatDateOnly, isDueWithinDays } from "@/lib/dates";
+import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
-import { AddTodoSubmit } from "./todo-submit-button";
-import { addTodo } from "./actions";
+import { AddTodoModal } from "./add-todo-modal";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 
 type TodoDoc = {
@@ -159,20 +158,16 @@ export default async function TodosPage({
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  const defaultDue = daysFromNow(7);
-
   return (
     <div className="space-y-6">
-      <header>
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
+        <AddTodoModal
+          teamId={tid}
+          members={members}
+          defaultOwnerId={uid}
+        />
       </header>
-
-      <AddTodoForm
-        teamId={tid}
-        members={members}
-        defaultOwnerId={uid}
-        defaultDue={defaultDue}
-      />
 
       {dueSoonMilestones.length > 0 && (
         <section>
@@ -295,67 +290,4 @@ function List({ children }: { children: React.ReactNode }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <EmptyState icon={CheckSquare} title={children} />;
-}
-
-function AddTodoForm({
-  teamId,
-  members,
-  defaultOwnerId,
-  defaultDue,
-}: {
-  teamId: string;
-  members: { user_id: string; full_name: string }[];
-  defaultOwnerId: string;
-  /** YYYY-MM-DD — client expects +7 days (P0-4 / P14-4). */
-  defaultDue: string;
-}) {
-  async function action(formData: FormData) {
-    "use server";
-    await addTodo(teamId, formData);
-  }
-  return (
-    <form
-      action={action}
-      className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-300 bg-white p-4 md:grid-cols-6 dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <input
-        name="title"
-        placeholder="To-Do (one line)"
-        required
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-3"
-      />
-      <select
-        name="owner_id"
-        defaultValue={defaultOwnerId}
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
-      >
-        {members.map((m) => (
-          <option key={m.user_id} value={m.user_id}>
-            {m.full_name}
-          </option>
-        ))}
-      </select>
-      <input
-        name="due_date"
-        type="date"
-        defaultValue={defaultDue}
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
-      />
-      <select
-        name="visibility"
-        defaultValue="team"
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700"
-      >
-        <option value="team">Team</option>
-        <option value="private">Private</option>
-      </select>
-      <textarea
-        name="description"
-        placeholder="Add notes or context (optional)"
-        rows={2}
-        className="resize-none rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-6"
-      />
-      <AddTodoSubmit />
-    </form>
-  );
 }

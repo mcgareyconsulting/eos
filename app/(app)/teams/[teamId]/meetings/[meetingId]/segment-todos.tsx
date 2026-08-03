@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Plus } from "lucide-react";
+import { useMemo } from "react";
+import { Flag } from "lucide-react";
 import {
   collection,
   doc,
@@ -10,18 +10,18 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { addDays, toDateString } from "@/lib/dates";
+import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { addTodo } from "../../todos/actions";
 import {
   TodoListRow,
   type TodoListItem,
 } from "../../todos/todo-list-row";
+import { AddTodoModal } from "../../todos/add-todo-modal";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
@@ -188,6 +188,17 @@ export function SegmentTodos({
   const teamTodos = useCollection<TodoDoc>(teamQuery, initialTeam);
   const myTodos = useCollection<TodoDoc>(mineQuery, initialMine);
 
+  // Rock titles for due-soon milestone rows (same pattern as standalone To-Dos).
+  const rocksQuery = useMemo(
+    () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
+    [db, teamId],
+  );
+  const rocks = useCollection<{ id: string; title?: string }>(rocksQuery, []);
+  const rockTitleById = useMemo(
+    () => new Map(rocks.map((r) => [r.id, String(r.title ?? "Rock")])),
+    [rocks],
+  );
+
   // Live speaking order + attendance so sections reorder when Segue marks absent.
   const meetingRef = useMemo(
     () => doc(db, "meetings", meetingId),
@@ -215,12 +226,21 @@ export function SegmentTodos({
     absentUserIds,
   );
 
-  const visible = [...teamTodos, ...myTodos]
-    // Hide milestones (they live in the rocks segment).
-    .filter((t) => !t.source_rock_id);
+  const allTodos = [...teamTodos, ...myTodos];
+  // Pure to-dos only in owner cards. Due-soon open milestones surface above
+  // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under Rocks.
+  const pureTodos = allTodos.filter((t) => !t.source_rock_id);
+  const dueSoonMilestones = allTodos
+    .filter(
+      (t) =>
+        Boolean(t.source_rock_id) &&
+        !t.completed_at &&
+        isDueWithinDays(t.due_date, 7),
+    )
+    .sort(byDue);
 
   const groups = groupTodosForMeeting(
-    visible,
+    pureTodos,
     members,
     speakingOrder,
     absent,
@@ -229,10 +249,19 @@ export function SegmentTodos({
 
   const openCount = groups.reduce((n, g) => n + g.open.length, 0);
   const doneCount = groups.reduce((n, g) => n + g.done.length, 0);
+  const ownerName = (id: string | null) =>
+    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <AddTodoModal
+          teamId={teamId}
+          members={members}
+          defaultOwnerId={userId}
+          meetingId={meetingId}
+          compact
+        />
         <QuickAddIssue
           teamId={teamId}
           prefill="Stale to-do: "
@@ -240,23 +269,55 @@ export function SegmentTodos({
         />
       </div>
 
-      {/* Capturing a to-do is the most common action an L10 produces — it
-          has to work here, mid-meeting, without leaving for the To-Dos tab
-          (the sidebar is hidden in focus mode, so there is no way there). */}
-      <AddTodoInline
-        teamId={teamId}
-        meetingId={meetingId}
-        members={members}
-        defaultOwnerId={userId}
-      />
+      {dueSoonMilestones.length > 0 && (
+        <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <header className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
+            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+              Due soon · milestones
+            </h3>
+            <span className="text-xs text-zinc-500">
+              {dueSoonMilestones.length}
+            </span>
+          </header>
+          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {dueSoonMilestones.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-3 px-4 py-3 text-sm"
+              >
+                <Flag
+                  className="h-4 w-4 shrink-0 text-zinc-500"
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{m.title}</div>
+                  <div className="truncate text-xs text-zinc-500">
+                    Milestone ·{" "}
+                    {rockTitleById.get(m.source_rock_id ?? "") ?? "Rock"}
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
+                  {ownerName(m.owner_id)}
+                </span>
+                <span className="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+                  {m.due_date ? formatDateOnly(m.due_date) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-      {groups.length === 0 && (
+      {groups.length === 0 && dueSoonMilestones.length === 0 && (
         <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
           No to-dos.
         </div>
       )}
 
-      {openCount === 0 && doneCount > 0 && (
+      {openCount === 0 &&
+        doneCount > 0 &&
+        dueSoonMilestones.length === 0 && (
         <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
           All to-dos done — nice week.
         </div>
@@ -344,92 +405,5 @@ export function SegmentTodos({
         </section>
       ))}
     </div>
-  );
-}
-
-// Compact in-meeting capture: title + owner + due, team visibility, tagged
-// with the meeting it came from. Deliberately smaller than the To-Dos page
-// form — private visibility and long descriptions are after-meeting work
-// (or the pencil on a row).
-function AddTodoInline({
-  teamId,
-  meetingId,
-  members,
-  defaultOwnerId,
-}: {
-  teamId: string;
-  meetingId: string;
-  members: Member[];
-  defaultOwnerId: string;
-}) {
-  const defaultDue = toDateString(addDays(new Date(), 7));
-  const [pending, start] = useTransition();
-  const [title, setTitle] = useState("");
-  const [ownerId, setOwnerId] = useState(defaultOwnerId);
-  const [due, setDue] = useState(defaultDue);
-  const [error, setError] = useState<string | null>(null);
-
-  function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    const fd = new FormData();
-    fd.set("title", title);
-    fd.set("owner_id", ownerId);
-    fd.set("due_date", due);
-    fd.set("visibility", "team");
-    fd.set("source_meeting_id", meetingId);
-    start(async () => {
-      try {
-        setError(null);
-        await addTodo(teamId, fd);
-        // The live subscription delivers the new row; just clear the form.
-        setTitle("");
-        setDue(defaultDue);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    });
-  }
-
-  return (
-    <form
-      onSubmit={submit}
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Capture a to-do…"
-        className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      />
-      <select
-        value={ownerId}
-        onChange={(e) => setOwnerId(e.target.value)}
-        aria-label="To-do owner"
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      >
-        {members.map((m) => (
-          <option key={m.user_id} value={m.user_id}>
-            {m.full_name}
-          </option>
-        ))}
-      </select>
-      <input
-        type="date"
-        value={due}
-        onChange={(e) => setDue(e.target.value)}
-        aria-label="Due date"
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      />
-      <button
-        type="submit"
-        disabled={pending || !title.trim()}
-        className="inline-flex items-center gap-1 rounded-md bg-hpb-blue px-3 py-1 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50"
-      >
-        <Plus className="h-3 w-3" />
-        {pending ? "Adding…" : "Add to-do"}
-      </button>
-      {error && <span className="text-[10px] text-red-600">{error}</span>}
-    </form>
   );
 }

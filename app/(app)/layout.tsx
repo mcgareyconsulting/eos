@@ -13,10 +13,8 @@ export default async function AppLayout({
   // Send them to /join to request membership; a leader approves.
   if (teams.length === 0) redirect("/join");
 
-  const team = teams[0] ?? null;
-
   return (
-    <AppShell user={user} profile={profile} team={team}>
+    <AppShell user={user} profile={profile} teams={teams}>
       {children}
     </AppShell>
   );

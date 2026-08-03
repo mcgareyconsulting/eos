@@ -1,21 +1,11 @@
 import Link from "next/link";
-import {
-  Home,
-  BarChart3,
-  Target,
-  CheckSquare,
-  AlertCircle,
-  Megaphone,
-  Calendar,
-  Users,
-  Plug,
-} from "lucide-react";
+import { Home, Plug } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
 import { SignOutButton } from "@/components/sign-out-button";
+import { TeamNav, type ShellTeam } from "@/components/team-nav";
 
-type Team = { id: string; name: string };
 type Profile = {
   full_name: string;
   first_name: string;
@@ -26,12 +16,13 @@ type Profile = {
 export function AppShell({
   user,
   profile,
-  team,
+  teams,
   children,
 }: {
   user: { email?: string | null };
   profile: Profile;
-  team: Team | null;
+  /** All teams the user belongs to (sidebar switcher when length > 1). */
+  teams: ShellTeam[];
   children: React.ReactNode;
 }) {
   const displayName =
@@ -39,19 +30,6 @@ export function AppShell({
     [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
     user.email ||
     "";
-  const teamPath = team ? `/teams/${team.id}` : null;
-
-  const teamNav = teamPath
-    ? [
-        { href: `${teamPath}/scorecard`, label: "Scorecard", icon: BarChart3 },
-        { href: `${teamPath}/rocks`, label: "Rocks", icon: Target },
-        { href: `${teamPath}/todos`, label: "To-Dos", icon: CheckSquare },
-        { href: `${teamPath}/issues`, label: "Issues", icon: AlertCircle },
-        { href: `${teamPath}/headlines`, label: "Headlines", icon: Megaphone },
-        { href: `${teamPath}/meetings`, label: "Meetings", icon: Calendar },
-        { href: `${teamPath}/members`, label: "Members", icon: Users },
-      ]
-    : [];
 
   return (
     // Column wrapper so the environment banner can span the full width above
@@ -86,23 +64,7 @@ export function AppShell({
               <NavLink href="/integrations" icon={Plug} label="Integrations" />
             </nav>
 
-            {team && (
-              <div className="px-2 py-3 border-t border-zinc-300 dark:border-zinc-800">
-                <div className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-                  {team.name}
-                </div>
-                <div className="space-y-0.5">
-                  {teamNav.map((item) => (
-                    <NavLink
-                      key={item.href}
-                      href={item.href}
-                      icon={item.icon}
-                      label={item.label}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            {teams.length > 0 && <TeamNav teams={teams} />}
           </div>
 
           <div className="border-t border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">

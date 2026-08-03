@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { Circle, Flag, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
@@ -106,26 +106,15 @@ export default async function HomePage() {
 
   // Further split milestones by due date: milestones due within 7 days (or
   // overdue) appear in Active To-Dos; others stay in Rock Milestones.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const sevenDaysFromNow = new Date(today);
-  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  // Use local-midnight parsing — bare `new Date("YYYY-MM-DD")` is UTC and
+  // can mis-bucket near timezone edges (P0-4).
+  const dueSoonMilestones = myMilestones.filter((m) =>
+    isDueWithinDays(m.due_date, 7),
+  );
 
-  const dueSoonMilestones = myMilestones.filter((m) => {
-    if (!m.due_date) return false;
-    const dueDate = new Date(m.due_date);
-    dueDate.setHours(0, 0, 0, 0);
-    return dueDate <= sevenDaysFromNow;
-  });
-
-  const futureMilestones = myMilestones.filter((m) => {
-    // No due date -> stays in Rock Milestones rather than dropping the
-    // milestone from the page entirely.
-    if (!m.due_date) return true;
-    const dueDate = new Date(m.due_date);
-    dueDate.setHours(0, 0, 0, 0);
-    return dueDate > sevenDaysFromNow;
-  });
+  const futureMilestones = myMilestones.filter(
+    (m) => !isDueWithinDays(m.due_date, 7),
+  );
 
   // Combine pure todos with due-soon milestones for the Active To-Dos section
   const allActiveTodos = [...pureTodos, ...dueSoonMilestones];

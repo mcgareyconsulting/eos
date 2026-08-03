@@ -7,7 +7,11 @@ import { ChevronRight, Plus, Trash2 } from "lucide-react";
 import { EditableText } from "@/components/editable-text";
 import { TodoCheckbox } from "../todos/todo-row";
 import { deleteTodo } from "../todos/actions";
-import { addMilestone, updateMilestoneDescription } from "./actions";
+import {
+  addMilestone,
+  updateMilestoneDescription,
+  updateMilestoneDueDate,
+} from "./actions";
 
 // Plain-data shape passed from the Server Component. Firestore Timestamps
 // are class instances and can't cross the RSC boundary, so the parent serializes
@@ -158,12 +162,30 @@ function MilestoneRow({
   milestone: MilestoneSerialized;
   ownerName: string;
 }) {
+  const router = useRouter();
+  const [editingDue, setEditingDue] = useState(false);
+  const [dueDraft, setDueDraft] = useState(milestone.due_date ?? "");
+  const [duePending, startDue] = useTransition();
   const remove = deleteTodo.bind(null, teamId, milestone.id);
   const saveDescription = updateMilestoneDescription.bind(
     null,
     teamId,
     milestone.id,
   );
+
+  function commitDue() {
+    const next = dueDraft.trim();
+    if (next === (milestone.due_date ?? "")) {
+      setEditingDue(false);
+      return;
+    }
+    startDue(async () => {
+      await updateMilestoneDueDate(teamId, milestone.id, next);
+      setEditingDue(false);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="group flex items-start gap-3 text-sm">
       <div className="pt-0.5">
@@ -173,7 +195,7 @@ function MilestoneRow({
           completed={milestone.completed}
         />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div
           className={
             "truncate " +
@@ -190,18 +212,46 @@ function MilestoneRow({
           className="text-xs text-zinc-600 dark:text-zinc-400"
         />
       </div>
-      <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+      <span className="whitespace-nowrap text-xs text-zinc-600 dark:text-zinc-400">
         {ownerName}
       </span>
-      <span className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap w-24 text-right">
-        {milestone.due_date
-          ? formatDateOnly(milestone.due_date)
-          : "—"}
-      </span>
+      {editingDue ? (
+        <input
+          type="date"
+          autoFocus
+          value={dueDraft}
+          disabled={duePending}
+          onChange={(e) => setDueDraft(e.target.value)}
+          onBlur={commitDue}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            } else if (e.key === "Escape") {
+              setDueDraft(milestone.due_date ?? "");
+              setEditingDue(false);
+            }
+          }}
+          aria-label="Milestone due date"
+          className="w-32 rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setDueDraft(milestone.due_date ?? "");
+            setEditingDue(true);
+          }}
+          title="Click to edit due date"
+          className="w-24 whitespace-nowrap rounded-sm px-1 text-right text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          {milestone.due_date ? formatDateOnly(milestone.due_date) : "—"}
+        </button>
+      )}
       <form action={remove}>
         <button
           type="submit"
-          className="text-zinc-300 dark:text-zinc-600 hover:text-red-600 opacity-0 group-hover:opacity-100"
+          className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
           aria-label="Delete milestone"
         >
           <Trash2 className="h-3.5 w-3.5" />

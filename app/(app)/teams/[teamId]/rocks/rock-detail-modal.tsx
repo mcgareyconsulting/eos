@@ -12,6 +12,10 @@ import {
   normalizeRockType,
 } from "./rock-type";
 import { STATUS_LABELS, STATUS_STYLES, isRockStatus } from "./status";
+import {
+  StatusHistoryList,
+  type StatusUpdateSerialized,
+} from "./status-history";
 
 // Plain-data shapes only: the trigger is rendered from both Server Components
 // (Rocks tab) and Client Components (L10 Rocks segment), so every prop must
@@ -38,12 +42,14 @@ export function RockDetailTrigger({
   rock,
   ownerName,
   milestones,
+  statusHistory = [],
   className,
   children,
 }: {
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
+  statusHistory?: StatusUpdateSerialized[];
   className?: string;
   children: React.ReactNode;
 }) {
@@ -63,6 +69,7 @@ export function RockDetailTrigger({
           rock={rock}
           ownerName={ownerName}
           milestones={milestones}
+          statusHistory={statusHistory}
           onClose={() => setOpen(false)}
         />
       )}
@@ -74,11 +81,13 @@ export function RockDetailModal({
   rock,
   ownerName,
   milestones,
+  statusHistory = [],
   onClose,
 }: {
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
+  statusHistory?: StatusUpdateSerialized[];
   onClose: () => void;
 }) {
   const type = normalizeRockType(rock.rock_type);
@@ -158,6 +167,13 @@ export function RockDetailModal({
           ) : (
             <p className="text-sm text-zinc-500">No description.</p>
           )}
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Status history
+          </h3>
+          <StatusHistoryList updates={statusHistory} />
         </section>
 
         <section className="space-y-2">

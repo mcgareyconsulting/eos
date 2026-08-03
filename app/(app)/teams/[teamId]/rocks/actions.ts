@@ -249,3 +249,21 @@ export async function updateMilestoneDescription(
 
   revalidatePath(pathFor(teamId));
 }
+
+// Milestone due dates were write-once at create (P0-3 / P14-20). Empty clears
+// the date; otherwise store YYYY-MM-DD from the date input.
+export async function updateMilestoneDueDate(
+  teamId: string,
+  milestoneId: string,
+  dueDate: string,
+) {
+  const trimmed = dueDate.trim() || null;
+
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", milestoneId, teamId);
+  await db.collection("todos").doc(milestoneId).update({ due_date: trimmed });
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/todos`);
+  revalidatePath("/home");
+}

@@ -1,4 +1,5 @@
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { addIssue } from "./actions";
 import { IssuesList, type IssueDoc } from "./issues-list";
 
@@ -117,12 +118,11 @@ function AddIssueForm({
         rows={2}
         className="md:col-span-6 rounded-md border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm"
       />
-      <button
-        type="submit"
+      <PendingSubmitButton
+        idleLabel="Add issue"
+        pendingLabel="Adding…"
         className="md:col-span-6 md:justify-self-end rounded-md bg-zinc-900 dark:bg-zinc-100 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
-        Add issue
-      </button>
+      />
     </form>
   );
 }

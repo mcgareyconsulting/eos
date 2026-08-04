@@ -190,7 +190,7 @@ export function RockDetailModal({
           </dl>
         </div>
 
-        <SectionHeading>Done looks like</SectionHeading>
+        <SectionHeading>Description</SectionHeading>
         {hasDescription ? (
           <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
             {rock.description}

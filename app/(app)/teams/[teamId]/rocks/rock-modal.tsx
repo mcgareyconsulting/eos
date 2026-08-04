@@ -291,7 +291,7 @@ export function RockModal({
               />
             </Field>
 
-            <Field label="What does done look like?" hint="(optional)">
+            <Field label="Description" hint="(optional)">
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}

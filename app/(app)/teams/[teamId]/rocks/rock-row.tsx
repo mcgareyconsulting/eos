@@ -206,7 +206,7 @@ export function RockRow({
               {hasDescription && (
                 <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
                   <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                    Done looks like:{" "}
+                    Description:{" "}
                   </span>
                   {rock.description}
                 </p>

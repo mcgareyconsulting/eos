@@ -413,10 +413,21 @@ batch, and carries over its Team-owner and free-text-quarter hints.
   visible when flipping **above** the trigger, since that's the one path
   where panel height feeds the position.
 
-> ⚠ **`rocks/milestones.tsx` must stay** even though the designer's handoff
-> README says to delete it: `meetings/[meetingId]/segment-rocks.tsx` imports
-> the **`MilestonesDisclosure` component** from it for the live L10. It only
-> becomes dead when the L10 rocks segment is itself redesigned.
+- **L10 rocks segment now renders the same `RockRow` as the Rocks tab** —
+  one component, one look, one set of affordances in both places. The
+  segment keeps what is meeting-specific (speaker grouping, absent dimming,
+  "Now speaking", QuickAddIssue) and drops its bespoke row. It also
+  subscribes to `rock_status_updates`, so the expanded row shows the latest
+  status note in the meeting exactly as it does on the tab.
+  - *Trade*: the old segment let you edit a rock's description inline
+    (`EditableText`). That is now behind the pencil → `RockModal`, matching
+    the Rocks tab. Same capability, one more click.
+  - This made `rocks/milestones.tsx` unreachable, so it is **deleted** — the
+    handoff always intended that; the only blocker was L10 importing
+    `MilestonesDisclosure` from it. Four actions it was the last caller of
+    went with it (`addMilestone`, `updateMilestoneDescription`,
+    `updateMilestoneDueDate`, `updateRockDescription`); milestone writes all
+    go through the batch path in `RockModal` now.
 
 > ⚠ **Milestones are always tickable — there is no read-only mode.** The
 > handoff had the detail modal render static ticks in L10 (gated on "no

@@ -1,28 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
-import { ChevronRight, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { formatDateOnly } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { EditableText } from "@/components/editable-text";
-import { StatusPopover } from "../../rocks/status-popover";
-import {
-  MilestonesDisclosure,
-  type MilestoneSerialized,
-} from "../../rocks/milestones";
 import { isTeamRock } from "../../rocks/rock-type";
-import { RockDetailTrigger } from "../../rocks/rock-detail-modal";
-import { updateRockDescription } from "../../rocks/actions";
+import { RockRow } from "../../rocks/rock-row";
+import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
+import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { QuickAddIssue } from "@/components/quick-add-issue";
-import { cn } from "@/lib/utils";
 
 type RockDoc = {
   id: string;
@@ -48,6 +41,18 @@ type TodoDoc = {
   completed_at: { toDate: () => Date } | boolean | null;
   source_rock_id: string | null;
   description: string | null;
+};
+
+// created_at is a Firestore Timestamp over onSnapshot; toMillis() is the only
+// thing we read off it.
+type StatusUpdateDoc = {
+  id: string;
+  team_id: string;
+  rock_id: string;
+  status: string;
+  comment: string | null;
+  user_id: string | null;
+  created_at: { toMillis?: () => number } | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -204,8 +209,21 @@ export function SegmentRocks({
     [db, teamId],
   );
 
+  // Status notes power the "latest status note" line in the expanded row, so
+  // the meeting sees the same context the Rocks tab does. Append-only and
+  // client-readable by team members (firestore.rules).
+  const statusQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "rock_status_updates"),
+        where("team_id", "==", teamId),
+      ),
+    [db, teamId],
+  );
+
   const rocks = useCollection<RockDoc>(rocksQuery, initialRocks);
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
+  const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -258,6 +276,24 @@ export function SegmentRocks({
       if (!b.due_date) return -1;
       return a.due_date.localeCompare(b.due_date);
     });
+  }
+
+  const statusByRock = new Map<string, StatusUpdateSerialized[]>();
+  for (const u of statusUpdates) {
+    if (!u.rock_id) continue;
+    const list = statusByRock.get(u.rock_id) ?? [];
+    list.push({
+      id: u.id,
+      status: String(u.status ?? ""),
+      comment: u.comment ?? null,
+      user_id: u.user_id ?? null,
+      created_at_ms: u.created_at?.toMillis?.() ?? null,
+      author_name: u.user_id ? (nameById.get(u.user_id) ?? "—") : "—",
+    });
+    statusByRock.set(u.rock_id, list);
+  }
+  for (const list of statusByRock.values()) {
+    list.sort((a, b) => (b.created_at_ms ?? 0) - (a.created_at_ms ?? 0));
   }
 
   // Show every non-cancelled rock. This used to filter on
@@ -348,16 +384,19 @@ export function SegmentRocks({
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {g.rocks.map((r) => (
-              <RockMeetingRow
+              <RockRow
                 key={r.id}
-                rock={r}
                 teamId={teamId}
                 userId={userId}
-                ownerName={g.title}
+                rock={r}
+                ownerName={
+                  isTeamRock(r.owner_id) ? "Team" : (g.isTeamSection ? "Team" : g.title)
+                }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={defaultDue}
-                nameById={nameById}
+                statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={userId}
               />
             ))}
           </div>
@@ -367,112 +406,3 @@ export function SegmentRocks({
   );
 }
 
-// Collapsed row = title + due + status only. Long descriptions and milestones
-// live behind expand so the L10 list stays scannable during speaking rounds.
-function RockMeetingRow({
-  rock,
-  teamId,
-  userId,
-  ownerName,
-  members,
-  milestones,
-  defaultDue,
-  nameById,
-}: {
-  rock: RockDoc;
-  teamId: string;
-  userId: string;
-  ownerName: string;
-  members: Member[];
-  milestones: MilestoneSerialized[];
-  defaultDue: string;
-  nameById: Map<string, string>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const doneCount = milestones.filter((m) => m.completed).length;
-
-  return (
-    <div className="group px-4 py-2.5 text-sm">
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          aria-expanded={expanded}
-          aria-label={expanded ? "Collapse rock" : "Expand rock"}
-          className="mt-0.5 shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-        >
-          <ChevronRight
-            className={cn(
-              "h-4 w-4 transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-        </button>
-
-        <div className="min-w-0 flex-1">
-          <RockDetailTrigger
-            rock={rock}
-            ownerName={ownerName}
-            milestones={milestones.map((m) => ({
-              id: m.id,
-              title: m.title,
-              due_date: m.due_date,
-              completed: m.completed,
-              owner_name: m.owner_id ? (nameById.get(m.owner_id) ?? null) : null,
-            }))}
-            teamId={teamId}
-            userId={userId}
-            members={members}
-            className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
-          >
-            {rock.title}
-          </RockDetailTrigger>
-
-          {!expanded && milestones.length > 0 && (
-            <p className="mt-0.5 truncate text-xs text-zinc-500">
-              {doneCount}/{milestones.length} milestones
-            </p>
-          )}
-        </div>
-
-        {/* Fixed-width date + status so rows line up as columns. */}
-        <div className="w-20 shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
-          {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
-        </div>
-        <div className="flex w-28 shrink-0 justify-end">
-          <StatusPopover
-            teamId={teamId}
-            rockId={rock.id}
-            status={rock.status}
-          />
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="mt-3 ml-7 space-y-3 border-l border-zinc-200 pl-4 dark:border-zinc-800">
-          <div>
-            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-              Description
-            </h4>
-            <EditableText
-              value={rock.description ?? ""}
-              onSave={updateRockDescription.bind(null, teamId, rock.id)}
-              multiline
-              placeholder="Add a description"
-              className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
-            />
-          </div>
-          <MilestonesDisclosure
-            teamId={teamId}
-            rockId={rock.id}
-            rockOwnerId={rock.owner_id}
-            members={members}
-            milestones={milestones}
-            defaultDue={defaultDue}
-            alwaysOpen
-          />
-        </div>
-      )}
-    </div>
-  );
-}

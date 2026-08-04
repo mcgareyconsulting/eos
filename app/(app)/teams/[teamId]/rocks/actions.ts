@@ -10,25 +10,6 @@ function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
 }
 
-// Optional handoff notes — an admin creating/reassigning a rock can leave
-// context for whoever owns it. Empty input clears the field back to null.
-export async function updateRockDescription(
-  teamId: string,
-  rockId: string,
-  description: string,
-) {
-  const trimmed = description.trim() || null;
-
-  const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
-  await db
-    .collection("rocks")
-    .doc(rockId)
-    .update({ description: trimmed });
-
-  revalidatePath(pathFor(teamId));
-}
-
 export async function setRockType(
   teamId: string,
   rockId: string,
@@ -104,82 +85,6 @@ export async function deleteRock(teamId: string, rockId: string) {
   commentsSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(db.collection("rocks").doc(rockId));
   await batch.commit();
-
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/home");
-}
-
-// Create a milestone — i.e., a todo tied to a rock via source_rock_id.
-// Lives in the todos collection so it reuses TodoCheckbox, toggleTodo,
-// and the existing privacy/visibility rules.
-export async function addMilestone(
-  teamId: string,
-  rockId: string,
-  formData: FormData,
-) {
-  const { uid, db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
-
-  const title = String(formData.get("title") ?? "").trim();
-  const owner_id = String(formData.get("owner_id") ?? "") || uid;
-  // P2-6: milestones default to no due date (not end-of-quarter).
-  const due_date = String(formData.get("due_date") ?? "").trim() || null;
-  const description =
-    String(formData.get("description") ?? "").trim() || null;
-
-  if (!title) throw new Error("Title required");
-
-  await db.collection("todos").add({
-    team_id: teamId,
-    title,
-    owner_id,
-    due_date,
-    description,
-    completed_at: null,
-    visibility: "team",
-    source_issue_id: null,
-    source_meeting_id: null,
-    source_rock_id: rockId,
-    created_at: FieldValue.serverTimestamp(),
-  });
-
-  revalidatePath(pathFor(teamId));
-  revalidatePath("/home");
-}
-
-// Optional handoff notes on a milestone — same rationale as
-// updateRockDescription. Milestones are todos (source_rock_id set), so this
-// writes to the todos collection.
-export async function updateMilestoneDescription(
-  teamId: string,
-  milestoneId: string,
-  description: string,
-) {
-  const trimmed = description.trim() || null;
-
-  const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", milestoneId, teamId);
-  await db
-    .collection("todos")
-    .doc(milestoneId)
-    .update({ description: trimmed });
-
-  revalidatePath(pathFor(teamId));
-}
-
-// Milestone due dates were write-once at create (P0-3 / P14-20). Empty clears
-// the date; otherwise store YYYY-MM-DD from the date input.
-export async function updateMilestoneDueDate(
-  teamId: string,
-  milestoneId: string,
-  dueDate: string,
-) {
-  const trimmed = dueDate.trim() || null;
-
-  const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", milestoneId, teamId);
-  await db.collection("todos").doc(milestoneId).update({ due_date: trimmed });
 
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/todos`);

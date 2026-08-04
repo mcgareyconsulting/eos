@@ -350,7 +350,7 @@ export function RockModal({
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  Optional — clear it if there's no date yet.
+                  Optional — clear it if there is no date yet.
                 </p>
               </Field>
             </div>

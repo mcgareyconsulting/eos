@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-03 — _Pass 16 (Session C: P2-3…P2-6)_
+**Last updated:** 2026-08-04 — _Pass 16 complete — PR #14 (`feature/p2-roadmap`)_
 
 ---
 
@@ -377,26 +377,41 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
-**Pass 16 (2026-08-03): Session C meeting hygiene** on `feature/p2-roadmap`
-(after Session B merge of `feature/p1-roadmap`).
+**Pass 16 (2026-08-03 → 2026-08-04): Session C complete** on
+`feature/p2-roadmap` → **PR #14** (merge when reviewed).
 
-**Shipped this session (Session C):**
-- **P2-3 Headlines discuss + selective archive** — checkbox to mark
-  discussed (standalone + L10); only checked headlines archive when the
-  meeting ends; Active / Archived tabs; no auto-clear-all of standing
-  headlines. Fields: `discussed`, `discussed_at`, `archived_at`.
-- **P2-4 Issues ST↔LT + LT tab** — Short-term / Long-term tabs on Issues
-  page; `setIssueType` + move button on standalone and L10 Issues.
-- **P2-5 Comments on issues & rocks** — `entity_comments` collection;
-  detail modals; auto-linkify URLs; author can delete own. No binary
-  attachments (links OK).
-- **P2-6 Rock / milestone date defaults** — quarter free text; rock due
-  optional (UI still suggests EOQ); milestones default to **no due date**.
+After Session A (`feature/p0-roadmap`) + Session B (`feature/p1-roadmap`).
 
-**Next:**
-- P1-2 ops checklist (allowlist + membership) when prepping access
-- Later: P1-6 vote credits UI, P1-7 Google Tasks two-way, P2-1 custom
-  agendas (design spike), P2-2 full archive model, P2-7 privacy, P3-*
+**Shipped (Session C — product):**
+- **P2-3 Headlines discuss + selective archive** — checkbox (standalone +
+  L10); only checked archive on Finish; Active / Archived tabs; standing
+  items stay. Fields: `discussed`, `discussed_at`, `archived_at`.
+- **P2-4 Issues ST↔LT + tabs** — Short-term / Long-term tabs on Issues +
+  L10; move labels `Long →` / `← Short`.
+- **P2-5 Comments** — `entity_comments` on issues & rocks; detail modals;
+  auto-linkify URLs; cascade delete with parent. No binary attachments.
+- **P2-6 Date defaults** — free-text quarter; rock due optional (EOQ
+  suggested); milestones default **empty** due.
+
+**Shipped (Session C — polish / hardening):**
+- L10 segment key `ids` → **`issues`** with `normalizeSegment` for legacy
+  meetings still storing `"ids"`. UI label was already "Issues".
+- Centered modals: Add/Edit issue (term defaults from active tab); New Rock
+  (replaces side drawer).
+- Review fixes: broadcast server guards; unarchive clears discussed; LT move
+  clears discuss pin; best-effort archive after `endMeeting`; comment query
+  filters `entity_type`.
+- Firestore: `entity_comments` rules + indexes (operator deploys both named
+  DBs via `firebase deploy --only firestore:rules,firestore:indexes`).
+
+**Not in this PR (still open):**
+- **P1-2** ops: allowlist + membership (when prepping access)
+- **P1-6** vote credits UI · **P1-7** Google Tasks two-way
+- **P2-1** custom agendas (design first) · **P2-2** full archive
+  (todos/rocks/issues; headlines selective archive done) · **P2-7** privacy
+- **P3-2** full rich text (issue **descriptions** + rocks/headlines/comments;
+  comments already linkify) · other P3-*
+- Smarter rock period → monthly milestone suggestions (proposed; not built)
 
 Working priority list is agent-local — not in this repo
 (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
@@ -419,11 +434,11 @@ Pass 11/13 so we don't double-count.
 | # | Date | Who | Page | Ask / bug | Map / disposition |
 |---|------|-----|------|-----------|-------------------|
 | 1 | 07-30 | Jenna | Scorecard | Weekly metrics work; **other scorecard tabs inaccessible** | ✅ **Done Pass 15 (P1-3).** Metric `interval` model: tabs filter weekly/monthly/quarterly/annual measurables (not weekly rollups). Calculated/share-up still P3-1; warehouse trends P3-5. |
-| 2 | 07-30 | Jenna | Rocks | Quarter + Due Date — **manual entry or smart logic?** | **Product clarity.** Document / improve defaults (also Steph #19). |
+| 2 | 07-30 | Jenna | Rocks | Quarter + Due Date — **manual entry or smart logic?** | ✅ **Done Pass 16 (P2-6).** Free-text quarter; rock due optional (EOQ suggested). Deeper monthly-stage defaults still later. |
 | 3 | 07-30 | Jenna | Rocks | **Where does the status comment go?** (off-track note) | **UX discoverability.** Related to Pass 13 #1 (save bug fixed). Surface comment history on rock after save. |
 | 4 | 07-30 | Jenna | To-Dos | **Default due date = 7 days out**; milestones 7 days out should become to-dos — she added a milestone due today and it **did not** pull into to-dos | **Bug + product.** Home 7-day milestones (Pass 11) may not cover "milestone → to-do" auto-promote, or list filter is wrong. Verify `home` + to-dos surface. |
 | 5 | 07-30 | Jenna | To-Dos | **Done to-dos archive after the team meeting**; toggle to view archived — same pattern for Rocks, Headlines, Issues, etc. | **Product** — archive-on-close + archive tab. Rocks archive already Feature 5c; generalize across entities. Custom agendas "archive-on-close" in Pass 11 new asks. |
-| 6 | 07-30 | Jenna | Issues | Comments useful; **attachments optional** (links to Google Docs OK instead) | Pass 11 "linked items + comments + attachments" — **prioritize comments; deprioritize binary attachments** (Workspace-link-first). |
+| 6 | 07-30 | Jenna | Issues | Comments useful; **attachments optional** (links to Google Docs OK instead) | ✅ **Done Pass 16 (P2-5)** for comments + linkify. Binary attachments still deferred. |
 | 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | ✅ **Done Pass 16 (P2-3).** Discuss checkbox + selective archive at meeting end. |
 | 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
 | 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | **Security / tenancy review.** Cross-team IDOR fixed on mutations (Pass 10); still need explicit privacy story for sensitive issues + role model (Pass 11 Directory/admin). |
@@ -436,9 +451,9 @@ Pass 11/13 so we don't double-count.
 | 16 | 08-03 | Steph | Headlines | **No submit loading feedback** → pressed multiple times → **4 duplicates** | **Bug — high confidence.** Disable button + pending state on create. Same pattern audit for all create forms. |
 | 17 | 08-03 | Steph | Integrations | Move Integrations out of top nav into **Settings / profile** | **UX polish** — nav hierarchy. |
 | 18 | 08-03 | Steph | Rocks | When screen full, **status dropdown at bottom is clipped / unreachable** | **Bug.** Related Pass 13 #1 popover flip/max-height — extend same treatment to status control at list bottom (collision / flip). |
-| 19 | 08-03 | Steph | Rocks | **Milestone default dates = calendar quarter end** — prefer no date or today; rock quarters need more flexibility | **Product** — smarter/flexible quarter + due defaults (pairs with Jenna #2). |
+| 19 | 08-03 | Steph | Rocks | **Milestone default dates = calendar quarter end** — prefer no date or today; rock quarters need more flexibility | ✅ **Done Pass 16 (P2-6).** Milestone due empty by default; free-text quarter. Optional monthly-stage suggestions still later. |
 | 20 | 08-03 | Steph | Rocks | **Cannot edit milestone dates after set** | **Bug / missing edit path.** |
-| 21 | 08-03 | Steph | Issues | **Long-term issues on separate tab** — list gets long | **Product** — ST/LT split UI (ninety-style). Related Jessica #12. |
+| 21 | 08-03 | Steph | Issues | **Long-term issues on separate tab** — list gets long | ✅ **Done Pass 16 (P2-4).** Short-term / Long-term tabs on Issues + L10. |
 | 22 | 08-03 | Steph | Issues | Rich text + attachments (echo Jenna) | Same as #6 / #15. |
 
 ### Pass 14 — prioritized engineering queue
@@ -458,11 +473,11 @@ Pass 11/13 so we don't double-count.
 
 **Product (scope against Pass 11):**
 10. **Custom agendas + pick template at start** (#8) — still largest build; re-confirmed by Jenna + Steph (Pass 13).
-11. **Archive-after-meeting + archive toggle** across entities (#5); **headline discuss checkbox** (selective archive) (#7).
-12. **Issue ST↔LT move + LT tab** (#12, #21); **comments** over file attachments (#6).
+11. **Archive-after-meeting + archive toggle** across entities (#5) — still open for todos/rocks/issues. ✅ Headline selective archive (#7) Pass 16 P2-3.
+12. **Issue ST↔LT move + LT tab** (#12, #21) ✅ Pass 16 P2-4; **comments** (#6) ✅ Pass 16 P2-5 (binary attachments still deferred).
 13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1).
-14. Headline **FYI category** (#14); **rich text / links** (#15, #22) — include **issue descriptions** (and rock descriptions / headline body / comments); comments already linkify URLs (P2-5).
-15. Integrations nav → settings (#17); rock/quarter **default flexibility** (#2, #19).
+14. Headline **FYI category** (#14); **rich text / links** (#15, #22) — include **issue descriptions** (and rock descriptions / headline body / comments); comments already linkify URLs (P2-5). Full editor still P3-2.
+15. Integrations nav → settings (#17). Rock/quarter **default flexibility** (#2, #19) ✅ Pass 16 P2-6 (empty milestone due; free-text quarter; smarter monthly stages later).
 
 ### Pass 13 (retained) + Pass 14 overlap
 

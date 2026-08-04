@@ -56,7 +56,6 @@ export function RockDetailTrigger({
   ownerName,
   milestones,
   statusHistory = [],
-  interactiveMilestones = false,
   className,
   children,
 }: {
@@ -67,10 +66,6 @@ export function RockDetailTrigger({
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
-  /** Tickable milestone checkboxes. Off in L10, where the rock list is a
-   *  read-only review surface — `teamId` alone can't imply this, since
-   *  comments need it everywhere. */
-  interactiveMilestones?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -94,7 +89,6 @@ export function RockDetailTrigger({
           ownerName={ownerName}
           milestones={milestones}
           statusHistory={statusHistory}
-          interactiveMilestones={interactiveMilestones}
           onClose={() => setOpen(false)}
         />
       )}
@@ -115,7 +109,6 @@ export function RockDetailModal({
   ownerName,
   milestones,
   statusHistory = [],
-  interactiveMilestones = false,
   onClose,
 }: {
   teamId: string;
@@ -125,7 +118,6 @@ export function RockDetailModal({
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
-  interactiveMilestones?: boolean;
   onClose: () => void;
 }) {
   const type = normalizeRockType(rock.rock_type);
@@ -238,7 +230,7 @@ export function RockDetailModal({
           <p className="text-[13px] italic text-zinc-400">No milestones yet.</p>
         ) : (
           <MilestoneChecklist
-            teamId={interactiveMilestones ? teamId : undefined}
+            teamId={teamId}
             milestones={checklist}
             variant="modal"
           />

@@ -418,11 +418,15 @@ batch, and carries over its Team-owner and free-text-quarter hints.
 > the **`MilestonesDisclosure` component** from it for the live L10. It only
 > becomes dead when the L10 rocks segment is itself redesigned.
 
-> ⚠ **Milestone ticking is gated by `interactiveMilestones`, not `teamId`.**
-> The redesign originally used "no `teamId`" to mean read-only in L10, but
-> P2-5 comments require `teamId` everywhere — so L10 would have silently
-> gained live checkboxes on merge. The mode is now an explicit prop: the
-> Rocks page passes it, L10 doesn't.
+> ⚠ **Milestones are always tickable — there is no read-only mode.** The
+> handoff had the detail modal render static ticks in L10 (gated on "no
+> `teamId`"), but that only mirrored an accident: main's old modal had no
+> `teamId` wired, so it *couldn't* tick. L10 is a working surface — the
+> segment's own `MilestonesDisclosure` has always had live checkboxes, and
+> checking milestones off is the point of walking the rocks. `teamId` is now
+> required on `MilestoneChecklist` and the static branch is gone, so the
+> modal ticks in L10 too. Don't reintroduce a mode switch keyed on data
+> presence; if a read-only surface is ever wanted, make it an explicit prop.
 
 **Before merging — manual QA (emulators or trial):** create a rock with
 milestones (one write, milestones appear on To-Dos); create with title only

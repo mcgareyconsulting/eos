@@ -108,7 +108,6 @@ export function RockRow({
                 teamId={teamId}
                 userId={userId}
                 members={members}
-                interactiveMilestones
                 rock={rock}
                 ownerName={displayOwner}
                 milestones={detailMilestones}
@@ -249,7 +248,6 @@ export function RockRow({
                   teamId={teamId}
                   userId={userId}
                   members={members}
-                  interactiveMilestones
                   rock={rock}
                   ownerName={displayOwner}
                   milestones={detailMilestones}

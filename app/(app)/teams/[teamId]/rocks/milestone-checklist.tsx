@@ -1,6 +1,5 @@
 "use client";
 
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateShort } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
@@ -28,10 +27,8 @@ type Member = { user_id: string; full_name: string };
  * editing milestones happens in RockModal now, which is what removes the
  * clutter from the expanded row.
  *
- * `teamId` omitted → static indicators. Callers must not pass it just because
- * they happen to have it: it is the mutation switch here, so an unrelated need
- * for the id turns ticking on. RockDetailModal decides via its explicit
- * `interactiveMilestones` prop and passes undefined when read-only (L10).
+ * Always tickable. Milestones get checked off live during the L10 — that is
+ * the point of walking the rocks — so there is no read-only mode to opt into.
  */
 export function MilestoneChecklist({
   teamId,
@@ -39,7 +36,7 @@ export function MilestoneChecklist({
   milestones,
   variant = "row",
 }: {
-  teamId?: string;
+  teamId: string;
   members?: Member[];
   milestones: MilestoneSerialized[];
   variant?: "row" | "modal";
@@ -70,25 +67,11 @@ export function MilestoneChecklist({
               m.completed && variant === "modal" && "bg-zinc-50 dark:bg-zinc-800/40",
             )}
           >
-            {teamId ? (
-              <TodoCheckbox
-                teamId={teamId}
-                todoId={m.id}
-                completed={m.completed}
-              />
-            ) : (
-              <span
-                className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded ring-1 ring-inset",
-                  m.completed
-                    ? "bg-hpb-green text-white ring-hpb-green"
-                    : "ring-zinc-300 dark:ring-zinc-600",
-                )}
-                aria-hidden
-              >
-                {m.completed && <Check className="h-3 w-3" strokeWidth={3.4} />}
-              </span>
-            )}
+            <TodoCheckbox
+              teamId={teamId}
+              todoId={m.id}
+              completed={m.completed}
+            />
             <span
               className={cn(
                 "min-w-0 flex-1 truncate",

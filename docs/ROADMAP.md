@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-03 — _Pass 15 (P1-1 + P1-3 shipped)_
+**Last updated:** 2026-08-04 — _Pass 16 (Rocks & Milestones redesign)_
 
 ---
 
@@ -376,6 +376,53 @@ It works in two primary ways:
 ---
 
 ## ▶ RESUME HERE — next session
+
+**Pass 16 (2026-08-04): Rocks & Milestones UI redesign** on
+`fix/rock-creation`. Built from a designer handoff (options 1b / 2a / 2b);
+not yet merged or pushed — manual QA below is the gate.
+
+**Shipped this session:**
+- **One `RockModal` for create + edit** with milestones inline, written in a
+  **single Firestore batch** (`createRockWithMilestones` /
+  `updateRockWithMilestones`). Replaces `add-rock-drawer.tsx`,
+  `edit-rock-drawer.tsx` and the inline add-milestone form — all deleted.
+  Milestones stay `todos` docs with `source_rock_id`, so `TodoCheckbox` /
+  `toggleTodo` / the To-Dos page keep working unchanged.
+- **Redesigned rock row** (status rail, owner · quarter · milestone progress,
+  relative due label). Expanded row shows the **latest** status note only;
+  the full timeline moved to the detail modal — that split is the
+  de-cluttering move.
+- **Pass 14 items closed:** #20 milestone dates editable after create,
+  #3 status-comment discoverability, #16 double-submit (pending state),
+  #18 status dropdown clipped at viewport bottom (see below), and #19 in
+  part (milestone dates optional, no forced quarter-end default).
+- **Status popover** rebuilt as two columns (statuses left, note right) and
+  its placement fixed: it now mounts hidden, measures its real height in a
+  layout effect, then places and reveals. The old flow placed with a 400px
+  estimate and a post-paint rAF re-measure that could lose the race — only
+  visible when flipping **above** the trigger, since that's the one path
+  where panel height feeds the position.
+
+> ⚠ **`rocks/milestones.tsx` must stay** even though the designer's handoff
+> README says to delete it: `meetings/[meetingId]/segment-rocks.tsx` imports
+> the **`MilestonesDisclosure` component** from it for the live L10. It only
+> becomes dead when the L10 rocks segment is itself redesigned.
+
+**Before merging — manual QA (emulators or trial):** create a rock with
+milestones (one write, milestones appear on To-Dos); create with title only
+(no empty todos); edit a milestone's date, remove a row, add a row; tick a
+milestone from both the row and the detail modal; set Off Track with a note
+and confirm it surfaces in the row + timeline; Team-owned rock milestone
+falls back to the signed-in user; mash Save (exactly one rock); **L10 rocks
+segment regression**; dark mode + narrow viewport.
+
+**Known gap, not fixed:** milestones are written straight to `todos` and
+never set `google_task_id` or call `upsertTaskForTodo`, so unlike every
+other to-do they **don't mirror to Google Tasks**. Pre-existing (old
+`addMilestone` has the same gap) but it collides with Steph's #10 ask for
+two-way Tasks sync — needs a product decision.
+
+---
 
 **Pass 15 (2026-08-03): client-feedback build batch** on
 `feature/p1-roadmap` (after P0 trust bugs on `feature/p0-roadmap`).

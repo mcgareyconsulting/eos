@@ -28,8 +28,10 @@ type Member = { user_id: string; full_name: string };
  * editing milestones happens in RockModal now, which is what removes the
  * clutter from the expanded row.
  *
- * `teamId` omitted → static indicators (used where no server action is wired,
- * e.g. the live L10 detail modal).
+ * `teamId` omitted → static indicators. Callers must not pass it just because
+ * they happen to have it: it is the mutation switch here, so an unrelated need
+ * for the id turns ticking on. RockDetailModal decides via its explicit
+ * `interactiveMilestones` prop and passes undefined when read-only (L10).
  */
 export function MilestoneChecklist({
   teamId,

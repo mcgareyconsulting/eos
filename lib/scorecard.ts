@@ -145,3 +145,78 @@ const STATUS_SORT_RANK: Record<TrendStatus, number> = {
 export function statusSortRank(status: TrendStatus): number {
   return STATUS_SORT_RANK[status];
 }
+
+/**
+ * One tone per TrendStatus, shared by the row rail, the status pill and the
+ * Trends chart accent. Unified with the Rocks palette (hpb-green / hpb-gold /
+ * red-600) so both screens read as one system.
+ *
+ * `accent` is a raw hex because the SVG chart needs a stroke/fill value, not a
+ * Tailwind class. `railBorder` is literal (not derived at runtime) so Tailwind
+ * v4's scanner picks it up.
+ */
+export const STATUS_TONE: Record<
+  TrendStatus,
+  {
+    label: string;
+    accent: string;
+    railBorder: string;
+    rail: string;
+    pill: string;
+    text: string;
+    icon: string;
+  }
+> = {
+  ok: {
+    label: TREND_STATUS_LABEL.ok,
+    accent: "#2cb34a",
+    railBorder: "border-l-hpb-green",
+    rail: "bg-hpb-green",
+    pill: "bg-hpb-green/10 text-hpb-green ring-hpb-green/30",
+    text: "text-hpb-green",
+    icon: "text-hpb-green",
+  },
+  watch: {
+    label: TREND_STATUS_LABEL.watch,
+    accent: "#ffc845",
+    railBorder: "border-l-hpb-gold",
+    rail: "bg-hpb-gold",
+    pill: "bg-hpb-gold/15 text-hpb-brown ring-hpb-gold/40 dark:text-hpb-gold",
+    text: "text-hpb-brown dark:text-hpb-gold",
+    icon: "text-hpb-gold",
+  },
+  off: {
+    label: TREND_STATUS_LABEL.off,
+    accent: "#dc2626",
+    railBorder: "border-l-red-600",
+    rail: "bg-red-600",
+    pill: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/30 dark:text-red-300 dark:ring-red-900",
+    text: "text-red-600 dark:text-red-400",
+    icon: "text-red-600",
+  },
+  empty: {
+    label: TREND_STATUS_LABEL.empty,
+    accent: "#d4d4d8",
+    railBorder: "border-l-zinc-300 dark:border-l-zinc-700",
+    rail: "bg-zinc-300 dark:bg-zinc-700",
+    pill: "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+    text: "text-zinc-500 dark:text-zinc-400",
+    icon: "text-zinc-300 dark:text-zinc-600",
+  },
+};
+
+/** Periods that met the goal, out of the periods that have a value. */
+export function hitRate(
+  values: (number | null)[],
+  goal: number | null,
+  direction: GoalDirection,
+): { hit: number; recorded: number; pct: number } {
+  const recorded = values.filter((v) => v != null).length;
+  const hit = values.filter((v) => onTrack(v, goal, direction) === true).length;
+  return { hit, recorded, pct: recorded ? Math.round((hit / recorded) * 100) : 0 };
+}
+
+/** Periods in the window with no entry at all — the sparse-data signal. */
+export function missingCount(values: (number | null)[]): number {
+  return values.filter((v) => v == null).length;
+}

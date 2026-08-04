@@ -81,12 +81,11 @@ export function AppShell({
         </aside>
 
         <main className="min-w-0 flex-1 overflow-auto">
-          {/* Wider in focus mode so the Scorecard's 13 week columns get room,
-              but still capped — an uncapped meeting screen stretches the
-              Segue roster into a row of islands on a 27" monitor. */}
-          <div className="mx-auto max-w-6xl px-8 py-8 group-has-[[data-meeting-focus]]/shell:max-w-[1600px] group-has-[[data-meeting-focus]]/shell:px-6 group-has-[[data-meeting-focus]]/shell:py-6">
-            {children}
-          </div>
+          {/* Left-aligned (no mx-auto): content hugs the sidebar instead of
+              centering in the pane, which on wide monitors opened a dead gap
+              between nav and page. Still capped — uncapped content stretches
+              card rows into islands on a 27" monitor. */}
+          <div className="max-w-[1600px] px-6 py-6">{children}</div>
         </main>
       </div>
     </div>

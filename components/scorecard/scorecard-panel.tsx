@@ -74,10 +74,7 @@ export function ScorecardPanel({
 
   // Tab = interval of the metric, not a rollup of another interval.
   const intervalMetrics = useMemo(
-    () =>
-      metrics.filter(
-        (m) => normalizeMetricInterval(m.interval) === period,
-      ),
+    () => metrics.filter((m) => normalizeMetricInterval(m.interval) === period),
     [metrics, period],
   );
 
@@ -123,9 +120,7 @@ export function ScorecardPanel({
             absentUserIds ?? [],
           );
         }
-        return (
-          a.sort_order - b.sort_order || a.name.localeCompare(b.name)
-        );
+        return a.sort_order - b.sort_order || a.name.localeCompare(b.name);
       }
       if (sort === "name") return a.name.localeCompare(b.name);
       if (sort === "owner") {
@@ -174,6 +169,14 @@ export function ScorecardPanel({
     absentUserIds,
   ]);
 
+  const statusCounts = filtered.reduce(
+    (acc, m) => {
+      acc[trendStatus(valuesFor(m.id), m.goal, m.direction)] += 1;
+      return acc;
+    },
+    { ok: 0, watch: 0, off: 0, empty: 0 },
+  );
+
   return (
     <div className="space-y-4">
       <ScorecardFilters
@@ -196,16 +199,27 @@ export function ScorecardPanel({
       />
 
       {!compact && (
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-semibold tracking-tight">
-            {PERIOD_LABELS[period]} measurables
-          </h2>
-          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-200 px-2 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-            {filtered.length}
-            {filtered.length !== intervalMetrics.length
-              ? `/${intervalMetrics.length}`
-              : ""}
-          </span>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold tracking-tight">
+              {PERIOD_LABELS[period]} measurables
+            </h2>
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-zinc-200 px-2 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+              {filtered.length}
+              {filtered.length !== intervalMetrics.length
+                ? `/${intervalMetrics.length}`
+                : ""}
+            </span>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="font-semibold text-red-600 dark:text-red-400">
+              {statusCounts.off} off-track
+            </span>{" "}
+            ·{" "}
+            <span className="font-semibold text-hpb-brown dark:text-hpb-gold">
+              {statusCounts.watch} at-risk
+            </span>
+          </p>
         </div>
       )}
 

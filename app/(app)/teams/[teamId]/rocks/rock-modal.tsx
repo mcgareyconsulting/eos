@@ -145,6 +145,7 @@ export function RockModal({
   teamName,
   rock,
   milestones = [],
+  focusMilestones = false,
   onClose,
 }: {
   teamId: string;
@@ -156,6 +157,8 @@ export function RockModal({
   /** Present = edit mode. */
   rock?: RockForEdit;
   milestones?: MilestoneSerialized[];
+  /** Open with a fresh milestone row focused instead of the rock title. */
+  focusMilestones?: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -178,8 +181,8 @@ export function RockModal({
   const inheritOwner =
     ownerId === TEAM_OWNER_VALUE ? currentUserId : ownerId;
 
-  const [rows, setRows] = useState<DraftMilestone[]>(() =>
-    editing
+  const [rows, setRows] = useState<DraftMilestone[]>(() => {
+    const base = editing
       ? milestones.map((m) => ({
           key: m.id,
           id: m.id,
@@ -191,7 +194,14 @@ export function RockModal({
           blankRow(currentUserId),
           blankRow(currentUserId),
           blankRow(currentUserId),
-        ],
+        ];
+    // "Add milestone" entry point: start on a fresh row, not the rock fields.
+    return focusMilestones ? [...base, blankRow(inheritOwner)] : base;
+  });
+  // The milestone input to focus on mount — the appended fresh row, then any
+  // row added with the button below.
+  const [focusKey, setFocusKey] = useState<string | null>(() =>
+    focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
   );
 
   useEffect(() => {
@@ -283,7 +293,7 @@ export function RockModal({
           <div className="space-y-3.5 px-5 py-4">
             <Field label="Title" required>
               <input
-                autoFocus
+                autoFocus={!focusMilestones}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Launch private banking division"
@@ -351,6 +361,7 @@ export function RockModal({
                       {i + 1}
                     </span>
                     <input
+                      autoFocus={r.key === focusKey}
                       value={r.title}
                       onChange={(e) =>
                         patchRow(r.key, { title: e.target.value })
@@ -403,9 +414,11 @@ export function RockModal({
 
               <button
                 type="button"
-                onClick={() =>
-                  setRows((rs) => [...rs, blankRow(inheritOwner)])
-                }
+                onClick={() => {
+                  const row = blankRow(inheritOwner);
+                  setRows((rs) => [...rs, row]);
+                  setFocusKey(row.key);
+                }}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-hpb-blue hover:border-hpb-blue hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-hpb-gold"
               >
                 <Plus className="h-3 w-3" />

@@ -283,6 +283,7 @@ function AddMilestoneLink(props: {
         <RockModal
           {...props}
           quarter={props.rock.quarter}
+          focusMilestones
           onClose={() => setOpen(false)}
         />
       )}

@@ -18,16 +18,25 @@
 //
 // Safe operations only:
 //   • owner_id reassignment on rocks / todos / issues / scorecard_metrics
-//   • remove `from` from teams.speaking_order and meeting speaking_order /
-//     absent_user_ids (never inserts `to` as absent)
-//   • delete team_members/{team}__{from} and users/{from}
+//   • remove `from` from teams.speaking_order and LIVE meetings' speaking_order
+//     / absent_user_ids (adjusting speaking_index so the pointer stays on the
+//     same person; never inserts `to` as absent). Ended meetings keep their
+//     as-run rotation untouched.
+//   • delete team_members/{team}__{from}; delete users/{from} only when no
+//     other team's membership still references it
 // Does NOT delete Auth (placeholder has none) or touch unrelated teams.
+//
+// Refuses to run unless `from` looks like an import placeholder (id prefix /
+// created_via marker, and no Firebase Auth record). --force overrides.
 
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+
+import { clampSpeakerIndex } from "../lib/l10/speaking-order";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -51,11 +60,12 @@ async function main() {
   const databaseId =
     arg("--database") || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
   const apply = has("--apply");
+  const force = has("--force");
 
   if (!from || !to || !teamId) {
     console.error(
       "Required: --from <import-uid> --to <real-uid> --team <teamId>\n" +
-        "Optional: --database <id>  --apply",
+        "Optional: --database <id>  --apply  --force",
     );
     process.exit(1);
   }
@@ -85,6 +95,53 @@ async function main() {
   console.log(`  mode     : ${apply ? "APPLY (writes)" : "DRY-RUN (no writes)"}\n`);
 
   // Preconditions
+  //
+  // `from` must actually be an import placeholder. import-csv.ts creates them
+  // with an `import-` id prefix and `created_via: "csv-import"` on users/{id},
+  // and never creates an Auth record. A swapped --from/--to would otherwise
+  // hand the real user's data to the placeholder and delete the real user's
+  // membership + profile.
+  const fromUser = await db.collection("users").doc(from).get();
+  const hasImportMarker =
+    from.startsWith("import-") || fromUser.data()?.created_via === "csv-import";
+  let authRecord: "none" | "exists" | "unknown" = "unknown";
+  try {
+    await getAuth(app).getUser(from);
+    authRecord = "exists";
+  } catch (err) {
+    if ((err as { code?: string })?.code === "auth/user-not-found") {
+      authRecord = "none";
+    } else {
+      console.warn(
+        `Auth lookup for ${from} failed (${(err as Error).message}); ` +
+          "falling back to id/field markers only.",
+      );
+    }
+  }
+  if (!hasImportMarker || authRecord === "exists") {
+    const reasons = [
+      !hasImportMarker &&
+        `no import marker (id lacks "import-" prefix and users/${from} has no created_via: "csv-import")`,
+      authRecord === "exists" &&
+        `${from} HAS a Firebase Auth record — placeholders never do`,
+    ]
+      .filter(Boolean)
+      .join("; ");
+    if (!force) {
+      console.error(
+        `--from ${from} does not look like an import placeholder: ${reasons}.\n` +
+          "Refusing to merge — check that --from/--to are not swapped.\n" +
+          "Pass --force only if you are certain.",
+      );
+      process.exit(1);
+    }
+    console.warn(
+      `\n*** --force: proceeding although --from ${from} does not look like an ` +
+        `import placeholder (${reasons}). This will reassign ${from}'s data ` +
+        `and DELETE its membership and profile. ***\n`,
+    );
+  }
+
   const fromMember = await db
     .collection("team_members")
     .doc(`${teamId}__${from}`)
@@ -194,15 +251,33 @@ async function main() {
       .get();
     for (const d of snap.docs) {
       const x = d.data();
+      // Finished meetings record the rotation they actually used
+      // (lib/l10/speaking-order.ts) — leave their speaking_order /
+      // speaking_index / absent_user_ids as-run.
+      if (x.ended_at != null) {
+        console.log(`  meeting   meetings/${d.id}  skipped (ended)`);
+        continue;
+      }
       const patch: Record<string, unknown> = {};
       const so = stripUid(x.speaking_order, from);
-      if (so) patch.speaking_order = so;
+      if (so) {
+        patch.speaking_order = so;
+        // Keep speaking_index on the same person: each removal before the
+        // pointer shifts it left by one; a removal AT the pointer leaves it
+        // aimed at the next speaker. Clamp with the app's clampSpeakerIndex
+        // (out-of-range pins to the last slot, empty order to 0).
+        const prev = x.speaking_order as unknown[];
+        const rawIdx =
+          typeof x.speaking_index === "number" ? x.speaking_index : 0;
+        const idx = clampSpeakerIndex(rawIdx, prev.length);
+        const removedBefore = prev
+          .slice(0, idx)
+          .filter((u) => u === from).length;
+        const nextIdx = clampSpeakerIndex(idx - removedBefore, so.length);
+        if (nextIdx !== x.speaking_index) patch.speaking_index = nextIdx;
+      }
       const absent = stripUid(x.absent_user_ids, from);
       if (absent) patch.absent_user_ids = absent;
-      // current speaker pointer
-      if (x.current_speaker_id === from) {
-        patch.current_speaker_id = to;
-      }
       if (Object.keys(patch).length) {
         ops.push({ kind: "update", path: `meetings/${d.id}`, patch });
         console.log(
@@ -219,8 +294,19 @@ async function main() {
   });
   console.log(`  delete    team_members/${teamId}__${from}`);
 
-  const userSnap = await db.collection("users").doc(from).get();
-  if (userSnap.exists) {
+  // users/{from} is global — only delete it once no other team's membership
+  // still references the placeholder.
+  const otherMemberships = (
+    await db.collection("team_members").where("user_id", "==", from).get()
+  ).docs.filter((d) => d.id !== `${teamId}__${from}`);
+  if (otherMemberships.length > 0) {
+    console.log(
+      `  keep      users/${from} — still referenced by ${otherMemberships.length} ` +
+        `other team(s): ${otherMemberships
+          .map((d) => String(d.data().team_id ?? d.id))
+          .join(", ")} (the last merge will remove it)`,
+    );
+  } else if (fromUser.exists) {
     ops.push({ kind: "delete", path: `users/${from}` });
     console.log(`  delete    users/${from}`);
   }

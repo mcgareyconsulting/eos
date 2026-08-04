@@ -9,7 +9,9 @@ import {
   nextSegment,
   prevSegment,
   isSegment,
+  normalizeSegment,
 } from "./segments";
+// normalizeSegment imported below with other helpers if needed
 
 // This file is the single source of truth every L10 UI piece trusts (segment
 // order, timing, labels). These tests exist to catch the two mistakes most
@@ -102,14 +104,27 @@ describe("segment copy", () => {
 
   test("hints never promise a removed assistant/AI feature", () => {
     // The Gemini assistant was pulled from the app (see the standing
-    // constraints in CLAUDE.md). The IDS hint used to end with "(the
+    // constraints in CLAUDE.md). The Issues hint used to end with "(the
     // Assistant can add it)" and shipped that dead promise to the screen for
-    // the whole IDS segment. Copy must not reintroduce it.
+    // the whole Issues segment. Copy must not reintroduce it.
     for (const s of SEGMENTS) {
       assert.ok(
         !/assistant|gemini/i.test(SEGMENT_HINTS[s]),
         `${s} hint references a removed feature`,
       );
     }
+  });
+});
+
+describe("normalizeSegment", () => {
+  test("maps legacy ids key to issues", () => {
+    assert.equal(normalizeSegment("ids"), "issues");
+  });
+  test("passes through modern segment keys", () => {
+    assert.equal(normalizeSegment("issues"), "issues");
+    assert.equal(normalizeSegment("segue"), "segue");
+  });
+  test("rejects unknown values", () => {
+    assert.equal(normalizeSegment("not-a-segment"), null);
   });
 });

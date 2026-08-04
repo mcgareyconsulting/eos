@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-03 — _Pass 15 (P1-1 + P1-3 shipped)_
+**Last updated:** 2026-08-03 — _Pass 16 (Session C: P2-3…P2-6)_
 
 ---
 
@@ -226,7 +226,7 @@ membership; scorecard weekly grid w/ owners/goals/averages.
   security-review item).
 - Insights dashboard (meeting-rating trend, issue solve rate, to-dos
   created/over-time, rock %, milestone trend, revised-due-date counts,
-  avg time in IDS). NOTE: the audit-log trigger already captures the
+  avg time in Issues). NOTE: the audit-log trigger already captures the
   change-history this needs (due-date revisions etc.).
 - Custom meeting agendas: multiple templates (L10, L10 Condensed,
   Quarterly, Annual, 1-on-1, Focus Day, Vision Building), per-team agenda
@@ -377,26 +377,29 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
-**Pass 15 (2026-08-03): client-feedback build batch** on
-`feature/p1-roadmap` (after P0 trust bugs on `feature/p0-roadmap`).
+**Pass 16 (2026-08-03): Session C meeting hygiene** on `feature/p2-roadmap`
+(after Session B merge of `feature/p1-roadmap`).
 
-**Shipped this session (Session B):**
-- **P1-1 Team switcher** — sidebar lists all memberships; switch preserves
-  section path; preference in `localStorage` (`components/team-nav.tsx`).
-- **P1-3 Scorecard metric intervals** (Jenna #1) — tabs are **filters by
-  `metric.interval`**, not rollups of weekly data. Weekly / Monthly /
-  Quarterly / Annual each own their measurables + editable period columns.
-  Add measurable is a header modal; interval defaults to the active tab.
-  L10 scorecard remains weekly-only.
-- **P1-4 L10 scorecard order** (P13-9) — Default order walks **owner
-  speaking sequence** (then metric `sort_order`), not status reshuffle.
-- **P1-5 Speaking order editor** (P14-8) — Members → Meeting settings;
-  leaders reorder with ↑↓; durable `teams.speaking_order`. UI copy:
-  configured order, **not join order**.
+**Shipped this session (Session C):**
+- **P2-3 Headlines discuss + selective archive** — checkbox to mark
+  discussed (standalone + L10); only checked headlines archive when the
+  meeting ends; Active / Archived tabs; no auto-clear-all of standing
+  headlines. Fields: `discussed`, `discussed_at`, `archived_at`.
+- **P2-4 Issues ST↔LT + LT tab** — Short-term / Long-term tabs on Issues
+  page; `setIssueType` + move button on standalone and L10 Issues.
+- **P2-5 Comments on issues & rocks** — `entity_comments` collection;
+  detail modals; auto-linkify URLs; author can delete own. No binary
+  attachments (links OK).
+- **P2-6 Rock / milestone date defaults** — quarter free text; rock due
+  optional (UI still suggests EOQ); milestones default to **no due date**.
 
-**Next:** P1-2 ops checklist, or Session C product (headlines discuss,
-issues ST/LT, comments). Working priority list is agent-local — not in
-this repo.
+**Next:**
+- P1-2 ops checklist (allowlist + membership) when prepping access
+- Later: P1-6 vote credits UI, P1-7 Google Tasks two-way, P2-1 custom
+  agendas (design spike), P2-2 full archive model, P2-7 privacy, P3-*
+
+Working priority list is agent-local — not in this repo
+(`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
 
 ---
 
@@ -421,12 +424,12 @@ Pass 11/13 so we don't double-count.
 | 4 | 07-30 | Jenna | To-Dos | **Default due date = 7 days out**; milestones 7 days out should become to-dos — she added a milestone due today and it **did not** pull into to-dos | **Bug + product.** Home 7-day milestones (Pass 11) may not cover "milestone → to-do" auto-promote, or list filter is wrong. Verify `home` + to-dos surface. |
 | 5 | 07-30 | Jenna | To-Dos | **Done to-dos archive after the team meeting**; toggle to view archived — same pattern for Rocks, Headlines, Issues, etc. | **Product** — archive-on-close + archive tab. Rocks archive already Feature 5c; generalize across entities. Custom agendas "archive-on-close" in Pass 11 new asks. |
 | 6 | 07-30 | Jenna | Issues | Comments useful; **attachments optional** (links to Google Docs OK instead) | Pass 11 "linked items + comments + attachments" — **prioritize comments; deprioritize binary attachments** (Workspace-link-first). |
-| 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | **Product gap.** Headline discuss/done checkbox + selective archive. Not auto-clear-all. |
+| 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | ✅ **Done Pass 16 (P2-3).** Discuss checkbox + selective archive at meeting end. |
 | 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
 | 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | **Security / tenancy review.** Cross-team IDOR fixed on mutations (Pass 10); still need explicit privacy story for sensitive issues + role model (Pass 11 Directory/admin). |
 | 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | **Integration bug / incomplete.** Today is **one-way push** (`lib/google/tasks.ts`). Client wants **Tasks → EOS** completion sync. Elevates Pass 11 Phase-1 Tasks ask to **two-way is required**. |
 | 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
-| 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | **Product.** ST/LT move = deferred issue actions family (Pass 11/13). In-meeting edit + comments = same as #6. |
+| 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | ✅ **Done Pass 16 (P2-4 + P2-5).** Move button + LT tab; comments on issue/rock detail. |
 | 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | ✅ **Done Pass 15 (P1-1).** Sidebar team switcher over all memberships. |
 | 14 | 08-03 | Steph | Headlines | Categorization good; add **General / FYI** category (beyond Other) | **Small product** — headline category enum. |
 | 15 | 08-03 | Steph | Headlines | **Hyperlinks + rich text** (bullets, bold) in headlines | **Product** — rich text / linkify across headlines (and issues #21). |
@@ -458,7 +461,7 @@ Pass 11/13 so we don't double-count.
 11. **Archive-after-meeting + archive toggle** across entities (#5); **headline discuss checkbox** (selective archive) (#7).
 12. **Issue ST↔LT move + LT tab** (#12, #21); **comments** over file attachments (#6).
 13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1).
-14. Headline **FYI category** (#14); **rich text / links** (#15, #22).
+14. Headline **FYI category** (#14); **rich text / links** (#15, #22) — include **issue descriptions** (and rock descriptions / headline body / comments); comments already linkify URLs (P2-5).
 15. Integrations nav → settings (#17); rock/quarter **default flexibility** (#2, #19).
 
 ### Pass 13 (retained) + Pass 14 overlap
@@ -492,9 +495,9 @@ tracked here.
 | # | Item | Speakers | Map to existing plan |
 |---|------|----------|----------------------|
 | 4 | **UI feedback** (general) | Jessica, Cora, Joe | Continue collecting; no single ticket yet |
-| 5 | **Vote allocation display** unclear or wrong | Jessica, Cora, Joe | Check remaining-credits UI in IDS; related: Pass 12 vote-reset-on-conclude semantics in `L10_GAPS` |
+| 5 | **Vote allocation display** unclear or wrong | Jessica, Cora, Joe | Check remaining-credits UI in Issues; related: Pass 12 vote-reset-on-conclude semantics in `L10_GAPS` |
 | 6 | **Scorecard page limitations** | Jessica, Cora, Joe | Pass 11 deferred scorecard work (interval views, warehouse-fed metrics) + 30-metric cliff |
-| 7 | **Issue management functionality** gaps | Jessica, Cora, Joe | Pass 11 deferred issue actions (merge / send-to-team / convert); in-meeting IDS "S" gap in `L10_GAPS` |
+| 7 | **Issue management functionality** gaps | Jessica, Cora, Joe | Pass 11 deferred issue actions (merge / send-to-team / convert); in-meeting Issues solve gap in `L10_GAPS` |
 | 8 | **Flexible meeting templates** (different durations & formats) | Stephanie | Already Pass 11 "new asks" — custom agendas (L10 / Condensed / Quarterly / 1-on-1 / …). **Client re-confirmed in live use.** Biggest build item. |
 | 9 | **Scorecard presentation order should follow participant list order** | Stephanie, Joe | Confirmed as desired behavior — verify implementation matches speaking/participant order |
 | 10 | **Active speaker highlighting during rotation** | Joe | Noted as present/working — keep as expected behavior |

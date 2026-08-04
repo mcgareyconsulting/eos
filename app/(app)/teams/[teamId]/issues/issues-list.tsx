@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { collection, query as fsQuery, where } from "firebase/firestore";
-import { Trash2, AlertCircle, User, ThumbsUp } from "lucide-react";
+import { Trash2, AlertCircle, User, ThumbsUp, Pencil } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
@@ -18,8 +18,9 @@ import {
   type IssueStatus,
   type IssueType,
 } from "@/lib/issues";
-import { EditIssuePopover } from "./edit-issue-popover";
 import { IssueDetailTrigger } from "./issue-detail-modal";
+import { IssueFormModal } from "./issue-form-modal";
+import { MoveIssueTermButton } from "./move-term-button";
 import { deleteIssue } from "./actions";
 
 export type IssueDoc = {
@@ -35,20 +36,24 @@ export type IssueDoc = {
 };
 
 type Member = { user_id: string; full_name: string };
+type TermTab = "short" | "long";
 
 // Issues tab: capture, edit, and triage outside the meeting. Voting is L10-only
-// (see segment-ids.tsx). We still rank short-term by the denormalized team vote
-// total so the list mirrors meeting order as a read-only view.
+// (see segment-issues.tsx). Short-term / long-term are separate tabs (P2-4).
 export function IssuesList({
   teamId,
+  userId,
   members,
   initialIssues,
 }: {
   teamId: string;
+  userId: string;
   members: Member[];
   initialIssues: IssueDoc[];
 }) {
   const db = getClientDb();
+  const [tab, setTab] = useState<TermTab>("short");
+  const [editing, setEditing] = useState<IssueDoc | null>(null);
 
   const issuesQuery = useMemo(
     () => fsQuery(collection(db, "issues"), where("team_id", "==", teamId)),
@@ -60,96 +65,116 @@ export function IssuesList({
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short);
   const rankedLong = rankLongTerm(long);
+  const list = tab === "short" ? rankedShort : rankedLong;
+  const defaultType: IssueType = tab === "long" ? "long" : "short";
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  if (issues.length === 0) {
-    return (
-      <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <EmptyState
-          icon={AlertCircle}
-          title="No issues yet"
-          hint="Capture team blockers above. Vote and solve the top ones during the L10 Issues segment."
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <header className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
-          <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Short-term
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {rankedShort.length} issue{rankedShort.length === 1 ? "" : "s"} ·
-            ordered by L10 team votes · vote only in the meeting
-          </p>
-        </header>
-        <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-          {rankedShort.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-              No short-term issues.
-            </div>
-          )}
-          {rankedShort.map((issue) => (
-            <IssueRow
-              key={issue.id}
-              teamId={teamId}
-              issue={issue}
-              members={members}
-              ownerName={ownerName}
-              showVoteCount
-            />
-          ))}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+        <button
+          type="button"
+          onClick={() => setTab("short")}
+          className={
+            tab === "short"
+              ? "rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+              : "rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }
+        >
+          Short-term ({rankedShort.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("long")}
+          className={
+            tab === "long"
+              ? "rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+              : "rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }
+        >
+          Long-term ({rankedLong.length})
+        </button>
+        <div className="ml-auto">
+          <IssueFormModal
+            teamId={teamId}
+            members={members}
+            defaultOwnerId={userId}
+            defaultType={defaultType}
+            buttonLabel={
+              tab === "long" ? "Add long-term issue" : "Add issue"
+            }
+          />
         </div>
-      </section>
+      </div>
 
-      <section className="space-y-3">
-        <header className="border-b border-zinc-200 pb-3 dark:border-zinc-800">
-          <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Long-term
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {rankedLong.length} issue{rankedLong.length === 1 ? "" : "s"} ·
-            ranked by priority · not voted on
-          </p>
-        </header>
+      {issues.length === 0 ? (
+        <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <EmptyState
+            icon={AlertCircle}
+            title="No issues yet"
+            hint="Use Add issue to capture blockers. Vote and solve the top ones during the L10 Issues segment."
+          />
+        </div>
+      ) : (
         <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-          {rankedLong.length === 0 && (
+          {list.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-              No long-term issues.
+              {tab === "short"
+                ? "No short-term issues. Move one from long-term or add one."
+                : "No long-term issues. Move one from short-term or add one."}
             </div>
           )}
-          {rankedLong.map((issue) => (
+          {list.map((issue) => (
             <IssueRow
               key={issue.id}
               teamId={teamId}
+              userId={userId}
               issue={issue}
               members={members}
               ownerName={ownerName}
+              showVoteCount={tab === "short"}
+              onEdit={() => setEditing(issue)}
             />
           ))}
         </div>
-      </section>
+      )}
+
+      {editing && (
+        <IssueFormModal
+          teamId={teamId}
+          members={members}
+          defaultOwnerId={userId}
+          defaultType={editing.type === "long" ? "long" : "short"}
+          issue={editing}
+          open={!!editing}
+          onOpenChange={(next) => {
+            if (!next) setEditing(null);
+          }}
+          showTrigger={false}
+        />
+      )}
     </div>
   );
 }
 
 function IssueRow({
   teamId,
+  userId,
   issue,
   members,
   ownerName,
   showVoteCount = false,
+  onEdit,
 }: {
   teamId: string;
+  userId: string;
   issue: IssueDoc;
   members: Member[];
   ownerName: (id: string | null) => string;
   showVoteCount?: boolean;
+  onEdit: () => void;
 }) {
   const remove = deleteIssue.bind(null, teamId, issue.id);
 
@@ -185,6 +210,9 @@ function IssueRow({
         <IssueDetailTrigger
           issue={issue}
           ownerName={ownerName(issue.owner_id)}
+          teamId={teamId}
+          userId={userId}
+          members={members}
           className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
         >
           {issue.title}
@@ -195,15 +223,21 @@ function IssueRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <EditIssuePopover
+      <div className="flex shrink-0 items-center gap-1">
+        <MoveIssueTermButton
           teamId={teamId}
           issueId={issue.id}
-          members={members}
-          ownerId={issue.owner_id}
-          priority={issue.priority}
-          description={issue.description}
+          type={issue.type}
         />
+        <button
+          type="button"
+          onClick={onEdit}
+          title="Edit issue"
+          aria-label="Edit issue"
+          className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
         <form action={remove}>
           <button
             type="submit"

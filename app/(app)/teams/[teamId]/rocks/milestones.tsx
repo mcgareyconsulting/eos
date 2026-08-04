@@ -33,7 +33,8 @@ export function MilestonesDisclosure({
   rockOwnerId,
   members,
   milestones,
-  defaultDue,
+  /** @deprecated P2-6: milestones no longer prefill EOQ; kept for call-site compat. */
+  defaultDue: _defaultDue = "",
   /** When true, list is shown immediately (e.g. parent rock row already expanded). */
   defaultOpen = false,
   /** Hide the chevron toggle — parent owns expand/collapse. */
@@ -44,7 +45,8 @@ export function MilestonesDisclosure({
   rockOwnerId: string | null;
   members: Member[];
   milestones: MilestoneSerialized[];
-  defaultDue: string;
+  /** Unused — milestones default to no due date (P2-6). */
+  defaultDue?: string;
   defaultOpen?: boolean;
   alwaysOpen?: boolean;
 }) {
@@ -144,7 +146,6 @@ export function MilestonesDisclosure({
               rockId={rockId}
               members={members}
               defaultOwnerId={rockOwnerId ?? members[0]?.user_id ?? ""}
-              defaultDue={defaultDue}
             />
           )}
         </div>
@@ -266,19 +267,18 @@ function AddMilestoneForm({
   rockId,
   members,
   defaultOwnerId,
-  defaultDue,
 }: {
   teamId: string;
   rockId: string;
   members: Member[];
   defaultOwnerId: string;
-  defaultDue: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [ownerId, setOwnerId] = useState(defaultOwnerId);
-  const [due, setDue] = useState(defaultDue);
+  // Empty by default — set a date only when you have one (P2-6).
+  const [due, setDue] = useState("");
   const [description, setDescription] = useState("");
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -292,7 +292,7 @@ function AddMilestoneForm({
     start(async () => {
       await addMilestone(teamId, rockId, fd);
       setTitle("");
-      setDue(defaultDue);
+      setDue("");
       setDescription("");
       router.refresh();
     });
@@ -325,6 +325,8 @@ function AddMilestoneForm({
           type="date"
           value={due}
           onChange={(e) => setDue(e.target.value)}
+          title="Due date (optional)"
+          aria-label="Due date (optional)"
           className="rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
         />
         <button

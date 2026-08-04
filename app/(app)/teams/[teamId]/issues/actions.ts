@@ -69,9 +69,8 @@ export async function addIssue(teamId: string, formData: FormData) {
   revalidatePath(pathFor(teamId));
 }
 
-// Edits the non-voting, non-status metadata on an issue: owner (exactly one
-// or none), priority, and description. Title/type/status/votes are edited
-// via their own dedicated affordances.
+// Edits triage fields on an issue (title, owner, priority, type, description).
+// Status and votes stay on their own affordances.
 export async function updateIssueMeta(
   teamId: string,
   issueId: string,
@@ -80,17 +79,27 @@ export async function updateIssueMeta(
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
 
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) throw new Error("Title required");
+
+  const typeRaw = String(formData.get("type") ?? "short");
+  const type: Type = TYPES.includes(typeRaw as Type)
+    ? (typeRaw as Type)
+    : "short";
   const owner_id = readOwnerId(formData, null);
   const priority = readPriority(formData);
   const description = String(formData.get("description") ?? "").trim() || null;
 
   await db.collection("issues").doc(issueId).update({
+    title,
+    type,
     owner_id,
     priority,
     description,
   });
 
   revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
 }
 
 // Cast a vote on this issue (delta = +1 or -1). Each user has 3 vote credits
@@ -181,17 +190,59 @@ export async function setIssueStatus(
   revalidatePath(pathFor(teamId));
 }
 
+/** Move an issue between short-term and long-term parking lot. */
+export async function setIssueType(
+  teamId: string,
+  issueId: string,
+  type: string,
+) {
+  if (!TYPES.includes(type as Type)) throw new Error("Bad type");
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "issues", issueId, teamId);
+  await db.collection("issues").doc(issueId).update({ type });
+
+  // Long-term issues aren't the IDS/discuss target — clear any live meeting
+  // pin so "Discussing" doesn't stick after the issue leaves short-term.
+  if (type === "long") {
+    // Team meeting history is small; filter in memory to avoid a composite index.
+    const meetings = await db
+      .collection("meetings")
+      .where("team_id", "==", teamId)
+      .get();
+    const openPinned = meetings.docs.filter(
+      (d) =>
+        d.data()?.ended_at == null && d.data()?.current_issue_id === issueId,
+    );
+    if (openPinned.length > 0) {
+      const batch = db.batch();
+      for (const d of openPinned) {
+        batch.update(d.ref, { current_issue_id: null });
+      }
+      await batch.commit();
+    }
+  }
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
+}
+
 export async function deleteIssue(teamId: string, issueId: string) {
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  // Cascade: delete the issue + any votes for it
-  const votes = await db
-    .collection("issue_votes")
-    .where("issue_id", "==", issueId)
-    .get();
+  // Cascade: issue + votes + comments (P2-5 entity_comments)
+  const [votes, comments] = await Promise.all([
+    db.collection("issue_votes").where("issue_id", "==", issueId).get(),
+    db
+      .collection("entity_comments")
+      .where("team_id", "==", teamId)
+      .where("entity_type", "==", "issue")
+      .where("entity_id", "==", issueId)
+      .get(),
+  ]);
   const batch = db.batch();
   batch.delete(db.collection("issues").doc(issueId));
   votes.docs.forEach((v) => batch.delete(v.ref));
+  comments.docs.forEach((c) => batch.delete(c.ref));
   await batch.commit();
   revalidatePath(pathFor(teamId));
 }

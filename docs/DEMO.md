@@ -28,7 +28,7 @@ owned action → wrap with a recap.** Total core run: ~8 minutes.
    (no password needed). This only works after the seed has run (step 1) —
    it's what creates her Auth account with the fixed uid the seed data points
    at. Put the two windows side-by-side — votes and the "Discussing now" pin
-   sync live between them during IDS.
+   sync live between them during Issues.
    On a **real Firebase project**, this beat needs a second real Workspace
    account that has joined via `/join` and been approved by the leader — the
    synthetic teammates are Firestore-only there (display names, no real
@@ -106,8 +106,8 @@ Each beat lists what to **DO** and what to **SAY**. Times are cumulative.
   dropped straight onto the Issues list — one click — so we keep moving instead
   of rat-holing."
 
-### 4:45 — IDS · "Identify, Discuss, Solve" *(the core)*
-- **DO:** Advance to **IDS**. 
+### 4:45 — Issues *(the core)*
+- **DO:** Advance to **Issues**. 
   - **Vote:** click **+** on the top one or two issues (you have 3 credits;
     you can stack). Watch the list re-rank by votes. *(If you opened a second
     teammate window, vote there too and show the counts update live.)*

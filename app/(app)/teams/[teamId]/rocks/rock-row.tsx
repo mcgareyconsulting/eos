@@ -37,6 +37,7 @@ type Member = { user_id: string; full_name: string };
 // owner, quarter, and description still edit via the pencil drawer.
 export function RockRow({
   teamId,
+  userId,
   rock,
   ownerName,
   members,
@@ -45,6 +46,7 @@ export function RockRow({
   statusHistory = [],
 }: {
   teamId: string;
+  userId: string;
   rock: Rock;
   ownerName: string;
   members: Member[];
@@ -94,6 +96,9 @@ export function RockRow({
             ownerName={displayOwner}
             milestones={detailMilestones}
             statusHistory={statusHistory}
+            teamId={teamId}
+            userId={userId}
+            members={members}
             className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
           >
             {rock.title}

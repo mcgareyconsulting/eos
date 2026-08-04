@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -119,9 +125,12 @@ export function StatusPopover({
     };
   }, [open]);
 
-  // Portal + fixed placement. Measure real panel height after paint so all
-  // statuses + notes fit without scroll; flip/clamp as a whole.
-  useEffect(() => {
+  // Portal + fixed placement. The panel mounts hidden as soon as it opens;
+  // this layout effect runs after that commit and before paint, so it always
+  // measures the REAL panel height — the flip-above position depends on it.
+  // (The old after-paint rAF re-measure could race the mount, leaving the
+  // estimate in place and the panel floating high above the trigger.)
+  useLayoutEffect(() => {
     if (!open) return;
 
     const update = () => {
@@ -131,8 +140,6 @@ export function StatusPopover({
       setCoords(placePanel(rect, measured));
     };
     update();
-    // Second pass after layout: estimate → real height may differ by a few px.
-    const raf = requestAnimationFrame(update);
 
     const onScrollOrResize = (e: Event) => {
       if (
@@ -149,7 +156,6 @@ export function StatusPopover({
     window.addEventListener("scroll", onScrollOrResize, true);
     window.addEventListener("resize", onScrollOrResize);
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
@@ -179,16 +185,19 @@ export function StatusPopover({
   }
 
   const panel =
-    open && coords && mounted
+    open && mounted
       ? createPortal(
           <div
             ref={panelRef}
             role="dialog"
             aria-label="Update rock status"
             style={{
-              top: coords.top,
-              left: coords.left,
+              top: coords?.top ?? 0,
+              left: coords?.left ?? 0,
               width: PANEL_W,
+              // First frame mounts hidden so the layout effect can measure the
+              // real height before the panel is ever visible.
+              visibility: coords ? undefined : "hidden",
             }}
             className="fixed z-50 flex flex-col rounded-xl border border-zinc-300 bg-white p-4 text-sm shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
           >

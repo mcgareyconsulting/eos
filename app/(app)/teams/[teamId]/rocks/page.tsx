@@ -298,7 +298,7 @@ function RockSection({
       <h2 className="mb-3 text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
         {title}
       </h2>
-      <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {children}
       </div>
     </section>

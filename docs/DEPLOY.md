@@ -239,7 +239,17 @@ Deploy:
 
 ```bash
 firebase deploy --only functions --project "$PROJECT_ID"
+# Or ship just the Monday cleanup (no audit triggers):
+firebase deploy --only functions:archiveStaleTodos --project "$PROJECT_ID"
 ```
+
+**`archiveStaleTodos`:** scheduled `0 3 * * 1` America/Chicago. Archives
+pure to-dos completed before this week's Monday 00:00 local. Param
+`FIRESTORE_DATABASE_ID` (see `functions/.env.hpb-eos-prod` →
+`hpb-eos-prod-db`). **All** functions in this codebase — including audit
+triggers — must declare that named database; the project has **no**
+`(default)` DB, and deploy fails with a 404 if the CLI still probes it.
+Cloud Scheduler API must be enabled (`cloudscheduler.googleapis.com`).
 
 This builds (`tsc`, via the `predeploy` hook in `firebase.json`) and deploys
 under the project's default runtime service account for 2nd-gen Cloud
@@ -248,7 +258,7 @@ Functions — the **Compute Engine default SA**
 App Engine default SA (`{PROJECT_ID}@appspot.gserviceaccount.com` — that's
 the gen1 default, and doesn't apply here) — unless a dedicated per-function
 SA is configured. It needs `roles/datastore.user` to write `audit_log`
-rows:
+rows (and to update `todos.archived_at` for the Monday sweep):
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')

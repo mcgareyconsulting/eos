@@ -26,6 +26,7 @@ import { QuickAddIssue } from "@/components/quick-add-issue";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
 // description is included so L10 rows mirror the To-Dos tab expand/edit UX.
+// archived_at may be missing on legacy docs (treat as active).
 type TodoDoc = {
   id: string;
   team_id: string;
@@ -34,6 +35,7 @@ type TodoDoc = {
   owner_id: string | null;
   due_date: string | null;
   completed_at: { toDate: () => Date } | boolean | null;
+  archived_at?: { toDate: () => Date } | boolean | null;
   visibility: "team" | "private";
   source_rock_id: string | null;
 };
@@ -226,7 +228,7 @@ export function SegmentTodos({
     absentUserIds,
   );
 
-  const allTodos = [...teamTodos, ...myTodos];
+  const allTodos = [...teamTodos, ...myTodos].filter((t) => !t.archived_at);
   // Pure to-dos only in owner cards. Due-soon open milestones surface above
   // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under Rocks.
   const pureTodos = allTodos.filter((t) => !t.source_rock_id);

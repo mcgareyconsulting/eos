@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-04 — _Pass 17 (Rocks & Milestones redesign, PR #16)_
+**Last updated:** 2026-08-04 — _Session D cleanup (`feature/p3-roadmap` / PR #17); Rocks redesign PR #16 on main_
 
 ---
 
@@ -377,9 +377,39 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
+**Session D (in progress): P1/P2 cleanup** on `feature/p3-roadmap` →
+**PR #17** (branch name is historical; scope is remaining P1–P2). Merged
+**Pass 17 rocks redesign (PR #16)** from main into this branch.
+
+**Shipped this session (Session D):**
+- **P1-6 Vote credits UI** — remaining-first badge, per-person copy, team vs you.
+- **Archive contract (P2-2 / P2-3 aligned):**
+  - **To-dos / Headlines / Issues:** closed *in L10* → archive on Finish;
+    closed *outside* → gray on Active until **Monday 3am** worker.
+  - Headlines “closed” = **discussed** only (standing never auto-archive).
+  - Issues “closed” = **solved | dropped** (`resolved_at`).
+  - Mid-week gray + “Closes Monday” chip; Archived = flat, Closed On, no strike.
+  - **Rocks:** Active/Archived tabs ready; **no archive path yet** (empty
+    Archived). Create button is **`NewRockButton` / `RockModal`** (PR #16).
+  - Worker `archiveStaleTodos` archives prior-week todos + issues + discussed
+    headlines (**redeployed** to prod).
+
+**Still open on this cleanup branch:**
+- **Rocks archive path** (manual and/or auto) — UI only for now
+- **P2-7** privacy · **P1-7** Google Tasks (optional)
+- **P1-2** allowlist ops (**deferred**)
+- **P2-1** custom agendas (out of band)
+- **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
+- P3-* as capacity allows
+
+Working priority list is agent-local — not in this repo
+(`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
+
+---
+
 **Pass 17 (2026-08-04): Rocks & Milestones UI redesign** on
-`fix/rock-creation` → **PR #16**. Built from a designer handoff (options
-1b / 2a / 2b); manual QA below is the merge gate.
+`fix/rock-creation` → **PR #16** (**merged to main**). Built from a
+designer handoff (options 1b / 2a / 2b).
 
 **Merged Pass 16 in** (main had shipped rocks work the same day). The
 redesign is structural source of truth; Pass 16's *behavior* was carried
@@ -390,7 +420,7 @@ milestone dates empty by default. Pass 16's `add-rock-modal.tsx` is
 deleted: `RockModal` supersedes it with create + edit + milestones in one
 batch, and carries over its Team-owner and free-text-quarter hints.
 
-**Shipped this session:**
+**Shipped (PR #16):**
 - **One `RockModal` for create + edit** with milestones inline, written in a
   **single Firestore batch** (`createRockWithMilestones` /
   `updateRockWithMilestones`). Replaces `add-rock-drawer.tsx`,
@@ -439,14 +469,6 @@ batch, and carries over its Team-owner and free-text-quarter hints.
 > modal ticks in L10 too. Don't reintroduce a mode switch keyed on data
 > presence; if a read-only surface is ever wanted, make it an explicit prop.
 
-**Before merging — manual QA (emulators or trial):** create a rock with
-milestones (one write, milestones appear on To-Dos); create with title only
-(no empty todos); edit a milestone's date, remove a row, add a row; tick a
-milestone from both the row and the detail modal; set Off Track with a note
-and confirm it surfaces in the row + timeline; Team-owned rock milestone
-falls back to the signed-in user; mash Save (exactly one rock); **L10 rocks
-segment regression**; dark mode + narrow viewport.
-
 **Known gap, not fixed:** milestones are written straight to `todos` and
 never set `google_task_id` or call `upsertTaskForTodo`, so unlike every
 other to-do they **don't mirror to Google Tasks**. Pre-existing (old
@@ -457,42 +479,6 @@ two-way Tasks sync — needs a product decision.
 
 **Pass 16 (2026-08-03 → 2026-08-04): Session C complete** on
 `feature/p2-roadmap` → **PR #14** (merged).
-
-After Session A (`feature/p0-roadmap`) + Session B (`feature/p1-roadmap`).
-
-**Shipped (Session C — product):**
-- **P2-3 Headlines discuss + selective archive** — checkbox (standalone +
-  L10); only checked archive on Finish; Active / Archived tabs; standing
-  items stay. Fields: `discussed`, `discussed_at`, `archived_at`.
-- **P2-4 Issues ST↔LT + tabs** — Short-term / Long-term tabs on Issues +
-  L10; move labels `Long →` / `← Short`.
-- **P2-5 Comments** — `entity_comments` on issues & rocks; detail modals;
-  auto-linkify URLs; cascade delete with parent. No binary attachments.
-- **P2-6 Date defaults** — free-text quarter; rock due optional (EOQ
-  suggested); milestones default **empty** due.
-
-**Shipped (Session C — polish / hardening):**
-- L10 segment key `ids` → **`issues`** with `normalizeSegment` for legacy
-  meetings still storing `"ids"`. UI label was already "Issues".
-- Centered modals: Add/Edit issue (term defaults from active tab); New Rock
-  (replaces side drawer).
-- Review fixes: broadcast server guards; unarchive clears discussed; LT move
-  clears discuss pin; best-effort archive after `endMeeting`; comment query
-  filters `entity_type`.
-- Firestore: `entity_comments` rules + indexes (operator deploys both named
-  DBs via `firebase deploy --only firestore:rules,firestore:indexes`).
-
-**Not in this PR (still open):**
-- **P1-2** ops: allowlist + membership (when prepping access)
-- **P1-6** vote credits UI · **P1-7** Google Tasks two-way
-- **P2-1** custom agendas (design first) · **P2-2** full archive
-  (todos/rocks/issues; headlines selective archive done) · **P2-7** privacy
-- **P3-2** full rich text (issue **descriptions** + rocks/headlines/comments;
-  comments already linkify) · other P3-*
-- Smarter rock period → monthly milestone suggestions (proposed; not built)
-
-Working priority list is agent-local — not in this repo
-(`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
 
 ---
 

@@ -7,6 +7,7 @@ import {
   rankShortTerm,
   splitIssuesByTerm,
   voteCredits,
+  voteCreditsSummary,
   type RankableIssue,
 } from "./issues";
 
@@ -221,5 +222,32 @@ describe("voteCredits", () => {
     assert.equal(byIssue.has("a"), false);
     assert.equal(byIssue.has("b"), false);
     assert.equal(used, 3); // c defaults to 1, d contributes 2
+  });
+});
+
+describe("voteCreditsSummary", () => {
+  test("leads with remaining, not used", () => {
+    const full = voteCreditsSummary(0);
+    assert.equal(full.remaining, MAX_VOTES_PER_TEAM);
+    assert.equal(full.label, `${MAX_VOTES_PER_TEAM} of ${MAX_VOTES_PER_TEAM} left`);
+    assert.equal(full.depleted, false);
+    assert.match(full.detail, /each person gets/i);
+
+    const mid = voteCreditsSummary(2);
+    assert.equal(mid.remaining, 1);
+    assert.equal(mid.label, "1 of 3 left");
+    assert.equal(mid.depleted, false);
+
+    const empty = voteCreditsSummary(3);
+    assert.equal(empty.remaining, 0);
+    assert.equal(empty.label, "0 of 3 left");
+    assert.equal(empty.depleted, true);
+    assert.match(empty.detail, /reset when the meeting ends/i);
+  });
+
+  test("clamps over-spent used counts", () => {
+    const s = voteCreditsSummary(99);
+    assert.equal(s.remaining, 0);
+    assert.equal(s.depleted, true);
   });
 });

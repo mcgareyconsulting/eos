@@ -139,6 +139,7 @@ function milestoneDoc(
     due_date: m.due_date,
     description: null,
     completed_at: null,
+    archived_at: null,
     visibility: "team" as const,
     source_issue_id: null,
     source_meeting_id: null,

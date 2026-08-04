@@ -9,6 +9,7 @@ import {
   deleteTaskForTodo,
   type TodoMirror,
 } from "@/lib/google/tasks";
+import { selectTodosCompletedDuringMeeting } from "@/lib/todos-archive";
 
 // Build the Google Tasks mirror payload from a to-do doc's fields plus any
 // just-applied overrides. Every to-do write passes the *complete* current
@@ -67,6 +68,7 @@ export async function addTodo(teamId: string, formData: FormData) {
     owner_id,
     due_date,
     completed_at: null,
+    archived_at: null,
     visibility,
     source_issue_id: null,
     source_meeting_id,
@@ -223,4 +225,77 @@ export async function deleteTodo(teamId: string, todoId: string) {
   await db.collection("todos").doc(todoId).delete();
   await deleteTaskForTodo(ownerUidOf(data), data.google_task_id);
   revalidatePath(pathFor(teamId));
+}
+
+/** Soft-archive or restore a pure to-do (not rock milestones). */
+export async function setTodoArchived(
+  teamId: string,
+  todoId: string,
+  archived: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  if (snap.data()?.source_rock_id) {
+    throw new Error("Milestones are managed under Rocks, not archived here");
+  }
+  await db
+    .collection("todos")
+    .doc(todoId)
+    .update({
+      archived_at: archived ? FieldValue.serverTimestamp() : null,
+    });
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
+  revalidatePath("/home");
+}
+
+/**
+ * Archive pure to-dos completed *during this L10* (not all done items).
+ * Called from endMeeting. Earlier-in-the-week completions stay checked on
+ * Active until the Monday morning sweep (or manual archive).
+ */
+export async function archiveTodosCompletedDuringMeeting(
+  teamId: string,
+  meetingId: string,
+): Promise<number> {
+  const { db } = await requireTeamAccess(teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const m = meetingSnap.data() ?? {};
+  const startMs =
+    typeof m.started_at?.toMillis === "function"
+      ? m.started_at.toMillis()
+      : 0;
+  const endMs =
+    typeof m.ended_at?.toMillis === "function"
+      ? m.ended_at.toMillis()
+      : Date.now();
+
+  if (!startMs) {
+    console.error(
+      "[archiveTodosCompletedDuringMeeting] meeting missing started_at",
+      meetingId,
+    );
+    return 0;
+  }
+
+  const snap = await db
+    .collection("todos")
+    .where("team_id", "==", teamId)
+    .get();
+
+  const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const ids = new Set(
+    selectTodosCompletedDuringMeeting(candidates, startMs, endMs),
+  );
+  if (ids.size === 0) return 0;
+
+  const batch = db.batch();
+  for (const d of snap.docs) {
+    if (!ids.has(d.id)) continue;
+    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+  }
+  await batch.commit();
+  revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
+  return ids.size;
 }

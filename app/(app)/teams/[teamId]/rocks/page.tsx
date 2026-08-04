@@ -1,4 +1,5 @@
-import { Target } from "lucide-react";
+import Link from "next/link";
+import { Archive, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
@@ -18,6 +19,7 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  archived_at?: unknown;
 };
 
 type TodoDoc = {
@@ -63,10 +65,11 @@ export default async function RocksPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ owner?: string }>;
+  searchParams: Promise<{ owner?: string; archived?: string }>;
 }) {
   const { teamId } = await params;
-  const { owner: ownerParam } = await searchParams;
+  const { owner: ownerParam, archived: archivedParam } = await searchParams;
+  const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
@@ -87,7 +90,7 @@ export default async function RocksPage({
 
   // Project plain fields only — spreading d.data() would pull created_at
   // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
-  const allRocks = rocksSnap.docs.map((d) => {
+  const allRocksRaw = rocksSnap.docs.map((d) => {
     const x = d.data();
     return {
       id: d.id,
@@ -99,8 +102,17 @@ export default async function RocksPage({
       status: x.status as string,
       description: (x.description as string | null) ?? null,
       rock_type: (x.rock_type as string | null) ?? null,
+      archived_at: x.archived_at ?? null,
     };
   });
+  // Archive surface exists (Feature 5c); no auto-archive path for rocks yet.
+  const activeRockCount = allRocksRaw.filter((r) => r.archived_at == null)
+    .length;
+  const archivedRockCount = allRocksRaw.filter((r) => r.archived_at != null)
+    .length;
+  const allRocks = allRocksRaw.filter((r) =>
+    showArchived ? r.archived_at != null : r.archived_at == null,
+  );
 
   // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
   // which can't cross the Server → Client component boundary.
@@ -236,29 +248,85 @@ export default async function RocksPage({
 
   const sections = buildSections(allRocks);
 
-  const emptyMessage =
-    filter === "all" ? "No rocks yet." : `No rocks for ${ownerName(filter)}.`;
+  const emptyMessage = showArchived
+    ? "No archived rocks yet."
+    : filter === "all"
+      ? "No rocks yet."
+      : `No rocks for ${ownerName(filter)}.`;
+
+  const ownerQuery =
+    filter !== "all" && filter !== "team" ? `owner=${filter}` : "";
 
   return (
     <div className="space-y-6">
-      <header className="flex items-end justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
-        <div className="flex items-center gap-2">
-          <OwnerFilter members={members} currentUserId={uid} />
-          <NewRockButton
-            teamId={teamId}
-            members={members}
-            quarter={quarter}
-            defaultDue={eoq}
-            currentUserId={uid}
-            teamName={team.name}
-          />
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            {showArchived
+              ? "Archived rocks will appear here. Auto-archive is not enabled yet — path ships later."
+              : "Quarterly priorities. Archive tab is ready; moving rocks into archive comes later."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 text-sm">
+            <Link
+              href={
+                ownerQuery
+                  ? `/teams/${teamId}/rocks?${ownerQuery}`
+                  : `/teams/${teamId}/rocks`
+              }
+              className={
+                !showArchived
+                  ? "rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              }
+            >
+              Active ({activeRockCount})
+            </Link>
+            <Link
+              href={
+                ownerQuery
+                  ? `/teams/${teamId}/rocks?archived=1&${ownerQuery}`
+                  : `/teams/${teamId}/rocks?archived=1`
+              }
+              className={
+                showArchived
+                  ? "inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              }
+            >
+              <Archive className="h-3.5 w-3.5" />
+              Archived ({archivedRockCount})
+            </Link>
+          </div>
+          {!showArchived && (
+            <>
+              <OwnerFilter members={members} currentUserId={uid} />
+              <NewRockButton
+                teamId={teamId}
+                members={members}
+                quarter={quarter}
+                defaultDue={eoq}
+                currentUserId={uid}
+                teamName={team.name}
+              />
+            </>
+          )}
         </div>
       </header>
 
       {sections.length === 0 ? (
-        <RockSection title="Rocks">
-          <Empty>{emptyMessage}</Empty>
+        <RockSection title={showArchived ? "Archived" : "Rocks"}>
+          {showArchived ? (
+            <EmptyState
+              icon={Archive}
+              title="No archived rocks"
+              hint="Rocks archive is ready for browsing. An archive path (manual or auto) will land in a later pass."
+            />
+          ) : (
+            <Empty>{emptyMessage}</Empty>
+          )}
         </RockSection>
       ) : (
         sections.map((g) => (

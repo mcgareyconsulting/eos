@@ -20,7 +20,9 @@ import {
   firstPresentIndex,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { archiveDiscussedHeadlines } from "../headlines/actions";
+import { archiveHeadlinesDiscussedDuringMeeting } from "../headlines/actions";
+import { archiveIssuesClosedDuringMeeting } from "../issues/actions";
+import { archiveTodosCompletedDuringMeeting } from "../todos/actions";
 
 function listPath(teamId: string) {
   return `/teams/${teamId}/meetings`;
@@ -273,18 +275,37 @@ export async function endMeeting(teamId: string, meetingId: string) {
       console.error("[endMeeting] vote reset failed:", e);
     }
     try {
-      // P2-3: archive only headlines marked discussed. Standing headlines
-      // (open positions, ongoing FYIs) stay active — never auto-clear-all.
-      await archiveDiscussedHeadlines(teamId);
+      // Closed *in this L10* only → Archived (team saw it). Standing headlines
+      // and mid-week closes stay until Monday worker.
+      await archiveHeadlinesDiscussedDuringMeeting(teamId, meetingId);
     } catch (e) {
-      // Half-finished conclude is worse than leaving discussed headlines active.
-      console.error("[endMeeting] archiveDiscussedHeadlines failed:", e);
+      console.error(
+        "[endMeeting] archiveHeadlinesDiscussedDuringMeeting failed:",
+        e,
+      );
+    }
+    try {
+      await archiveTodosCompletedDuringMeeting(teamId, meetingId);
+    } catch (e) {
+      console.error(
+        "[endMeeting] archiveTodosCompletedDuringMeeting failed:",
+        e,
+      );
+    }
+    try {
+      await archiveIssuesClosedDuringMeeting(teamId, meetingId);
+    } catch (e) {
+      console.error(
+        "[endMeeting] archiveIssuesClosedDuringMeeting failed:",
+        e,
+      );
     }
   }
   revalidatePath(detailPath(teamId, meetingId));
   revalidatePath(listPath(teamId));
   revalidatePath(`/teams/${teamId}/issues`);
   revalidatePath(`/teams/${teamId}/headlines`);
+  revalidatePath(`/teams/${teamId}/todos`);
   // ?recap=1 opens the post-meeting recap modal on the next render.
   redirect(`${detailPath(teamId, meetingId)}?recap=1`);
 }

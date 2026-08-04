@@ -102,8 +102,9 @@ export default async function HeadlinesPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Headlines</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Check off discussed items in the L10. Only checked headlines archive
-            when the meeting ends — standing items stay.
+            {showArchived
+              ? "Discussed in an L10 archive when that meeting ends; discussed mid-week archive Monday morning. Standing items never auto-archive."
+              : "Check off discussed in the L10 to archive at Finish. Mid-week discuss stays gray until Monday. Standing items stay active."}
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
@@ -166,12 +167,22 @@ export default async function HeadlinesPage({
             !archivedRow,
           );
 
+          const closedOn =
+            archivedRow && h.archived_at?.toDate
+              ? (() => {
+                  const d = h.archived_at.toDate();
+                  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+                })()
+              : null;
+
           return (
             <div
               key={h.id}
               className={`group flex items-start gap-3 px-4 py-3 text-sm ${
-                discussed && !archivedRow ? "bg-zinc-50/80 dark:bg-zinc-950/40" : ""
-              } ${archivedRow ? "opacity-70" : ""}`}
+                discussed && !archivedRow
+                  ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
+                  : ""
+              }`}
             >
               {!archivedRow && (
                 <HeadlineDiscussedCheckbox
@@ -190,13 +201,17 @@ export default async function HeadlinesPage({
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <div
-                    className={`font-medium ${discussed && !archivedRow ? "text-zinc-600 line-through dark:text-zinc-400" : ""}`}
+                    className={`font-medium ${
+                      discussed && !archivedRow
+                        ? "text-zinc-500 dark:text-zinc-400"
+                        : ""
+                    }`}
                   >
                     {h.title}
                   </div>
                   {discussed && !archivedRow && (
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
-                      Discussed
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+                      Discussed · closes Monday
                     </span>
                   )}
                   {readOnly && (
@@ -205,6 +220,11 @@ export default async function HeadlinesPage({
                     </span>
                   )}
                 </div>
+                {archivedRow && closedOn && (
+                  <div className="mt-0.5 text-xs tabular-nums text-zinc-500">
+                    Closed On: {closedOn}
+                  </div>
+                )}
                 {body && (
                   <div className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
                     {body}

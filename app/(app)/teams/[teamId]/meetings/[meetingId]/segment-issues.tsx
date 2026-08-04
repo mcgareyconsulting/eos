@@ -11,7 +11,6 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import {
-  MAX_VOTES_PER_TEAM,
   PRIORITY_BADGE,
   PRIORITY_LABEL,
   STATUS_BADGE,
@@ -25,6 +24,7 @@ import {
   type IssueType,
 } from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
+import { VoteCreditsBadge } from "../../issues/vote-credits-badge";
 import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
@@ -42,6 +42,7 @@ type IssueDoc = {
   votes: number;
   type: IssueType;
   status: IssueStatus;
+  archived_at?: unknown;
 };
 
 type VoteDoc = {
@@ -93,7 +94,7 @@ export function SegmentIssues({
     [db, meetingId],
   );
 
-  const issues = useCollection<IssueDoc>(issuesQuery, initialIssues);
+  const issuesLive = useCollection<IssueDoc>(issuesQuery, initialIssues);
   const votes = useCollection<VoteDoc>(votesQuery, initialVotes);
   // Live "discussing now" pointer, shared across all clients via the meeting doc.
   const meetingLive = useDoc<{ current_issue_id?: string | null }>(
@@ -102,11 +103,11 @@ export function SegmentIssues({
   );
   const discussingId = meetingLive.current_issue_id ?? null;
 
-  const {
-    byIssue: myVoteByIssue,
-    used: myVotesUsed,
-    remaining: myVotesRemaining,
-  } = voteCredits(votes);
+  const { byIssue: myVoteByIssue, used: myVotesUsed, remaining: myVotesRemaining } =
+    voteCredits(votes);
+
+  // Active only — archived issues leave the L10 list.
+  const issues = issuesLive.filter((i) => i.archived_at == null);
 
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
   const { short, long } = splitIssuesByTerm(issues);
@@ -143,21 +144,7 @@ export function SegmentIssues({
           Long-term ({rankedLong.length})
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {tab === "short" && (
-            <span className="text-xs text-zinc-600 dark:text-zinc-400">
-              <span
-                className={
-                  "font-medium " +
-                  (myVotesRemaining === 0
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-zinc-700 dark:text-zinc-300")
-                }
-              >
-                {myVotesUsed}/{MAX_VOTES_PER_TEAM}
-              </span>{" "}
-              votes used
-            </span>
-          )}
+          {tab === "short" && <VoteCreditsBadge used={myVotesUsed} />}
           {tab === "long" && (
             <span className="text-xs text-zinc-500">
               Not votable · move to short-term to work this meeting
@@ -184,6 +171,8 @@ export function SegmentIssues({
             meetingId,
             isDiscussing ? null : i.id,
           );
+          const closedPending =
+            i.status === "solved" || i.status === "dropped";
           return (
             <div
               key={i.id}
@@ -191,7 +180,9 @@ export function SegmentIssues({
                 "group flex items-center gap-3 px-4 py-3 text-sm " +
                 (isDiscussing
                   ? "bg-hpb-blue/5 dark:bg-hpb-blue/10 ring-1 ring-inset ring-hpb-blue/30"
-                  : "")
+                  : closedPending
+                    ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
+                    : "")
               }
             >
               {tab === "short" && (

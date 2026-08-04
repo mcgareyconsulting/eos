@@ -141,3 +141,26 @@ export function durationMinutes(
     (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60000,
   );
 }
+
+// "in 12d" / "3d overdue" / "today" — the at-a-glance urgency label next to a
+// due date. Empty string for no date so callers can render nothing.
+export function relativeDueLabel(
+  due: string | null | undefined,
+  from: Date = new Date(),
+): string {
+  if (!due) return "";
+  const target = toLocalDate(due);
+  const today = toLocalDate(from);
+  const n = Math.round((target.getTime() - today.getTime()) / 86400000);
+  if (n === 0) return "today";
+  if (n < 0) return `${-n}d overdue`;
+  if (n < 45) return `in ${n}d`;
+  return `in ${Math.round(n / 7)}w`;
+}
+
+// "2026-08-12" → "Aug 12" (compact milestone dates in lists).
+export function formatDateShort(d: string | null | undefined): string {
+  if (!d) return "—";
+  const date = toLocalDate(d);
+  return `${SHORT_MONTHS[date.getMonth()]} ${date.getDate()}`;
+}

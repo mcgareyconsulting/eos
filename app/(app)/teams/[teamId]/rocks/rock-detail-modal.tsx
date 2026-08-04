@@ -1,23 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
-import { formatDateOnly } from "@/lib/dates";
-import { initials } from "@/lib/initials";
+import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
+import { dueToneClass } from "./due";
 import {
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
   normalizeRockType,
 } from "./rock-type";
-import { STATUS_LABELS, STATUS_STYLES, isRockStatus } from "./status";
 import {
-  StatusHistoryList,
-  type StatusUpdateSerialized,
-} from "./status-history";
+  STATUS_BAR,
+  STATUS_LABELS,
+  STATUS_STYLES,
+  isRockStatus,
+  type RockStatus,
+} from "./status";
+import {
+  MilestoneChecklist,
+  type MilestoneSerialized,
+} from "./milestone-checklist";
+import { type StatusUpdateSerialized } from "./status-history";
 
-// Plain-data shapes only: the trigger is rendered from both Server Components
+// Plain-data shapes only: the trigger renders from both Server Components
 // (Rocks tab) and Client Components (L10 Rocks segment), so every prop must
 // survive the RSC boundary — names come pre-resolved, never as lookups.
 export type RockDetailData = {
@@ -39,6 +45,7 @@ export type RockDetailMilestone = {
 };
 
 export function RockDetailTrigger({
+  teamId,
   rock,
   ownerName,
   milestones,
@@ -46,6 +53,8 @@ export function RockDetailTrigger({
   className,
   children,
 }: {
+  /** Pass to make the milestone checklist tickable; omit in L10. */
+  teamId?: string;
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
@@ -66,6 +75,7 @@ export function RockDetailTrigger({
       </button>
       {open && (
         <RockDetailModal
+          teamId={teamId}
           rock={rock}
           ownerName={ownerName}
           milestones={milestones}
@@ -77,13 +87,20 @@ export function RockDetailTrigger({
   );
 }
 
+/**
+ * The full record for one rock: identity, the same four-fact strip the expanded
+ * row shows, the success criterion, a milestone checklist with progress, and
+ * the complete status history as a newest-first timeline.
+ */
 export function RockDetailModal({
+  teamId,
   rock,
   ownerName,
   milestones,
   statusHistory = [],
   onClose,
 }: {
+  teamId?: string;
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
@@ -91,158 +108,227 @@ export function RockDetailModal({
   onClose: () => void;
 }) {
   const type = normalizeRockType(rock.rock_type);
-  const status = isRockStatus(rock.status) ? rock.status : null;
+  const status: RockStatus | null = isRockStatus(rock.status)
+    ? rock.status
+    : null;
+  const bar = status ? STATUS_BAR[status] : "bg-zinc-300 dark:bg-zinc-700";
   const doneCount = milestones.filter((m) => m.completed).length;
-  const hasDescription =
-    !!rock.description && rock.description.trim().length > 0;
+  const pct = milestones.length
+    ? Math.round((doneCount / milestones.length) * 100)
+    : 0;
+  const hasDescription = !!rock.description?.trim();
+
+  // MilestoneChecklist speaks MilestoneSerialized; the detail shapes carry a
+  // resolved owner_name instead of an id, so map through ownerNames.
+  const checklist: MilestoneSerialized[] = milestones.map((m) => ({
+    id: m.id,
+    title: m.title,
+    owner_id: m.owner_name,
+    due_date: m.due_date,
+    completed: m.completed,
+    description: null,
+  }));
+  const ownerNames = Object.fromEntries(
+    milestones
+      .filter((m) => m.owner_name)
+      .map((m) => [m.owner_name as string, m.owner_name as string]),
+  );
 
   return (
     <DetailModal ariaLabel={`Rock: ${rock.title}`} onClose={onClose} size="lg">
-      <div className="space-y-6 pr-6">
-        <header className="space-y-3">
-          <h2 className="text-lg font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
-            {rock.title}
-          </h2>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="pr-6">
+        <div className="text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-400">
+          {ownerName} · {rock.quarter || "—"}
+        </div>
+        <h2 className="mt-1 text-[19px] font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
+          {rock.title}
+        </h2>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {status && (
             <span
               className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-                ROCK_TYPE_STYLES[type],
+                "inline-flex h-[22px] items-center rounded-full px-2.5 text-[11px] font-semibold ring-1 ring-inset",
+                STATUS_STYLES[status],
               )}
             >
-              {ROCK_TYPE_LABELS[type]}
+              {STATUS_LABELS[status]}
             </span>
-            {status && (
-              <span
-                className={cn(
-                  "inline-flex h-5 w-[5.5rem] items-center justify-center rounded-full px-2.5 text-[11px] font-medium ring-1 ring-inset",
-                  STATUS_STYLES[status],
-                )}
-              >
-                {STATUS_LABELS[status]}
-              </span>
+          )}
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10.5px] font-bold ring-1 ring-inset",
+              ROCK_TYPE_STYLES[type],
             )}
-          </div>
-        </header>
+          >
+            {ROCK_TYPE_LABELS[type]}
+          </span>
+        </div>
 
-        <section
-          aria-label="Rock details"
-          className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-950/40"
-        >
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Fact label="Owner">
-              <span className="inline-flex items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue ring-1 ring-inset ring-hpb-blue/30 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:ring-hpb-gold/30">
-                  {initials(ownerName) || "?"}
-                </span>
-                <span className="font-medium">{ownerName}</span>
-              </span>
-            </Fact>
+        <div className="mt-4 flex overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className={cn("w-[3px] shrink-0", bar)} aria-hidden />
+          <dl className="flex flex-1 flex-wrap bg-white dark:bg-zinc-900">
+            <Fact label="Owner">{ownerName}</Fact>
+            <Fact label="Quarter">{rock.quarter || "—"}</Fact>
             <Fact label="Due">
               <span className="tabular-nums">
                 {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
+              </span>{" "}
+              <span
+                className={cn(
+                  "font-normal",
+                  dueToneClass(rock.due_date, rock.status === "done"),
+                )}
+              >
+                {relativeDueLabel(rock.due_date)}
               </span>
             </Fact>
-            <Fact label="Quarter">
-              <span>{rock.quarter || "—"}</span>
-            </Fact>
-            <Fact label="Milestones">
+            <Fact label="Milestones" last>
               {milestones.length === 0
                 ? "None"
                 : `${doneCount} of ${milestones.length} done`}
             </Fact>
           </dl>
-        </section>
+        </div>
 
-        <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Description
-          </h3>
-          {hasDescription ? (
-            <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                {rock.description}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-zinc-500">No description.</p>
-          )}
-        </section>
+        <SectionHeading>Done looks like</SectionHeading>
+        {hasDescription ? (
+          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+            {rock.description}
+          </p>
+        ) : (
+          <p className="text-[13px] italic text-zinc-400">Not defined yet.</p>
+        )}
 
-        <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Status history
-          </h3>
-          <StatusHistoryList updates={statusHistory} />
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="mb-2 mt-5 flex items-center justify-between gap-3">
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
             Milestones
-            {milestones.length > 0 && (
-              <span className="ml-1.5 font-normal normal-case tracking-normal text-zinc-400">
-                ({doneCount}/{milestones.length})
-              </span>
-            )}
           </h3>
-          {milestones.length === 0 ? (
-            <p className="text-sm text-zinc-500">No milestones.</p>
-          ) : (
-            <ul className="divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {milestones.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex items-start gap-3 bg-white px-4 py-3 text-sm dark:bg-zinc-900"
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
-                      m.completed
-                        ? "bg-hpb-green text-white ring-hpb-green"
-                        : "bg-transparent ring-zinc-300 dark:ring-zinc-600",
-                    )}
-                  >
-                    {m.completed && <Check className="h-3 w-3" />}
-                  </span>
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <div
+          {milestones.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="relative block h-[5px] w-[74px] overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                <span
+                  className={cn("absolute inset-y-0 left-0", bar)}
+                  style={{ width: `${pct}%` }}
+                />
+              </span>
+              <span className="text-[11.5px] font-semibold tabular-nums text-zinc-600 dark:text-zinc-300">
+                {doneCount}/{milestones.length}
+              </span>
+            </div>
+          )}
+        </div>
+        {milestones.length === 0 ? (
+          <p className="text-[13px] italic text-zinc-400">
+            No milestones — a rock without milestones has no early-warning
+            signal.
+          </p>
+        ) : (
+          <MilestoneChecklist
+            teamId={teamId}
+            milestones={checklist}
+            ownerNames={ownerNames}
+            variant="modal"
+          />
+        )}
+
+        <SectionHeading>Status history</SectionHeading>
+        {statusHistory.length === 0 ? (
+          <p className="text-[13px] italic text-zinc-400">
+            Nothing logged yet. Notes you leave when changing status land here —
+            newest first.
+          </p>
+        ) : (
+          <ol>
+            {statusHistory.map((u) => {
+              const s: RockStatus | null = isRockStatus(u.status)
+                ? u.status
+                : null;
+              const when =
+                u.created_at_ms != null
+                  ? new Date(u.created_at_ms).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "—";
+              return (
+                <li key={u.id} className="flex gap-3">
+                  <div className="flex w-2.5 shrink-0 flex-col items-center">
+                    <span
                       className={cn(
-                        "leading-snug",
-                        m.completed && "text-zinc-500 line-through",
+                        "mt-[5px] h-2.5 w-2.5 rounded-full",
+                        s ? STATUS_BAR[s] : "bg-zinc-300 dark:bg-zinc-700",
                       )}
-                    >
-                      {m.title}
+                      aria-hidden
+                    />
+                    <span className="w-0.5 flex-1 bg-zinc-200 dark:bg-zinc-800" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1 pb-3.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {s && (
+                        <span
+                          className={cn(
+                            "inline-flex h-[19px] items-center rounded-full px-2 text-[10px] font-semibold ring-1 ring-inset",
+                            STATUS_STYLES[s],
+                          )}
+                        >
+                          {STATUS_LABELS[s]}
+                        </span>
+                      )}
+                      <span className="text-[11.5px] font-semibold text-zinc-700 dark:text-zinc-300">
+                        {u.author_name}
+                      </span>
+                      <span className="text-[11.5px] text-zinc-400">{when}</span>
                     </div>
-                    {m.owner_name && (
-                      <div className="text-xs text-zinc-500">{m.owner_name}</div>
+                    {u.comment ? (
+                      <p className="mt-1 whitespace-pre-wrap text-[13.5px] leading-snug text-zinc-700 dark:text-zinc-300">
+                        {u.comment}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[13px] italic text-zinc-400">
+                        No comment
+                      </p>
                     )}
                   </div>
-                  <span className="shrink-0 pt-0.5 text-xs tabular-nums text-zinc-500">
-                    {m.due_date ? formatDateOnly(m.due_date) : "—"}
-                  </span>
                 </li>
-              ))}
-            </ul>
-          )}
-        </section>
+              );
+            })}
+          </ol>
+        )}
       </div>
     </DetailModal>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="mb-1.5 mt-5 text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
+      {children}
+    </h3>
   );
 }
 
 function Fact({
   label,
   children,
+  last,
 }: {
   label: string;
   children: React.ReactNode;
+  last?: boolean;
 }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+    <div
+      className={cn(
+        "min-w-[130px] flex-1 px-3.5 py-2.5",
+        !last && "border-r border-zinc-100 dark:border-zinc-800",
+      )}
+    >
+      <dt className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-zinc-400">
         {label}
       </dt>
-      <dd className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
+      <dd className="mt-0.5 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-200">
         {children}
       </dd>
     </div>

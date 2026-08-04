@@ -3,10 +3,10 @@ import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
-import { AddRockDrawer } from "./add-rock-drawer";
+import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
 import { isTeamRock } from "./rock-type";
-import type { MilestoneSerialized } from "./milestones";
+import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
 
 type RockDoc = {
@@ -67,7 +67,7 @@ export default async function RocksPage({
 }) {
   const { teamId } = await params;
   const { owner: ownerParam } = await searchParams;
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, team } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const quarter = currentQuarter();
@@ -245,12 +245,13 @@ export default async function RocksPage({
         <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
         <div className="flex items-center gap-2">
           <OwnerFilter members={members} currentUserId={uid} />
-          <AddRockDrawer
+          <NewRockButton
             teamId={teamId}
             members={members}
             quarter={quarter}
             defaultDue={eoq}
             currentUserId={uid}
+            teamName={team.name}
           />
         </div>
       </header>
@@ -274,6 +275,8 @@ export default async function RocksPage({
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={eoq}
                 statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={uid}
+                teamName={team.name}
               />
             ))}
           </RockSection>

@@ -52,10 +52,19 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
   const db = adminDb();
   const weekStartMs = mondayMidnightMsInTimeZone(TIME_ZONE, now);
 
+  // Scan only un-archived docs so the sweep doesn't re-read the forever-
+  // growing archive. Every creation path (server actions, seed-demo,
+  // import-csv) writes an explicit `archived_at: null`, which this equality
+  // filter requires — Firestore `== null` does NOT match docs missing the
+  // field. CAVEAT: docs imported by scripts/import-csv.ts before 2026-08-04
+  // (the archive model / PR #17) lack the field entirely, so this query
+  // skips them; if any such legacy docs are still un-archived, a one-time
+  // backfill (set `archived_at: null` where missing) is needed to bring
+  // them under sweep coverage.
   const [todosSnap, issuesSnap, headlinesSnap] = await Promise.all([
-    db.collection("todos").get(),
-    db.collection("issues").get(),
-    db.collection("headlines").get(),
+    db.collection("todos").where("archived_at", "==", null).get(),
+    db.collection("issues").where("archived_at", "==", null).get(),
+    db.collection("headlines").where("archived_at", "==", null).get(),
   ]);
 
   const todoIds = selectTodosCompletedBeforeWeek(

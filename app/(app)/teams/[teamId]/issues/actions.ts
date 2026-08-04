@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
@@ -31,6 +31,31 @@ function readOwnerId(formData: FormData, fallback: string | null): string | null
 function readPriority(formData: FormData): Priority | null {
   const raw = String(formData.get("priority") ?? "").trim();
   return PRIORITIES.includes(raw as Priority) ? (raw as Priority) : null;
+}
+
+// Long-term issues aren't the IDS/discuss target — clear any live meeting
+// pin so "Discussing" doesn't stick after the issue leaves short-term.
+async function clearLiveMeetingPin(
+  db: Firestore,
+  teamId: string,
+  issueId: string,
+) {
+  // Team meeting history is small; filter in memory to avoid a composite index.
+  const meetings = await db
+    .collection("meetings")
+    .where("team_id", "==", teamId)
+    .get();
+  const openPinned = meetings.docs.filter(
+    (d) =>
+      d.data()?.ended_at == null && d.data()?.current_issue_id === issueId,
+  );
+  if (openPinned.length > 0) {
+    const batch = db.batch();
+    for (const d of openPinned) {
+      batch.update(d.ref, { current_issue_id: null });
+    }
+    await batch.commit();
+  }
 }
 
 export async function addIssue(teamId: string, formData: FormData) {
@@ -79,7 +104,8 @@ export async function updateIssueMeta(
   formData: FormData,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "issues", issueId, teamId);
+  const snap = await requireTeamDoc(db, "issues", issueId, teamId);
+  const prevType = snap.data()?.type;
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("Title required");
@@ -99,6 +125,12 @@ export async function updateIssueMeta(
     priority,
     description,
   });
+
+  // Moving to long-term via the edit modal needs the same live-meeting pin
+  // cleanup as setIssueType.
+  if (type === "long" && prevType !== "long") {
+    await clearLiveMeetingPin(db, teamId, issueId);
+  }
 
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
@@ -208,25 +240,8 @@ export async function setIssueType(
   await requireTeamDoc(db, "issues", issueId, teamId);
   await db.collection("issues").doc(issueId).update({ type });
 
-  // Long-term issues aren't the IDS/discuss target — clear any live meeting
-  // pin so "Discussing" doesn't stick after the issue leaves short-term.
   if (type === "long") {
-    // Team meeting history is small; filter in memory to avoid a composite index.
-    const meetings = await db
-      .collection("meetings")
-      .where("team_id", "==", teamId)
-      .get();
-    const openPinned = meetings.docs.filter(
-      (d) =>
-        d.data()?.ended_at == null && d.data()?.current_issue_id === issueId,
-    );
-    if (openPinned.length > 0) {
-      const batch = db.batch();
-      for (const d of openPinned) {
-        batch.update(d.ref, { current_issue_id: null });
-      }
-      await batch.commit();
-    }
+    await clearLiveMeetingPin(db, teamId, issueId);
   }
 
   revalidatePath(pathFor(teamId));

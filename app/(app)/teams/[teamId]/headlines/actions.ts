@@ -49,7 +49,10 @@ export async function addHeadline(teamId: string, formData: FormData) {
 
 export async function deleteHeadline(teamId: string, headlineId: string) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "headlines", headlineId, teamId);
+  const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
+  if (snap.data()?.broadcast) {
+    throw new Error("Org-wide headlines are read-only");
+  }
   await db.collection("headlines").doc(headlineId).delete();
   revalidateHeadlines(teamId);
 }

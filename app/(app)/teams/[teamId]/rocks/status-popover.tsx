@@ -92,6 +92,10 @@ export function StatusPopover({
       setDraftStatus(current);
       setComment("");
       setError(null);
+      // Stale from the previous open — the row may have moved (list re-sorts
+      // on status change). Hold rendering until placement runs against the
+      // trigger's current rect.
+      setCoords(null);
     }
   }
 

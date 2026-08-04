@@ -422,7 +422,7 @@ export function RockModal({
             <span className="text-[11.5px] text-zinc-400">
               {filled.length
                 ? `Saves the rock and ${filled.length} milestone${filled.length === 1 ? "" : "s"} together.`
-                : "Milestones are optional — but they're the only early warning you get."}
+                : ""}
             </span>
             <div className="flex gap-2">
               <button

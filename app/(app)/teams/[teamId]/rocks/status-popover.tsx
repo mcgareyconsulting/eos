@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,7 +23,7 @@ import {
 // Estimate used for the first paint before the panel is measured; real height
 // is re-measured after mount so the full content stays on-screen.
 const PANEL_ESTIMATE_H = 400;
-const PANEL_W = 320; // a bit wider for notes comfort
+const PANEL_W = 480; // two columns: statuses left, note right
 const VIEWPORT_PAD = 12;
 const GAP = 6;
 
@@ -92,6 +99,10 @@ export function StatusPopover({
       setDraftStatus(current);
       setComment("");
       setError(null);
+      // Stale from the previous open — the row may have moved (list re-sorts
+      // on status change). Hold rendering until placement runs against the
+      // trigger's current rect.
+      setCoords(null);
     }
   }
 
@@ -115,20 +126,28 @@ export function StatusPopover({
     };
   }, [open]);
 
-  // Portal + fixed placement. Measure real panel height after paint so all
-  // statuses + notes fit without scroll; flip/clamp as a whole.
+  // Portal + fixed placement. The panel mounts hidden as soon as it opens;
+  // this layout effect runs after that commit and before paint, so it always
+  // measures the REAL panel height — the flip-above position depends on it.
+  // (The old after-paint rAF re-measure could race the mount, leaving the
+  // estimate in place and the panel floating high above the trigger.)
+  const place = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCoords(placePanel(rect, panelRef.current?.offsetHeight ?? 0));
+  }, []);
+
+  // Re-place whenever the panel's own height can change: on open, and when the
+  // off-track label or the error line appears/disappears.
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+  }, [open, draftStatus, error, place]);
+
+  // Listeners are keyed on `open` alone, so clicking a radio doesn't detach
+  // and reattach them.
   useEffect(() => {
     if (!open) return;
-
-    const update = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const measured = panelRef.current?.offsetHeight ?? 0;
-      setCoords(placePanel(rect, measured));
-    };
-    update();
-    // Second pass after layout: estimate → real height may differ by a few px.
-    const raf = requestAnimationFrame(update);
 
     const onScrollOrResize = (e: Event) => {
       if (
@@ -139,17 +158,16 @@ export function StatusPopover({
       ) {
         return;
       }
-      update();
+      place();
     };
 
     window.addEventListener("scroll", onScrollOrResize, true);
     window.addEventListener("resize", onScrollOrResize);
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
-  }, [open, draftStatus, error]);
+  }, [open, place]);
 
   const offTrackNeedsReason = draftStatus === "off_track" && !comment.trim();
 
@@ -175,59 +193,63 @@ export function StatusPopover({
   }
 
   const panel =
-    open && coords && mounted
+    open && mounted
       ? createPortal(
           <div
             ref={panelRef}
             role="dialog"
             aria-label="Update rock status"
             style={{
-              top: coords.top,
-              left: coords.left,
+              top: coords?.top ?? 0,
+              left: coords?.left ?? 0,
               width: PANEL_W,
+              // First frame mounts hidden so the layout effect can measure the
+              // real height before the panel is ever visible.
+              visibility: coords ? undefined : "hidden",
             }}
             className="fixed z-50 flex flex-col rounded-xl border border-zinc-300 bg-white p-4 text-sm shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
           >
-            <div className="space-y-1">
-              {STATUSES.map((s) => (
-                <label
-                  key={s}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
-                  <input
-                    type="radio"
-                    name={radioName}
-                    value={s}
-                    checked={draftStatus === s}
-                    onChange={() => setDraftStatus(s)}
-                    className="h-3.5 w-3.5"
-                  />
-                  <span
-                    className={cn(
-                      "inline-flex h-6 w-[5.75rem] items-center justify-center rounded-full px-2 text-center text-xs font-medium ring-1 ring-inset",
-                      STATUS_STYLES[s],
-                    )}
+            <div className="flex gap-4">
+              <div className="shrink-0 space-y-1">
+                {STATUSES.map((s) => (
+                  <label
+                    key={s}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                   >
-                    {STATUS_LABELS[s]}
-                  </span>
-                </label>
-              ))}
-            </div>
+                    <input
+                      type="radio"
+                      name={radioName}
+                      value={s}
+                      checked={draftStatus === s}
+                      onChange={() => setDraftStatus(s)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span
+                      className={cn(
+                        "inline-flex h-6 w-[5.75rem] items-center justify-center rounded-full px-2 text-center text-xs font-medium ring-1 ring-inset",
+                        STATUS_STYLES[s],
+                      )}
+                    >
+                      {STATUS_LABELS[s]}
+                    </span>
+                  </label>
+                ))}
+              </div>
 
-            <div className="mt-4">
-              <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                {draftStatus === "off_track"
-                  ? "Why off track? (required)"
-                  : "Comment (optional)"}
-              </label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={5}
-                placeholder="What changed? Leave a note for the team…"
-                onWheel={(e) => e.stopPropagation()}
-                className="w-full resize-none rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
-              />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  {draftStatus === "off_track"
+                    ? "Why off track? (required)"
+                    : "Comment (optional)"}
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What changed? Leave a note for the team…"
+                  onWheel={(e) => e.stopPropagation()}
+                  className="w-full flex-1 resize-none rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
+                />
+              </div>
             </div>
 
             {error && (

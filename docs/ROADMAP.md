@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-04 — _Pass 17 in progress — Session D cleanup (`feature/p3-roadmap`)_
+**Last updated:** 2026-08-04 — _Session D cleanup (`feature/p3-roadmap` / PR #17); Rocks redesign PR #16 on main_
 
 ---
 
@@ -377,10 +377,11 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
-**Pass 17 (in progress): Session D — P1/P2 cleanup** on
-`feature/p3-roadmap` (branch name is historical; scope is remaining P1–P2).
+**Session D (in progress): P1/P2 cleanup** on `feature/p3-roadmap` →
+**PR #17** (branch name is historical; scope is remaining P1–P2). Merged
+**Pass 17 rocks redesign (PR #16)** from main into this branch.
 
-**Shipped this session (so far):**
+**Shipped this session (Session D):**
 - **P1-6 Vote credits UI** — remaining-first badge, per-person copy, team vs you.
 - **Archive contract (P2-2 / P2-3 aligned):**
   - **To-dos / Headlines / Issues:** closed *in L10* → archive on Finish;
@@ -388,10 +389,10 @@ It works in two primary ways:
   - Headlines “closed” = **discussed** only (standing never auto-archive).
   - Issues “closed” = **solved | dropped** (`resolved_at`).
   - Mid-week gray + “Closes Monday” chip; Archived = flat, Closed On, no strike.
-  - **Rocks:** Active/Archived tabs ready; **no archive path yet** (empty Archived).
+  - **Rocks:** Active/Archived tabs ready; **no archive path yet** (empty
+    Archived). Create button is **`NewRockButton` / `RockModal`** (PR #16).
   - Worker `archiveStaleTodos` archives prior-week todos + issues + discussed
     headlines (**redeployed** to prod).
-- **P1-6** vote credits as above.
 
 **Still open on this cleanup branch:**
 - **Rocks archive path** (manual and/or auto) — UI only for now
@@ -401,11 +402,83 @@ It works in two primary ways:
 - **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
 - P3-* as capacity allows
 
-**Prior:** Session C complete on `feature/p2-roadmap` → **PR #14**
-(P2-3…P2-6 + polish). Sessions A/B on p0/p1 branches.
-
 Working priority list is agent-local — not in this repo
 (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
+
+---
+
+**Pass 17 (2026-08-04): Rocks & Milestones UI redesign** on
+`fix/rock-creation` → **PR #16** (**merged to main**). Built from a
+designer handoff (options 1b / 2a / 2b).
+
+**Merged Pass 16 in** (main had shipped rocks work the same day). The
+redesign is structural source of truth; Pass 16's *behavior* was carried
+into it: comments on the rock detail modal (P2-5), `deleteRock` purging
+`entity_comments`, and P2-6 date semantics — free-text quarter, due
+optional and **null when cleared** (never re-forced to end-of-quarter),
+milestone dates empty by default. Pass 16's `add-rock-modal.tsx` is
+deleted: `RockModal` supersedes it with create + edit + milestones in one
+batch, and carries over its Team-owner and free-text-quarter hints.
+
+**Shipped (PR #16):**
+- **One `RockModal` for create + edit** with milestones inline, written in a
+  **single Firestore batch** (`createRockWithMilestones` /
+  `updateRockWithMilestones`). Replaces `add-rock-drawer.tsx`,
+  `edit-rock-drawer.tsx` and the inline add-milestone form — all deleted.
+  Milestones stay `todos` docs with `source_rock_id`, so `TodoCheckbox` /
+  `toggleTodo` / the To-Dos page keep working unchanged.
+- **Redesigned rock row** (status rail, owner · quarter · milestone progress,
+  relative due label). Expanded row shows the **latest** status note only;
+  the full timeline moved to the detail modal — that split is the
+  de-cluttering move.
+- **Pass 14 items closed:** #20 milestone dates editable after create,
+  #3 status-comment discoverability, #16 double-submit (pending state),
+  #18 status dropdown clipped at viewport bottom (see below). #2 / #19
+  (date defaults) were closed by Pass 16 P2-6 — this pass preserves that
+  behavior rather than re-claiming it.
+- **Status popover** rebuilt as two columns (statuses left, note right) and
+  its placement fixed: it now mounts hidden, measures its real height in a
+  layout effect, then places and reveals. The old flow placed with a 400px
+  estimate and a post-paint rAF re-measure that could lose the race — only
+  visible when flipping **above** the trigger, since that's the one path
+  where panel height feeds the position.
+
+- **L10 rocks segment now renders the same `RockRow` as the Rocks tab** —
+  one component, one look, one set of affordances in both places. The
+  segment keeps what is meeting-specific (speaker grouping, absent dimming,
+  "Now speaking", QuickAddIssue) and drops its bespoke row. It also
+  subscribes to `rock_status_updates`, so the expanded row shows the latest
+  status note in the meeting exactly as it does on the tab.
+  - *Trade*: the old segment let you edit a rock's description inline
+    (`EditableText`). That is now behind the pencil → `RockModal`, matching
+    the Rocks tab. Same capability, one more click.
+  - This made `rocks/milestones.tsx` unreachable, so it is **deleted** — the
+    handoff always intended that; the only blocker was L10 importing
+    `MilestonesDisclosure` from it. Four actions it was the last caller of
+    went with it (`addMilestone`, `updateMilestoneDescription`,
+    `updateMilestoneDueDate`, `updateRockDescription`); milestone writes all
+    go through the batch path in `RockModal` now.
+
+> ⚠ **Milestones are always tickable — there is no read-only mode.** The
+> handoff had the detail modal render static ticks in L10 (gated on "no
+> `teamId`"), but that only mirrored an accident: main's old modal had no
+> `teamId` wired, so it *couldn't* tick. L10 is a working surface — the
+> segment's own `MilestonesDisclosure` has always had live checkboxes, and
+> checking milestones off is the point of walking the rocks. `teamId` is now
+> required on `MilestoneChecklist` and the static branch is gone, so the
+> modal ticks in L10 too. Don't reintroduce a mode switch keyed on data
+> presence; if a read-only surface is ever wanted, make it an explicit prop.
+
+**Known gap, not fixed:** milestones are written straight to `todos` and
+never set `google_task_id` or call `upsertTaskForTodo`, so unlike every
+other to-do they **don't mirror to Google Tasks**. Pre-existing (old
+`addMilestone` has the same gap) but it collides with Steph's #10 ask for
+two-way Tasks sync — needs a product decision.
+
+---
+
+**Pass 16 (2026-08-03 → 2026-08-04): Session C complete** on
+`feature/p2-roadmap` → **PR #14** (merged).
 
 ---
 

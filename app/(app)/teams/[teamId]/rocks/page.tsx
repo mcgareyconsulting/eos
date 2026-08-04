@@ -4,10 +4,10 @@ import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
-import { AddRockModal } from "./add-rock-modal";
+import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
 import { isTeamRock } from "./rock-type";
-import type { MilestoneSerialized } from "./milestones";
+import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
 
 type RockDoc = {
@@ -70,7 +70,7 @@ export default async function RocksPage({
   const { teamId } = await params;
   const { owner: ownerParam, archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, team } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const quarter = currentQuarter();
@@ -303,12 +303,13 @@ export default async function RocksPage({
           {!showArchived && (
             <>
               <OwnerFilter members={members} currentUserId={uid} />
-              <AddRockModal
+              <NewRockButton
                 teamId={teamId}
                 members={members}
                 quarter={quarter}
                 defaultDue={eoq}
                 currentUserId={uid}
+                teamName={team.name}
               />
             </>
           )}
@@ -343,6 +344,8 @@ export default async function RocksPage({
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={eoq}
                 statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={uid}
+                teamName={team.name}
               />
             ))}
           </RockSection>
@@ -364,7 +367,7 @@ function RockSection({
       <h2 className="mb-3 text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
         {title}
       </h2>
-      <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {children}
       </div>
     </section>

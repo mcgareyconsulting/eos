@@ -24,3 +24,12 @@ export const STATUS_STYLES: Record<RockStatus, string> = {
 export function isRockStatus(v: string): v is RockStatus {
   return (STATUSES as readonly string[]).includes(v);
 }
+
+// Solid status color for the 3px row rail and the milestone progress bar.
+// Same semantics as STATUS_STYLES, but a single opaque fill.
+export const STATUS_BAR: Record<RockStatus, string> = {
+  on_track: "bg-hpb-green",
+  off_track: "bg-hpb-gold",
+  done: "bg-hpb-blue",
+  cancelled: "bg-zinc-300 dark:bg-zinc-700",
+};

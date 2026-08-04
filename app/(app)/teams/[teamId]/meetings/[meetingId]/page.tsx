@@ -18,6 +18,7 @@ import {
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
 import { endOfQuarter, toDateString } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
 import { SegmentScorecard } from "./segment-scorecard";
@@ -305,7 +306,10 @@ export default async function MeetingDetailPage({
         />
       )}
 
-      <div className="min-w-0 flex-1 space-y-6">
+      {/* pb-24 while live: the rail's "Catch up" pill is `fixed` at
+          bottom-6 and floats over this column, so the last row of a segment
+          needs room to scroll clear of it instead of sitting underneath. */}
+      <div className={cn("min-w-0 flex-1 space-y-6", live && "pb-24")}>
         {/* Live: one compact header line — the stage is the headline, the
             team L10 is context. Everything static (start time, back link)
             lives in the rail, so content starts ~150px higher than when this

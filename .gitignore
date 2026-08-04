@@ -30,6 +30,13 @@ HPB Branding for McGarey.pdf
 # or a CI checkout can't commit it into the client's repository.
 .claude/
 
+# Build-agent scaffolding: work-package plans handed to subagents, staged
+# handoff files, and the like. Decision records belong in docs/ and stay
+# tracked (ROADMAP.md, CUTOVER_PLAN.md); these are coordination artifacts
+# that go stale the moment the work ships.
+/docs/plans/
+/docs/handoff/
+
 # Throwaway diagnostic scripts. One-off Firestore/Auth queries need to sit
 # inside the repo to resolve firebase-admin, so they land here rather than in
 # a temp dir; these patterns keep them from being committed by a `git add -A`.

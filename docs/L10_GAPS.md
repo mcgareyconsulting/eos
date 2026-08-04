@@ -15,7 +15,7 @@ Severity: 🔴 worth doing soon · 🟡 real but not urgent · ⚪ nice-to-have.
 ### 🔴 Vote credits now reset when a meeting concludes — confirm this is wanted
 Fixed tonight, but it's a semantics change worth a deliberate yes: `endMeeting`
 now deletes the team's `issue_votes` and zeroes `issues.votes`. Rationale: EOS
-vote credits rank *one meeting's* IDS hour; before this, credits were
+vote credits rank *one meeting's* Issues hour; before this, credits were
 lifetime-per-team, so the second meeting ever run opened with everyone "out of
 votes". Consequence: between meetings the Issues tab ranks by priority/status
 only. If the client wants votes to persist across a week, the alternative is
@@ -41,7 +41,7 @@ recap changes. Proper fix: denormalize a recap snapshot onto the meeting doc
 at conclude time (one write in `endMeeting`), render from that. Medium-size,
 touches schema — good post-demo task. Related: per-segment durations are never
 persisted (`segment_started_at` is overwritten on each advance), so "how long
-did IDS take?" is unanswerable; ninety.io tracks this (see ROADMAP Pass 11).
+did Issues take?" is unanswerable; ninety.io tracks this (see ROADMAP Pass 11).
 
 ### 🟡 Who may drive/end a meeting
 Any team member can advance segments and conclude (the driver label is
@@ -53,13 +53,14 @@ a workflow decision, not a bug.
 
 ## Deferred (real gaps, too big for demo eve)
 
-### In-meeting IDS can't complete the "S" of IDS 🔴
+### In-meeting Issues can't complete solve → to-do 🔴
 Solving an issue in the meeting has nowhere to land the follow-up: no owner
-or priority editing in-segment (the `EditIssuePopover` exists only on the
-Issues tab), and `resolution_todo_id` is written as null and never set.
-The natural demo beat — "solved; Tom owns the follow-up to-do" — needs a
-"solve → create to-do" affordance in `segment-ids.tsx`. The inline to-do form
-from tonight makes this a compose job, not a build job.
+or priority editing in-segment (`IssueFormModal` + detail comments live on
+the Issues tab / detail modal, not in the L10 list), and `resolution_todo_id`
+is written as null and never set. The natural demo beat — "solved; Tom owns
+the follow-up to-do" — needs a "solve → create to-do" affordance in
+`segment-issues.tsx`. The inline to-do form from tonight makes this a compose
+job, not a build job.
 
 ### Per-row "drop to Issues" 🟡
 Drop-to-Issues is a header button with a typed-prefix title ("Off-track

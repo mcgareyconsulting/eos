@@ -13,7 +13,7 @@ import {
   SEGMENT_LABELS,
   SEGMENT_DURATION_SECONDS,
   TOTAL_MEETING_SECONDS,
-  isSegment,
+  normalizeSegment,
   type Segment,
 } from "@/lib/l10/segments";
 import { LocalTime } from "@/components/local-time";
@@ -105,7 +105,7 @@ export function MeetingRail({
         const ts = x.segment_started_at as
           { toMillis?: () => number } | null | undefined;
         setLive({
-          segment: (x.current_segment as Segment) ?? "segue",
+          segment: normalizeSegment(x.current_segment as string) ?? "segue",
           startedAtMs: ts?.toMillis?.() ?? null,
           ended: x.ended_at != null,
           speakingOrder: (x.speaking_order as string[]) ?? [],
@@ -125,11 +125,10 @@ export function MeetingRail({
   // server no longer writes that combination) renders as Conclude so the
   // transport and Finish stay on screen instead of stranding the room.
   const activeSegmentRaw = live?.segment ?? initialSegment;
-  const activeSegment: Segment = !isSegment(activeSegmentRaw)
-    ? "segue"
-    : activeSegmentRaw === "done" && !ended
-      ? "conclude"
-      : activeSegmentRaw;
+  const activeSegment: Segment = (() => {
+    const n = normalizeSegment(activeSegmentRaw) ?? "segue";
+    return n === "done" && !ended ? "conclude" : n;
+  })();
   // Reconcile the snapshot's raw order against the roster, same as the Segue
   // and Rocks segments do — otherwise a member who joined mid-quarter never
   // appears in the rail and a departed member lingers as a "?" chip.

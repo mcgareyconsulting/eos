@@ -4,7 +4,7 @@ export const SEGMENTS = [
   "rocks",
   "headlines",
   "todos",
-  "ids",
+  "issues",
   "conclude",
   "done",
 ] as const;
@@ -20,7 +20,7 @@ export const SEGMENT_DURATION_SECONDS: Record<Segment, number> = {
   rocks: 5 * 60,
   headlines: 5 * 60,
   todos: 5 * 60,
-  ids: 60 * 60,
+  issues: 60 * 60,
   conclude: 5 * 60,
   done: 0,
 };
@@ -31,10 +31,7 @@ export const SEGMENT_LABELS: Record<Segment, string> = {
   rocks: "Rocks",
   headlines: "Headlines",
   todos: "To-Dos",
-  // Client preference (L10 backlog 2026-07-27): the segment is labeled
-  // "Issues", not the EOS jargon "IDS". Key stays "ids" — it's stored on
-  // meeting docs, so renaming it would strand in-flight meetings.
-  ids: "Issues",
+  issues: "Issues",
   conclude: "Conclude",
   done: "Done",
 };
@@ -45,7 +42,8 @@ export const SEGMENT_HINTS: Record<Segment, string> = {
   rocks: "Quick on-track / off-track per rock. Off-track → Issues.",
   headlines: "Customer wins, customer losses, employee news. Headlines, not discussions.",
   todos: "Check off prior week's to-dos. Anything not done after 1 week → Issues.",
-  ids: "Identify the real issue, Discuss it, Solve it. Capture the next step as a to-do before you move on.",
+  issues:
+    "Identify the real issue, discuss it, solve it. Capture the next step as a to-do before you move on.",
   conclude: "Recap new to-dos, identify cascading messages, rate the meeting 1-10.",
   done: "Meeting complete.",
 };
@@ -66,4 +64,16 @@ export function isActiveSegment(s: Segment): boolean {
 
 export function isSegment(s: string | null | undefined): s is Segment {
   return !!s && (SEGMENTS as readonly string[]).includes(s);
+}
+
+/**
+ * Normalize a stored meeting segment value.
+ * Legacy meetings used `current_segment: "ids"`; map that to `"issues"`.
+ */
+export function normalizeSegment(
+  s: string | null | undefined,
+): Segment | null {
+  if (s === "ids") return "issues";
+  if (isSegment(s)) return s;
+  return null;
 }

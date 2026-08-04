@@ -10,9 +10,9 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 - **Scorecard** — weekly KPIs on a 13-week rolling grid, grouped into sections; on-/off-track coloring, per-metric owners and goals.
 - **Rocks** — quarterly goals with owners, status (on/off-track, done, cancelled), append-only status history, and milestones.
 - **To-Dos** — 7-day action items, team or private, assignable, with due dates.
-- **Issues (IDS)** — team issues ranked by votes (3 credits per person), worked through live during the meeting.
+- **Issues** — team issues ranked by votes (3 credits per person), worked through live during the meeting.
 - **Headlines** — customer wins, employee news, and cascading messages.
-- **Level 10 Meeting** — a live, timed 90-minute orchestrator (Segue → Scorecard → Rocks → Headlines → To-Dos → IDS → Conclude) with shared segment state, presence, meeting-rating (each attendee rates the meeting 1–10), and a post-meeting recap.
+- **Level 10 Meeting** — a live, timed 90-minute orchestrator (Segue → Scorecard → Rocks → Headlines → To-Dos → Issues → Conclude) with shared segment state, presence, meeting-rating (each attendee rates the meeting 1–10), and a post-meeting recap.
 
 ## Setup
 

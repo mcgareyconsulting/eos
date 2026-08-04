@@ -142,6 +142,20 @@ service cloud.firestore {
       allow delete: if resource.data.user_id == request.auth.uid;
     }
 
+    // ---------- free-form comments on issues / rocks (P2-5) ----------
+    // Writes go through server actions (admin SDK); client rules cover live
+    // reads + defense-in-depth if a client write path is added later.
+    match /entity_comments/{id} {
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow create: if admin()
+                    || (isMember(request.resource.data.team_id)
+                        && request.resource.data.author_id == request.auth.uid);
+      allow update: if false; // append-only; edit = delete + re-post
+      allow delete: if admin()
+                    || (isMember(resource.data.team_id)
+                        && resource.data.author_id == request.auth.uid);
+    }
+
     // ---------- headlines ----------
     match /headlines/{id} {
       // Cascading headlines visible to target teams via app-layer filtering

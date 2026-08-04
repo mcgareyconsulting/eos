@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { LocalTime } from "@/components/local-time";
-import { SEGMENT_LABELS, SEGMENTS } from "@/lib/l10/segments";
+import { SEGMENT_LABELS, SEGMENTS, normalizeSegment } from "@/lib/l10/segments";
 import { deleteMeeting } from "./actions";
 
 // Timestamps arrive two ways: serialized to millis by the server render
@@ -26,7 +26,7 @@ export type MeetingListDoc = {
   team_id: string;
   started_at: TsLike;
   ended_at: TsLike;
-  current_segment: keyof typeof SEGMENT_LABELS;
+  current_segment: string;
 };
 
 // Live meetings list. The one-shot server render used to be the whole page,
@@ -84,12 +84,15 @@ export function MeetingsList({
             ? Math.max(1, Math.round((endedMs - startedMs) / 60000))
             : null;
 
-        const segIdx = SEGMENTS.indexOf(m.current_segment);
+        const segment = normalizeSegment(
+          m.current_segment as string,
+        );
+        const segIdx = segment ? SEGMENTS.indexOf(segment) : -1;
         const stepNumber =
           live && segIdx >= 0 ? Math.min(segIdx + 1, segmentCount) : null;
         const progressLabel = live
-          ? stepNumber != null
-            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[m.current_segment] ?? "—"}`
+          ? stepNumber != null && segment
+            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[segment]}`
             : "In progress"
           : `Completed · ${duration ?? "—"} min`;
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
+import { EntityComments } from "@/components/entity-comments";
 import { formatDateOnly } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import {
@@ -16,6 +17,8 @@ import {
   StatusHistoryList,
   type StatusUpdateSerialized,
 } from "./status-history";
+
+type Member = { user_id: string; full_name: string };
 
 // Plain-data shapes only: the trigger is rendered from both Server Components
 // (Rocks tab) and Client Components (L10 Rocks segment), so every prop must
@@ -43,6 +46,9 @@ export function RockDetailTrigger({
   ownerName,
   milestones,
   statusHistory = [],
+  teamId,
+  userId,
+  members,
   className,
   children,
 }: {
@@ -50,6 +56,9 @@ export function RockDetailTrigger({
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
+  teamId: string;
+  userId: string;
+  members: Member[];
   className?: string;
   children: React.ReactNode;
 }) {
@@ -70,6 +79,9 @@ export function RockDetailTrigger({
           ownerName={ownerName}
           milestones={milestones}
           statusHistory={statusHistory}
+          teamId={teamId}
+          userId={userId}
+          members={members}
           onClose={() => setOpen(false)}
         />
       )}
@@ -82,12 +94,18 @@ export function RockDetailModal({
   ownerName,
   milestones,
   statusHistory = [],
+  teamId,
+  userId,
+  members,
   onClose,
 }: {
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
+  teamId: string;
+  userId: string;
+  members: Member[];
   onClose: () => void;
 }) {
   const type = normalizeRockType(rock.rock_type);
@@ -175,6 +193,14 @@ export function RockDetailModal({
           </h3>
           <StatusHistoryList updates={statusHistory} />
         </section>
+
+        <EntityComments
+          teamId={teamId}
+          entityType="rock"
+          entityId={rock.id}
+          userId={userId}
+          members={members}
+        />
 
         <section className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">

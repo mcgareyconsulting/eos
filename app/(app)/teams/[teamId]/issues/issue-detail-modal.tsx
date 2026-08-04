@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
+import { EntityComments } from "@/components/entity-comments";
 import { initials } from "@/lib/initials";
 import {
   PRIORITY_BADGE,
@@ -27,14 +28,22 @@ export type IssueDetailData = {
   status: IssueStatus;
 };
 
+type Member = { user_id: string; full_name: string };
+
 export function IssueDetailTrigger({
   issue,
   ownerName,
+  teamId,
+  userId,
+  members,
   className,
   children,
 }: {
   issue: IssueDetailData;
   ownerName: string;
+  teamId: string;
+  userId: string;
+  members: Member[];
   className?: string;
   children: React.ReactNode;
 }) {
@@ -53,6 +62,9 @@ export function IssueDetailTrigger({
         <IssueDetailModal
           issue={issue}
           ownerName={ownerName}
+          teamId={teamId}
+          userId={userId}
+          members={members}
           onClose={() => setOpen(false)}
         />
       )}
@@ -63,10 +75,16 @@ export function IssueDetailTrigger({
 export function IssueDetailModal({
   issue,
   ownerName,
+  teamId,
+  userId,
+  members,
   onClose,
 }: {
   issue: IssueDetailData;
   ownerName: string;
+  teamId: string;
+  userId: string;
+  members: Member[];
   onClose: () => void;
 }) {
   const hasDescription =
@@ -151,6 +169,14 @@ export function IssueDetailModal({
             <p className="text-sm text-zinc-500">No description.</p>
           )}
         </section>
+
+        <EntityComments
+          teamId={teamId}
+          entityType="issue"
+          entityId={issue.id}
+          userId={userId}
+          members={members}
+        />
       </div>
     </DetailModal>
   );

@@ -10,6 +10,7 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { addHeadline, deleteHeadline } from "../../headlines/actions";
+import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -26,7 +27,8 @@ function tsMs(t: MaybeTimestamp): number | null {
   if (typeof t === "number") return t;
   return typeof t.toMillis === "function" ? t.toMillis() : null;
 }
-type HeadlineDoc = {
+
+export type HeadlineDoc = {
   id: string;
   team_id: string;
   title: string;
@@ -34,6 +36,8 @@ type HeadlineDoc = {
   kind: "customer" | "employee" | "cascading";
   created_by: string | null;
   created_at: MaybeTimestamp;
+  discussed?: boolean;
+  archived_at?: MaybeTimestamp;
   broadcast?: boolean;
   from_label?: string | null;
   source_owner_name?: string | null;
@@ -65,6 +69,10 @@ const KIND_META: Record<
   },
 };
 
+function isArchived(h: HeadlineDoc): boolean {
+  return h.archived_at != null;
+}
+
 export function SegmentHeadlines({
   teamId,
   meetingId,
@@ -87,9 +95,15 @@ export function SegmentHeadlines({
   );
   const headlines = useCollection<HeadlineDoc>(q, initialHeadlines);
 
-  const sorted = [...headlines].sort(
-    (a, b) => (tsMs(b.created_at) ?? 0) - (tsMs(a.created_at) ?? 0),
-  );
+  // Active only — archived drop out of the live L10 list (selective archive).
+  const active = headlines.filter((h) => !isArchived(h));
+  const sorted = [...active].sort((a, b) => {
+    // Undiscussed first (still need airtime), then discussed, then by recency.
+    const ad = a.discussed === true ? 1 : 0;
+    const bd = b.discussed === true ? 1 : 0;
+    if (ad !== bd) return ad - bd;
+    return (tsMs(b.created_at) ?? 0) - (tsMs(a.created_at) ?? 0);
+  });
 
   const creatorName = (h: HeadlineDoc) => {
     if (h.created_by === userId) return "You";
@@ -121,11 +135,20 @@ export function SegmentHeadlines({
           const meta = KIND_META[h.kind] ?? KIND_META.customer;
           const remove = deleteHeadline.bind(null, teamId, h.id);
           const readOnly = !!h.broadcast;
+          const discussed = h.discussed === true;
           return (
             <div
               key={h.id}
-              className="group flex items-start gap-3 px-4 py-3 text-sm"
+              className={`group flex items-start gap-3 px-4 py-3 text-sm ${
+                discussed ? "bg-zinc-50/80 dark:bg-zinc-950/40" : ""
+              }`}
             >
+              <HeadlineDiscussedCheckbox
+                teamId={teamId}
+                headlineId={h.id}
+                discussed={discussed}
+                disabled={readOnly}
+              />
               <div
                 className={`mt-0.5 rounded-full p-1.5 ring-1 ring-inset ${meta.badge}`}
                 title={meta.label}
@@ -134,7 +157,16 @@ export function SegmentHeadlines({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-medium">{h.title}</div>
+                  <div
+                    className={`font-medium ${discussed ? "text-zinc-600 line-through dark:text-zinc-400" : ""}`}
+                  >
+                    {h.title}
+                  </div>
+                  {discussed && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
+                      Discussed
+                    </span>
+                  )}
                   {readOnly && (
                     <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
                       Org-wide · read-only

@@ -224,7 +224,7 @@ const METRICS: SeedMetric[] = [
 // ---------------------------------------------------------------------------
 // Issues. Votes are derived from the seeded issue_votes below (kept in sync),
 // so the Issues page ranks them correctly. The logged-in user casts none —
-// leaving all 3 vote credits free to demo live during the L10 IDS segment.
+// leaving all 3 vote credits free to demo live during the L10 Issues segment.
 // ---------------------------------------------------------------------------
 type SeedIssue = {
   key: string;
@@ -355,6 +355,7 @@ async function clearTeamData(db: Firestore, teamId: string) {
     "todos",
     "issues",
     "issue_votes",
+    "entity_comments",
     "scorecard_metrics",
     "headlines",
     "meetings",
@@ -733,6 +734,9 @@ async function main() {
       kind: h.kind,
       created_by: ownerByKey[h.by],
       target_team_ids: [],
+      discussed: false,
+      discussed_at: null,
+      archived_at: null,
       created_at: Timestamp.fromDate(addDays(now, -h.daysAgo)),
     });
   }

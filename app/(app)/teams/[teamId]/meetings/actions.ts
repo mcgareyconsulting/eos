@@ -13,12 +13,14 @@ import {
   nextSegment,
   prevSegment,
   type Segment,
+  normalizeSegment,
 } from "@/lib/l10/segments";
 import {
   clampSpeakerIndex,
   firstPresentIndex,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import { archiveDiscussedHeadlines } from "../headlines/actions";
 
 function listPath(teamId: string) {
   return `/teams/${teamId}/meetings`;
@@ -43,7 +45,7 @@ export async function startMeeting(teamId: string) {
     redirect(detailPath(teamId, activeSnap.docs[0].id));
   }
 
-  // Fresh IDS hour: clear last meeting's vote tallies + any leftover credits
+  // Fresh Issues hour: clear last meeting's vote tallies + any leftover credits
   // so ranking starts at zero. Tallies are kept on issue docs between meetings
   // (so the Issues tab still shows how the room ranked them after Finish).
   await resetTeamIssueVotes(db, teamId);
@@ -112,8 +114,8 @@ export async function advanceSegment(
     // after someone finished must not rewrite history.
     if (snap.data()?.ended_at != null) return;
 
-    const current = (snap.data()?.current_segment as Segment) ?? "segue";
-    if (expectedCurrent && current !== expectedCurrent) return;
+    const current = normalizeSegment(snap.data()?.current_segment as string) ?? "segue";
+    if (expectedCurrent && current !== (normalizeSegment(expectedCurrent) ?? expectedCurrent)) return;
 
     const target =
       direction === "next" ? nextSegment(current) : prevSegment(current);
@@ -256,19 +258,33 @@ export async function endMeeting(teamId: string, meetingId: string) {
   // "out of votes". Team tallies (issues.votes) stay until the next Start —
   // the Issues tab shows last meeting's ranking in between.
   if (didEnd) {
-    const voteRows = await db
-      .collection("issue_votes")
-      .where("team_id", "==", teamId)
-      .get();
-    if (!voteRows.empty) {
-      const batch = db.batch();
-      voteRows.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
+    try {
+      const voteRows = await db
+        .collection("issue_votes")
+        .where("team_id", "==", teamId)
+        .get();
+      if (!voteRows.empty) {
+        const batch = db.batch();
+        voteRows.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    } catch (e) {
+      // Meeting is already ended — do not fail Finish over vote cleanup.
+      console.error("[endMeeting] vote reset failed:", e);
+    }
+    try {
+      // P2-3: archive only headlines marked discussed. Standing headlines
+      // (open positions, ongoing FYIs) stay active — never auto-clear-all.
+      await archiveDiscussedHeadlines(teamId);
+    } catch (e) {
+      // Half-finished conclude is worse than leaving discussed headlines active.
+      console.error("[endMeeting] archiveDiscussedHeadlines failed:", e);
     }
   }
   revalidatePath(detailPath(teamId, meetingId));
   revalidatePath(listPath(teamId));
   revalidatePath(`/teams/${teamId}/issues`);
+  revalidatePath(`/teams/${teamId}/headlines`);
   // ?recap=1 opens the post-meeting recap modal on the next render.
   redirect(`${detailPath(teamId, meetingId)}?recap=1`);
 }

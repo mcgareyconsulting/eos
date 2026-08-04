@@ -6,6 +6,7 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import {
   type Segment,
   isSegment,
+  normalizeSegment,
   SEGMENT_LABELS,
 } from "@/lib/l10/segments";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
@@ -23,7 +24,7 @@ import { SegmentScorecard } from "./segment-scorecard";
 import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
-import { SegmentIDS } from "./segment-ids";
+import { SegmentIssues } from "./segment-issues";
 import { ConcludeReview, type MeetingRating } from "./conclude-review";
 import {
   RecapModal,
@@ -109,11 +110,10 @@ export default async function MeetingDetailPage({
   // "done" on a meeting that never got ended_at (legacy stuck state — the
   // server no longer writes that combination) renders as Conclude so the
   // room can actually finish.
-  const storedSegment: Segment = !isSegment(m.current_segment)
-    ? "segue"
-    : m.current_segment === "done" && live
-      ? "conclude"
-      : m.current_segment;
+  const storedSegment: Segment = (() => {
+    const n = normalizeSegment(m.current_segment) ?? "segue";
+    return n === "done" && live ? "conclude" : n;
+  })();
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
   const meetingStartedAtMs = m.started_at?.toMillis?.() ?? null;
   // Server-formatted so the rail can render it verbatim (no locale drift
@@ -554,6 +554,7 @@ async function SegmentContent({
       <SegmentRocks
         teamId={teamId}
         meetingId={meetingId}
+        userId={userId}
         defaultDue={toDateString(endOfQuarter())}
         initialRocks={initialRocks}
         initialTodos={initialTodos}
@@ -573,6 +574,7 @@ async function SegmentContent({
     const initialHeadlines = snap.docs.map((d) => {
       const x = d.data();
       const t = x.created_at as Timestamp | null;
+      const archived = x.archived_at as Timestamp | null | undefined;
       return {
         id: d.id,
         team_id: x.team_id,
@@ -581,6 +583,11 @@ async function SegmentContent({
         kind: x.kind,
         created_by: x.created_by ?? null,
         created_at: t?.toMillis?.() ?? null,
+        discussed: x.discussed === true,
+        archived_at: archived?.toMillis?.() ?? null,
+        broadcast: !!x.broadcast,
+        from_label: x.from_label ?? null,
+        source_owner_name: x.source_owner_name ?? null,
       };
     });
     return (
@@ -631,7 +638,7 @@ async function SegmentContent({
     );
   }
 
-  if (segment === "ids") {
+  if (segment === "issues") {
     const [issuesSnap, votesSnap] = await Promise.all([
       db.collection("issues").where("team_id", "==", teamId).get(),
       db
@@ -665,7 +672,7 @@ async function SegmentContent({
       };
     });
     return (
-      <SegmentIDS
+      <SegmentIssues
         teamId={teamId}
         meetingId={meetingId}
         userId={userId}

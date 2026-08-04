@@ -34,7 +34,7 @@ type MeetingShape = {
 //
 // Order, pointer and attendance all live on the meeting doc and are written
 // through server actions that deliberately skip revalidatePath, so this
-// subscribes directly (same pattern as segment-ids.tsx and its discussing pin)
+// subscribes directly (same pattern as segment-issues.tsx and its discussing pin)
 // and every client sees the round move without a refresh.
 export function SegmentSegue({
   teamId,

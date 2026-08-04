@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
-import { endOfQuarter, toDateString } from "@/lib/dates";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
 
@@ -15,10 +14,10 @@ export async function addRock(teamId: string, formData: FormData) {
   const { uid, db } = await requireTeamAccess(teamId);
 
   const title = String(formData.get("title") ?? "").trim();
+  // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
   const quarter = String(formData.get("quarter") ?? "").trim();
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
+  // Due is optional; UI may prefill end-of-quarter as a suggestion only.
+  const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
     String(formData.get("description") ?? "").trim() || null;
   // Team ownership is owner_id only (Owner = Team → null). rock_type is
@@ -98,9 +97,8 @@ export async function updateRockMeta(
   const quarter = String(formData.get("quarter") ?? "").trim();
   if (!quarter) throw new Error("Quarter required");
 
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
+  // Empty due is allowed (null) — don't re-force EOQ on edit.
+  const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
     String(formData.get("description") ?? "").trim() || null;
 
@@ -169,20 +167,29 @@ export async function setRockStatus(
   revalidatePath("/home");
 }
 
-// Removes the rock and any todos linked via source_rock_id (milestones).
-// Single batch so a partial failure can't orphan milestones.
+// Removes the rock, linked milestones (todos), and entity_comments.
+// Single batch so a partial failure can't orphan children.
 export async function deleteRock(teamId: string, rockId: string) {
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "rocks", rockId, teamId);
 
-  const milestonesSnap = await db
-    .collection("todos")
-    .where("team_id", "==", teamId)
-    .where("source_rock_id", "==", rockId)
-    .get();
+  const [milestonesSnap, commentsSnap] = await Promise.all([
+    db
+      .collection("todos")
+      .where("team_id", "==", teamId)
+      .where("source_rock_id", "==", rockId)
+      .get(),
+    db
+      .collection("entity_comments")
+      .where("team_id", "==", teamId)
+      .where("entity_type", "==", "rock")
+      .where("entity_id", "==", rockId)
+      .get(),
+  ]);
 
   const batch = db.batch();
   milestonesSnap.docs.forEach((d) => batch.delete(d.ref));
+  commentsSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(db.collection("rocks").doc(rockId));
   await batch.commit();
 
@@ -204,9 +211,8 @@ export async function addMilestone(
 
   const title = String(formData.get("title") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
+  // P2-6: milestones default to no due date (not end-of-quarter).
+  const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
     String(formData.get("description") ?? "").trim() || null;
 

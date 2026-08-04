@@ -41,7 +41,7 @@ export function EditRockDrawer({
   const [description, setDescription] = useState(rock.description ?? "");
   const [ownerId, setOwnerId] = useState(rock.owner_id ?? TEAM_OWNER_VALUE);
   const [quarter, setQuarter] = useState(rock.quarter);
-  const [due, setDue] = useState(rock.due_date ?? defaultDue);
+  const [due, setDue] = useState(rock.due_date ?? "");
 
   // Reset drafts when opening so cancelled edits don't leak.
   useEffect(() => {
@@ -50,9 +50,9 @@ export function EditRockDrawer({
     setDescription(rock.description ?? "");
     setOwnerId(rock.owner_id ?? TEAM_OWNER_VALUE);
     setQuarter(rock.quarter);
-    setDue(rock.due_date ?? defaultDue);
+    setDue(rock.due_date ?? "");
     setError(null);
-  }, [open, rock, defaultDue]);
+  }, [open, rock]);
 
   useEffect(() => {
     if (!open) return;

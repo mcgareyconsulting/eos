@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
-import { AddRockDrawer } from "./add-rock-drawer";
+import { AddRockModal } from "./add-rock-modal";
 import { RockRow } from "./rock-row";
 import { isTeamRock } from "./rock-type";
 import type { MilestoneSerialized } from "./milestones";
@@ -245,7 +245,7 @@ export default async function RocksPage({
         <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
         <div className="flex items-center gap-2">
           <OwnerFilter members={members} currentUserId={uid} />
-          <AddRockDrawer
+          <AddRockModal
             teamId={teamId}
             members={members}
             quarter={quarter}
@@ -266,6 +266,7 @@ export default async function RocksPage({
               <RockRow
                 key={r.id}
                 teamId={teamId}
+                userId={uid}
                 rock={r}
                 ownerName={
                   isTeamRock(r.owner_id) ? "Team" : ownerName(r.owner_id)

@@ -34,6 +34,7 @@ const TEAM_SCOPED = [
   "rock_status_updates",
   "todos",
   "issues",
+  "entity_comments",
   "headlines",
   "scorecard_metrics",
   "meetings",

@@ -10,7 +10,7 @@ import {
   type RankableIssue,
 } from "./issues";
 
-// These rules are shared by the Issues tab and the in-meeting IDS segment.
+// These rules are shared by the Issues tab and the in-meeting Issues segment.
 // The two surfaces previously carried their own comparators and had already
 // drifted (page ranked by priority, meeting by votes), so the ordering
 // contract is pinned here rather than in either component.

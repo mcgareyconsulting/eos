@@ -23,6 +23,7 @@ const DATA_COLLECTIONS = [
   "issues",
   "todos",
   "scorecard_metrics",
+  "entity_comments",
   "headlines",
   "meetings",
 ] as const;

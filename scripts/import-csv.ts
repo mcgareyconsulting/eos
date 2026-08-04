@@ -1040,7 +1040,7 @@ async function importHeadlines(
 }
 
 // ---------------------------------------------------------------------------
-// Issues (short-term IDS list + long-term parking lot)
+// Issues (short-term Issues list + long-term parking lot)
 // ---------------------------------------------------------------------------
 
 async function importIssues(

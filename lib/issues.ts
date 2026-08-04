@@ -1,7 +1,7 @@
 // Shared vocabulary and ranking rules for issues.
 //
 // Issues render on two surfaces — the standalone Issues tab and the in-meeting
-// IDS segment — which previously carried verbatim copies of these label/badge
+// Issues segment — which previously carried verbatim copies of these label/badge
 // maps and their own sort comparators, and had already drifted apart (the page
 // ranked by priority, the meeting by votes). Everything order- or
 // label-related lives here so the two surfaces cannot disagree again; the
@@ -82,7 +82,7 @@ export type RankableIssue = {
   votes?: number | null;
 };
 
-// Short-term issues are the IDS list; long-term are parked below it. An issue
+// Short-term issues are the short-term list; long-term are parked below it. An issue
 // with no type recorded is treated as short-term, matching QuickAddIssue,
 // which stamps "short" on everything dropped from a meeting stage.
 export function splitIssuesByTerm<T extends RankableIssue>(
@@ -100,7 +100,7 @@ export function splitIssuesByTerm<T extends RankableIssue>(
 // Short-term ranking: whatever the group is discussing pins to the very top
 // for everyone, then unresolved issues, then the team's vote total. Votes
 // outrank priority here by design — the team's votes are what decide where
-// the IDS hour goes; priority stays a label.
+// the Issues hour goes; priority stays a label.
 export function rankShortTerm<T extends RankableIssue>(
   issues: T[],
   discussingId?: string | null,

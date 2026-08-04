@@ -325,13 +325,22 @@ export function RockModal({
                     </option>
                   ))}
                 </select>
+                {ownerId === TEAM_OWNER_VALUE && (
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Team Rocks appear at the top of the list for everyone.
+                  </p>
+                )}
               </Field>
               <Field label="Quarter">
                 <input
                   value={qtr}
                   onChange={(e) => setQtr(e.target.value)}
+                  placeholder="e.g. 2026-Q3"
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Free text — calendar Q, fiscal period, or custom label.
+                </p>
               </Field>
               <Field label="Due date">
                 <input
@@ -340,6 +349,9 @@ export function RockModal({
                   onChange={(e) => setDue(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Optional — clear it if there's no date yet.
+                </p>
               </Field>
             </div>
 

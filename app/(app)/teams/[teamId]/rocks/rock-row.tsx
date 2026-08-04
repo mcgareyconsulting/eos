@@ -43,6 +43,7 @@ type Member = { user_id: string; full_name: string };
  */
 export function RockRow({
   teamId,
+  userId,
   rock,
   ownerName,
   members,
@@ -53,6 +54,7 @@ export function RockRow({
   teamName,
 }: {
   teamId: string;
+  userId: string;
   rock: Rock;
   ownerName: string;
   members: Member[];
@@ -104,6 +106,9 @@ export function RockRow({
             <div className="flex items-center gap-2">
               <RockDetailTrigger
                 teamId={teamId}
+                userId={userId}
+                members={members}
+                interactiveMilestones
                 rock={rock}
                 ownerName={displayOwner}
                 milestones={detailMilestones}
@@ -242,6 +247,9 @@ export function RockRow({
                 />
                 <RockDetailTrigger
                   teamId={teamId}
+                  userId={userId}
+                  members={members}
+                  interactiveMilestones
                   rock={rock}
                   ownerName={displayOwner}
                   milestones={detailMilestones}

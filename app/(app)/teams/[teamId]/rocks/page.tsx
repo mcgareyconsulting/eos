@@ -267,6 +267,7 @@ export default async function RocksPage({
               <RockRow
                 key={r.id}
                 teamId={teamId}
+                userId={uid}
                 rock={r}
                 ownerName={
                   isTeamRock(r.owner_id) ? "Team" : ownerName(r.owner_id)

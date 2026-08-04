@@ -51,7 +51,7 @@ export async function linkMeetingRecap(
   }
 
   // Solve 1 issue during the meeting (prefer one already solved so we don't
-  // shrink the live IDS list), and raise 1 during it.
+  // shrink the live Issues list), and raise 1 during it.
   const issues = (
     await db.collection("issues").where("team_id", "==", teamId).get()
   ).docs;

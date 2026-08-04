@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
+import { EntityComments } from "@/components/entity-comments";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
@@ -45,21 +46,31 @@ export type RockDetailMilestone = {
   owner_name: string | null;
 };
 
+type Member = { user_id: string; full_name: string };
+
 export function RockDetailTrigger({
   teamId,
+  userId,
+  members,
   rock,
   ownerName,
   milestones,
   statusHistory = [],
+  interactiveMilestones = false,
   className,
   children,
 }: {
-  /** Pass to make the milestone checklist tickable; omit in L10. */
-  teamId?: string;
+  teamId: string;
+  userId: string;
+  members: Member[];
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
+  /** Tickable milestone checkboxes. Off in L10, where the rock list is a
+   *  read-only review surface — `teamId` alone can't imply this, since
+   *  comments need it everywhere. */
+  interactiveMilestones?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -77,10 +88,13 @@ export function RockDetailTrigger({
       {open && (
         <RockDetailModal
           teamId={teamId}
+          userId={userId}
+          members={members}
           rock={rock}
           ownerName={ownerName}
           milestones={milestones}
           statusHistory={statusHistory}
+          interactiveMilestones={interactiveMilestones}
           onClose={() => setOpen(false)}
         />
       )}
@@ -95,17 +109,23 @@ export function RockDetailTrigger({
  */
 export function RockDetailModal({
   teamId,
+  userId,
+  members,
   rock,
   ownerName,
   milestones,
   statusHistory = [],
+  interactiveMilestones = false,
   onClose,
 }: {
-  teamId?: string;
+  teamId: string;
+  userId: string;
+  members: Member[];
   rock: RockDetailData;
   ownerName: string;
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
+  interactiveMilestones?: boolean;
   onClose: () => void;
 }) {
   const type = normalizeRockType(rock.rock_type);
@@ -218,7 +238,7 @@ export function RockDetailModal({
           <p className="text-[13px] italic text-zinc-400">No milestones yet.</p>
         ) : (
           <MilestoneChecklist
-            teamId={teamId}
+            teamId={interactiveMilestones ? teamId : undefined}
             milestones={checklist}
             variant="modal"
           />
@@ -289,6 +309,14 @@ export function RockDetailModal({
             })}
           </ol>
         )}
+
+        <EntityComments
+          teamId={teamId}
+          entityType="rock"
+          entityId={rock.id}
+          userId={userId}
+          members={members}
+        />
       </div>
     </DetailModal>
   );

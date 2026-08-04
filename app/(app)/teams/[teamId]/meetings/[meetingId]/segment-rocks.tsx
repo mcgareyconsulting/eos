@@ -165,6 +165,7 @@ function groupRocksForMeeting(
 export function SegmentRocks({
   teamId,
   meetingId,
+  userId,
   defaultDue,
   initialRocks,
   initialTodos,
@@ -175,6 +176,7 @@ export function SegmentRocks({
 }: {
   teamId: string;
   meetingId: string;
+  userId: string;
   defaultDue: string;
   initialRocks: RockDoc[];
   initialTodos: TodoDoc[];
@@ -350,6 +352,7 @@ export function SegmentRocks({
                 key={r.id}
                 rock={r}
                 teamId={teamId}
+                userId={userId}
                 ownerName={g.title}
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
@@ -369,6 +372,7 @@ export function SegmentRocks({
 function RockMeetingRow({
   rock,
   teamId,
+  userId,
   ownerName,
   members,
   milestones,
@@ -377,6 +381,7 @@ function RockMeetingRow({
 }: {
   rock: RockDoc;
   teamId: string;
+  userId: string;
   ownerName: string;
   members: Member[];
   milestones: MilestoneSerialized[];
@@ -415,6 +420,9 @@ function RockMeetingRow({
               completed: m.completed,
               owner_name: m.owner_id ? (nameById.get(m.owner_id) ?? null) : null,
             }))}
+            teamId={teamId}
+            userId={userId}
+            members={members}
             className="block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
           >
             {rock.title}

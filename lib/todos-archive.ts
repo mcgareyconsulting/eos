@@ -8,6 +8,7 @@ export type TodoArchiveCandidate = {
   source_rock_id?: string | null;
   archived_at?: unknown | null;
   completed_at?: { toMillis?: () => number } | null;
+  visibility?: string | null;
 };
 
 export function isPureActiveCompleted(
@@ -26,6 +27,15 @@ export function isPureActiveCompleted(
  * Archive when the L10 finishes: pure to-dos completed during this meeting's
  * window (started_at → endMs). Items completed earlier in the week stay on
  * Active (checked) until the Monday morning sweep.
+ *
+ * Private to-dos are excluded: they never appear in the L10, so an owner
+ * checking one off from their own tab mid-meeting is a "closed outside the
+ * meeting" event — it stays visible (grayed) until the Monday sweep.
+ *
+ * Known limitation (accepted): actor context isn't tracked, so a TEAM to-do
+ * checked off from the standalone tab while an L10 happens to be running is
+ * indistinguishable from an in-meeting check and still archives on Finish —
+ * the window is wall-clock only.
  */
 export function selectTodosCompletedDuringMeeting(
   todos: TodoArchiveCandidate[],
@@ -39,6 +49,7 @@ export function selectTodosCompletedDuringMeeting(
   const end = meetingEndMs + 60_000;
   return todos
     .filter(isPureActiveCompleted)
+    .filter((t) => t.visibility !== "private")
     .filter((t) => {
       const c = t.completed_at.toMillis();
       return c >= meetingStartMs && c <= end;
@@ -50,6 +61,9 @@ export function selectTodosCompletedDuringMeeting(
  * Monday ~3am sweep: pure to-dos that were completed *before* this week's
  * Monday 00:00 local (i.e. closed last week or earlier) and still sit on
  * Active. Leaves "done this week" visible until next Monday.
+ *
+ * Private to-dos ARE included here — the sweep is their only auto-archive
+ * path (Finish deliberately skips them; see selectTodosCompletedDuringMeeting).
  *
  * @param weekStartMs — local Monday 00:00 of the current week, as ms epoch
  */

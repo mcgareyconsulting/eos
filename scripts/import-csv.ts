@@ -768,6 +768,10 @@ async function importMilestones(
       source_rock_id: rockId,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
+      // Explicit null so the Monday sweep's `archived_at == null` equality
+      // filter matches (Firestore never matches a missing field). Only on
+      // new docs — a merge re-import must not un-archive an archived doc.
+      ...(isNew ? { archived_at: null } : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -868,6 +872,9 @@ async function importTodos(
       source_rock_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
+      // Explicit null for the sweep's equality filter; new docs only (see
+      // the milestone import above).
+      ...(isNew ? { archived_at: null } : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -1024,6 +1031,9 @@ async function importHeadlines(
       broadcast: isBroadcast,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
+      // Explicit null for the sweep's equality filter; new docs only (see
+      // the milestone import above).
+      ...(isNew ? { archived_at: null } : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -1130,6 +1140,9 @@ async function importIssues(
       source_meeting_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
+      // Explicit null for the sweep's equality filter; new docs only (see
+      // the milestone import above).
+      ...(isNew ? { archived_at: null } : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;

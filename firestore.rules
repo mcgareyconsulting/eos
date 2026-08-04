@@ -111,24 +111,49 @@ service cloud.firestore {
     // ---------- rock status updates (immutable history) ----------
     match /rock_status_updates/{id} {
       allow read:   if admin() || isMember(resource.data.team_id);
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow create: if admin()
+                    || (isMember(request.resource.data.team_id)
+                        && request.resource.data.user_id == request.auth.uid);
       // No update/delete from clients — history is append-only.
     }
 
     // ---------- todos ----------
+    // Archive/audit stamps (archived_at, completed_at) are written only by
+    // server actions and the Monday sweep worker (Admin SDK — bypasses these
+    // rules); no client-SDK code writes to-dos at all. Freezing the stamps
+    // keeps a hand-rolled client from forging archive state (e.g. archiving
+    // without completing) and desyncing the Finish/Monday contract.
     match /todos/{id} {
+      function todoStampsUntouched() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(["archived_at", "completed_at"]) == false;
+      }
       allow read: if admin()
                   || (isMember(resource.data.team_id)
                       && (resource.data.visibility == "team"
                           || resource.data.owner_id == request.auth.uid));
-      allow update, delete: if admin() || isMember(resource.data.team_id);
-      allow create:         if admin() || isMember(request.resource.data.team_id);
+      allow update: if admin()
+                    || (isMember(resource.data.team_id)
+                        && todoStampsUntouched());
+      allow delete: if admin() || isMember(resource.data.team_id);
+      allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
     // ---------- issues + per-user votes ----------
+    // Same archive-contract freeze as todos: status / resolved_at / votes /
+    // archived_at all change via server actions only (setIssueStatus keeps
+    // status and resolved_at in lockstep; castVote owns the denormalized
+    // votes counter — no client path writes any of them).
     match /issues/{id} {
-      allow read, update, delete: if admin() || isMember(resource.data.team_id);
-      allow create:               if admin() || isMember(request.resource.data.team_id);
+      function issueStampsUntouched() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(["archived_at", "resolved_at", "status", "votes"]) == false;
+      }
+      allow read, delete: if admin() || isMember(resource.data.team_id);
+      allow update: if admin()
+                    || (isMember(resource.data.team_id)
+                        && issueStampsUntouched());
+      allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
     match /issue_votes/{id} {
@@ -161,9 +186,18 @@ service cloud.firestore {
       // Cascading headlines visible to target teams via app-layer filtering
       // (rules can't iterate target_team_ids efficiently; the query already
       // scopes by team_id, so this is enforced at query time).
-      allow read:           if admin() || isMember(resource.data.team_id);
-      allow update, delete: if admin() || isMember(resource.data.team_id);
-      allow create:         if admin() || isMember(request.resource.data.team_id);
+      // Same archive-contract freeze as todos: discussed / discussed_at /
+      // archived_at change via server actions only.
+      function headlineStampsUntouched() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(["archived_at", "discussed", "discussed_at"]) == false;
+      }
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow update: if admin()
+                    || (isMember(resource.data.team_id)
+                        && headlineStampsUntouched());
+      allow delete: if admin() || isMember(resource.data.team_id);
+      allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
     // ---------- meetings (L10) ----------

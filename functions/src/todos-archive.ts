@@ -8,6 +8,7 @@ export type TodoArchiveCandidate = {
   source_rock_id?: string | null;
   archived_at?: unknown | null;
   completed_at?: { toMillis?: () => number } | null;
+  visibility?: string | null;
 };
 
 function isPureActiveCompleted(
@@ -20,6 +21,8 @@ function isPureActiveCompleted(
   return true;
 }
 
+// Private to-dos ARE included here — the sweep is their only auto-archive
+// path (Finish-time archiving in lib/todos-archive.ts deliberately skips them).
 export function selectTodosCompletedBeforeWeek(
   todos: TodoArchiveCandidate[],
   weekStartMs: number,

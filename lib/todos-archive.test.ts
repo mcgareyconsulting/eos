@@ -72,6 +72,29 @@ describe("selectTodosCompletedDuringMeeting", () => {
     );
     assert.deepEqual(ids, ["edge"]);
   });
+
+  test("leaves private todos for the Monday sweep even inside the window", () => {
+    // A member checking off their own private to-do mid-meeting is a
+    // "closed outside the meeting" event — Finish must not archive it.
+    const ids = selectTodosCompletedDuringMeeting(
+      [
+        todo({
+          id: "priv",
+          completed_at: ts(start + 5_000),
+          visibility: "private",
+        }),
+        todo({
+          id: "team",
+          completed_at: ts(start + 5_000),
+          visibility: "team",
+        }),
+        todo({ id: "unset", completed_at: ts(start + 5_000) }),
+      ],
+      start,
+      end,
+    );
+    assert.deepEqual(ids, ["team", "unset"]);
+  });
 });
 
 describe("selectTodosCompletedBeforeWeek", () => {
@@ -103,6 +126,20 @@ describe("selectTodosCompletedBeforeWeek", () => {
     );
     assert.deepEqual(ids, []);
   });
+
+  test("includes private todos — the sweep is their only auto-archive path", () => {
+    const ids = selectTodosCompletedBeforeWeek(
+      [
+        todo({
+          id: "priv",
+          completed_at: ts(weekStart - 1),
+          visibility: "private",
+        }),
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, ["priv"]);
+  });
 });
 
 describe("selectIssuesClosedDuringMeeting", () => {
@@ -121,6 +158,59 @@ describe("selectIssuesClosedDuringMeeting", () => {
       end,
     );
     assert.deepEqual(ids.sort(), ["d", "s"]);
+  });
+});
+
+describe("selectIssuesClosedBeforeWeek", () => {
+  const weekStart = 2_000_000;
+
+  test("archives issues solved or dropped before the week boundary", () => {
+    const ids = selectIssuesClosedBeforeWeek(
+      [
+        { id: "solved-old", status: "solved", resolved_at: ts(weekStart - 1) },
+        { id: "dropped-old", status: "dropped", resolved_at: ts(weekStart - 5) },
+        { id: "solved-new", status: "solved", resolved_at: ts(weekStart + 1) },
+        { id: "at-boundary", status: "solved", resolved_at: ts(weekStart) },
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids.sort(), ["dropped-old", "solved-old"]);
+  });
+
+  test("skips open/solving issues and closed ones missing resolved_at", () => {
+    const ids = selectIssuesClosedBeforeWeek(
+      [
+        { id: "open", status: "open", resolved_at: ts(weekStart - 1) },
+        { id: "solving", status: "solving", resolved_at: ts(weekStart - 1) },
+        { id: "no-stamp", status: "solved", resolved_at: null },
+        { id: "missing-stamp", status: "dropped" },
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, []);
+  });
+
+  test("skips already-archived issues", () => {
+    const ids = selectIssuesClosedBeforeWeek(
+      [
+        {
+          id: "arch",
+          status: "solved",
+          resolved_at: ts(weekStart - 1),
+          archived_at: ts(weekStart - 1),
+        },
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, []);
+  });
+
+  test("returns nothing for a non-finite boundary", () => {
+    const ids = selectIssuesClosedBeforeWeek(
+      [{ id: "s", status: "solved", resolved_at: ts(0) }],
+      Number.NaN,
+    );
+    assert.deepEqual(ids, []);
   });
 });
 
@@ -211,5 +301,71 @@ describe("mondayMidnightMsInTimeZone", () => {
     // Week of Aug 3–9: Monday is still Aug 3
     assert.match(wall, /Mon/);
     assert.match(wall, /08\/03\/2026/);
+  });
+
+  // --- DST transitions (America/Chicago) ----------------------------------
+  // Spring forward: Sun 2026-03-08 02:00 CST → 03:00 CDT (UTC-6 → UTC-5).
+  // Fall back:      Sun 2026-11-01 02:00 CDT → 01:00 CST (UTC-5 → UTC-6).
+  // The sweep fires Monday 03:00 local; the boundary it computes must be
+  // that same week's Monday 00:00 *civil* time, whatever the offset is.
+
+  function chicagoWall(ms: number) {
+    return new Date(ms).toLocaleString("en-US", {
+      timeZone: "America/Chicago",
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  }
+
+  test("spring-forward Monday: 00:00 Chicago is 05:00 UTC (CDT)", () => {
+    // Worker fires Mon 2026-03-09 03:00 CDT = 08:00 UTC — first Monday on CDT.
+    const now = new Date("2026-03-09T08:00:00.000Z");
+    const ms = mondayMidnightMsInTimeZone("America/Chicago", now);
+    assert.equal(ms, Date.UTC(2026, 2, 9, 5, 0, 0));
+    const wall = chicagoWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /03\/09\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("walking back across spring-forward keeps Monday 00:00 CST (06:00 UTC)", () => {
+    // Sun 2026-03-08 20:00 CDT (after the jump) = 2026-03-09T01:00Z; its
+    // week's Monday (Mar 2) was still on CST, so midnight there is 06:00 UTC.
+    const now = new Date("2026-03-09T01:00:00.000Z");
+    const ms = mondayMidnightMsInTimeZone("America/Chicago", now);
+    assert.equal(ms, Date.UTC(2026, 2, 2, 6, 0, 0));
+    const wall = chicagoWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /03\/02\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("fall-back Monday: 00:00 Chicago is 06:00 UTC (CST)", () => {
+    // Worker fires Mon 2026-11-02 03:00 CST = 09:00 UTC — first Monday on CST.
+    const now = new Date("2026-11-02T09:00:00.000Z");
+    const ms = mondayMidnightMsInTimeZone("America/Chicago", now);
+    assert.equal(ms, Date.UTC(2026, 10, 2, 6, 0, 0));
+    const wall = chicagoWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /11\/02\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("walking back across fall-back keeps Monday 00:00 CDT (05:00 UTC)", () => {
+    // Sun 2026-11-01 22:00 CST (after the fall-back) = 2026-11-02T04:00Z;
+    // its week's Monday (Oct 26) was still on CDT, so midnight is 05:00 UTC.
+    const now = new Date("2026-11-02T04:00:00.000Z");
+    const ms = mondayMidnightMsInTimeZone("America/Chicago", now);
+    assert.equal(ms, Date.UTC(2026, 9, 26, 5, 0, 0));
+    const wall = chicagoWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /10\/26\/2026/);
+    assert.match(wall, /00:00:00/);
   });
 });

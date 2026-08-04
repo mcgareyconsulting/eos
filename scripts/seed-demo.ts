@@ -686,6 +686,7 @@ async function main() {
       priority: iss.priority ?? null,
       status: iss.status,
       resolved_at: resolved ? FieldValue.serverTimestamp() : null,
+      archived_at: null,
       resolution_todo_id: null,
       created_at: FieldValue.serverTimestamp(),
     });

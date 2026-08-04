@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-04 — _Pass 16 complete — PR #14 (`feature/p2-roadmap`)_
+**Last updated:** 2026-08-04 — _Pass 17 in progress — Session D cleanup (`feature/p3-roadmap`)_
 
 ---
 
@@ -377,41 +377,32 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
-**Pass 16 (2026-08-03 → 2026-08-04): Session C complete** on
-`feature/p2-roadmap` → **PR #14** (merge when reviewed).
+**Pass 17 (in progress): Session D — P1/P2 cleanup** on
+`feature/p3-roadmap` (branch name is historical; scope is remaining P1–P2).
 
-After Session A (`feature/p0-roadmap`) + Session B (`feature/p1-roadmap`).
+**Shipped this session (so far):**
+- **P1-6 Vote credits UI** — remaining-first badge, per-person copy, team vs you.
+- **Archive contract (P2-2 / P2-3 aligned):**
+  - **To-dos / Headlines / Issues:** closed *in L10* → archive on Finish;
+    closed *outside* → gray on Active until **Monday 3am** worker.
+  - Headlines “closed” = **discussed** only (standing never auto-archive).
+  - Issues “closed” = **solved | dropped** (`resolved_at`).
+  - Mid-week gray + “Closes Monday” chip; Archived = flat, Closed On, no strike.
+  - **Rocks:** Active/Archived tabs ready; **no archive path yet** (empty Archived).
+  - Worker `archiveStaleTodos` archives prior-week todos + issues + discussed
+    headlines (**redeployed** to prod).
+- **P1-6** vote credits as above.
 
-**Shipped (Session C — product):**
-- **P2-3 Headlines discuss + selective archive** — checkbox (standalone +
-  L10); only checked archive on Finish; Active / Archived tabs; standing
-  items stay. Fields: `discussed`, `discussed_at`, `archived_at`.
-- **P2-4 Issues ST↔LT + tabs** — Short-term / Long-term tabs on Issues +
-  L10; move labels `Long →` / `← Short`.
-- **P2-5 Comments** — `entity_comments` on issues & rocks; detail modals;
-  auto-linkify URLs; cascade delete with parent. No binary attachments.
-- **P2-6 Date defaults** — free-text quarter; rock due optional (EOQ
-  suggested); milestones default **empty** due.
+**Still open on this cleanup branch:**
+- **Rocks archive path** (manual and/or auto) — UI only for now
+- **P2-7** privacy · **P1-7** Google Tasks (optional)
+- **P1-2** allowlist ops (**deferred**)
+- **P2-1** custom agendas (out of band)
+- **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
+- P3-* as capacity allows
 
-**Shipped (Session C — polish / hardening):**
-- L10 segment key `ids` → **`issues`** with `normalizeSegment` for legacy
-  meetings still storing `"ids"`. UI label was already "Issues".
-- Centered modals: Add/Edit issue (term defaults from active tab); New Rock
-  (replaces side drawer).
-- Review fixes: broadcast server guards; unarchive clears discussed; LT move
-  clears discuss pin; best-effort archive after `endMeeting`; comment query
-  filters `entity_type`.
-- Firestore: `entity_comments` rules + indexes (operator deploys both named
-  DBs via `firebase deploy --only firestore:rules,firestore:indexes`).
-
-**Not in this PR (still open):**
-- **P1-2** ops: allowlist + membership (when prepping access)
-- **P1-6** vote credits UI · **P1-7** Google Tasks two-way
-- **P2-1** custom agendas (design first) · **P2-2** full archive
-  (todos/rocks/issues; headlines selective archive done) · **P2-7** privacy
-- **P3-2** full rich text (issue **descriptions** + rocks/headlines/comments;
-  comments already linkify) · other P3-*
-- Smarter rock period → monthly milestone suggestions (proposed; not built)
+**Prior:** Session C complete on `feature/p2-roadmap` → **PR #14**
+(P2-3…P2-6 + polish). Sessions A/B on p0/p1 branches.
 
 Working priority list is agent-local — not in this repo
 (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).

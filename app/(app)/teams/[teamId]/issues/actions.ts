@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
+import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -61,6 +62,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     type,
     status: "open",
     resolved_at: null,
+    archived_at: null,
     resolution_todo_id: null,
     source_meeting_id,
     created_at: FieldValue.serverTimestamp(),
@@ -102,8 +104,9 @@ export async function updateIssueMeta(
   revalidatePath(`/teams/${teamId}/meetings`);
 }
 
-// Cast a vote on this issue (delta = +1 or -1). Each user has 3 vote credits
-// per team and can stack multiple credits on a single issue. Atomic across:
+// Cast a vote on this issue (delta = +1 or -1). Each person has 3 vote credits
+// on this team (not a shared team pool) and can stack multiple credits on a
+// single issue. Atomic across:
 //  - the user's per-issue credit count (issue_votes.count)
 //  - the user's total credits across the team (sum of count, capped at 3)
 //  - the issue's denormalized counter (issues.votes)
@@ -146,7 +149,7 @@ export async function castVote(
       );
       if (totalUsed >= MAX_VOTES_PER_TEAM) {
         throw new Error(
-          `Out of votes (${MAX_VOTES_PER_TEAM} per team). Remove one first.`,
+          `Out of vote credits (${MAX_VOTES_PER_TEAM} per person). Remove one first.`,
         );
       }
     } else if (currentCount <= 0) {
@@ -185,9 +188,13 @@ export async function setIssueStatus(
   const update: Record<string, unknown> = { status };
   if (status === "solved" || status === "dropped") {
     update.resolved_at = FieldValue.serverTimestamp();
+  } else {
+    // Re-open clears close timestamp so it won't archive as "closed this week".
+    update.resolved_at = null;
   }
   await db.collection("issues").doc(issueId).update(update);
   revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
 }
 
 /** Move an issue between short-term and long-term parking lot. */
@@ -245,4 +252,63 @@ export async function deleteIssue(teamId: string, issueId: string) {
   comments.docs.forEach((c) => batch.delete(c.ref));
   await batch.commit();
   revalidatePath(pathFor(teamId));
+}
+
+/** Soft-archive or restore an issue. */
+export async function setIssueArchived(
+  teamId: string,
+  issueId: string,
+  archived: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "issues", issueId, teamId);
+  await db
+    .collection("issues")
+    .doc(issueId)
+    .update({
+      archived_at: archived ? FieldValue.serverTimestamp() : null,
+    });
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
+}
+
+/**
+ * Archive issues solved/dropped during this L10. Mid-week closes stay on
+ * Active (gray) until the Monday worker.
+ */
+export async function archiveIssuesClosedDuringMeeting(
+  teamId: string,
+  meetingId: string,
+): Promise<number> {
+  const { db } = await requireTeamAccess(teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const m = meetingSnap.data() ?? {};
+  const startMs =
+    typeof m.started_at?.toMillis === "function"
+      ? m.started_at.toMillis()
+      : 0;
+  const endMs =
+    typeof m.ended_at?.toMillis === "function"
+      ? m.ended_at.toMillis()
+      : Date.now();
+  if (!startMs) return 0;
+
+  const snap = await db
+    .collection("issues")
+    .where("team_id", "==", teamId)
+    .get();
+  const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const ids = new Set(
+    selectIssuesClosedDuringMeeting(candidates, startMs, endMs),
+  );
+  if (ids.size === 0) return 0;
+
+  const batch = db.batch();
+  for (const d of snap.docs) {
+    if (!ids.has(d.id)) continue;
+    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+  }
+  await batch.commit();
+  revalidatePath(pathFor(teamId));
+  return ids.size;
 }

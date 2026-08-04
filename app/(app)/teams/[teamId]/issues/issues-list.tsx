@@ -2,10 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { collection, query as fsQuery, where } from "firebase/firestore";
-import { Trash2, AlertCircle, User, ThumbsUp, Pencil } from "lucide-react";
+import {
+  Trash2,
+  AlertCircle,
+  User,
+  ThumbsUp,
+  Pencil,
+  Archive,
+} from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
+import { cn } from "@/lib/utils";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -21,7 +29,7 @@ import {
 import { IssueDetailTrigger } from "./issue-detail-modal";
 import { IssueFormModal } from "./issue-form-modal";
 import { MoveIssueTermButton } from "./move-term-button";
-import { deleteIssue } from "./actions";
+import { deleteIssue, setIssueArchived } from "./actions";
 
 export type IssueDoc = {
   id: string;
@@ -33,23 +41,36 @@ export type IssueDoc = {
   votes: number;
   type: IssueType;
   status: IssueStatus;
+  archived?: boolean;
+  closed_on?: string | null;
+  /** Live client docs may carry Firestore Timestamp. */
+  archived_at?: unknown;
 };
 
 type Member = { user_id: string; full_name: string };
 type TermTab = "short" | "long";
 
-// Issues tab: capture, edit, and triage outside the meeting. Voting is L10-only
-// (see segment-issues.tsx). Short-term / long-term are separate tabs (P2-4).
+function isClosedStatus(status: IssueStatus | null | undefined): boolean {
+  return status === "solved" || status === "dropped";
+}
+
+function isArchivedIssue(i: IssueDoc): boolean {
+  return i.archived === true || i.archived_at != null;
+}
+
+// Issues tab: capture, edit, and triage outside the meeting. Voting is L10-only.
 export function IssuesList({
   teamId,
   userId,
   members,
   initialIssues,
+  showArchived = false,
 }: {
   teamId: string;
   userId: string;
   members: Member[];
   initialIssues: IssueDoc[];
+  showArchived?: boolean;
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
@@ -60,7 +81,10 @@ export function IssuesList({
     [db, teamId],
   );
 
-  const issues = useCollection<IssueDoc>(issuesQuery, initialIssues, "issues");
+  const live = useCollection<IssueDoc>(issuesQuery, initialIssues, "issues");
+  const issues = live.filter((i) =>
+    showArchived ? isArchivedIssue(i) : !isArchivedIssue(i),
+  );
 
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short);
@@ -97,24 +121,30 @@ export function IssuesList({
           Long-term ({rankedLong.length})
         </button>
         <div className="ml-auto">
-          <IssueFormModal
-            teamId={teamId}
-            members={members}
-            defaultOwnerId={userId}
-            defaultType={defaultType}
-            buttonLabel={
-              tab === "long" ? "Add long-term issue" : "Add issue"
-            }
-          />
+          {!showArchived && (
+            <IssueFormModal
+              teamId={teamId}
+              members={members}
+              defaultOwnerId={userId}
+              defaultType={defaultType}
+              buttonLabel={
+                tab === "long" ? "Add long-term issue" : "Add issue"
+              }
+            />
+          )}
         </div>
       </div>
 
       {issues.length === 0 ? (
         <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <EmptyState
-            icon={AlertCircle}
-            title="No issues yet"
-            hint="Use Add issue to capture blockers. Vote and solve the top ones during the L10 Issues segment."
+            icon={showArchived ? Archive : AlertCircle}
+            title={showArchived ? "No archived issues" : "No issues yet"}
+            hint={
+              showArchived
+                ? "Solved/dropped in an L10 archive at Finish; other closes archive Monday morning."
+                : "Use Add issue to capture blockers. Vote and solve the top ones during the L10 Issues segment."
+            }
           />
         </div>
       ) : (
@@ -134,14 +164,15 @@ export function IssuesList({
               issue={issue}
               members={members}
               ownerName={ownerName}
-              showVoteCount={tab === "short"}
+              showVoteCount={tab === "short" && !showArchived}
+              showArchived={showArchived}
               onEdit={() => setEditing(issue)}
             />
           ))}
         </div>
       )}
 
-      {editing && (
+      {editing && !showArchived && (
         <IssueFormModal
           teamId={teamId}
           members={members}
@@ -166,6 +197,7 @@ function IssueRow({
   members,
   ownerName,
   showVoteCount = false,
+  showArchived = false,
   onEdit,
 }: {
   teamId: string;
@@ -174,12 +206,26 @@ function IssueRow({
   members: Member[];
   ownerName: (id: string | null) => string;
   showVoteCount?: boolean;
+  showArchived?: boolean;
   onEdit: () => void;
 }) {
   const remove = deleteIssue.bind(null, teamId, issue.id);
+  const archived = showArchived || isArchivedIssue(issue);
+  const closedPending = !archived && isClosedStatus(issue.status);
+  const toggleArchive = setIssueArchived.bind(
+    null,
+    teamId,
+    issue.id,
+    !archived,
+  );
 
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 text-sm">
+    <div
+      className={cn(
+        "group flex items-center gap-3 px-4 py-3 text-sm",
+        closedPending && "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400",
+      )}
+    >
       {showVoteCount && (
         <div
           className="flex w-12 shrink-0 flex-col items-center gap-0.5 rounded-md bg-zinc-50 px-1.5 py-1 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-950/50 dark:ring-zinc-800"
@@ -206,6 +252,11 @@ function IssueRow({
           >
             {STATUS_LABEL[issue.status]}
           </span>
+          {closedPending && (
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+              Closes Monday
+            </span>
+          )}
         </div>
         <IssueDetailTrigger
           issue={issue}
@@ -213,10 +264,19 @@ function IssueRow({
           teamId={teamId}
           userId={userId}
           members={members}
-          className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+          className={cn(
+            "mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold",
+            closedPending && "text-zinc-500 dark:text-zinc-400",
+            archived && "font-normal text-zinc-700 dark:text-zinc-300",
+          )}
         >
           {issue.title}
         </IssueDetailTrigger>
+        {archived && (
+          <div className="mt-0.5 text-xs tabular-nums text-zinc-500">
+            Closed On: {issue.closed_on ?? "—"}
+          </div>
+        )}
         <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
           <User className="h-3 w-3" />
           {ownerName(issue.owner_id)}
@@ -224,29 +284,45 @@ function IssueRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <MoveIssueTermButton
-          teamId={teamId}
-          issueId={issue.id}
-          type={issue.type}
-        />
-        <button
-          type="button"
-          onClick={onEdit}
-          title="Edit issue"
-          aria-label="Edit issue"
-          className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-        <form action={remove}>
+        {!archived && (
+          <MoveIssueTermButton
+            teamId={teamId}
+            issueId={issue.id}
+            type={issue.type}
+          />
+        )}
+        {!archived && (
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit issue"
+            aria-label="Edit issue"
+            className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+        <form action={toggleArchive}>
           <button
             type="submit"
-            className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-            aria-label="Delete issue"
+            className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800"
+            aria-label={archived ? "Restore issue" : "Archive issue"}
+            title={archived ? "Restore to Active" : "Archive now"}
           >
-            <Trash2 className="h-4 w-4" />
+            <Archive className="h-4 w-4" />
           </button>
         </form>
+        {!archived && (
+          <form action={remove}>
+            <button
+              type="submit"
+              className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+              aria-label="Delete issue"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -1,15 +1,12 @@
 /**
- * Audit log capture — Cloud Functions for Firebase (2nd gen).
+ * Cloud Functions for Firebase (2nd gen).
  *
- * DECIDED design (docs/ROADMAP.md, "Audit log / change history"): a
- * server-side Firestore trigger, not an app-level write, because it's the
- * only path that guarantees nothing bypasses the log — server actions,
- * admin/seed scripts, and console edits all funnel through Firestore itself
- * and therefore all hit this trigger.
+ * 1) Audit log capture — DECIDED (docs/ROADMAP.md): server-side Firestore
+ *    triggers so nothing bypasses the log. Deploy only after triggers are
+ *    pointed at the named database (see OPERATIONS / CUTOVER).
  *
- * The Firestore audit_log collection is the durable append-only record;
- * the nightly Firestore->BigQuery worker mirrors it like any other table
- * (see ROADMAP). No streaming to BigQuery here.
+ * 2) Monday todo archive — `archiveStaleTodos` (scheduler). Safe to deploy
+ *    independently; uses FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
  */
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
@@ -20,13 +17,22 @@ import {
   type Change,
   type DocumentSnapshot,
 } from "firebase-functions/v2/firestore";
+import { firestoreDatabaseId } from "./config";
+
+// Re-export scheduled todo archive (Monday 3am America/Chicago).
+export { archiveStaleTodos } from "./archive-stale-todos";
 
 initializeApp();
-const db = getFirestore();
 
 // Match the Cloud Run region used for the rest of this app's infra
 // (docs/DEPLOY.md), so audit writes stay regionally colocated.
 setGlobalOptions({ region: "us-central1" });
+
+/** Named DB — never `(default)` on hpb-eos-prod. */
+function auditDb() {
+  const id = firestoreDatabaseId.value();
+  return id ? getFirestore(id) : getFirestore();
+}
 
 type AuditAction = "create" | "update" | "delete";
 
@@ -76,21 +82,23 @@ async function recordAuditEvent(
 
   const action: AuditAction = !beforeSnap.exists ? "create" : !afterSnap.exists ? "delete" : "update";
 
-  await db.collection("audit_log").add({
-    entity_type: entityType,
-    entity_id: afterSnap.exists ? afterSnap.id : beforeSnap.id,
-    action,
-    // authId is only populated when the write carries an end-user identity
-    // (client SDK writes, or Admin SDK calls made "on behalf of" a user via
-    // impersonation). Plain Admin SDK writes — server actions, seed scripts —
-    // show up as authType "service_account"/"unknown" with no authId.
-    actor_uid: event.authId ?? null,
-    auth_type: event.authType,
-    timestamp: FieldValue.serverTimestamp(),
-    before,
-    after,
-    changed_keys: action === "update" ? changedKeys(before, after) : [],
-  });
+  await auditDb()
+    .collection("audit_log")
+    .add({
+      entity_type: entityType,
+      entity_id: afterSnap.exists ? afterSnap.id : beforeSnap.id,
+      action,
+      // authId is only populated when the write carries an end-user identity
+      // (client SDK writes, or Admin SDK calls made "on behalf of" a user via
+      // impersonation). Plain Admin SDK writes — server actions, seed scripts —
+      // show up as authType "service_account"/"unknown" with no authId.
+      actor_uid: event.authId ?? null,
+      auth_type: event.authType,
+      timestamp: FieldValue.serverTimestamp(),
+      before,
+      after,
+      changed_keys: action === "update" ? changedKeys(before, after) : [],
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -106,12 +114,17 @@ async function recordAuditEvent(
 // forever — bail out before doing anything else.
 // ---------------------------------------------------------------------------
 export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(
-  "{collection}/{docId}",
+  {
+    document: "{collection}/{docId}",
+    // Required: hpb-eos-prod has no (default) database. CLI deploy fails if
+    // this is omitted (it probes (default) and 404s).
+    database: firestoreDatabaseId,
+  },
   async (event) => {
     const { collection } = event.params;
     if (collection === "audit_log") return;
     await recordAuditEvent(collection, event);
-  }
+  },
 );
 
 // ---------------------------------------------------------------------------
@@ -128,8 +141,11 @@ export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(
 // auditable business record.
 // ---------------------------------------------------------------------------
 export const auditEffectivenessScoreWrites = onDocumentWrittenWithAuthContext(
-  "meetings/{meetingId}/effectiveness_scores/{scoreId}",
+  {
+    document: "meetings/{meetingId}/effectiveness_scores/{scoreId}",
+    database: firestoreDatabaseId,
+  },
   async (event) => {
     await recordAuditEvent("effectiveness_scores", event);
-  }
+  },
 );

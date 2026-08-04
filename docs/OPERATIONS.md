@@ -22,6 +22,12 @@ Deferred, by design: the BigQuery warehouse and the Firestore audit-log Cloud
 Function (see `ROADMAP.md`). The audit function must not be deployed until its
 triggers are pointed at the named database.
 
+**Shipped separately:** Monday **todo archive** Cloud Function
+(`archiveStaleTodos`) — `0 3 * * 1` America/Chicago. Moves pure completed
+to-dos from before this week's Monday onto Archived. Deploy:
+`firebase deploy --only functions:archiveStaleTodos --project <PROJECT_ID>`.
+Param `FIRESTORE_DATABASE_ID` defaults to `hpb-eos-prod-db`.
+
 ## Environments
 
 | | Project | Firestore DB | Who signs in |

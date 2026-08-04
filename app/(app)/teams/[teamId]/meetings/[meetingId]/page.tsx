@@ -620,6 +620,7 @@ async function SegmentContent({
         owner_id: x.owner_id ?? null,
         due_date: x.due_date ?? null,
         completed_at: x.completed_at ? true : null,
+        archived_at: x.archived_at ? true : null,
         visibility: x.visibility ?? "team",
         source_rock_id: x.source_rock_id ?? null,
       };
@@ -659,6 +660,7 @@ async function SegmentContent({
         votes: x.votes ?? 0,
         type: x.type ?? "short",
         status: x.status ?? "open",
+        archived_at: x.archived_at ? true : null,
       };
     });
     const initialVotes = votesSnap.docs.map((d) => {

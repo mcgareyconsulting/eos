@@ -11,9 +11,10 @@ export type IssueStatus = "open" | "solving" | "solved" | "dropped";
 export type IssuePriority = "urgent" | "high" | "medium" | "low";
 export type IssueType = "short" | "long";
 
-// Vote credits are per user, per team, and stackable on a single issue.
+// Vote credits are per person (within a team), and stackable on a single issue.
 // Enforced for real inside the castVote transaction; surfaced in the UI so
-// people can see what they have left.
+// people can see what they have left. Name is historical ("per team" scope of
+// the budget) — each user gets this many credits independently.
 export const MAX_VOTES_PER_TEAM = 3;
 
 export const STATUS_ORDER: IssueStatus[] = [
@@ -142,4 +143,30 @@ export function voteCredits(
     used += count;
   }
   return { byIssue, used, remaining: Math.max(0, max - used) };
+}
+
+/** User-facing copy for the remaining-credits chip (L10 Issues header). */
+export function voteCreditsSummary(
+  used: number,
+  max: number = MAX_VOTES_PER_TEAM,
+): {
+  remaining: number;
+  /** Short label, e.g. "3 of 3 left" / "0 left" */
+  label: string;
+  /** Longer explanation for title/tooltip */
+  detail: string;
+  depleted: boolean;
+} {
+  const remaining = Math.max(0, max - Math.max(0, used));
+  const depleted = remaining === 0;
+  const label =
+    remaining === 0
+      ? `0 of ${max} left`
+      : remaining === max
+        ? `${max} of ${max} left`
+        : `${remaining} of ${max} left`;
+  const detail = depleted
+    ? `You've used all ${max} of your vote credits. Remove a vote to free one up. Credits are per person and reset when the meeting ends.`
+    : `You have ${remaining} of ${max} vote credits left (${used} used). Each person gets ${max} credits; stack them on one issue or spread them. Credits reset when the meeting ends.`;
+  return { remaining, label, detail, depleted };
 }

@@ -2,7 +2,7 @@
   "name": "functions",
   "version": "1.0.0",
   "private": true,
-  "description": "Firestore audit-log capture trigger for the EOS app (Cloud Functions for Firebase, 2nd gen)",
+  "description": "EOS Cloud Functions (gen2): audit-log triggers + Monday todo archive schedule",
   "engines": {
     "node": "22"
   },

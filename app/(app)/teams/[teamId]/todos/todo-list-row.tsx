@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Trash2 } from "lucide-react";
+import { Archive, Lock, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/dates";
 import { normalizeDescription } from "@/lib/csv-import";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoDrawer } from "./edit-todo-drawer";
-import { deleteTodo } from "./actions";
+import { deleteTodo, setTodoArchived } from "./actions";
 
 export type TodoListItem = {
   id: string;
@@ -17,6 +17,9 @@ export type TodoListItem = {
   due_date: string | null;
   completed: boolean;
   visibility: "team" | "private";
+  archived?: boolean;
+  /** Local mm/dd/yyyy when archived (from archived_at). */
+  closed_on?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -36,6 +39,12 @@ export function TodoListRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const remove = deleteTodo.bind(null, teamId, todo.id);
+  const toggleArchive = setTodoArchived.bind(
+    null,
+    teamId,
+    todo.id,
+    !todo.archived,
+  );
   // Restore label/body breaks lost in ninety xlsx exports (e.g. "Analytical"
   // glued onto the paragraph) so whitespace-pre-wrap can render them.
   const description = normalizeDescription(todo.description);
@@ -45,16 +54,31 @@ export function TodoListRow({
     setExpanded((e) => !e);
   }
 
+  // Active/L10: completed = checked box only (no strikethrough — stays readable).
+  // Archived: no checkbox; "Closed On" date instead of heavy grayout.
+  const archived = !!todo.archived;
+
+  // Mid-week complete (not yet archived): gray row until Monday / Finish.
+  const closedPending = !archived && todo.completed;
+
   return (
-    <div className="group px-4 py-2.5 text-sm">
+    <div
+      className={cn(
+        "group px-4 py-2.5 text-sm",
+        closedPending &&
+          "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400",
+      )}
+    >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <TodoCheckbox
-            teamId={teamId}
-            todoId={todo.id}
-            completed={todo.completed}
-          />
-        </div>
+        {!archived && (
+          <div className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <TodoCheckbox
+              teamId={teamId}
+              todoId={todo.id}
+              completed={todo.completed}
+            />
+          </div>
+        )}
 
         <button
           type="button"
@@ -64,8 +88,8 @@ export function TodoListRow({
         >
           <span
             className={cn(
-              "font-medium",
-              todo.completed && "text-zinc-500 line-through",
+              "font-medium text-zinc-900 dark:text-zinc-100",
+              closedPending && "text-zinc-500 dark:text-zinc-400",
             )}
           >
             {todo.title}
@@ -74,6 +98,16 @@ export function TodoListRow({
             <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-zinc-500">
               <Lock className="h-3 w-3" />
               private
+            </span>
+          )}
+          {closedPending && (
+            <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+              Closes Monday
+            </span>
+          )}
+          {archived && (
+            <span className="mt-0.5 block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+              Closed On: {todo.closed_on ?? "—"}
             </span>
           )}
         </button>
@@ -88,21 +122,44 @@ export function TodoListRow({
           className="flex shrink-0 items-center gap-0.5"
           onClick={(e) => e.stopPropagation()}
         >
-          <EditTodoDrawer teamId={teamId} todo={todo} members={members} />
-          <form action={remove}>
+          {!archived && (
+            <EditTodoDrawer teamId={teamId} todo={todo} members={members} />
+          )}
+          <form action={toggleArchive}>
             <button
               type="submit"
-              className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-              aria-label="Delete to-do"
+              className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              aria-label={archived ? "Restore to-do" : "Archive to-do"}
+              title={
+                archived
+                  ? "Restore to Active"
+                  : "Archive now (done items also archive when the L10 ends)"
+              }
             >
-              <Trash2 className="h-4 w-4" />
+              <Archive className="h-4 w-4" />
             </button>
           </form>
+          {!archived && (
+            <form action={remove}>
+              <button
+                type="submit"
+                className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                aria-label="Delete to-do"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </form>
+          )}
         </div>
       </div>
 
       {expanded && (
-        <div className="mt-3 ml-7 space-y-2 border-l border-zinc-200 pl-4 dark:border-zinc-800">
+        <div
+          className={cn(
+            "mt-3 space-y-2 border-l border-zinc-200 pl-4 dark:border-zinc-800",
+            archived ? "ml-1" : "ml-7",
+          )}
+        >
           <div>
             <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
               Description
@@ -140,6 +197,16 @@ export function TodoListRow({
                 {todo.visibility}
               </dd>
             </div>
+            {archived && (
+              <div>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Closed On
+                </dt>
+                <dd className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
+                  {todo.closed_on ?? "—"}
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
       )}

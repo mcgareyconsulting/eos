@@ -34,6 +34,15 @@ for legacy docs. Also: rocks/headlines created in-meeting don't carry the
 field yet (no in-meeting creation surface for rocks; headlines quick-add could
 pass it the same way).
 
+**Reconfirmed edge case (Pass 17 / Session D cleanup):** while an L10 is
+*running*, creating rocks / issues / to-dos from the **normal standalone tabs**
+(not the live segment) still stamps `created_at` inside the meeting window, so
+recap treats them as "created during the meeting" even though they were not
+captured in-L10. Super edge, but we should be ready: prefer
+`source_meeting_id` (only set by in-meeting forms / Drop-to-Issues) and never
+attribute standalone creates mid-meeting via time alone. Code today:
+`meetings/[meetingId]/page.tsx` recap block uses `inWindow(created_at)`.
+
 ### 🟡 Recap is a live view masquerading as a historical record
 "Total Tracked Issues", solve rate, and every recap list are recomputed from
 *today's* data each time a past recap is opened. Retitle a rock → last month's

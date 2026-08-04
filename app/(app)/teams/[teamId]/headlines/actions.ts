@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
 
 const KINDS = ["customer", "employee", "cascading"] as const;
 type Kind = (typeof KINDS)[number];
@@ -102,32 +103,51 @@ export async function setHeadlineArchived(
 }
 
 /**
- * Archive every active headline that has been marked discussed.
- * Does NOT touch undiscussed (standing) headlines — open positions, etc.
- * Called from endMeeting and available as a manual bulk action.
+ * Archive headlines discussed *during this L10* only. Standing (undiscussed)
+ * never auto-archive. Mid-week discuss stays gray on Active until Monday.
  */
-export async function archiveDiscussedHeadlines(teamId: string): Promise<number> {
+export async function archiveHeadlinesDiscussedDuringMeeting(
+  teamId: string,
+  meetingId: string,
+): Promise<number> {
   const { db } = await requireTeamAccess(teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const m = meetingSnap.data() ?? {};
+  const startMs =
+    typeof m.started_at?.toMillis === "function"
+      ? m.started_at.toMillis()
+      : 0;
+  const endMs =
+    typeof m.ended_at?.toMillis === "function"
+      ? m.ended_at.toMillis()
+      : Date.now();
+  if (!startMs) return 0;
+
   const snap = await db
     .collection("headlines")
     .where("team_id", "==", teamId)
     .get();
+  const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const ids = new Set(
+    selectHeadlinesDiscussedDuringMeeting(candidates, startMs, endMs),
+  );
+  if (ids.size === 0) return 0;
 
-  const toArchive = snap.docs.filter((d) => {
-    const x = d.data();
-    if (x.archived_at != null) return false;
-    if (x.broadcast) return false; // org-wide read-only copies
-    return x.discussed === true;
-  });
-
-  if (toArchive.length === 0) return 0;
-
-  // Firestore batches cap at 500; teams will never approach that for headlines.
   const batch = db.batch();
-  for (const d of toArchive) {
+  for (const d of snap.docs) {
+    if (!ids.has(d.id)) continue;
     batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
   }
   await batch.commit();
   revalidateHeadlines(teamId);
-  return toArchive.length;
+  return ids.size;
+}
+
+/** @deprecated Prefer archiveHeadlinesDiscussedDuringMeeting (windowed). */
+export async function archiveDiscussedHeadlines(
+  teamId: string,
+  meetingId?: string,
+): Promise<number> {
+  if (!meetingId) return 0;
+  return archiveHeadlinesDiscussedDuringMeeting(teamId, meetingId);
 }

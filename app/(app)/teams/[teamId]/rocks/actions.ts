@@ -225,6 +225,7 @@ export async function addMilestone(
     due_date,
     description,
     completed_at: null,
+    archived_at: null,
     visibility: "team",
     source_issue_id: null,
     source_meeting_id: null,

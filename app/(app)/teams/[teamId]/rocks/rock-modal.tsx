@@ -118,7 +118,6 @@ export function EditRockButton({
         <RockModal
           teamId={teamId}
           members={members}
-          quarter={rock.quarter}
           defaultDue={defaultDue}
           currentUserId={currentUserId}
           teamName={teamName}
@@ -150,7 +149,8 @@ export function RockModal({
 }: {
   teamId: string;
   members: Member[];
-  quarter: string;
+  /** Create-mode default only — edit mode reads the rock's own quarter. */
+  quarter?: string;
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
@@ -173,7 +173,7 @@ export function RockModal({
   const [title, setTitle] = useState(rock?.title ?? "");
   const [description, setDescription] = useState(rock?.description ?? "");
   const [ownerId, setOwnerId] = useState(initialOwner);
-  const [qtr, setQtr] = useState(rock?.quarter ?? quarter);
+  const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
   const [due, setDue] = useState(rock?.due_date ?? defaultDue);
 
   // Milestone owner inherits the rock owner; a Team-owned rock falls back to

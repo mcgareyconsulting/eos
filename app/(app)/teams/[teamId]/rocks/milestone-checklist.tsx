@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateShort } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
-import { dueToneClass } from "./due";
+import { dueToneClass } from "@/lib/due";
 
 // Plain-data shape passed from the Server Component (unchanged from
 // milestones.tsx — Firestore Timestamps can't cross the RSC boundary, so the
@@ -16,6 +16,9 @@ export type MilestoneSerialized = {
   due_date: string | null;
   completed: boolean;
   description: string | null;
+  /** Pre-resolved owner name, for callers that never had the roster (L10).
+   *  Wins over looking `owner_id` up in `members`. */
+  owner_label?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -32,22 +35,19 @@ export function MilestoneChecklist({
   teamId,
   members,
   milestones,
-  ownerNames,
   variant = "row",
 }: {
   teamId?: string;
   members?: Member[];
   milestones: MilestoneSerialized[];
-  /** Pre-resolved names when the caller has no member roster (L10). */
-  ownerNames?: Record<string, string>;
   variant?: "row" | "modal";
 }) {
   if (milestones.length === 0) return null;
 
-  const nameFor = (ownerId: string | null) => {
-    if (!ownerId) return "—";
-    if (ownerNames?.[ownerId]) return ownerNames[ownerId];
-    return members?.find((m) => m.user_id === ownerId)?.full_name ?? "—";
+  const nameFor = (m: MilestoneSerialized) => {
+    if (m.owner_label) return m.owner_label;
+    if (!m.owner_id) return "—";
+    return members?.find((x) => x.user_id === m.owner_id)?.full_name ?? "—";
   };
 
   return (
@@ -99,7 +99,7 @@ export function MilestoneChecklist({
               {m.title}
             </span>
             <span className="shrink-0 text-[11.5px] text-zinc-500 dark:text-zinc-400">
-              {nameFor(m.owner_id)}
+              {nameFor(m)}
             </span>
             <span
               className={cn(
@@ -120,12 +120,10 @@ export function MilestoneChecklist({
 export function MilestoneProgress({
   milestones,
   barClass,
-  width = "w-[52px]",
 }: {
   milestones: { completed: boolean }[];
   /** STATUS_BAR[status] */
   barClass: string;
-  width?: string;
 }) {
   const total = milestones.length;
   const done = milestones.filter((m) => m.completed).length;
@@ -133,12 +131,7 @@ export function MilestoneProgress({
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span
-        className={cn(
-          "relative block h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700",
-          width,
-        )}
-      >
+      <span className="relative block h-1 w-[52px] overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
         <span
           className={cn("absolute inset-y-0 left-0", barClass)}
           style={{ width: `${pct}%` }}

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -130,16 +131,23 @@ export function StatusPopover({
   // measures the REAL panel height — the flip-above position depends on it.
   // (The old after-paint rAF re-measure could race the mount, leaving the
   // estimate in place and the panel floating high above the trigger.)
+  const place = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCoords(placePanel(rect, panelRef.current?.offsetHeight ?? 0));
+  }, []);
+
+  // Re-place whenever the panel's own height can change: on open, and when the
+  // off-track label or the error line appears/disappears.
   useLayoutEffect(() => {
     if (!open) return;
+    place();
+  }, [open, draftStatus, error, place]);
 
-    const update = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const measured = panelRef.current?.offsetHeight ?? 0;
-      setCoords(placePanel(rect, measured));
-    };
-    update();
+  // Listeners are keyed on `open` alone, so clicking a radio doesn't detach
+  // and reattach them.
+  useEffect(() => {
+    if (!open) return;
 
     const onScrollOrResize = (e: Event) => {
       if (
@@ -150,7 +158,7 @@ export function StatusPopover({
       ) {
         return;
       }
-      update();
+      place();
     };
 
     window.addEventListener("scroll", onScrollOrResize, true);
@@ -159,7 +167,7 @@ export function StatusPopover({
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
-  }, [open, draftStatus, error]);
+  }, [open, place]);
 
   const offTrackNeedsReason = draftStatus === "off_track" && !comment.trim();
 

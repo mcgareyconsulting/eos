@@ -8,7 +8,8 @@ import { StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock } from "./actions";
-import { dueToneClass } from "./due";
+import { dueToneClass } from "@/lib/due";
+import { Fact } from "./fact";
 import { isTeamRock, normalizeRockType, ROCK_TYPE_LABELS, ROCK_TYPE_STYLES } from "./rock-type";
 import { STATUS_BAR, isRockStatus, type RockStatus } from "./status";
 import {
@@ -282,37 +283,10 @@ function AddMilestoneLink(props: {
       {open && (
         <RockModal
           {...props}
-          quarter={props.rock.quarter}
           focusMilestones
           onClose={() => setOpen(false)}
         />
       )}
     </>
-  );
-}
-
-function Fact({
-  label,
-  children,
-  last,
-}: {
-  label: string;
-  children: React.ReactNode;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "min-w-[130px] flex-1 px-3.5 py-2.5",
-        !last && "border-r border-zinc-100 dark:border-zinc-800",
-      )}
-    >
-      <dt className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-zinc-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-200">
-        {children}
-      </dd>
-    </div>
   );
 }

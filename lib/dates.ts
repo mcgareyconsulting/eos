@@ -142,6 +142,14 @@ export function durationMinutes(
   );
 }
 
+// Whole days from `from` to `due`; negative when overdue. The shared basis for
+// every due-date urgency read (labels in this file, tones in lib/due.ts).
+export function daysUntil(due: string, from: Date = new Date()): number {
+  return Math.round(
+    (toLocalDate(due).getTime() - toLocalDate(from).getTime()) / 86400000,
+  );
+}
+
 // "in 12d" / "3d overdue" / "today" — the at-a-glance urgency label next to a
 // due date. Empty string for no date so callers can render nothing.
 export function relativeDueLabel(
@@ -149,9 +157,7 @@ export function relativeDueLabel(
   from: Date = new Date(),
 ): string {
   if (!due) return "";
-  const target = toLocalDate(due);
-  const today = toLocalDate(from);
-  const n = Math.round((target.getTime() - today.getTime()) / 86400000);
+  const n = daysUntil(due, from);
   if (n === 0) return "today";
   if (n < 0) return `${-n}d overdue`;
   if (n < 45) return `in ${n}d`;

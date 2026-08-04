@@ -4,7 +4,8 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
-import { dueToneClass } from "./due";
+import { dueToneClass } from "@/lib/due";
+import { Fact } from "./fact";
 import {
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
@@ -119,20 +120,16 @@ export function RockDetailModal({
   const hasDescription = !!rock.description?.trim();
 
   // MilestoneChecklist speaks MilestoneSerialized; the detail shapes carry a
-  // resolved owner_name instead of an id, so map through ownerNames.
+  // resolved name rather than an id, which is what owner_label is for.
   const checklist: MilestoneSerialized[] = milestones.map((m) => ({
     id: m.id,
     title: m.title,
-    owner_id: m.owner_name,
+    owner_id: null,
+    owner_label: m.owner_name,
     due_date: m.due_date,
     completed: m.completed,
     description: null,
   }));
-  const ownerNames = Object.fromEntries(
-    milestones
-      .filter((m) => m.owner_name)
-      .map((m) => [m.owner_name as string, m.owner_name as string]),
-  );
 
   return (
     <DetailModal ariaLabel={`Rock: ${rock.title}`} onClose={onClose} size="lg">
@@ -223,7 +220,6 @@ export function RockDetailModal({
           <MilestoneChecklist
             teamId={teamId}
             milestones={checklist}
-            ownerNames={ownerNames}
             variant="modal"
           />
         )}
@@ -303,31 +299,5 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     <h3 className="mb-1.5 mt-5 text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
       {children}
     </h3>
-  );
-}
-
-function Fact({
-  label,
-  children,
-  last,
-}: {
-  label: string;
-  children: React.ReactNode;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "min-w-[130px] flex-1 px-3.5 py-2.5",
-        !last && "border-r border-zinc-100 dark:border-zinc-800",
-      )}
-    >
-      <dt className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-zinc-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-200">
-        {children}
-      </dd>
-    </div>
   );
 }

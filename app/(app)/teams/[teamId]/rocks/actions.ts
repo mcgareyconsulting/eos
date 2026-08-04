@@ -11,57 +11,6 @@ function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
 }
 
-export async function addRock(teamId: string, formData: FormData) {
-  const { uid, db } = await requireTeamAccess(teamId);
-
-  const title = String(formData.get("title") ?? "").trim();
-  const quarter = String(formData.get("quarter") ?? "").trim();
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
-  const description =
-    String(formData.get("description") ?? "").trim() || null;
-  // Team ownership is owner_id only (Owner = Team → null). rock_type is
-  // optional legacy/import metadata; new rocks default to individual.
-  const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
-  const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
-
-  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
-  // Owner = Team → null owner_id (Team Rocks section). Else person, default me.
-  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
-
-  if (!title || !quarter) throw new Error("Title and quarter required");
-
-  await db.collection("rocks").add({
-    team_id: teamId,
-    title,
-    quarter,
-    due_date,
-    owner_id,
-    description,
-    rock_type,
-    status: "on_track",
-    created_at: FieldValue.serverTimestamp(),
-  });
-
-  revalidatePath(pathFor(teamId));
-}
-
-export async function updateRockTitle(
-  teamId: string,
-  rockId: string,
-  title: string,
-) {
-  const trimmed = title.trim();
-  if (!trimmed) throw new Error("Title required");
-
-  const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
-  await db.collection("rocks").doc(rockId).update({ title: trimmed });
-
-  revalidatePath(pathFor(teamId));
-}
-
 // Optional handoff notes — an admin creating/reassigning a rock can leave
 // context for whoever owns it. Empty input clears the field back to null.
 export async function updateRockDescription(
@@ -79,44 +28,6 @@ export async function updateRockDescription(
     .update({ description: trimmed });
 
   revalidatePath(pathFor(teamId));
-}
-
-// Full meta edit from the Rocks tab drawer (view is read-only; this is the
-// dedicated edit surface). Title required; empty description clears to null.
-// Owner = "team" → null owner_id (Team Rocks section).
-export async function updateRockMeta(
-  teamId: string,
-  rockId: string,
-  formData: FormData,
-) {
-  const { uid, db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
-
-  const title = String(formData.get("title") ?? "").trim();
-  if (!title) throw new Error("Title required");
-
-  const quarter = String(formData.get("quarter") ?? "").trim();
-  if (!quarter) throw new Error("Quarter required");
-
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
-  const description =
-    String(formData.get("description") ?? "").trim() || null;
-
-  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
-  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
-
-  await db.collection("rocks").doc(rockId).update({
-    title,
-    quarter,
-    due_date,
-    description,
-    owner_id,
-  });
-
-  revalidatePath(pathFor(teamId));
-  revalidatePath("/home");
 }
 
 export async function setRockType(
@@ -324,24 +235,35 @@ function milestoneDoc(
   };
 }
 
+// The fields both save paths read off the modal's FormData. Owner = "team"
+// → null owner_id (Team Rocks section); else a person, defaulting to me.
+function parseRockFields(formData: FormData, uid: string) {
+  const title = String(formData.get("title") ?? "").trim();
+  const quarter = String(formData.get("quarter") ?? "").trim();
+  if (!title || !quarter) throw new Error("Title and quarter required");
+
+  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
+  return {
+    title,
+    quarter,
+    due_date:
+      String(formData.get("due_date") ?? "").trim() ||
+      toDateString(endOfQuarter()),
+    description: String(formData.get("description") ?? "").trim() || null,
+    owner_id: ownerRaw === "team" ? null : ownerRaw || uid,
+  };
+}
+
 export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
 
-  const title = String(formData.get("title") ?? "").trim();
-  const quarter = String(formData.get("quarter") ?? "").trim();
-  if (!title || !quarter) throw new Error("Title and quarter required");
-
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
-  const description =
-    String(formData.get("description") ?? "").trim() || null;
-
-  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
-  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
+  const { title, quarter, due_date, description, owner_id } = parseRockFields(
+    formData,
+    uid,
+  );
 
   const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
   const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
@@ -382,31 +304,27 @@ export async function updateRockWithMilestones(
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
 
-  const title = String(formData.get("title") ?? "").trim();
-  if (!title) throw new Error("Title required");
-  const quarter = String(formData.get("quarter") ?? "").trim();
-  if (!quarter) throw new Error("Quarter required");
-
-  const due_date =
-    String(formData.get("due_date") ?? "").trim() ||
-    toDateString(endOfQuarter());
-  const description =
-    String(formData.get("description") ?? "").trim() || null;
-  const ownerRaw = String(formData.get("owner_id") ?? "").trim();
-  const owner_id = ownerRaw === "team" ? null : ownerRaw || uid;
+  const { title, quarter, due_date, description, owner_id } = parseRockFields(
+    formData,
+    uid,
+  );
 
   const milestones = parseMilestones(formData.get("milestones"));
   const keptIds = new Set(
     milestones.map((m) => m.id).filter((id): id is string => !!id),
   );
 
-  const existingSnap = await db
-    .collection("todos")
-    .where("team_id", "==", teamId)
-    .where("source_rock_id", "==", rockId)
-    .get();
+  // The ownership check and the milestone read are independent — one round
+  // trip, not two.
+  const [, existingSnap] = await Promise.all([
+    requireTeamDoc(db, "rocks", rockId, teamId),
+    db
+      .collection("todos")
+      .where("team_id", "==", teamId)
+      .where("source_rock_id", "==", rockId)
+      .get(),
+  ]);
 
   const batch = db.batch();
   batch.update(db.collection("rocks").doc(rockId), {
@@ -423,17 +341,18 @@ export async function updateRockWithMilestones(
   }
 
   const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+  const fallbackOwner = owner_id ?? uid;
   for (const m of milestones) {
     if (m.id && existingIds.has(m.id)) {
       batch.update(db.collection("todos").doc(m.id), {
         title: m.title,
-        owner_id: m.owner_id || owner_id || uid,
+        owner_id: m.owner_id || fallbackOwner,
         due_date: m.due_date,
       });
     } else {
       batch.set(
         db.collection("todos").doc(),
-        milestoneDoc(teamId, rockId, m, owner_id ?? uid),
+        milestoneDoc(teamId, rockId, m, fallbackOwner),
       );
     }
   }

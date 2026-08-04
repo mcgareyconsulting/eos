@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   average,
   formatGoal,
+  hitRate,
+  missingCount,
   onTrack,
   parseWeekRange,
   trendStatus,
@@ -67,5 +69,61 @@ describe("formatWeekRange", () => {
     assert.equal(formatWeekRange("2026-06-29"), "Jun 29 – Jul 5");
     // Same-month week
     assert.equal(formatWeekRange("2026-07-06"), "Jul 6 – 12");
+  });
+});
+
+describe("hitRate", () => {
+  it("handles empty values array", () => {
+    const result = hitRate([], 5, "gte");
+    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0 });
+  });
+
+  it("handles all-null values", () => {
+    const result = hitRate([null, null, null], 5, "gte");
+    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0 });
+  });
+
+  it("counts hits and records correctly with mixed nulls (gte)", () => {
+    const result = hitRate([10, null, 5, null, 3], 5, "gte");
+    // recorded: [10, 5, 3] → 3 values
+    // hits: [10, 5] → 2 values >= 5
+    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67 });
+  });
+
+  it("rounds pct correctly", () => {
+    // 1 hit out of 3 → 33.333... → rounds to 33
+    const result = hitRate([10, 3, 3], 5, "gte");
+    assert.deepEqual(result, { hit: 1, recorded: 3, pct: 33 });
+  });
+
+  it("supports lte direction", () => {
+    const result = hitRate([2, null, 5, null, 8], 5, "lte");
+    // recorded: [2, 5, 8] → 3 values
+    // hits: [2, 5] → 2 values <= 5
+    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67 });
+  });
+
+  it("does not count as hit when goal is null", () => {
+    const result = hitRate([10, 5, 3], null, "gte");
+    // recorded: 3, but onTrack returns null for each → hit: 0
+    assert.deepEqual(result, { hit: 0, recorded: 3, pct: 0 });
+  });
+});
+
+describe("missingCount", () => {
+  it("returns 0 for empty array", () => {
+    assert.equal(missingCount([]), 0);
+  });
+
+  it("returns 0 when all values present", () => {
+    assert.equal(missingCount([10, 5, 3]), 0);
+  });
+
+  it("counts null entries", () => {
+    assert.equal(missingCount([10, null, 5, null, 3]), 2);
+  });
+
+  it("counts all-null array", () => {
+    assert.equal(missingCount([null, null, null]), 3);
   });
 });

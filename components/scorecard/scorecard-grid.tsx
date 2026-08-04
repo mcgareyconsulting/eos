@@ -1,13 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleHelp,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
 import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
@@ -15,13 +9,15 @@ import {
   average,
   formatGoal,
   formatValue,
+  hitRate,
   onTrack,
+  STATUS_TONE,
   trendStatus,
   type GoalDirection,
-  type TrendStatus,
 } from "@/lib/scorecard";
 import { type ScorecardColumn } from "@/lib/scorecard-periods";
 import { cn } from "@/lib/utils";
+import { MetricExpand } from "./metric-expand";
 
 export type ScorecardMetric = {
   id: string;
@@ -74,42 +70,45 @@ function ownerInitials(name: string): string {
   return `${parts[0]![0] ?? ""}${parts[parts.length - 1]![0] ?? ""}`.toUpperCase();
 }
 
-function TrendIcon({ status }: { status: TrendStatus }) {
-  if (status === "ok") {
-    return (
-      <CheckCircle2
-        className="h-4 w-4 text-emerald-500 dark:text-emerald-400"
-        aria-label="On-track"
-      />
-    );
-  }
-  if (status === "off") {
-    return (
-      <AlertTriangle
-        className="h-4 w-4 text-red-500 dark:text-red-400"
-        aria-label="Off-track"
-      />
-    );
-  }
-  if (status === "watch") {
-    return (
-      <AlertTriangle
-        className="h-4 w-4 text-amber-500 dark:text-amber-400"
-        aria-label="At-risk"
-      />
-    );
-  }
-  return (
-    <CircleHelp
-      className="h-4 w-4 text-zinc-300 dark:text-zinc-600"
-      aria-label="No data"
-    />
-  );
-}
-
 /** Sticky cell shell; pixel `left` is applied via style for exact offsets. */
 function stickyCell(extra?: string) {
   return cn("sticky bg-white dark:bg-zinc-900", extra);
+}
+
+/**
+ * Wrapper for the expanded trend panel: pinned to the scrollport (sticky
+ * left-0 at the measured visible width) and deaf to horizontal wheel input —
+ * the panel isn't part of the scrollable data, so side-scroll over it would
+ * just move the period columns invisibly behind it.
+ */
+function PinnedPanel({
+  width,
+  children,
+}: {
+  width?: number;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Native listener: React registers wheel as passive, which forbids
+    // preventDefault.
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault();
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="sticky left-0 p-3"
+      style={width ? { width } : undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function ScorecardGrid({
@@ -141,6 +140,30 @@ export function ScorecardGrid({
   emptyHint?: string;
 }) {
   const [search, setSearch] = useState("");
+  // Which rows have their trend panel open. Local on purpose: a reload
+  // collapses everything, same as the rock row.
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggleOpen = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // Visible width of the horizontal scroller. The expanded trend panel is
+  // sized to this and pinned with sticky left-0, so it stays fully in view
+  // while the period columns scroll behind it.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewWidth, setViewWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // ResizeObserver fires once on observe, so no synchronous first measure.
+    const ro = new ResizeObserver(() => setViewWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const entryMap = useMemo(() => {
     if (entryByMetricWeek instanceof Map) return entryByMetricWeek;
@@ -191,12 +214,13 @@ export function ScorecardGrid({
   const totalCols = FROZEN_COLS + columns.length + (showDelete ? 1 : 0);
 
   const renderMetricRow = (m: ScorecardMetric) => {
-    const values = columns.map(
-      (c) => entryMap.get(`${m.id}__${c.id}`) ?? null,
-    );
+    const values = columns.map((c) => entryMap.get(`${m.id}__${c.id}`) ?? null);
     const avg = average(values);
     const avgOnTrack = onTrack(avg, m.goal, m.direction);
     const status = trendStatus(values, m.goal, m.direction);
+    const tone = STATUS_TONE[status];
+    const open = openIds.has(m.id);
+    const { hit, recorded, pct } = hitRate(values, m.goal, m.direction);
     const owner = ownerName(m.owner_id);
 
     const avgTone =
@@ -207,132 +231,193 @@ export function ScorecardGrid({
           : "text-red-700 dark:text-red-300";
 
     return (
-      <tr
-        key={m.id}
-        className="group border-b border-zinc-200 dark:border-zinc-800 last:border-0"
-      >
-        <td
-          className={cn(stickyCell(), "z-10 px-2 py-2.5 align-middle")}
-          style={{ left: LEFT.trend, width: COL.trend, minWidth: COL.trend }}
+      <Fragment key={m.id}>
+        <tr
+          className={cn(
+            "group border-b border-zinc-200 dark:border-zinc-800 last:border-0",
+            open && "bg-hpb-blue/[0.03]",
+          )}
         >
-          <div className="flex justify-center">
-            <TrendIcon status={status} />
-          </div>
-        </td>
+          <td
+            className={cn(
+              stickyCell(),
+              "z-10 border-l-[3px] px-2 py-2.5 align-middle",
+              tone.railBorder,
+            )}
+            style={{ left: LEFT.trend, width: COL.trend, minWidth: COL.trend }}
+          >
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => toggleOpen(m.id)}
+                aria-expanded={open}
+                aria-label={open ? "Hide trend" : "Show trend"}
+                title={`Show ${columns.length}-period trend`}
+                className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-4 w-4 transition-transform",
+                    open && "rotate-90",
+                  )}
+                />
+              </button>
+            </div>
+          </td>
 
-        <td
-          className={cn(stickyCell(), "z-10 px-3 py-2.5 align-middle")}
-          style={{
-            left: LEFT.title,
-            width: COL.title,
-            minWidth: COL.title,
-            // Hard cap. Without it a long measurable name grew the cell,
-            // desynced the frozen block from the week header, and shoved
-            // the week columns out of view.
-            maxWidth: COL.title,
-          }}
-        >
-          {/* Wraps rather than truncates — but clamped at two lines so a
+          <td
+            className={cn(stickyCell(), "z-10 px-3 py-2.5 align-middle")}
+            style={{
+              left: LEFT.title,
+              width: COL.title,
+              minWidth: COL.title,
+              // Hard cap. Without it a long measurable name grew the cell,
+              // desynced the frozen block from the week header, and shoved
+              // the week columns out of view.
+              maxWidth: COL.title,
+            }}
+          >
+            {/* Wraps rather than truncates — but clamped at two lines so a
               paragraph-length measurable can't make its row twice the height
               of its neighbors. Full text on hover. */}
-          <div
-            className="line-clamp-2 break-words font-medium text-zinc-900 dark:text-zinc-100"
-            title={m.name}
-          >
-            {m.name}
-          </div>
-          {showGroupEditor && (
-            <div className="mt-0.5">
-              <GroupCell
-                teamId={teamId}
-                metricId={m.id}
-                initial={m.group ?? null}
-              />
+            <div
+              className="line-clamp-2 break-words font-medium text-zinc-900 dark:text-zinc-100"
+              title={m.name}
+            >
+              {m.name}
             </div>
-          )}
-        </td>
-
-        <td
-          className={cn(stickyCell(), "z-10 px-1 py-2.5 align-middle")}
-          style={{ left: LEFT.owner, width: COL.owner, minWidth: COL.owner }}
-        >
-          <div className="flex justify-center">
-            <span
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
-              title={owner}
-            >
-              {ownerInitials(owner === "—" ? m.name : owner)}
-            </span>
-          </div>
-        </td>
-
-        <td
-          className={cn(
-            stickyCell(),
-            "z-10 px-2 py-2.5 text-right align-middle tabular-nums text-zinc-600 dark:text-zinc-400",
-          )}
-          style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
-        >
-          {formatGoal(m.goal, m.direction, m.unit)}
-        </td>
-
-        <td
-          className={cn(
-            stickyCell(),
-            stickyShadow,
-            "z-10 px-2 py-2.5 text-right align-middle font-medium tabular-nums",
-            avgTone,
-          )}
-          style={{ left: LEFT.avg, width: COL.avg, minWidth: COL.avg }}
-          title={
-            avg == null
-              ? "No entries yet"
-              : `Average of ${values.filter((v) => v != null).length} recorded periods`
-          }
-        >
-          {formatValue(avg, m.unit)}
-        </td>
-
-        {columns.map((col, i) => {
-          const v = values[i] ?? null;
-          const isCurrent = col.isCurrent;
-          // period start key (weekly Monday / month 1st / …)
-          const periodStart = col.id;
-          return (
-            <td
-              key={col.id}
-              className={cn(
-                "px-1 py-1 align-middle",
-                weekDivider,
-                isCurrent && "bg-sky-50/40 dark:bg-sky-950/15",
-              )}
-            >
-              <ValueCell
-                teamId={teamId}
-                metricId={m.id}
-                weekStartDate={periodStart}
-                initial={v}
-                onTrack={onTrack(v, m.goal, m.direction)}
-                isCurrentWeek={isCurrent}
-              />
-            </td>
-          );
-        })}
-
-        {showDelete && (
-          <td className="px-2 py-2 text-right">
-            <form action={deleteMetric.bind(null, teamId, m.id)}>
-              <button
-                type="submit"
-                className="text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600 hover:text-red-600"
-                aria-label="Delete metric"
+            {showGroupEditor && (
+              <div className="mt-0.5">
+                <GroupCell
+                  teamId={teamId}
+                  metricId={m.id}
+                  initial={m.group ?? null}
+                />
+              </div>
+            )}
+            <div className="mt-1 flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-1.5 py-px text-[9.5px] font-bold ring-1 ring-inset",
+                  tone.pill,
+                )}
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </form>
+                {tone.label}
+              </span>
+              {recorded > 0 && (
+                <>
+                  <span className="relative block h-1 w-11 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                    <span
+                      className={cn("absolute inset-y-0 left-0", tone.rail)}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </span>
+                  <span className="text-[10.5px] tabular-nums text-zinc-500">
+                    {hit}/{recorded} hit
+                  </span>
+                </>
+              )}
+            </div>
           </td>
+
+          <td
+            className={cn(stickyCell(), "z-10 px-1 py-2.5 align-middle")}
+            style={{ left: LEFT.owner, width: COL.owner, minWidth: COL.owner }}
+          >
+            <div className="flex justify-center">
+              <span
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
+                title={owner}
+              >
+                {ownerInitials(owner === "—" ? m.name : owner)}
+              </span>
+            </div>
+          </td>
+
+          <td
+            className={cn(
+              stickyCell(),
+              "z-10 px-2 py-2.5 text-right align-middle tabular-nums text-zinc-600 dark:text-zinc-400",
+            )}
+            style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
+          >
+            {formatGoal(m.goal, m.direction, m.unit)}
+          </td>
+
+          <td
+            className={cn(
+              stickyCell(),
+              stickyShadow,
+              "z-10 px-2 py-2.5 text-right align-middle font-medium tabular-nums",
+              avgTone,
+            )}
+            style={{ left: LEFT.avg, width: COL.avg, minWidth: COL.avg }}
+            title={
+              avg == null
+                ? "No entries yet"
+                : `Average of ${values.filter((v) => v != null).length} recorded periods`
+            }
+          >
+            {formatValue(avg, m.unit)}
+          </td>
+
+          {columns.map((col, i) => {
+            const v = values[i] ?? null;
+            const isCurrent = col.isCurrent;
+            // period start key (weekly Monday / month 1st / …)
+            const periodStart = col.id;
+            return (
+              <td
+                key={col.id}
+                className={cn(
+                  "px-1 py-1 align-middle",
+                  weekDivider,
+                  isCurrent && "bg-sky-50/40 dark:bg-sky-950/15",
+                )}
+              >
+                <ValueCell
+                  teamId={teamId}
+                  metricId={m.id}
+                  weekStartDate={periodStart}
+                  initial={v}
+                  onTrack={onTrack(v, m.goal, m.direction)}
+                  isCurrentWeek={isCurrent}
+                />
+              </td>
+            );
+          })}
+
+          {showDelete && (
+            <td className="px-2 py-2 text-right">
+              <form action={deleteMetric.bind(null, teamId, m.id)}>
+                <button
+                  type="submit"
+                  className="text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600 hover:text-red-600"
+                  aria-label="Delete metric"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </form>
+            </td>
+          )}
+        </tr>
+        {open && (
+          <tr className="bg-hpb-blue/[0.03]">
+            <td colSpan={totalCols} className="p-0">
+              <PinnedPanel width={viewWidth ?? undefined}>
+                <MetricExpand
+                  metric={m}
+                  ownerName={owner}
+                  columns={columns}
+                  values={values}
+                  // The p-3 gutter around the card costs 24px of the pinned width.
+                  panelWidth={viewWidth ? viewWidth - 24 : undefined}
+                />
+              </PinnedPanel>
+            </td>
+          </tr>
         )}
-      </tr>
+      </Fragment>
     );
   };
 
@@ -376,6 +461,7 @@ export function ScorecardGrid({
       )}
 
       <div
+        ref={scrollRef}
         className={cn(
           "overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900",
           compact
@@ -383,9 +469,14 @@ export function ScorecardGrid({
             : "max-h-[min(75vh,40rem)] overflow-y-auto",
         )}
       >
+        {/* Fixed layout: frozen columns keep their design widths (so sticky
+            offsets stay true) and leftover space spreads evenly across the
+            period columns — the grid fills the container with no gaps. The
+            112px floor per period column keeps "Jul 27 – Aug 2" labels from
+            overflowing when many columns force a horizontal scroll. */}
         <table
-          className="w-max min-w-full border-separate border-spacing-0 text-sm"
-          style={{ minWidth: FROZEN_WIDTH + columns.length * 88 }}
+          className="w-full table-fixed border-separate border-spacing-0 text-sm"
+          style={{ minWidth: FROZEN_WIDTH + columns.length * 112 }}
         >
           <thead className="sticky top-0 z-30">
             <tr

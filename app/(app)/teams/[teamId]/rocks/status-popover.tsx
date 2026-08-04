@@ -16,7 +16,7 @@ import {
 // Estimate used for the first paint before the panel is measured; real height
 // is re-measured after mount so the full content stays on-screen.
 const PANEL_ESTIMATE_H = 400;
-const PANEL_W = 320; // a bit wider for notes comfort
+const PANEL_W = 480; // two columns: statuses left, note right
 const VIEWPORT_PAD = 12;
 const GAP = 6;
 
@@ -188,46 +188,47 @@ export function StatusPopover({
             }}
             className="fixed z-50 flex flex-col rounded-xl border border-zinc-300 bg-white p-4 text-sm shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
           >
-            <div className="space-y-1">
-              {STATUSES.map((s) => (
-                <label
-                  key={s}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                >
-                  <input
-                    type="radio"
-                    name={radioName}
-                    value={s}
-                    checked={draftStatus === s}
-                    onChange={() => setDraftStatus(s)}
-                    className="h-3.5 w-3.5"
-                  />
-                  <span
-                    className={cn(
-                      "inline-flex h-6 w-[5.75rem] items-center justify-center rounded-full px-2 text-center text-xs font-medium ring-1 ring-inset",
-                      STATUS_STYLES[s],
-                    )}
+            <div className="flex gap-4">
+              <div className="shrink-0 space-y-1">
+                {STATUSES.map((s) => (
+                  <label
+                    key={s}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                   >
-                    {STATUS_LABELS[s]}
-                  </span>
-                </label>
-              ))}
-            </div>
+                    <input
+                      type="radio"
+                      name={radioName}
+                      value={s}
+                      checked={draftStatus === s}
+                      onChange={() => setDraftStatus(s)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span
+                      className={cn(
+                        "inline-flex h-6 w-[5.75rem] items-center justify-center rounded-full px-2 text-center text-xs font-medium ring-1 ring-inset",
+                        STATUS_STYLES[s],
+                      )}
+                    >
+                      {STATUS_LABELS[s]}
+                    </span>
+                  </label>
+                ))}
+              </div>
 
-            <div className="mt-4">
-              <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                {draftStatus === "off_track"
-                  ? "Why off track? (required)"
-                  : "Comment (optional)"}
-              </label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={5}
-                placeholder="What changed? Leave a note for the team…"
-                onWheel={(e) => e.stopPropagation()}
-                className="w-full resize-none rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
-              />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <label className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  {draftStatus === "off_track"
+                    ? "Why off track? (required)"
+                    : "Comment (optional)"}
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What changed? Leave a note for the team…"
+                  onWheel={(e) => e.stopPropagation()}
+                  className="w-full flex-1 resize-none rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
+                />
+              </div>
             </div>
 
             {error && (

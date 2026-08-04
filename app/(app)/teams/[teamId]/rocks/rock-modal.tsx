@@ -174,7 +174,9 @@ export function RockModal({
   const [description, setDescription] = useState(rock?.description ?? "");
   const [ownerId, setOwnerId] = useState(initialOwner);
   const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
-  const [due, setDue] = useState(rock?.due_date ?? defaultDue);
+  // P2-6: due is a create-mode suggestion only. An existing rock with a
+  // cleared due date stays empty — never re-seed end-of-quarter on edit.
+  const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 
   // Milestone owner inherits the rock owner; a Team-owned rock falls back to
   // the signed-in user, since a milestone is a todo and a todo needs a person.

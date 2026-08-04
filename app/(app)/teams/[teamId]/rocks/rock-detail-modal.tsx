@@ -218,10 +218,7 @@ export function RockDetailModal({
           )}
         </div>
         {milestones.length === 0 ? (
-          <p className="text-[13px] italic text-zinc-400">
-            No milestones — a rock without milestones has no early-warning
-            signal.
-          </p>
+          <p className="text-[13px] italic text-zinc-400">No milestones yet.</p>
         ) : (
           <MilestoneChecklist
             teamId={teamId}

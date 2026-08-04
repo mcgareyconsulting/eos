@@ -256,7 +256,7 @@ export function RockModal({
         role="dialog"
         aria-modal="true"
         aria-label={editing ? "Edit rock" : "New rock"}
-        className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
       >
         <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
           <div>
@@ -296,7 +296,7 @@ export function RockModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="A short success criterion."
-                rows={2}
+                rows={3}
                 className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
               />
             </Field>

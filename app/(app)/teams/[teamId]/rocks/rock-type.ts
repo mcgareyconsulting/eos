@@ -3,8 +3,10 @@
 // predate this field, so a missing/invalid value is always treated as
 // "individual" — never write undefined, always normalize on read.
 //
-// Team ownership is NOT a rock type — it's owner_id === null (Owner = Team).
-// See isTeamRock / TEAM_OWNER_VALUE.
+// Department section rocks (top of Rocks list / L10):
+//   - owner_id null (shared department ownership), OR
+//   - rock_type === "department" even when a person is accountable.
+// See isDepartmentRock / DEPARTMENT_OWNER_VALUE.
 
 export const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
@@ -31,8 +33,13 @@ export const ROCK_TYPE_ORDER: readonly RockType[] = [
   "individual",
 ];
 
-/** Form/owner-select sentinel: assign the rock to the whole team (owner_id null). */
-export const TEAM_OWNER_VALUE = "team";
+/**
+ * Form/owner-select sentinel: shared department ownership (owner_id null).
+ * Value stays `"team"` so existing form posts / drafts keep working.
+ */
+export const DEPARTMENT_OWNER_VALUE = "team";
+/** @deprecated Use DEPARTMENT_OWNER_VALUE */
+export const TEAM_OWNER_VALUE = DEPARTMENT_OWNER_VALUE;
 
 export function isRockType(v: string): v is RockType {
   return (ROCK_TYPES as readonly string[]).includes(v);
@@ -43,7 +50,29 @@ export function normalizeRockType(v: string | null | undefined): RockType {
   return v && isRockType(v) ? v : "individual";
 }
 
-// Team Rocks are identified by ownership, not rock_type: no person owner_id.
-export function isTeamRock(ownerId: string | null | undefined): boolean {
+/** Shared department ownership: no person owner_id. */
+export function isSharedDepartmentOwner(
+  ownerId: string | null | undefined,
+): boolean {
   return ownerId == null || ownerId === "";
 }
+
+/** @deprecated Use isSharedDepartmentOwner */
+export function isTeamRock(ownerId: string | null | undefined): boolean {
+  return isSharedDepartmentOwner(ownerId);
+}
+
+/**
+ * Rocks that belong in the Department section at the top of the list / L10.
+ * Department-typed rocks land here even when a person is the accountable owner.
+ */
+export function isDepartmentRock(r: {
+  owner_id?: string | null;
+  rock_type?: string | null;
+}): boolean {
+  if (isSharedDepartmentOwner(r.owner_id)) return true;
+  return normalizeRockType(r.rock_type) === "department";
+}
+
+/** Display label for the shared department owner chip. */
+export const DEPARTMENT_SECTION_TITLE = "Department";

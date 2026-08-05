@@ -6,8 +6,10 @@ import {
   selectHeadlinesDiscussedDuringMeeting,
   selectIssuesClosedBeforeWeek,
   selectIssuesClosedDuringMeeting,
+  selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
   selectTodosCompletedDuringMeeting,
+  type RockArchiveCandidate,
   type TodoArchiveCandidate,
 } from "./todos-archive";
 
@@ -245,6 +247,57 @@ describe("selectHeadlinesDiscussedBeforeWeek", () => {
       weekStart,
     );
     assert.deepEqual(ids, ["old"]);
+  });
+});
+
+describe("selectRocksDoneBeforeWeek", () => {
+  const weekStart = Date.UTC(2026, 7, 3); // 2026-08-03
+
+  function rock(
+    over: Partial<RockArchiveCandidate> & { id: string },
+  ): RockArchiveCandidate {
+    return {
+      archived_at: null,
+      status: "done",
+      completed_at: null,
+      ...over,
+    };
+  }
+
+  test("archives done rocks completed before this week's Monday", () => {
+    const ids = selectRocksDoneBeforeWeek(
+      [
+        rock({ id: "last-week", completed_at: ts(weekStart - 86_400_000) }),
+        rock({ id: "this-week", completed_at: ts(weekStart + 3_600_000) }),
+        rock({ id: "open", status: "on_track", completed_at: null }),
+        rock({ id: "cancelled", status: "cancelled", completed_at: ts(weekStart - 1) }),
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, ["last-week"]);
+  });
+
+  test("skips already-archived and done-without-completed_at", () => {
+    const ids = selectRocksDoneBeforeWeek(
+      [
+        rock({
+          id: "arch",
+          completed_at: ts(weekStart - 1),
+          archived_at: ts(weekStart - 1),
+        }),
+        rock({ id: "no-stamp", completed_at: null }),
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, []);
+  });
+
+  test("returns nothing for a non-finite boundary", () => {
+    const ids = selectRocksDoneBeforeWeek(
+      [rock({ id: "x", completed_at: ts(0) })],
+      Number.NaN,
+    );
+    assert.deepEqual(ids, []);
   });
 });
 

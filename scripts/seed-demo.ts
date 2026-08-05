@@ -607,6 +607,9 @@ async function main() {
       quarter,
       owner_id: ownerId,
       due_date: active ? eoq : null,
+      completed_at:
+        r.status === "done" ? FieldValue.serverTimestamp() : null,
+      archived_at: null,
       created_at: FieldValue.serverTimestamp(),
     });
     if (r.milestones?.length) {

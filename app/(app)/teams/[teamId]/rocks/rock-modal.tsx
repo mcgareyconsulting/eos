@@ -8,7 +8,7 @@ import {
   createRockWithMilestones,
   updateRockWithMilestones,
 } from "./actions";
-import { TEAM_OWNER_VALUE } from "./rock-type";
+import { DEPARTMENT_OWNER_VALUE, DEPARTMENT_SECTION_TITLE } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 
 type Member = { user_id: string; full_name: string };
@@ -167,7 +167,7 @@ export function RockModal({
 
   const editing = !!rock;
   const initialOwner = rock
-    ? (rock.owner_id ?? TEAM_OWNER_VALUE)
+    ? (rock.owner_id ?? DEPARTMENT_OWNER_VALUE)
     : currentUserId;
 
   const [title, setTitle] = useState(rock?.title ?? "");
@@ -178,10 +178,10 @@ export function RockModal({
   // cleared due date stays empty — never re-seed end-of-quarter on edit.
   const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 
-  // Milestone owner inherits the rock owner; a Team-owned rock falls back to
-  // the signed-in user, since a milestone is a todo and a todo needs a person.
+  // Milestone owner inherits the rock owner; a department-shared rock falls
+  // back to the signed-in user (milestones are todos and need a person).
   const inheritOwner =
-    ownerId === TEAM_OWNER_VALUE ? currentUserId : ownerId;
+    ownerId === DEPARTMENT_OWNER_VALUE ? currentUserId : ownerId;
 
   const [rows, setRows] = useState<DraftMilestone[]>(() => {
     const base = editing
@@ -320,16 +320,18 @@ export function RockModal({
                   onChange={(e) => setOwnerId(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 >
-                  <option value={TEAM_OWNER_VALUE}>Team</option>
+                  <option value={DEPARTMENT_OWNER_VALUE}>
+                    {DEPARTMENT_SECTION_TITLE}
+                  </option>
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </option>
                   ))}
                 </select>
-                {ownerId === TEAM_OWNER_VALUE && (
+                {ownerId === DEPARTMENT_OWNER_VALUE && (
                   <p className="mt-1 text-[11px] text-zinc-500">
-                    Team Rocks appear at the top of the list for everyone.
+                    Department rocks appear at the top of the list for everyone.
                   </p>
                 )}
               </Field>

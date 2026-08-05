@@ -1,10 +1,27 @@
 # CSV import — seeding real client data
 
-`pnpm import:csv` loads a team's **scorecard**, **rocks**, and **milestones**
-from CSV, TSV, or **.xlsx**. It targets the column sets ninety.io exports (the
-tool clients are migrating off of), but nothing is ninety-specific — any
-spreadsheet with the same headers works, including one pasted out of Excel or
-Sheets as TSV.
+## In-app import (Rocks, To-Dos, Issues)
+
+Team members can upload a **.csv / .tsv / .xlsx** from the sidebar:
+**Import** → `/teams/[teamId]/import`.
+
+- Pick **Rocks**, **To-Dos**, or **Issues**, drop the file, **Preview (dry run)**
+  then **Import**.
+- Same column rules as below; same deterministic ids (re-import updates by title).
+- Defaults are safer than the CLI: unknown owners are **skipped** unless you
+  enable placeholder members or choose a fallback owner.
+- Scorecard, milestones, and headlines remain **CLI-only** for now
+  (`pnpm import:csv`).
+
+Shared engine: `lib/team-import.ts` (used by the page and the CLI).
+
+---
+
+`pnpm import:csv` loads a team's **scorecard**, **rocks**, **milestones**,
+**to-dos**, **issues**, and **headlines** from CSV, TSV, or **.xlsx**. It
+targets the column sets ninety.io exports (the tool clients are migrating off
+of), but nothing is ninety-specific — any spreadsheet with the same headers
+works, including one pasted out of Excel or Sheets as TSV.
 
 Use it to replace demo data with a client's actual numbers before a
 walkthrough, or to migrate a team for real at cutover.

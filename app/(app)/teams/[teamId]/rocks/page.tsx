@@ -6,7 +6,11 @@ import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
 import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
-import { isTeamRock } from "./rock-type";
+import {
+  DEPARTMENT_SECTION_TITLE,
+  isDepartmentRock,
+  isSharedDepartmentOwner,
+} from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
 
@@ -105,7 +109,8 @@ export default async function RocksPage({
       archived_at: x.archived_at ?? null,
     };
   });
-  // Archive surface exists (Feature 5c); no auto-archive path for rocks yet.
+  // Active/Archived tabs; Monday CF moves Done rocks (completed_at before
+  // this week's Monday) onto Archived.
   const activeRockCount = allRocksRaw.filter((r) => r.archived_at == null)
     .length;
   const archivedRockCount = allRocksRaw.filter((r) => r.archived_at != null)
@@ -183,8 +188,9 @@ export default async function RocksPage({
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  // All view: Team section first, then members A–Z, then owners no longer on
-  // the roster. L10 is Team → speaker order (see segment-rocks.tsx).
+  // All view: Department section first (shared ownership + Level=Department
+  // rocks, even when a person is accountable), then members A–Z, then owners
+  // no longer on the roster. L10 matches (see segment-rocks.tsx).
   type RockWithId = { id: string } & RockDoc;
   type RockGroup = {
     key: string;
@@ -194,6 +200,8 @@ export default async function RocksPage({
 
   function buildSections(rocks: RockWithId[]): RockGroup[] {
     if (filter !== "all") {
+      // Person filter: their individual/company rocks + any they own that
+      // aren't in the shared department bucket for this view.
       const list = rocks.filter((r) => r.owner_id === filter);
       if (list.length === 0) return [];
       return [
@@ -201,11 +209,11 @@ export default async function RocksPage({
       ];
     }
 
-    const teamRocks: RockWithId[] = [];
+    const deptRocks: RockWithId[] = [];
     const byOwner = new Map<string, RockWithId[]>();
     for (const r of rocks) {
-      if (isTeamRock(r.owner_id)) {
-        teamRocks.push(r);
+      if (isDepartmentRock(r)) {
+        deptRocks.push(r);
         continue;
       }
       const id = r.owner_id as string;
@@ -215,8 +223,12 @@ export default async function RocksPage({
     }
 
     const groups: RockGroup[] = [];
-    if (teamRocks.length > 0) {
-      groups.push({ key: "team", title: "Team", rocks: sortRocks(teamRocks) });
+    if (deptRocks.length > 0) {
+      groups.push({
+        key: "department",
+        title: DEPARTMENT_SECTION_TITLE,
+        rocks: sortRocks(deptRocks),
+      });
     }
 
     const named = [...members].sort((a, b) =>
@@ -264,8 +276,8 @@ export default async function RocksPage({
           <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
           <p className="mt-1 text-sm text-zinc-500">
             {showArchived
-              ? "Archived rocks will appear here. Auto-archive is not enabled yet — path ships later."
-              : "Quarterly priorities. Archive tab is ready; moving rocks into archive comes later."}
+              ? "Done rocks move here after the Monday archive sweep (completed before this week)."
+              : "Quarterly priorities. Mark a rock Done — it stays on Active until next Monday’s archive sweep."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -322,7 +334,7 @@ export default async function RocksPage({
             <EmptyState
               icon={Archive}
               title="No archived rocks"
-              hint="Rocks archive is ready for browsing. An archive path (manual or auto) will land in a later pass."
+              hint="Nothing archived yet. Rocks marked Done before this week’s Monday land here after the overnight sweep."
             />
           ) : (
             <Empty>{emptyMessage}</Empty>
@@ -338,7 +350,9 @@ export default async function RocksPage({
                 userId={uid}
                 rock={r}
                 ownerName={
-                  isTeamRock(r.owner_id) ? "Team" : ownerName(r.owner_id)
+                  isSharedDepartmentOwner(r.owner_id)
+                    ? DEPARTMENT_SECTION_TITLE
+                    : ownerName(r.owner_id)
                 }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}

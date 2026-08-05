@@ -26,6 +26,7 @@ export async function setRockType(
 
 // Atomic: writes the new status onto the rock AND appends an immutable history
 // entry to rock_status_updates. Off-track always requires a "why" comment.
+// Done stamps completed_at (Monday archive sweep clock); leaving Done clears it.
 export async function setRockStatus(
   teamId: string,
   rockId: string,
@@ -39,10 +40,23 @@ export async function setRockStatus(
   }
 
   const { uid, db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
+  const rockSnap = await requireTeamDoc(db, "rocks", rockId, teamId);
+  const prevStatus = String(rockSnap.data()?.status ?? "");
+
+  // Monday worker archives status=done with completed_at before this week's
+  // Monday 00:00. Stamp completed_at only on the transition into Done (don't
+  // reset the clock if they re-save Done). Leaving Done clears it.
+  const rockPatch: Record<string, unknown> = { status };
+  if (status === "done") {
+    if (prevStatus !== "done") {
+      rockPatch.completed_at = FieldValue.serverTimestamp();
+    }
+  } else {
+    rockPatch.completed_at = null;
+  }
 
   const batch = db.batch();
-  batch.update(db.collection("rocks").doc(rockId), { status });
+  batch.update(db.collection("rocks").doc(rockId), rockPatch);
   batch.set(db.collection("rock_status_updates").doc(), {
     rock_id: rockId,
     team_id: teamId,
@@ -149,7 +163,7 @@ function milestoneDoc(
 }
 
 // The fields both save paths read off the modal's FormData. Owner = "team"
-// → null owner_id (Team Rocks section); else a person, defaulting to me.
+// → null owner_id (Department section); else a person, defaulting to me.
 function parseRockFields(formData: FormData, uid: string) {
   const title = String(formData.get("title") ?? "").trim();
   // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
@@ -195,10 +209,14 @@ export async function createRockWithMilestones(
     description,
     rock_type,
     status: "on_track",
+    completed_at: null,
+    // Explicit null so the Monday sweep's `archived_at == null` equality
+    // filter matches (Firestore never matches a missing field).
+    archived_at: null,
     created_at: FieldValue.serverTimestamp(),
   });
-  // A milestone is a todo, and a todo needs a person: Team-owned rocks fall
-  // back to whoever created it.
+  // A milestone is a todo, and a todo needs a person: department-shared rocks
+  // fall back to whoever created it.
   for (const m of milestones) {
     batch.set(
       db.collection("todos").doc(),

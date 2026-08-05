@@ -10,7 +10,13 @@ import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
-import { isTeamRock, normalizeRockType, ROCK_TYPE_LABELS, ROCK_TYPE_STYLES } from "./rock-type";
+import {
+  DEPARTMENT_SECTION_TITLE,
+  isSharedDepartmentOwner,
+  normalizeRockType,
+  ROCK_TYPE_LABELS,
+  ROCK_TYPE_STYLES,
+} from "./rock-type";
 import { STATUS_BAR, isRockStatus, type RockStatus } from "./status";
 import {
   MilestoneChecklist,
@@ -68,7 +74,9 @@ export function RockRow({
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   const type = normalizeRockType(rock.rock_type);
-  const displayOwner = isTeamRock(rock.owner_id) ? "Team" : ownerName;
+  const displayOwner = isSharedDepartmentOwner(rock.owner_id)
+    ? DEPARTMENT_SECTION_TITLE
+    : ownerName;
   const doneCount = milestones.filter((m) => m.completed).length;
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());

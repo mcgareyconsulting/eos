@@ -11,7 +11,11 @@ import {
   ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { isTeamRock } from "../../rocks/rock-type";
+import {
+  DEPARTMENT_SECTION_TITLE,
+  isDepartmentRock,
+  isSharedDepartmentOwner,
+} from "../../rocks/rock-type";
 import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
@@ -63,8 +67,8 @@ type RockGroup = {
   rocks: RockDoc[];
   absent: boolean;
   isCurrentSpeaker: boolean;
-  /** Team-level section (Team Rocks) — not tied to the speaking rail. */
-  isTeamSection: boolean;
+  /** Department section (shared + Level=Department) — not on the speaking rail. */
+  isDepartmentSection: boolean;
 };
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
@@ -86,9 +90,11 @@ function sortRocks(rocks: RockDoc[]): RockDoc[] {
   });
 }
 
-// L10 Rocks: Team section first, then person sections.
+// L10 Rocks: Department section first, then person sections.
 // Order = present members in speaking order, then absentees (dimmed) so an
 // absent owner never sits above someone still in the room (matches rail).
+// Department-typed rocks (Level = Department) live in the Department section
+// even when a person is accountable.
 function groupRocksForMeeting(
   rocks: RockDoc[],
   members: Member[],
@@ -96,22 +102,22 @@ function groupRocksForMeeting(
   absent: Set<string>,
   currentSpeaker: string | null,
 ): RockGroup[] {
-  const teamRocks: RockDoc[] = [];
+  const deptRocks: RockDoc[] = [];
   const personal: RockDoc[] = [];
   for (const r of rocks) {
-    if (isTeamRock(r.owner_id)) teamRocks.push(r);
+    if (isDepartmentRock(r)) deptRocks.push(r);
     else personal.push(r);
   }
 
   const groups: RockGroup[] = [];
-  if (teamRocks.length > 0) {
+  if (deptRocks.length > 0) {
     groups.push({
-      key: "team",
-      title: "Team",
-      rocks: sortRocks(teamRocks),
+      key: "department",
+      title: DEPARTMENT_SECTION_TITLE,
+      rocks: sortRocks(deptRocks),
       absent: false,
       isCurrentSpeaker: false,
-      isTeamSection: true,
+      isDepartmentSection: true,
     });
   }
 
@@ -139,7 +145,7 @@ function groupRocksForMeeting(
       rocks: sortRocks(list),
       absent: absent.has(uid),
       isCurrentSpeaker: uid === currentSpeaker,
-      isTeamSection: false,
+      isDepartmentSection: false,
     });
   }
 
@@ -160,7 +166,7 @@ function groupRocksForMeeting(
       rocks: sortRocks(list),
       absent: absent.has(uid),
       isCurrentSpeaker: uid === currentSpeaker,
-      isTeamSection: false,
+      isDepartmentSection: false,
     });
   }
 
@@ -360,7 +366,7 @@ export function SegmentRocks({
                   : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
               }
             >
-              {g.isTeamSection ? (
+              {g.isDepartmentSection ? (
                 <Users className="h-3.5 w-3.5" />
               ) : (
                 initials(g.title) || "?"
@@ -390,7 +396,12 @@ export function SegmentRocks({
                 userId={userId}
                 rock={r}
                 ownerName={
-                  isTeamRock(r.owner_id) ? "Team" : (g.isTeamSection ? "Team" : g.title)
+                  isSharedDepartmentOwner(r.owner_id)
+                    ? DEPARTMENT_SECTION_TITLE
+                    : g.isDepartmentSection
+                      ? members.find((m) => m.user_id === r.owner_id)
+                          ?.full_name ?? DEPARTMENT_SECTION_TITLE
+                      : g.title
                 }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}

@@ -1,5 +1,5 @@
-// CSV importer — seeds real client data (scorecard, rocks, milestones) into a
-// team, from ninety.io-style exports or any spreadsheet with the same columns.
+// CSV importer CLI — seeds real client data into a team from ninety.io-style
+// exports (or any spreadsheet with the same columns).
 //
 // Usage:
 //   pnpm import:csv --team "Leadership Team" \
@@ -8,74 +8,28 @@
 //     --milestones ~/Downloads/milestones.csv \
 //     --dry-run
 //
-// Options:
-//   --team <name|id>     Target team. Matched by doc id first, then by name.  [required]
-//   --create-team        Create the team when the name doesn't exist yet.
-//   --leader <email|uid> Add this account to the team as leader (your login).
-//   --leader-name <name> Make the member behind this CSV Owner name the leader —
-//                        for a leader who hasn't signed in yet, so has no account.
-//   --member <email|uid> Add this account as a member. Repeatable.
-//   --scorecard <file>   Scorecard export (wide: one column per week).
-//   --rocks <file>       Rocks export.
-//   --milestones <file>  Milestones export (linked to rocks by "Rock Name").
-//   --todos <file>       Standalone to-dos (not tied to a rock).
-//   --issues <file>      Issues export (short-term + long-term; .xlsx can be multi-sheet).
-//   --headlines <file>   Headlines + Cascading Messages (multi-sheet .xlsx OK).
-//   --as-of <YYYY-MM-DD> Anchor for undated week headers ("Jul 27 - Aug 2").
-//                        Defaults to today; set it when importing a stale export.
-//   --dry-run            Parse, resolve, and report. Writes nothing.
-//   --owner-alias "CSV Name=email|uid"
-//                        Pin one CSV owner name to a specific account. Repeatable.
-//   --owner-fallback <email|uid|name>
-//                        Assign unmatched owners to this existing member instead
-//                        of creating a placeholder for them.
-//   --no-create-owners   Never create placeholder members; skip rows whose owner
-//                        can't be resolved (unless --owner-fallback is set).
-//   --include-archived   Import rows the export marks archived — scorecard rows
-//                        whose Status says archived/inactive, and to-dos or
-//                        milestones carrying an "Archived Date".
-//   --completed-since <YYYY-MM-DD>
-//                        Back-import cutoff: drop to-dos/milestones completed
-//                        before this date. Open rows always import, however old.
-//   --rock-team <value>  Import only rocks/milestones whose "Team" column matches.
-//
-// Standing up a fresh team from an export, with you on it:
-//   pnpm import:csv --team "Enterprise Systems & Data" --create-team \
-//     --leader you@example.com --rocks rocks.csv --milestones milestones.csv
-//
-// Re-runnable: every imported doc gets a deterministic id derived from the team
-// and the row's natural key (metric name / rock title / rock+milestone title),
-// so importing a corrected file updates rows in place instead of duplicating
-// them. Rows the app already had (created in-app, auto-id) are left alone.
+// Core parsing + Firestore writes live in lib/team-import.ts so the in-app
+// Import page can share the same engine.
 
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { readFileSync } from "node:fs";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import type { DocumentData, Firestore, WriteBatch } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";
-import { currentQuarter, endOfQuarter, toDateString } from "../lib/dates";
-import {
-  cell,
-  importDocId,
-  inferUnit,
-  normalizeKey,
-  normalizePersonKey,
-  normalizeQuarter,
-  normalizeDescription,
-  normalizeRockStatus,
-  normalizeRockType,
-  parseDateOnly,
-  parseDelimited,
-  parseGoal,
-  parseNumericValue,
-  parseWeekHeader,
-  slugify,
-  toTable,
-  type CsvTable,
-} from "../lib/csv-import";
+import { normalizePersonKey } from "../lib/csv-import";
 import { pickSheet, readXlsx } from "../lib/xlsx";
+import {
+  headlineTablesFromBytes,
+  issueTablesFromBytes,
+  loadMembers,
+  preferRegexForKind,
+  runTeamImport,
+  tableFromBytes,
+  Writer,
+  type Member,
+  type TeamImportInputs,
+} from "../lib/team-import";
 
 // ---------------------------------------------------------------------------
 // Args
@@ -112,15 +66,12 @@ type Args = {
 };
 
 function parseArgs(argv: string[]): Args {
-  // Values accumulate per key so repeatable flags (--owner-alias) work.
   const flags = new Map<string, (string | true)[]>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith("--")) continue;
     const key = a.slice(2);
     const next = argv[i + 1];
-    // `next !== undefined`, not `next` — `--database ""` (meaning "the default
-    // database") passes an empty string, which is a value, not an absent one.
     const value: string | true =
       next !== undefined && !next.startsWith("--") ? next : true;
     if (typeof value === "string") i++;
@@ -150,9 +101,6 @@ function parseArgs(argv: string[]): Args {
     process.exit(1);
   }
 
-  // Compared as a plain YYYY-MM-DD string against parseDateOnly output, so it
-  // has to be exactly that shape — a Date parse would accept "Jan 2024" and
-  // then compare wrong.
   const completedSince = str("completed-since") ?? null;
   if (completedSince && !/^\d{4}-\d{2}-\d{2}$/.test(completedSince)) {
     console.error(`--completed-since must be YYYY-MM-DD (got "${completedSince}")`);
@@ -204,967 +152,26 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-// Accepts .csv, .tsv, or .xlsx. Ninety exports Rocks and Milestones as one
-// two-sheet workbook, so an .xlsx picks its sheet by name (`--*-sheet`), else
-// the first sheet whose name looks right, else the first sheet.
-function readTable(path: string, prefer: RegExp, sheetName?: string): CsvTable {
-  let rows: string[][];
-  let label = path;
-
+function readFileTable(
+  path: string,
+  kind: "scorecard" | "rocks" | "milestones" | "todos",
+  sheetName?: string,
+) {
+  const buf = readFileSync(path);
   if (/\.xlsx$/i.test(path)) {
-    const sheets = readXlsx(readFileSync(path));
-    const sheet = pickSheet(sheets, sheetName, prefer);
-    rows = sheet.rows;
-    label = `${path} [${sheet.name}]`;
+    const sheets = readXlsx(buf);
+    const sheet = pickSheet(sheets, sheetName, preferRegexForKind(kind));
     console.log(
       `  reading "${sheet.name}" of ${sheets.length} sheet(s): ${sheets.map((s) => s.name).join(", ")}`,
     );
-  } else {
-    rows = parseDelimited(readFileSync(path, "utf8"));
   }
-
-  const table = toTable(rows);
-  if (table.rows.length === 0) console.warn(`⚠ ${label} has no data rows.`);
+  const table = tableFromBytes(buf, path, preferRegexForKind(kind), sheetName);
+  if (table.rows.length === 0) console.warn(`⚠ ${path} has no data rows.`);
   return table;
 }
 
-// Ninety's issues export is a two-sheet workbook (Short-Term + Long-Term). When
-// no sheet is named, import every sheet that looks like issues (or all sheets
-// if none match the name heuristic).
-function readIssueTables(path: string, sheetName?: string): CsvTable[] {
-  if (!/\.xlsx$/i.test(path)) {
-    return [readTable(path, /issue|short|long/i, sheetName)];
-  }
-
-  const sheets = readXlsx(readFileSync(path));
-  if (sheetName) {
-    return [readTable(path, /issue|short|long/i, sheetName)];
-  }
-
-  const prefer = /issue|short.?term|long.?term/i;
-  const picked = sheets.filter((s) => prefer.test(s.name));
-  const use = picked.length > 0 ? picked : sheets;
-  console.log(
-    `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
-      (picked.length === 0 ? " (no issue-named sheets; using all)" : ""),
-  );
-
-  return use.map((sheet) => {
-    const table = toTable(sheet.rows);
-    if (table.rows.length === 0) {
-      console.warn(`⚠ ${path} [${sheet.name}] has no data rows.`);
-    }
-    // Stash the sheet name so Type can fall back to it when the Type cell is blank.
-    (table as CsvTable & { sheetName?: string }).sheetName = sheet.name;
-    return table;
-  });
-}
-
-function normalizeIssueType(
-  raw: string,
-  sheetName?: string,
-): "short" | "long" {
-  const s = (raw || sheetName || "").trim().toLowerCase();
-  if (/^long/.test(s) || s.includes("long-term") || s.includes("long term")) {
-    return "long";
-  }
-  return "short";
-}
-
-function normalizeIssuePriority(
-  raw: string,
-): "urgent" | "high" | "medium" | "low" | null {
-  const s = (raw ?? "").trim().toLowerCase();
-  if (!s) return null;
-  if (/urgent|critical|p0/.test(s)) return "urgent";
-  if (/^high|p1/.test(s)) return "high";
-  if (/^med|p2/.test(s)) return "medium";
-  if (/^low|p3/.test(s)) return "low";
-  return null;
-}
-
-function normalizeIssueStatus(
-  raw: string,
-  completedOn: string | null,
-): "open" | "solving" | "solved" | "dropped" {
-  const s = (raw ?? "").trim().toLowerCase().replace(/[-_]/g, " ");
-  if (/solv(ed|e)|done|complete|closed|resolved/.test(s) && !/solving|in progress/.test(s)) {
-    return "solved";
-  }
-  if (/drop|archiv|cancel|abandon|deleted/.test(s)) return "dropped";
-  if (/solving|in progress|ids|discuss/.test(s)) return "solving";
-  if (completedOn) return "solved";
-  return "open";
-}
-
-// ---------------------------------------------------------------------------
-// Batched writes (Firestore caps a batch at 500 ops)
-// ---------------------------------------------------------------------------
-
-class Writer {
-  private batch: WriteBatch;
-  private pending = 0;
-  written = 0;
-
-  constructor(
-    private db: Firestore,
-    private dryRun: boolean,
-  ) {
-    this.batch = db.batch();
-  }
-
-  async set(path: [string, string], data: DocumentData) {
-    this.written++;
-    if (this.dryRun) return;
-    this.batch.set(this.db.collection(path[0]).doc(path[1]), data, { merge: true });
-    if (++this.pending >= 400) await this.flush();
-  }
-
-  async flush() {
-    if (this.dryRun || this.pending === 0) return;
-    await this.batch.commit();
-    this.batch = this.db.batch();
-    this.pending = 0;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Owner resolution
-// ---------------------------------------------------------------------------
-
-type Member = { user_id: string; names: string[] };
-
-// Builds a lookup from every handle a member might appear under in an export:
-// display name, "First Last", email, and the email's local part.
-async function loadMembers(db: Firestore, teamId: string): Promise<Member[]> {
-  const membersSnap = await db
-    .collection("team_members")
-    .where("team_id", "==", teamId)
-    .get();
-  const ids = membersSnap.docs.map((d) => d.data().user_id as string);
-  if (ids.length === 0) return [];
-
-  const userDocs = await db.getAll(...ids.map((id) => db.collection("users").doc(id)));
-  return ids.map((id, i) => {
-    const data = userDocs[i]?.data() ?? {};
-    const first = (data.first_name as string) ?? "";
-    const last = (data.last_name as string) ?? "";
-    const email = (data.email as string) ?? "";
-    const names = [
-      data.display_name as string,
-      `${first} ${last}`.trim(),
-      email,
-      email.includes("@") ? email.split("@")[0].replace(/[._]/g, " ") : "",
-      id,
-    ].filter((n): n is string => !!n && n.trim() !== "");
-    return { user_id: id, names };
-  });
-}
-
-class OwnerResolver {
-  private index = new Map<string, string>();
-  private cache = new Map<string, string | null>();
-  created: { user_id: string; name: string }[] = [];
-  unresolved = new Set<string>();
-
-  constructor(
-    private teamId: string,
-    members: Member[],
-    private opts: {
-      createOwners: boolean;
-      fallbackId: string | null;
-      aliases?: Map<string, string>;
-      writer: Writer;
-    },
-  ) {
-    for (const m of members) {
-      for (const n of m.names) {
-        const key = normalizePersonKey(n);
-        if (key && !this.index.has(key)) this.index.set(key, m.user_id);
-      }
-    }
-  }
-
-  // Read-only lookup of an already-known name (a member, an alias target, or a
-  // placeholder created earlier this run). Never creates anything.
-  lookup(name: string): string | null {
-    const key = normalizePersonKey(name);
-    return this.opts.aliases?.get(key) ?? this.index.get(key) ?? null;
-  }
-
-  // Returns a uid, or null when the row should be skipped. Placeholder members
-  // get an `import-` prefixed id (mirroring the seed script's `demo-` prefix)
-  // so they're obvious in team-info output and easy to clean up later.
-  async resolve(rawName: string): Promise<string | null> {
-    const raw = (rawName ?? "").trim();
-    if (!raw) return this.opts.fallbackId;
-
-    const key = normalizePersonKey(raw);
-    if (this.cache.has(key)) return this.cache.get(key)!;
-
-    let uid = this.opts.aliases?.get(key) ?? this.index.get(key) ?? null;
-
-    // Last-name-only or first-name-only cells ("Sarah") match when unambiguous.
-    if (!uid && !key.includes(" ")) {
-      const partial = [...this.index.entries()].filter(([k]) =>
-        k.split(" ").includes(key),
-      );
-      if (partial.length === 1) uid = partial[0][1];
-    }
-
-    if (!uid && this.opts.createOwners) {
-      uid = `import-${slugify(raw, 32)}`;
-      const [first, ...rest] = raw.split(/\s+/);
-      await this.opts.writer.set(
-        ["users", uid],
-        {
-          display_name: raw,
-          first_name: first ?? raw,
-          last_name: rest.join(" ") || null,
-          email: null,
-          created_via: "csv-import",
-        },
-      );
-      await this.opts.writer.set(
-        ["team_members", `${this.teamId}__${uid}`],
-        {
-          team_id: this.teamId,
-          user_id: uid,
-          role: "member",
-          created_at: FieldValue.serverTimestamp(),
-        },
-      );
-      this.index.set(key, uid);
-      this.created.push({ user_id: uid, name: raw });
-    }
-
-    if (!uid) {
-      uid = this.opts.fallbackId;
-      if (!uid) this.unresolved.add(raw);
-    }
-
-    this.cache.set(key, uid);
-    return uid;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Scorecard
-// ---------------------------------------------------------------------------
-
-async function importScorecard(
-  table: CsvTable,
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    asOf: Date;
-    includeArchived: boolean;
-    existingIds: Set<string>;
-  },
-) {
-  const weekColumns = table.headers
-    .map((h) => ({ header: h, week: parseWeekHeader(h, ctx.asOf) }))
-    .filter((c): c is { header: string; week: string } => c.week !== null);
-
-  if (weekColumns.length === 0) {
-    console.warn(
-      "⚠ scorecard: no week columns recognized. Expected headers like " +
-        '"Jul 27 - Aug 2" or "7/27/2026" — metrics will import with no history.',
-    );
-  }
-
-  let metrics = 0;
-  let entries = 0;
-  let skipped = 0;
-
-  for (const [i, row] of table.rows.entries()) {
-    const name = cell(row, table.headers, "Title", "Name", "Metric", "Measurable");
-    if (!name) {
-      skipped++;
-      continue;
-    }
-
-    const status = cell(row, table.headers, "Status");
-    if (!ctx.includeArchived && /archiv|inactive|paused|deleted/i.test(status)) {
-      skipped++;
-      continue;
-    }
-
-    const goalRaw = cell(row, table.headers, "Goal", "Target");
-    const parsed = parseGoal(goalRaw);
-    const sampleValues = weekColumns.map((c) => row[c.header] ?? "");
-    const unit = inferUnit(parsed.unit, sampleValues);
-
-    const ownerId = await ctx.owners.resolve(
-      cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
-    );
-    if (ownerId === null) {
-      skipped++;
-      continue;
-    }
-
-    const metricId = importDocId("metric", ctx.teamId, name);
-    const isNew = !ctx.existingIds.has(metricId);
-
-    await ctx.writer.set(["scorecard_metrics", metricId], {
-      team_id: ctx.teamId,
-      name,
-      unit,
-      goal: parsed.goal,
-      direction: parsed.direction,
-      owner_id: ownerId,
-      group: cell(row, table.headers, "Group Name", "Group", "Section") || null,
-      // ninety weekly exports → weekly; other cadences need a dedicated column later.
-      interval: "weekly",
-      // Not rendered today; kept so the note survives if the UI grows a field.
-      description:
-        normalizeDescription(cell(row, table.headers, "Description")) || null,
-      sort_order: i,
-      import_source: "csv",
-      ...(isNew ? { created_at: FieldValue.serverTimestamp() } : {}),
-    });
-    metrics++;
-
-    for (const col of weekColumns) {
-      const value = parseNumericValue(row[col.header] ?? "");
-      if (value === null) continue; // blank week — leave the cell empty
-      await ctx.writer.set(["scorecard_entries", `${metricId}__${col.week}`], {
-        metric_id: metricId,
-        week_start_date: col.week,
-        value,
-        note: null,
-        import_source: "csv",
-        created_at: FieldValue.serverTimestamp(),
-      });
-      entries++;
-    }
-  }
-
-  const weekRange = weekColumns.length
-    ? ` (${weekColumns[weekColumns.length - 1].week} → ${weekColumns[0].week})`
-    : "";
-  console.log(
-    `  scorecard: ${metrics} metrics, ${entries} weekly entries across ${weekColumns.length} week columns${weekRange}` +
-      (skipped ? `, ${skipped} rows skipped` : ""),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Rocks
-// ---------------------------------------------------------------------------
-
-async function importRocks(
-  table: CsvTable,
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    existingIds: Set<string>;
-    rockTeam?: string;
-  },
-): Promise<Map<string, string>> {
-  const rockIdByTitle = new Map<string, string>();
-  const teamValues = new Set<string>();
-  let imported = 0;
-  let skipped = 0;
-  let attachments = 0;
-
-  for (const row of table.rows) {
-    const title = cell(row, table.headers, "Title", "Name", "Rock", "Rock Name");
-    if (!title) {
-      skipped++;
-      continue;
-    }
-
-    const rowTeam = cell(row, table.headers, "Team");
-    if (rowTeam) teamValues.add(rowTeam);
-    if (ctx.rockTeam && normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)) {
-      skipped++;
-      continue;
-    }
-
-    const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed", "Completed Date"));
-    const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
-    const createdDate = parseDateOnly(cell(row, table.headers, "Created Date", "Created"));
-    const status = normalizeRockStatus(cell(row, table.headers, "Status"), completedOn);
-
-    const ownerId = await ctx.owners.resolve(
-      cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
-    );
-    if (ownerId === null) {
-      skipped++;
-      continue;
-    }
-
-    if (cell(row, table.headers, "Attachment Names", "Attachments")) attachments++;
-
-    const rockId = importDocId("rock", ctx.teamId, title);
-    const isNew = !ctx.existingIds.has(rockId);
-
-    await ctx.writer.set(["rocks", rockId], {
-      team_id: ctx.teamId,
-      title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description")) || null,
-      status,
-      rock_type: normalizeRockType(cell(row, table.headers, "Level", "Type", "Rock Type")),
-      quarter:
-        normalizeQuarter(cell(row, table.headers, "Quarter"), dueDate) ?? currentQuarter(),
-      owner_id: ownerId,
-      due_date: dueDate ?? toDateString(endOfQuarter()),
-      completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
-      // No attachments feature yet — the source link is kept so the reference
-      // isn't lost when the client's ninety account goes away.
-      source_link: cell(row, table.headers, "Link", "URL") || null,
-      import_source: "csv",
-      ...(isNew
-        ? {
-            created_at: createdDate
-              ? Timestamp.fromDate(new Date(`${createdDate}T00:00:00`))
-              : FieldValue.serverTimestamp(),
-          }
-        : {}),
-    });
-
-    rockIdByTitle.set(normalizeKey(title), rockId);
-    imported++;
-  }
-
-  console.log(
-    `  rocks: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}` +
-      (attachments ? `  (${attachments} rows had attachments — not imported, no attachments feature yet)` : ""),
-  );
-  if (!ctx.rockTeam && teamValues.size > 1) {
-    console.warn(
-      `  ⚠ rocks span ${teamValues.size} teams in the file (${[...teamValues].join(", ")}). ` +
-        `All landed on the target team — re-run with --rock-team "<value>" to split them.`,
-    );
-  }
-
-  return rockIdByTitle;
-}
-
-// ---------------------------------------------------------------------------
-// Shared row helpers for the to-do-shaped exports (milestones + to-dos)
-// ---------------------------------------------------------------------------
-
-// ninety.io exports carry archived rows inline, marked only by a non-empty
-// "Archived Date" — there's no Status column to key off the way the scorecard
-// has. An archived to-do has no completion date either, so importing it lands
-// it in the *open* list forever and buries the live items under dead ones.
-function isArchived(row: Record<string, string>, headers: string[]): boolean {
-  const archivedOn = cell(row, headers, "Archived Date", "Archived On", "Archived");
-  if (archivedOn) return true;
-  return /archiv|deleted/i.test(cell(row, headers, "Status"));
-}
-
-// History cutoff for a back-import. Only *completed* rows are subject to it —
-// an old open to-do is still live work and always comes in. Both the To-Dos
-// page and the live L10 segment render the Done list unbounded and oldest
-// first, so importing years of closed rows pushes the real work off screen.
-function isStaleCompletion(completedOn: string | null, since: string | null): boolean {
-  return !!since && !!completedOn && completedOn < since;
-}
-
-// Does a Repeat cell describe an actual schedule? The column is populated even
-// for one-off items — ninety writes the literal "Don't repeat" — so a mere
-// non-empty check reports every to-do as recurring and the warning becomes
-// noise. Apostrophes are stripped before matching because exports mix straight
-// and curly ones.
-function isRecurring(raw: string): boolean {
-  const s = raw
-    .toLowerCase()
-    .replace(/[''`‘’]/g, "")
-    .replace(/[\s_-]+/g, " ")
-    .trim();
-  if (!s) return false;
-  return !/^(no|none|never|off|one time|no repeat|dont repeat|doesnt repeat|does not repeat|do not repeat)$/.test(
-    s,
-  );
-}
-
-// Use the export's own creation date when it has one, so age and "created"
-// ordering survive the import. Falls back to the server clock for new docs.
-function createdAtFrom(row: Record<string, string>, headers: string[]) {
-  const created = parseDateOnly(cell(row, headers, "Created Date", "Created On", "Created"));
-  return created
-    ? Timestamp.fromDate(new Date(`${created}T00:00:00`))
-    : FieldValue.serverTimestamp();
-}
-
-// ---------------------------------------------------------------------------
-// Milestones (todos with source_rock_id)
-// ---------------------------------------------------------------------------
-
-async function importMilestones(
-  table: CsvTable,
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    existingIds: Set<string>;
-    rockIdByTitle: Map<string, string>;
-    rockTeam?: string;
-    includeArchived: boolean;
-    completedSince: string | null;
-  },
-) {
-  let imported = 0;
-  let skipped = 0;
-  let archived = 0;
-  let stale = 0;
-  const missingRocks = new Set<string>();
-
-  for (const row of table.rows) {
-    const title = cell(row, table.headers, "Title", "Name", "Milestone");
-    const rockName = cell(row, table.headers, "Rock Name", "Rock", "Parent Rock");
-    if (!title) {
-      skipped++;
-      continue;
-    }
-
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
-      archived++;
-      continue;
-    }
-
-    const rockId = ctx.rockIdByTitle.get(normalizeKey(rockName));
-    if (!rockId) {
-      missingRocks.add(rockName || "(blank)");
-      skipped++;
-      continue;
-    }
-
-    const ownerId = await ctx.owners.resolve(
-      cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
-    );
-    if (ownerId === null) {
-      skipped++;
-      continue;
-    }
-
-    const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
-    if (isStaleCompletion(completedOn, ctx.completedSince)) {
-      stale++;
-      continue;
-    }
-
-    const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
-    const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
-    const isNew = !ctx.existingIds.has(todoId);
-
-    await ctx.writer.set(["todos", todoId], {
-      team_id: ctx.teamId,
-      title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description")) || null,
-      owner_id: ownerId,
-      due_date: dueDate ?? toDateString(endOfQuarter()),
-      completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
-      visibility: "team",
-      source_issue_id: null,
-      source_meeting_id: null,
-      source_rock_id: rockId,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
-      import_source: "csv",
-      // Explicit null so the Monday sweep's `archived_at == null` equality
-      // filter matches (Firestore never matches a missing field). Only on
-      // new docs — a merge re-import must not un-archive an archived doc.
-      ...(isNew ? { archived_at: null } : {}),
-      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
-    });
-    imported++;
-  }
-
-  console.log(
-    `  milestones: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}` +
-      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
-      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
-  );
-  if (missingRocks.size > 0) {
-    console.warn(
-      `  ⚠ ${missingRocks.size} milestone(s) reference a rock that isn't in the target team:\n` +
-        [...missingRocks].map((r) => `      • ${r}`).join("\n") +
-        "\n      Import the rocks file in the same run (or first) so they can be linked.",
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// To-dos (standalone — same collection as milestones, but no source_rock_id)
-// ---------------------------------------------------------------------------
-
-async function importTodos(
-  table: CsvTable,
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    existingIds: Set<string>;
-    includeArchived: boolean;
-    completedSince: string | null;
-  },
-) {
-  let imported = 0;
-  let skipped = 0;
-  let archived = 0;
-  let stale = 0;
-  const recurring: string[] = [];
-
-  for (const row of table.rows) {
-    const title = cell(row, table.headers, "Title", "Name", "To-Do", "Todo", "Task");
-    if (!title) {
-      skipped++;
-      continue;
-    }
-
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
-      archived++;
-      continue;
-    }
-
-    // No recurrence in the data model — a repeating to-do imports as a single
-    // item on its next due date. Collected so the run reports what needs
-    // re-creating by hand rather than dropping it silently.
-    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
-    if (repeat && isRecurring(repeat)) {
-      recurring.push(`${title} (${repeat})`);
-    }
-
-    const ownerId = await ctx.owners.resolve(
-      cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
-    );
-    if (ownerId === null) {
-      skipped++;
-      continue;
-    }
-
-    const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
-    if (isStaleCompletion(completedOn, ctx.completedSince)) {
-      stale++;
-      continue;
-    }
-
-    const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
-    // Private to-dos are the owner's alone; anything else is visible to the
-    // team, which is what makes it show up in the L10 To-Dos segment.
-    const visibility = /^priv/i.test(cell(row, table.headers, "Visibility", "Private"))
-      ? "private"
-      : "team";
-
-    const todoId = importDocId("todo", ctx.teamId, title);
-    const isNew = !ctx.existingIds.has(todoId);
-
-    await ctx.writer.set(["todos", todoId], {
-      team_id: ctx.teamId,
-      title,
-      description:
-        normalizeDescription(
-          cell(row, table.headers, "Description", "Notes"),
-        ) || null,
-      owner_id: ownerId,
-      due_date: dueDate ?? toDateString(endOfQuarter()),
-      completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
-      visibility,
-      source_issue_id: null,
-      source_meeting_id: null,
-      source_rock_id: null,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
-      import_source: "csv",
-      // Explicit null for the sweep's equality filter; new docs only (see
-      // the milestone import above).
-      ...(isNew ? { archived_at: null } : {}),
-      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
-    });
-    imported++;
-  }
-
-  console.log(
-    `  to-dos: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}` +
-      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
-      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
-  );
-  if (recurring.length > 0) {
-    console.warn(
-      `  ⚠ ${recurring.length} to-do(s) repeat on a schedule, imported as one-offs:\n` +
-        recurring.map((r) => `      • ${r}`).join("\n"),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Headlines + Cascading Messages
-// ---------------------------------------------------------------------------
-
-// Ninety exports Headlines and Cascading Messages as one multi-sheet
-// workbook. Cascades from other teams (From = Transformation, etc.) still
-// land on this team's list so the L10 can surface org-wide messages; those
-// rows are marked broadcast so the UI shows them read-only.
-function normalizeHeadlineKind(
-  typeCell: string,
-  sheetName?: string,
-): "customer" | "employee" | "cascading" {
-  const s = `${typeCell} ${sheetName ?? ""}`.toLowerCase();
-  if (/cascad/.test(s)) return "cascading";
-  if (/customer|client|win/.test(s)) return "customer";
-  if (/employee|people|hr|staff/.test(s)) return "employee";
-  // Generic "Headlines" sheet → employee (team news), not customer wins.
-  return "employee";
-}
-
-function readHeadlineTables(path: string, sheetName?: string): CsvTable[] {
-  if (!/\.xlsx$/i.test(path)) {
-    return [readTable(path, /headline|cascad/i, sheetName)];
-  }
-  const sheets = readXlsx(readFileSync(path));
-  if (sheetName) {
-    return [readTable(path, /headline|cascad/i, sheetName)];
-  }
-  const prefer = /headline|cascad/i;
-  const picked = sheets.filter((s) => prefer.test(s.name));
-  const use = picked.length > 0 ? picked : sheets;
-  console.log(
-    `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
-      (picked.length === 0 ? " (no headline-named sheets; using all)" : ""),
-  );
-  return use.map((sheet) => {
-    const table = toTable(sheet.rows);
-    if (table.rows.length === 0) {
-      console.warn(`⚠ ${path} [${sheet.name}] has no data rows.`);
-    }
-    return Object.assign(table, { sheetName: sheet.name });
-  });
-}
-
-async function importHeadlines(
-  table: CsvTable & { sheetName?: string },
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    existingIds: Set<string>;
-    includeArchived: boolean;
-    rockTeam?: string;
-  },
-) {
-  let imported = 0;
-  let skipped = 0;
-  let archived = 0;
-  let broadcast = 0;
-  const sheetName = table.sheetName;
-
-  for (const row of table.rows) {
-    const title = cell(row, table.headers, "Title", "Name", "Headline");
-    if (!title) {
-      skipped++;
-      continue;
-    }
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
-      archived++;
-      continue;
-    }
-
-    const rowTeam = cell(row, table.headers, "Team");
-    if (
-      ctx.rockTeam &&
-      rowTeam &&
-      normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)
-    ) {
-      skipped++;
-      continue;
-    }
-
-    const kind = normalizeHeadlineKind(
-      cell(row, table.headers, "Type", "Kind", "Category"),
-      sheetName,
-    );
-
-    // Prefer resolving Owner to a team member; external cascade authors stay
-    // as display names (no placeholder members) so ESD doesn't fill with
-    // import-brian-otteman ghosts.
-    const ownerRaw = cell(
-      row,
-      table.headers,
-      "Owner",
-      "Owner Name",
-      "Accountable",
-      "From Name",
-    );
-    const createdBy = ownerRaw ? ctx.owners.lookup(ownerRaw) : null;
-    const fromLabel = cell(row, table.headers, "From", "Source", "Team From");
-    const cleanFrom =
-      fromLabel && fromLabel !== "-" && fromLabel.trim() ? fromLabel.trim() : null;
-
-    // Cascades whose owner isn't on this team are org-wide broadcast:
-    // visible here, not editable/deletable in the UI.
-    const isBroadcast = kind === "cascading" && !createdBy;
-
-    const bodyRaw = normalizeDescription(
-      cell(row, table.headers, "Description", "Notes", "Body", "Detail"),
-    );
-    let body = bodyRaw || null;
-    if (cleanFrom && isBroadcast) {
-      body = body
-        ? `From: ${cleanFrom}\n\n${body}`
-        : `From: ${cleanFrom}`;
-    }
-
-    const headlineId = importDocId(
-      "headline",
-      ctx.teamId,
-      `${kind}|${title}`,
-    );
-    const isNew = !ctx.existingIds.has(headlineId);
-
-    await ctx.writer.set(["headlines", headlineId], {
-      team_id: ctx.teamId,
-      title,
-      body,
-      kind,
-      created_by: createdBy,
-      // Empty = this team's own list; cascading still stored on the team that
-      // imported it so Firestore rules (member of team_id) allow the read.
-      target_team_ids: [] as string[],
-      from_label: cleanFrom,
-      source_owner_name: createdBy ? null : ownerRaw || null,
-      broadcast: isBroadcast,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
-      import_source: "csv",
-      // Explicit null for the sweep's equality filter; new docs only (see
-      // the milestone import above).
-      ...(isNew ? { archived_at: null } : {}),
-      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
-    });
-    imported++;
-    if (isBroadcast) broadcast++;
-  }
-
-  const label = sheetName ? `headlines [${sheetName}]` : "headlines";
-  console.log(
-    `  ${label}: ${imported} imported` +
-      (broadcast ? ` (${broadcast} broadcast / read-only)` : "") +
-      `${skipped ? `, ${skipped} skipped` : ""}` +
-      `${archived ? `, ${archived} archived` : ""}`,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Issues (short-term Issues list + long-term parking lot)
-// ---------------------------------------------------------------------------
-
-async function importIssues(
-  table: CsvTable,
-  ctx: {
-    teamId: string;
-    writer: Writer;
-    owners: OwnerResolver;
-    existingIds: Set<string>;
-    includeArchived: boolean;
-    completedSince: string | null;
-    sheetName?: string;
-  },
-) {
-  let imported = 0;
-  let skipped = 0;
-  let archived = 0;
-  let stale = 0;
-  let shortCount = 0;
-  let longCount = 0;
-
-  for (const row of table.rows) {
-    const title = cell(row, table.headers, "Title", "Name", "Issue");
-    if (!title) {
-      skipped++;
-      continue;
-    }
-
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
-      archived++;
-      continue;
-    }
-
-    const completedOn = parseDateOnly(
-      cell(row, table.headers, "Completed On", "Completed", "Resolved On"),
-    );
-    if (isStaleCompletion(completedOn, ctx.completedSince)) {
-      stale++;
-      continue;
-    }
-
-    const ownerId = await ctx.owners.resolve(
-      cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
-    );
-    if (ownerId === null) {
-      skipped++;
-      continue;
-    }
-
-    const type = normalizeIssueType(
-      cell(row, table.headers, "Type", "Term", "Horizon"),
-      ctx.sheetName,
-    );
-    const status = normalizeIssueStatus(
-      cell(row, table.headers, "Status"),
-      completedOn,
-    );
-    const priority = normalizeIssuePriority(
-      cell(row, table.headers, "Priority"),
-    );
-    const resolved = status === "solved" || status === "dropped";
-
-    // Natural key includes type so a short/long pair with the same title
-    // (rare, but possible after a promote) stay distinct docs.
-    const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
-    const isNew = !ctx.existingIds.has(issueId);
-
-    await ctx.writer.set(["issues", issueId], {
-      team_id: ctx.teamId,
-      title,
-      description:
-        normalizeDescription(
-          cell(row, table.headers, "Description", "Notes"),
-        ) || null,
-      owner_id: ownerId,
-      // Don't clobber live vote totals on re-import of an existing issue.
-      ...(isNew ? { votes: 0 } : {}),
-      type,
-      priority,
-      status,
-      resolved_at: resolved
-        ? completedOn
-          ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`))
-          : FieldValue.serverTimestamp()
-        : null,
-      resolution_todo_id: null,
-      source_meeting_id: null,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
-      import_source: "csv",
-      // Explicit null for the sweep's equality filter; new docs only (see
-      // the milestone import above).
-      ...(isNew ? { archived_at: null } : {}),
-      ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
-    });
-    imported++;
-    if (type === "long") longCount++;
-    else shortCount++;
-  }
-
-  const label = ctx.sheetName ? `issues [${ctx.sheetName}]` : "issues";
-  console.log(
-    `  ${label}: ${imported} imported (${shortCount} short, ${longCount} long)` +
-      `${skipped ? `, ${skipped} skipped` : ""}` +
-      `${archived ? `, ${archived} archived (use --include-archived to import)` : ""}` +
-      `${stale ? `, ${stale} completed before ${ctx.completedSince}` : ""}`,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 async function resolveTeam(
-  db: Firestore,
+  db: ReturnType<typeof getAdminDb>,
   teamArg: string,
   opts: { createTeam: boolean; dryRun: boolean },
 ): Promise<{ id: string; name: string; created: boolean }> {
@@ -1189,8 +196,6 @@ async function resolveTeam(
     process.exit(1);
   }
 
-  // Creating a team is opt-in: a typo'd --team should fail loudly, not quietly
-  // stand up "Enterprse Systems & Data" next to the real one.
   if (opts.createTeam) {
     const ref = db.collection("teams").doc();
     if (!opts.dryRun) {
@@ -1212,10 +217,6 @@ async function resolveTeam(
   process.exit(1);
 }
 
-// Attaches the operator's own account to the team as leader, resolving an email
-// through Firebase Auth so the membership lands on the uid they actually sign in
-// with. Mirrors `pnpm seed` — including the emulator carve-out, where there's no
-// real Google sign-in to do first.
 async function attachAccount(
   teamId: string,
   account: string,
@@ -1244,7 +245,6 @@ async function attachAccount(
       );
       process.exit(1);
     }
-    // A raw uid we couldn't look up — proceed with it as given.
   }
 
   const displayName = user?.displayName ?? user?.email ?? account;
@@ -1260,31 +260,18 @@ async function attachAccount(
     created_at: FieldValue.serverTimestamp(),
   });
 
-  console.log(`${role === "leader" ? "Leader" : "Member"}: ${user?.email ?? account} (uid ${uid})`);
+  console.log(
+    `${role === "leader" ? "Leader" : "Member"}: ${user?.email ?? account} (uid ${uid})`,
+  );
   return {
     user_id: uid,
     names: [displayName, user?.email ?? "", account].filter((n) => n && n.trim() !== ""),
   };
 }
 
-// Ids of docs this importer previously created for the team, so a re-import
-// preserves the original created_at instead of bumping it every run.
-async function loadExistingIds(db: Firestore, teamId: string, collections: string[]) {
-  const sets = await Promise.all(
-    collections.map(async (c) => {
-      const snap = await db.collection(c).where("team_id", "==", teamId).select().get();
-      return snap.docs.map((d) => d.id);
-    }),
-  );
-  return new Set(sets.flat());
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  // --project/--database override .env.local. Set before the admin SDK is
-  // touched (getAdminDb reads them lazily) so pointing at the trial project
-  // doesn't mean editing .env.local and remembering to put it back.
   if (args.project) process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = args.project;
   if (args.database !== undefined) process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID = args.database;
 
@@ -1292,7 +279,9 @@ async function main() {
   const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
   console.log(
     `\nProject: ${projectId ?? "(from credentials)"}   Database: ${databaseId || "(default)"}` +
-      (process.env.FIRESTORE_EMULATOR_HOST ? `   [EMULATOR ${process.env.FIRESTORE_EMULATOR_HOST}]` : ""),
+      (process.env.FIRESTORE_EMULATOR_HOST
+        ? `   [EMULATOR ${process.env.FIRESTORE_EMULATOR_HOST}]`
+        : ""),
   );
 
   const db = getAdminDb();
@@ -1306,17 +295,16 @@ async function main() {
       (args.dryRun ? "   [DRY RUN — nothing will be written]" : ""),
   );
 
-  const writer = new Writer(db, args.dryRun);
-
+  // Pre-attach leader/members so owner matching sees them (even in dry-run).
+  const preWriter = new Writer(db, args.dryRun);
   const members = await loadMembers(db, team.id);
-  // Injected into `members` rather than re-read: in a dry run the membership
-  // isn't written, and owner matching still needs to see them.
   const attach = async (account: string, role: "leader" | "member") => {
-    const m = await attachAccount(team.id, account, role, writer);
+    const m = await attachAccount(team.id, account, role, preWriter);
     if (!members.some((existing) => existing.user_id === m.user_id)) members.push(m);
   };
   if (args.leader) await attach(args.leader, "leader");
   for (const m of args.members) await attach(m, "member");
+  await preWriter.flush();
   console.log(`Members on this team: ${members.length}`);
 
   let fallbackId: string | null = null;
@@ -1330,8 +318,6 @@ async function main() {
     fallbackId = match.user_id;
   }
 
-  // --owner-alias "Dan McGarey=me@example.com": pins a CSV name onto a specific
-  // member, for when the export spells someone differently than their account.
   const aliases = new Map<string, string>();
   for (const raw of args.ownerAliases) {
     const [csvName, target] = raw.split("=").map((s) => s.trim());
@@ -1350,149 +336,133 @@ async function main() {
     aliases.set(normalizePersonKey(csvName), match.user_id);
   }
 
-  const owners = new OwnerResolver(team.id, members, {
-    createOwners: args.createOwners,
-    fallbackId,
-    aliases,
-    writer,
-  });
+  const inputs: TeamImportInputs = {};
 
-  const existingIds = await loadExistingIds(db, team.id, [
-    "scorecard_metrics",
-    "rocks",
-    "todos",
-    "issues",
-    "headlines",
-  ]);
+  if (args.scorecard) {
+    inputs.scorecard = {
+      table: readFileTable(args.scorecard, "scorecard", args.scorecardSheet),
+    };
+  }
+  if (args.rocks) {
+    inputs.rocks = { table: readFileTable(args.rocks, "rocks", args.rocksSheet) };
+  }
+  if (args.milestones) {
+    inputs.milestones = {
+      table: readFileTable(args.milestones, "milestones", args.milestonesSheet),
+    };
+  }
+  if (args.todos) {
+    inputs.todos = { table: readFileTable(args.todos, "todos", args.todosSheet) };
+  }
+  if (args.issues) {
+    const buf = readFileSync(args.issues);
+    if (/\.xlsx$/i.test(args.issues) && !args.issuesSheet) {
+      const sheets = readXlsx(buf);
+      const prefer = /issue|short.?term|long.?term/i;
+      const picked = sheets.filter((s) => prefer.test(s.name));
+      const use = picked.length > 0 ? picked : sheets;
+      console.log(
+        `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
+          (picked.length === 0 ? " (no issue-named sheets; using all)" : ""),
+      );
+    }
+    inputs.issues = {
+      tables: issueTablesFromBytes(buf, args.issues, args.issuesSheet),
+    };
+  }
+  if (args.headlines) {
+    const buf = readFileSync(args.headlines);
+    if (/\.xlsx$/i.test(args.headlines) && !args.headlinesSheet) {
+      const sheets = readXlsx(buf);
+      const prefer = /headline|cascad/i;
+      const picked = sheets.filter((s) => prefer.test(s.name));
+      const use = picked.length > 0 ? picked : sheets;
+      console.log(
+        `  reading ${use.length} of ${sheets.length} sheet(s): ${use.map((s) => s.name).join(", ")}` +
+          (picked.length === 0 ? " (no headline-named sheets; using all)" : ""),
+      );
+    }
+    inputs.headlines = {
+      tables: headlineTablesFromBytes(buf, args.headlines, args.headlinesSheet),
+    };
+  }
 
   console.log("");
-  if (args.scorecard) {
-    await importScorecard(readTable(args.scorecard, /scorecard|measurable|metric/i, args.scorecardSheet), {
-      teamId: team.id,
-      writer,
-      owners,
+  const report = await runTeamImport(
+    db,
+    team.id,
+    inputs,
+    {
+      dryRun: args.dryRun,
+      createOwners: args.createOwners,
+      fallbackOwnerId: fallbackId,
+      ownerAliases: aliases,
+      includeArchived: args.includeArchived,
+      completedSince: args.completedSince,
+      rockTeam: args.rockTeam,
       asOf: args.asOf,
-      includeArchived: args.includeArchived,
-      existingIds,
-    });
+    },
+    members,
+  );
+
+  for (const k of report.kinds) {
+    const extra = k.details.length ? `  (${k.details.join("; ")})` : "";
+    console.log(
+      `  ${k.label}: ${k.imported} imported${k.skipped ? `, ${k.skipped} skipped` : ""}${extra}`,
+    );
+    for (const w of k.warnings) console.warn(`  ⚠ ${w}`);
   }
 
-  // Rocks before milestones: milestones link by rock title, and the map is
-  // built from this run's rocks.
-  let rockIdByTitle = new Map<string, string>();
-  if (args.rocks) {
-    rockIdByTitle = await importRocks(readTable(args.rocks, /rock/i, args.rocksSheet), {
-      teamId: team.id,
-      writer,
-      owners,
-      existingIds,
-      rockTeam: args.rockTeam,
-    });
-  }
-
-  if (args.milestones) {
-    // Milestones can also attach to rocks already in the team (imported on an
-    // earlier run, or created in-app), so fold those titles in as well.
-    const existingRocks = await db.collection("rocks").where("team_id", "==", team.id).get();
-    for (const d of existingRocks.docs) {
-      const key = normalizeKey((d.data().title as string) ?? "");
-      if (key && !rockIdByTitle.has(key)) rockIdByTitle.set(key, d.id);
-    }
-
-    await importMilestones(readTable(args.milestones, /milestone/i, args.milestonesSheet), {
-      teamId: team.id,
-      writer,
-      owners,
-      existingIds,
-      rockIdByTitle,
-      rockTeam: args.rockTeam,
-      includeArchived: args.includeArchived,
-      completedSince: args.completedSince,
-    });
-  }
-
-  if (args.todos) {
-    await importTodos(readTable(args.todos, /to-?dos?|task/i, args.todosSheet), {
-      teamId: team.id,
-      writer,
-      owners,
-      existingIds,
-      includeArchived: args.includeArchived,
-      completedSince: args.completedSince,
-    });
-  }
-
-  if (args.issues) {
-    const tables = readIssueTables(args.issues, args.issuesSheet);
-    for (const table of tables) {
-      const sheetName = (table as CsvTable & { sheetName?: string }).sheetName;
-      await importIssues(table, {
-        teamId: team.id,
-        writer,
-        owners,
-        existingIds,
-        includeArchived: args.includeArchived,
-        completedSince: args.completedSince,
-        sheetName,
-      });
-    }
-  }
-
-  if (args.headlines) {
-    // --no-create-owners for cascade authors outside the team: lookup-only
-    // via owners.lookup; we never skip the row for a missing owner.
-    const tables = readHeadlineTables(args.headlines, args.headlinesSheet);
-    for (const table of tables) {
-      await importHeadlines(table, {
-        teamId: team.id,
-        writer,
-        owners,
-        existingIds,
-        includeArchived: args.includeArchived,
-        rockTeam: args.rockTeam,
-      });
-    }
-  }
-
-  // Promoting by name runs after the imports: the member behind that name may
-  // only have been created moments ago, from an Owner cell.
+  // Promote by name after imports (placeholder may have just been created).
   if (args.leaderName) {
-    const uid = owners.lookup(args.leaderName);
+    const postMembers = await loadMembers(db, team.id);
+    const key = normalizePersonKey(args.leaderName);
+    const match = postMembers.find((m) =>
+      m.names.some((n) => normalizePersonKey(n) === key),
+    );
+    // Also check placeholders created this run.
+    const fromReport = report.placeholdersCreated.find(
+      (c) => normalizePersonKey(c.name) === key,
+    );
+    const uid = match?.user_id ?? fromReport?.user_id;
     if (!uid) {
       console.warn(
         `⚠ --leader-name "${args.leaderName}" didn't match any owner in the files or member of the team — no leader set.`,
       );
-    } else {
-      await writer.set(["team_members", `${team.id}__${uid}`], {
-        team_id: team.id,
-        user_id: uid,
-        role: "leader",
-      });
+    } else if (!args.dryRun) {
+      await db.collection("team_members").doc(`${team.id}__${uid}`).set(
+        {
+          team_id: team.id,
+          user_id: uid,
+          role: "leader",
+        },
+        { merge: true },
+      );
       console.log(`\nLeader: ${args.leaderName} (uid ${uid})`);
+    } else {
+      console.log(`\nLeader (dry-run): ${args.leaderName} (uid ${uid})`);
     }
   }
 
-  await writer.flush();
-
   console.log("");
-  if (owners.created.length > 0) {
+  if (report.placeholdersCreated.length > 0) {
     console.log(
-      `Created ${owners.created.length} placeholder member(s) — they show up as team members ` +
+      `Created ${report.placeholdersCreated.length} placeholder member(s) — they show up as team members ` +
         `with no login until the real account signs in:\n` +
-        owners.created.map((c) => `  • ${c.name}  (${c.user_id})`).join("\n"),
+        report.placeholdersCreated.map((c) => `  • ${c.name}  (${c.user_id})`).join("\n"),
     );
   }
-  if (owners.unresolved.size > 0) {
+  if (report.unresolvedOwners.length > 0) {
     console.warn(
-      `⚠ Skipped rows for ${owners.unresolved.size} unresolved owner(s): ${[...owners.unresolved].join(", ")}\n` +
+      `⚠ Skipped rows for ${report.unresolvedOwners.length} unresolved owner(s): ${report.unresolvedOwners.join(", ")}\n` +
         `  Drop --no-create-owners, or pass --owner-fallback <member> to park them on someone.`,
     );
   }
 
   console.log(
     args.dryRun
-      ? `Dry run complete — ${writer.written} write(s) planned. Re-run without --dry-run to apply.`
-      : `Done — ${writer.written} document(s) written.`,
+      ? `Dry run complete — ${report.writes} write(s) planned. Re-run without --dry-run to apply.`
+      : `Done — ${report.writes} document(s) written.`,
   );
 }
 

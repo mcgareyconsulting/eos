@@ -5,7 +5,8 @@
  *    triggers so nothing bypasses the log. Deploy only after triggers are
  *    pointed at the named database (see OPERATIONS / CUTOVER).
  *
- * 2) Monday todo archive — `archiveStaleTodos` (scheduler). Safe to deploy
+ * 2) Monday archive sweep — `archiveStaleTodos` (scheduler): pure to-dos,
+ *    closed issues, discussed headlines, and done rocks. Safe to deploy
  *    independently; uses FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
  */
 import { initializeApp } from "firebase-admin/app";

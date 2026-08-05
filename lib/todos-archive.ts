@@ -187,6 +187,46 @@ export function selectHeadlinesDiscussedBeforeWeek(
     .map((h) => h.id);
 }
 
+// --- Rocks (closed = status done; clock = completed_at) --------------------
+//
+// Rocks stay on Active (with Done status) until the Monday sweep — there is
+// no Finish-time rock archive. Cancelled rocks are left alone; only Done
+// moves to the Archived tab automatically.
+
+export type RockArchiveCandidate = {
+  id: string;
+  status?: string | null;
+  archived_at?: unknown | null;
+  completed_at?: { toMillis?: () => number } | null;
+};
+
+function isActiveDoneRock(
+  r: RockArchiveCandidate,
+): r is RockArchiveCandidate & { completed_at: { toMillis: () => number } } {
+  if (r.archived_at != null) return false;
+  if (String(r.status ?? "") !== "done") return false;
+  if (r.completed_at == null || typeof r.completed_at.toMillis !== "function") {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Monday ~3am sweep: rocks marked Done *before* this week's Monday 00:00
+ * local that still sit on Active. Leaves "done this week" visible until the
+ * following Monday (same cadence as pure to-dos / closed issues).
+ */
+export function selectRocksDoneBeforeWeek(
+  rocks: RockArchiveCandidate[],
+  weekStartMs: number,
+): string[] {
+  if (!Number.isFinite(weekStartMs)) return [];
+  return rocks
+    .filter(isActiveDoneRock)
+    .filter((r) => r.completed_at.toMillis() < weekStartMs)
+    .map((r) => r.id);
+}
+
 const WEEKDAY_TO_MONDAY_OFFSET: Record<string, number> = {
   Mon: 0,
   Tue: 1,

@@ -11,6 +11,7 @@ import {
   Megaphone,
   Calendar,
   Users,
+  Upload,
   ChevronDown,
   Check,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const TEAM_SECTIONS = [
   "headlines",
   "meetings",
   "members",
+  "import",
 ] as const;
 
 type TeamSection = (typeof TEAM_SECTIONS)[number];
@@ -44,6 +46,7 @@ const NAV_ITEMS: {
   { section: "headlines", label: "Headlines", icon: Megaphone },
   { section: "meetings", label: "Meetings", icon: Calendar },
   { section: "members", label: "Members", icon: Users },
+  { section: "import", label: "Import", icon: Upload },
 ];
 
 function parseTeamRoute(pathname: string): {

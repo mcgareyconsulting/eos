@@ -253,3 +253,53 @@ export async function denyJoinRequest(teamId: string, userId: string) {
   });
   revalidatePath(pathFor(teamId));
 }
+
+/**
+ * Promote a member to leader, or demote a leader to member.
+ * Leaders only. A team must keep at least one leader — demoting the last
+ * leader (including yourself) is rejected so the team can't lock itself out
+ * of Members admin.
+ */
+export async function setMemberRole(
+  teamId: string,
+  userId: string,
+  role: "leader" | "member",
+) {
+  if (role !== "leader" && role !== "member") {
+    throw new Error("Role must be leader or member");
+  }
+
+  const { db } = await requireTeamLeader(teamId);
+
+  const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
+  const memberSnap = await memberRef.get();
+  if (!memberSnap.exists || memberSnap.data()?.team_id !== teamId) {
+    throw new Error("That person is not on this team");
+  }
+
+  const currentRole = (memberSnap.data()?.role as string) ?? "member";
+  if (currentRole === role) {
+    revalidatePath(pathFor(teamId));
+    return;
+  }
+
+  if (role === "member" && currentRole === "leader") {
+    const members = await getTeamMembers(teamId);
+    const leaderCount = members.filter((m) => m.role === "leader").length;
+    if (leaderCount <= 1) {
+      throw new Error(
+        "This team needs at least one leader. Promote someone else first.",
+      );
+    }
+  }
+
+  await memberRef.set(
+    {
+      team_id: teamId,
+      user_id: userId,
+      role,
+    },
+    { merge: true },
+  );
+  revalidatePath(pathFor(teamId));
+}

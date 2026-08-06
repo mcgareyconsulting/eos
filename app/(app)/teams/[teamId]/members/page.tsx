@@ -7,6 +7,7 @@ import {
   setMeetLink,
 } from "./actions";
 import { AddMemberDrawer } from "./add-member-drawer";
+import { MemberRoleControls } from "./member-role-controls";
 import { SpeakingOrderEditor } from "./speaking-order-editor";
 
 type JoinRequest = {
@@ -27,6 +28,16 @@ export default async function MembersPage({
   const isLeader = members.some(
     (m) => m.user_id === uid && m.role === "leader",
   );
+  const leaderCount = members.filter((m) => m.role === "leader").length;
+
+  // Leaders first, then A–Z — makes who can admin easier to scan.
+  const roster = [...members].sort((a, b) => {
+    if (a.role === "leader" && b.role !== "leader") return -1;
+    if (a.role !== "leader" && b.role === "leader") return 1;
+    return a.full_name.localeCompare(b.full_name, undefined, {
+      sensitivity: "base",
+    });
+  });
 
   const driver = members.find((m) => m.user_id === team.meetingDriverId) ?? null;
 
@@ -197,32 +208,55 @@ export default async function MembersPage({
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-          Team members
-        </h2>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+            Team members
+          </h2>
+          {isLeader && (
+            <p className="text-xs text-zinc-500">
+              Leaders can manage members and meeting settings. A team always
+              needs at least one leader.
+            </p>
+          )}
+        </div>
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-          {members.map((m) => (
+          {roster.map((m) => (
             <div
               key={m.user_id}
               className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
             >
-              <span className="font-medium">{m.full_name}</span>
-              <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <span className="font-medium">{m.full_name}</span>
+                {m.user_id === uid && (
+                  <span className="ml-1.5 text-xs text-zinc-500">(you)</span>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {driver?.user_id === m.user_id && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
                     <Compass className="h-3 w-3" />
                     Driver
                   </span>
                 )}
-                <span
-                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                    m.role === "leader"
-                      ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
-                      : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
-                  }`}
-                >
-                  {m.role === "leader" ? "Leader" : "Member"}
-                </span>
+                {isLeader ? (
+                  <MemberRoleControls
+                    teamId={tid}
+                    userId={m.user_id}
+                    role={m.role}
+                    isSelf={m.user_id === uid}
+                    canDemote={!(m.role === "leader" && leaderCount <= 1)}
+                  />
+                ) : (
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                      m.role === "leader"
+                        ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
+                    }`}
+                  >
+                    {m.role === "leader" ? "Leader" : "Member"}
+                  </span>
+                )}
               </div>
             </div>
           ))}

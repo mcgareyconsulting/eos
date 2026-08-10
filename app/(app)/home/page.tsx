@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { daysUntil, formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { chunkForInQuery } from "@/lib/firestore-in";
+import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
 import { Circle, Flag, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
@@ -25,6 +26,7 @@ type RockRow = {
   quarter: string;
   owner_id: string | null;
   team_id: string;
+  archived_at?: unknown | null;
 };
 
 export default async function HomePage() {
@@ -130,8 +132,53 @@ export default async function HomePage() {
   // Split: pure to-dos (no parent rock) vs milestones (linked to a rock and
   // owned by the current user). Prevents double-counting in the to-dos section.
   const pureTodos = todos.filter((t) => !t.source_rock_id);
+
+  // The rocks fetch above only pulls on_track/off_track rocks, so a
+  // done/cancelled/archived rock behind one of my milestones won't be in
+  // `rocks`. Fetch those specific rock docs (by id, not another status
+  // query) so stale milestones can be filtered out below — old May
+  // milestones under a long-finished rock shouldn't haunt Home forever.
+  const myMilestoneRockIds = new Set(
+    todos
+      .filter((t) => t.source_rock_id && t.owner_id === user.id)
+      .map((t) => t.source_rock_id as string),
+  );
+  const knownRockIds = new Set(rocks.map((r) => r.id));
+  const unknownRockIds = [...myMilestoneRockIds].filter(
+    (id) => !knownRockIds.has(id),
+  );
+  const extraRockDocs = unknownRockIds.length
+    ? await db.getAll(
+        ...unknownRockIds.map((id) => db.collection("rocks").doc(id)),
+      )
+    : [];
+
+  const rockStatusById = new Map<
+    string,
+    { status: string | null; archived_at: unknown }
+  >();
+  for (const r of rocks) {
+    rockStatusById.set(r.id, {
+      status: r.status,
+      archived_at: r.archived_at ?? null,
+    });
+  }
+  for (const d of extraRockDocs) {
+    if (!d.exists) continue;
+    const x = d.data() ?? {};
+    rockStatusById.set(d.id, {
+      status: (x.status as string) ?? null,
+      archived_at: x.archived_at ?? null,
+    });
+  }
+
   const myMilestones = todos.filter(
-    (t) => t.source_rock_id && t.owner_id === user.id,
+    (t) =>
+      t.source_rock_id &&
+      t.owner_id === user.id &&
+      !isMilestoneHiddenByRock(
+        t.source_rock_id ? rockStatusById.get(t.source_rock_id) : null,
+      ),
   );
 
   // Further split milestones by due date: milestones due within 7 days (or

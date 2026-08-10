@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-04 — _Session D cleanup (`feature/p3-roadmap` / PR #17); Rocks redesign PR #16 on main_
+**Last updated:** 2026-08-10 — _Pass 18 ESD L10 transcript; shared rocks in scope; leader advances L10; scorecard trend rules for Joe; N1–N9 + P18 queue_
 
 ---
 
@@ -377,33 +377,163 @@ It works in two primary ways:
 
 ## ▶ RESUME HERE — next session
 
-**Session D (in progress): P1/P2 cleanup** on `feature/p3-roadmap` →
-**PR #17** (branch name is historical; scope is remaining P1–P2). Merged
-**Pass 17 rocks redesign (PR #16)** from main into this branch.
+### Team management / tenancy (2026-08-10) — `feature/team-management`
 
-**Shipped this session (Session D):**
-- **P1-6 Vote credits UI** — remaining-first badge, per-person copy, team vs you.
-- **Archive contract (P2-2 / P2-3 aligned):**
-  - **To-dos / Headlines / Issues:** closed *in L10* → archive on Finish;
-    closed *outside* → gray on Active until **Monday 3am** worker.
-  - Headlines “closed” = **discussed** only (standing never auto-archive).
-  - Issues “closed” = **solved | dropped** (`resolved_at`).
-  - Mid-week gray + “Closes Monday” chip; Archived = flat, Closed On, no strike.
-  - **Rocks:** Active/Archived tabs ready; **no archive path yet** (empty
-    Archived). Create button is **`NewRockButton` / `RockModal`** (PR #16).
-  - Worker `archiveStaleTodos` archives prior-week todos + issues + discussed
-    headlines (**redeployed** to prod).
+**P2-7 (Members / cross-team privacy + admin role model)** — built and
+exercised on sandbox. Ops notes: `docs/TEAM_MGMT_OPS.md`.
 
-**Still open on this cleanup branch:**
-- **Rocks archive path** (manual and/or auto) — UI only for now
-- **P2-7** privacy · **P1-7** Google Tasks (optional)
-- **P1-2** allowlist ops (**deferred**)
+**Product model (decided):**
+- **Soft directory, hard data.** Everyone signed in can see **all teams +
+  rosters** (names, emails, roles). Rocks / issues / scorecard / L10 / etc.
+  require **team membership** (or org admin). No issue leakage across team
+  boundaries for non-admins.
+- **Roles:** org **`admin`** (Identity Platform custom claim `role: "admin"`)
+  + per-team **`leader` | `member`**. Multi-team membership with different
+  roles per team is supported.
+- **Admin = god mode** for team *data* (all teams) + create teams; not
+  auto-added to rosters.
+- **Leader** = team data + invite + role management + meeting settings.
+- **Invite = pre-provision** (name + email → Auth + `team_members`); no app
+  email. Self-serve `/join` request list is **retired** (invite-only).
+- **Create flow:** admin → name → invite leader → Done; leader later invites
+  members from Members.
+
+**Shipped (code):**
+- `requireTeamAccess` / `requireTeamLeader` / `requireAdmin` (admin bypass).
+- **Members** page tabs: **This team** | **All teams** (org directory).
+  Admin **New team** under All teams (`…/members/new-team`).
+- Sidebar no longer has a top-level Directory link; `/directory` redirects
+  into Members → All teams when the user has a team context.
+- Firestore rules: `inDomain()` consultant email →
+  `daniel@mcgareyconsulting.com`; `team_join_requests` **create** denied.
+- Script: `pnpm admin:set-role --email … --apply` (sign out/in after claim).
+
+**Ops / perimeter (keep in lockstep):**
+- `SIGN_IN_ALLOWLIST` (local `.env.local` + Cloud Run `eos` / **us-east1**)
+  must include HPB domain + operator primary email. Operator primary after
+  Google alias conversion is **`daniel@mcgareyconsulting.com`** (token email
+  is primary, not alias-only).
+- Deploy rules: `firebase deploy --only firestore:rules --project hpb-eos-prod`
+  (project-wide; both sandbox + live DBs).
+- **App UI** still needs a Cloud Run ship (`pnpm ship` / merge + deploy) for
+  prod users to see Members tabs / create-team; local sandbox already has it.
+- Deleting an Auth user re-keys uid — re-seed or re-invite memberships for
+  that person.
+
+### Next work (captured 2026-08-10; Pass 18 decisions 2026-08-10)
+
+Ordered for planning — not a committed sprint sequence.
+
+#### Validate team management
+1. **Steph as admin + new-team onboarding test** — grant `role: "admin"` to
+   Steph; walk create team → invite leader → Done → leader invites members.
+   Confirm directory soft-read + hard data isolation. Ops: `docs/TEAM_MGMT_OPS.md`.
+2. **Stress-testing setup** — multi-team multi-user scenario for admin /
+   leader / member; concurrent L10 + standalone edits; allowlist + membership
+   matrix. Document how to spin it (sandbox seed / import).
+3. **Double-check migration data for ESD team** — Enterprise Systems & Data
+   import vs live ninety/export; owners, metrics, rocks, roster integrity on
+   sandbox (then prod if applicable). **Do not** migrate historical
+   attachments/links from ninety (none expected in import).
+
+#### Product / UX
+4. **Multi-team surface + shared rocks (in scope)** — how a user on several
+   teams sees Home + tabs (per-team sections vs unified feed vs sticky
+   filter). **Shared rocks are in product scope:** a rock has a **parent
+   team** (canonical home) and can be **shared / visible** on other teams
+   the owner belongs to (Steph: rock originated on IT Systems & Security,
+   shared into ESD). Also milestone assignees on another team’s rock
+   (Cora / leadership “My 90” pattern). Privacy still hard on non-shared
+   team data (P2-7). Design before build.
+5. **Left sidebar collapse / expand** — free horizontal space on L10 and
+   dense grids; remember preference (localStorage).
+6. **Better import functionality** — beyond current CSV/xlsx import; clearer
+   mapping, validation, dry-run, re-import, error report (ties Pass 11 CSV
+   directory import). Attachments out of import scope.
+7. **Manual rocks archive mode** — client ask: archive control with a
+   **Gmail-style** icon (not only Monday auto-archive / empty Archived tab).
+   Completes rocks half of P2-2 archive model. Live re-confirm Pass 18.
+8. **Confirm before every delete** — audit all delete actions (rocks,
+   milestones, issues, todos, headlines, members remove, metrics, etc.);
+   consistent confirm dialog / copy so nothing one-clicks away.
+
+#### Pass 18 — ESD L10 transcript (2026-08-05) decisions
+9. **Only team leaders advance the L10 agenda** — segment next/prev (and
+   related facilitator controls) restricted to **team `leader`** (org
+   admin may keep bypass if already god-mode). Members may still **peek**
+   other segments; “group is on X / catch up” unchanged. Decided: not
+   “anyone can advance.”
+10. **Attachments + links on entities (forward only)** — rocks / issues /
+    todos / headlines accept **file attachments** and/or **hyperlinks**.
+    **No data migration** of ninety attachments into EOS. Ship new write
+    path + storage (Cloud Storage + security review); linkify rich text
+    remains P3-2 related.
+11. **Edit headlines** after create / during L10 (Steph + Joe).
+12. **Due-soon milestones:** hide (or ignore) milestones under rocks that
+    are **done / cancelled / archived** (Cora — old May milestone noise).
+13. **Personal Home (My 90–like)** — Home should prioritize **my**
+    todos / rocks / milestones, not a dump of everyone’s items on the team
+    (Cora). Fold into multi-team Home story (#4).
+14. **Headlines layout:** sort/group by owner; separate **cascading**
+    headlines from team headlines (secondary section).
+15. **Meeting notes UX** — clarify personal notes vs recap; fix save /
+    visibility / possible overwrite at conclude.
+16. **Post-Finish meeting exit** — after Done, leave live meeting UI
+    (redirect Home or recap); don’t leave a “ghost” meeting main pane.
+17. **Department rocks first in L10** — list + “now speaking” should
+    prioritize **department / team rocks** (and their owners) before
+    individual speaking order (Feature 5a polish).
+18. **Scorecard trend status — docs for Joe (no product change)** —
+    report **current** rules for client review. See box below.
+
+##### Scorecard on-track / at-risk / off-track (current code — for Joe)
+
+Source: `lib/scorecard.ts` → `trendStatus()` (unit tests in
+`lib/scorecard.test.ts`).
+
+| Concept | Rule today |
+|---------|------------|
+| **Per-cell on track?** | Compare value to metric **goal** with direction: `gte` (≥), `lte` (≤), or `eq` (=). Empty cell = no judgment. |
+| **Lookback window** | Last **3 populated** periods only (default). Empty weeks are **skipped** — they do not count in the 3. (ninety Trends-style.) |
+| **On-track (ok)** | Among those 3 (or fewer if less data), **0** miss the goal. |
+| **At-risk (watch)** | At least one miss, but **not** a strict majority miss (ties → at-risk). E.g. **1 of 3** off → at-risk. |
+| **Off-track (off)** | **Strict majority** of the lookback miss the goal. E.g. **2 of 3** or **3 of 3** off → off-track. |
+| **No data** | No populated scores in range. |
+| **No goal** | Treated as on-track for trend purposes. |
+
+**Not used for the pill:** full 13-week (or 6-week) hit counts. If the UI
+shows “1 of 6 weeks under goal,” that is the **grid hit rate** over
+visible weeks — the **left status pill** still uses the **3 most recent
+populated** scores and majority rule above. Joe’s live example
+(1-of-N under goal vs Steph 2-of-N) should be re-checked against this
+split when sharing the write-up.
+
+Grid still defaults to a **13-week** rolling window for display; status
+filter/sort use the same `trendStatus` labels (Off-track / At-risk /
+On-track / No data).
+
+#### Platform / ops
+19. **Bitbucket migration** — move repo hosting; ship **README** +
+    **security docs** (perimeter, allowlist, rules, IAM, no secrets in
+    repo, consultant access model). Coordinate `docs/DEPLOY.md`,
+    `CLIENT_GCP_SETUP.md`, `TEAM_MGMT_OPS.md`.
+
+#### Still open (prior backlog, not replaced)
+- **P1-7** Google Tasks two-way (optional)
+- **P1-2** allowlist + membership ops for demo users (ongoing)
 - **P2-1** custom agendas (out of band)
 - **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
+- Pass 11 Directory stretch: private-team flag, Owner/Implementer roles
 - P3-* as capacity allows
 
 Working priority list is agent-local — not in this repo
 (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
+
+---
+
+**Earlier — Session D (P1/P2 cleanup)** on `feature/p3-roadmap` → **PR #17**.
+Shipped then: **P1-6** vote credits UI; archive contract for todos / headlines /
+issues (+ Monday worker); rocks Active/Archived UI without archive write path.
 
 ---
 
@@ -505,7 +635,7 @@ Pass 11/13 so we don't double-count.
 | 6 | 07-30 | Jenna | Issues | Comments useful; **attachments optional** (links to Google Docs OK instead) | ✅ **Done Pass 16 (P2-5)** for comments + linkify. Binary attachments still deferred. |
 | 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | ✅ **Done Pass 16 (P2-3).** Discuss checkbox + selective archive at meeting end. |
 | 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
-| 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | **Security / tenancy review.** Cross-team IDOR fixed on mutations (Pass 10); still need explicit privacy story for sensitive issues + role model (Pass 11 Directory/admin). |
+| 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | ✅ **Built 2026-08-10 (`feature/team-management`, P2-7).** Soft directory + hard data; org admin claim; Members → This team / All teams; invite-only. Deploy app + rules for prod. Stretch (CSV import, private teams, ninety Owner/Implementer) still open. |
 | 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | **Integration bug / incomplete.** Today is **one-way push** (`lib/google/tasks.ts`). Client wants **Tasks → EOS** completion sync. Elevates Pass 11 Phase-1 Tasks ask to **two-way is required**. |
 | 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
 | 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | ✅ **Done Pass 16 (P2-4 + P2-5).** Move button + LT tab; comments on issue/rock detail. |
@@ -532,8 +662,8 @@ Pass 11/13 so we don't double-count.
 
 **Integrations / access:**
 7. **Google Tasks two-way completion** (#10) — today one-way only; client expects Tasks→EOS.
-8. **Members / issue privacy** story for multi-team (#9) — confirm rules + product model.
-9. Ops still: allowlist + membership for access issues (Pass 13 #2).
+8. **Members / issue privacy** multi-team (#9) ✅ **2026-08-10** — see ▶ RESUME HERE (team management). Prod: ship app + rules + allowlist.
+9. Ops still: allowlist + membership for access issues (Pass 13 #2) — operator email now `daniel@mcgareyconsulting.com`.
 
 **Product (scope against Pass 11):**
 10. **Custom agendas + pick template at start** (#8) — still largest build; re-confirmed by Jenna + Steph (Pass 13).

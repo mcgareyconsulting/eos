@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Archive, Info, Megaphone, Smile, Trash2, Users } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Timestamp } from "firebase-admin/firestore";
@@ -265,7 +266,10 @@ export default async function HeadlinesPage({
                     </button>
                   </form>
                   {!archivedRow && (
-                    <form action={remove}>
+                    <ConfirmSubmitForm
+                      action={remove}
+                      confirmMessage="Delete this headline? This can't be undone."
+                    >
                       <button
                         type="submit"
                         className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
@@ -273,7 +277,7 @@ export default async function HeadlinesPage({
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
+                    </ConfirmSubmitForm>
                   )}
                 </div>
               )}

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, Trash2 } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
 import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
@@ -389,7 +390,10 @@ export function ScorecardGrid({
 
           {showDelete && (
             <td className="px-2 py-2 text-right">
-              <form action={deleteMetric.bind(null, teamId, m.id)}>
+              <ConfirmSubmitForm
+                action={deleteMetric.bind(null, teamId, m.id)}
+                confirmMessage="Delete this metric? This will remove it from the scorecard, including its logged history. This can't be undone."
+              >
                 <button
                   type="submit"
                   className="text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600 hover:text-red-600"
@@ -397,7 +401,7 @@ export function ScorecardGrid({
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
-              </form>
+              </ConfirmSubmitForm>
             </td>
           )}
         </tr>

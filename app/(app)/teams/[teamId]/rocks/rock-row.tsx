@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
@@ -178,7 +179,10 @@ export function RockRow({
               currentUserId={currentUserId}
               teamName={teamName}
             />
-            <form action={remove}>
+            <ConfirmSubmitForm
+              action={remove}
+              confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
+            >
               <button
                 type="submit"
                 aria-label="Delete rock"
@@ -186,7 +190,7 @@ export function RockRow({
               >
                 <Trash2 className="h-[15px] w-[15px]" />
               </button>
-            </form>
+            </ConfirmSubmitForm>
           </div>
         </div>
 

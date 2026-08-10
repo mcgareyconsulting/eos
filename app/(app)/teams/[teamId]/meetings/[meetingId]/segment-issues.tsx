@@ -267,7 +267,7 @@ export function SegmentIssues({
                   onSubmit={(e) => {
                     if (
                       !window.confirm(
-                        "Delete this issue? This can't be undone.",
+                        "Delete this issue? This will also delete its votes and comments. This can't be undone.",
                       )
                     )
                       e.preventDefault();

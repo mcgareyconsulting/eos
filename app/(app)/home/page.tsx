@@ -133,9 +133,11 @@ export default async function HomePage() {
   // owned by the current user). Prevents double-counting in the to-dos section.
   const pureTodos = todos.filter((t) => !t.source_rock_id);
 
-  // Active-rock query only loads on_track/off_track. Fetch parent rocks for
-  // my milestones that aren't in that set so we can hide done/cancelled/
-  // archived rock milestones (Pass 18 / main: Cora's old May due-soons).
+  // The rocks fetch above only pulls on_track/off_track rocks, so a
+  // done/cancelled/archived rock behind one of my milestones won't be in
+  // `rocks`. Fetch those specific rock docs (by id, not another status
+  // query) so stale milestones can be filtered out below — old May
+  // milestones under a long-finished rock shouldn't haunt Home forever.
   const myMilestoneRockIds = new Set(
     todos
       .filter((t) => t.source_rock_id && t.owner_id === user.id)

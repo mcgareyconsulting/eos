@@ -5,7 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
 
-const KINDS = ["customer", "employee", "cascading"] as const;
+const KINDS = ["customer", "employee", "cascading", "general"] as const;
 type Kind = (typeof KINDS)[number];
 
 function pathFor(teamId: string) {
@@ -42,6 +42,41 @@ export async function addHeadline(teamId: string, formData: FormData) {
     discussed_at: null,
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
+  });
+
+  revalidateHeadlines(teamId);
+}
+
+/**
+ * Edit a headline's title / detail / category. Any team member with access
+ * can edit (same convention as updateTodoMeta / updateIssueMeta — no
+ * owner-only restriction). Org-wide broadcast copies stay read-only, same
+ * guard as delete/discuss/archive.
+ */
+export async function updateHeadline(
+  teamId: string,
+  headlineId: string,
+  formData: FormData,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
+  if (snap.data()?.broadcast) {
+    throw new Error("Org-wide headlines are read-only");
+  }
+
+  const title = String(formData.get("title") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim() || null;
+  const kindRaw = String(formData.get("kind") ?? "customer");
+  const kind: Kind = KINDS.includes(kindRaw as Kind)
+    ? (kindRaw as Kind)
+    : "customer";
+
+  if (!title) throw new Error("Title required");
+
+  await db.collection("headlines").doc(headlineId).update({
+    title,
+    body,
+    kind,
   });
 
   revalidateHeadlines(teamId);

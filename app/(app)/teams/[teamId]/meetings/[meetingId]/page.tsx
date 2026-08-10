@@ -66,7 +66,12 @@ export default async function MeetingDetailPage({
   // standalone Scorecard page so L10 filters match.
   const scorecardWeekRange = parseWeekRange(weeksParam);
   const scorecardPeriod = parseScorecardPeriod(periodParam);
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const { uid, db, team, isAdmin, membershipRole } = await requireTeamAccess(tid);
+  // Pass 18 #9: only a team leader (or org admin, god-mode bypass) may drive
+  // the shared L10 transport — advance/rewind segments, Finish. Members keep
+  // peeking + catch-up; MeetingRail hides the transport controls when this
+  // is false. Mirrors the server-side gate in meetings/actions.ts.
+  const isLeader = isAdmin || membershipRole === "leader";
 
   const meetingSnap = await db.collection("meetings").doc(mid).get();
   if (!meetingSnap.exists || meetingSnap.data()?.team_id !== tid) notFound();
@@ -104,6 +109,11 @@ export default async function MeetingDetailPage({
     // entry here would otherwise poison the averages (below, and in
     // ConcludeReview) into NaN.
     .filter((r): r is MeetingRating => Number.isFinite(r.rating));
+
+  // The current viewer's own rating, if any — passed to the recap so it can
+  // offer a "Rate this meeting" prompt when the post-Finish redirect opens
+  // the recap over an unsubmitted rating (see RecapModal below).
+  const myRating = ratings.find((r) => r.user_id === uid) ?? null;
 
   const live = !m.ended_at;
   // Normalize what's stored before rendering from it: an unknown/legacy
@@ -303,6 +313,7 @@ export default async function MeetingDetailPage({
           initialSpeakingOrder={speakingOrder}
           initialSpeakerIndex={speakerIndex}
           initialAbsentUserIds={absentUserIds}
+          isLeader={isLeader}
         />
       )}
 
@@ -410,6 +421,9 @@ export default async function MeetingDetailPage({
         )}
 
         <RecapModal
+          teamId={tid}
+          meetingId={mid}
+          myRating={myRating}
           meetingMinutes={meetingMinutes}
           notes={m.notes ?? null}
           newRocks={newRocks}

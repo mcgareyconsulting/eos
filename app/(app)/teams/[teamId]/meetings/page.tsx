@@ -20,7 +20,11 @@ export default async function MeetingsPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { db } = await requireTeamAccess(tid);
+  const { db, isAdmin, membershipRole } = await requireTeamAccess(tid);
+  // Pass 18 #9: starting the shared L10 room is a facilitator control —
+  // startMeeting requires leader/admin server-side, so don't show members a
+  // Start button that would 404. Join-live stays open to everyone.
+  const isLeader = isAdmin || membershipRole === "leader";
 
   const snap = await db.collection("meetings").where("team_id", "==", tid).get();
 
@@ -73,7 +77,11 @@ export default async function MeetingsPage({
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
-        <HeaderAction teamId={tid} meetings={initialMeetings} />
+        <HeaderAction
+          teamId={tid}
+          meetings={initialMeetings}
+          isLeader={isLeader}
+        />
       </header>
 
       <MeetingsList
@@ -92,9 +100,11 @@ export default async function MeetingsPage({
 function HeaderAction({
   teamId,
   meetings,
+  isLeader,
 }: {
   teamId: string;
   meetings: MeetingListDoc[];
+  isLeader: boolean;
 }) {
   const liveMeeting = meetings.find((m) => m.ended_at == null);
   if (liveMeeting) {
@@ -108,6 +118,7 @@ function HeaderAction({
       </Link>
     );
   }
+  if (!isLeader) return null;
   async function action() {
     "use server";
     await startMeeting(teamId);

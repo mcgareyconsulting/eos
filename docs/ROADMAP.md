@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-10 — _Pass 18 ESD L10 transcript; shared rocks in scope; leader advances L10; scorecard trend rules for Joe; N1–N9 + P18 queue_
+**Last updated:** 2026-08-10 — _PR #22 quick-win batches: P18 items 5, 7, 8, 9, 11, 12, 14, 16, 17 shipped (+ Pass 14 #14 FYI category); >15-team Home note was stale_
 
 ---
 
@@ -445,44 +445,55 @@ Ordered for planning — not a committed sprint sequence.
    shared into ESD). Also milestone assignees on another team’s rock
    (Cora / leadership “My 90” pattern). Privacy still hard on non-shared
    team data (P2-7). Design before build.
-5. **Left sidebar collapse / expand** — free horizontal space on L10 and
-   dense grids; remember preference (localStorage).
+5. **Left sidebar collapse / expand** ✅ **2026-08-10 (PR #22)** — icon-rail
+   collapse w/ localStorage preference; collapsed rail keeps a team-initials
+   button that expands + opens the team switcher.
 6. **Better import functionality** — beyond current CSV/xlsx import; clearer
    mapping, validation, dry-run, re-import, error report (ties Pass 11 CSV
    directory import). Attachments out of import scope.
-7. **Manual rocks archive mode** — client ask: archive control with a
-   **Gmail-style** icon (not only Monday auto-archive / empty Archived tab).
-   Completes rocks half of P2-2 archive model. Live re-confirm Pass 18.
-8. **Confirm before every delete** — audit all delete actions (rocks,
-   milestones, issues, todos, headlines, members remove, metrics, etc.);
-   consistent confirm dialog / copy so nothing one-clicks away.
+7. **Manual rocks archive mode** ✅ **2026-08-10 (PR #22)** — Archive icon in
+   rock-row hover actions; same `archived_at` as the Monday sweep; restore
+   clears `completed_at` so the sweep doesn't instantly re-archive.
+8. **Confirm before every delete** ✅ **2026-08-10 (PR #22)** — audit found 6
+   unguarded deletes (headline, issue, rock, todo, metric, comment); all now
+   confirm via shared `ConfirmSubmitForm`, copy names cascades. Reversible
+   archives stay confirm-free by convention. (Member remove doesn't exist;
+   role changes already confirmed.)
 
 #### Pass 18 — ESD L10 transcript (2026-08-05) decisions
-9. **Only team leaders advance the L10 agenda** — segment next/prev (and
-   related facilitator controls) restricted to **team `leader`** (org
-   admin may keep bypass if already god-mode). Members may still **peek**
-   other segments; “group is on X / catch up” unchanged. Decided: not
-   “anyone can advance.”
+9. **Only team leaders advance the L10 agenda** ✅ **2026-08-10 (PR #22)** —
+   start/advance/jump/end require leader (admin bypass) server-side via
+   `requireTeamLeader`; rail transport + Start-meeting button hidden for
+   members. Peek / “group is on X / catch up” unchanged.
 10. **Attachments + links on entities (forward only)** — rocks / issues /
     todos / headlines accept **file attachments** and/or **hyperlinks**.
     **No data migration** of ninety attachments into EOS. Ship new write
     path + storage (Cloud Storage + security review); linkify rich text
     remains P3-2 related.
-11. **Edit headlines** after create / during L10 (Steph + Joe).
-12. **Due-soon milestones:** hide (or ignore) milestones under rocks that
-    are **done / cancelled / archived** (Cora — old May milestone noise).
+11. **Edit headlines** after create / during L10 (Steph + Joe) ✅
+    **2026-08-10 (PR #22)** — shared edit modal on tab + L10 segment;
+    `updateHeadline` action (broadcast copies stay read-only). Also added
+    **General / FYI** category (Pass 14 #14) incl. CSV-import mapping.
+12. **Due-soon milestones:** hide milestones under rocks that are
+    **done / cancelled / archived** (Cora — old May milestone noise) ✅
+    **2026-08-10 (PR #22)** — `lib/milestone-visibility.ts`, applied on Home.
 13. **Personal Home (My 90–like)** — Home should prioritize **my**
     todos / rocks / milestones, not a dump of everyone’s items on the team
     (Cora). Fold into multi-team Home story (#4).
-14. **Headlines layout:** sort/group by owner; separate **cascading**
-    headlines from team headlines (secondary section).
+14. **Headlines layout** ✅ **2026-08-10 (PR #22)** — active list grouped by
+    owner (No-owner group last); cascading + incoming broadcast copies in a
+    secondary Cascading section. Shared rules in `lib/headlines.ts` (tested).
 15. **Meeting notes UX** — clarify personal notes vs recap; fix save /
     visibility / possible overwrite at conclude.
-16. **Post-Finish meeting exit** — after Done, leave live meeting UI
-    (redirect Home or recap); don’t leave a “ghost” meeting main pane.
-17. **Department rocks first in L10** — list + “now speaking” should
-    prioritize **department / team rocks** (and their owners) before
-    individual speaking order (Feature 5a polish).
+16. **Post-Finish meeting exit** ✅ **2026-08-10 (PR #22)** — investigation:
+    exit-to-recap already shipped in the pre-demo audit fix (concluder
+    redirect + every participant's rail listener). Actual gap fixed: recap
+    overlay could bury an unsubmitted rating — recap now offers an inline
+    “Rate this meeting” until the viewer has rated.
+17. **Department rocks first in L10** ✅ **2026-08-10 (PR #22)** — already
+    shipped structurally (Department section leads); ordering extracted to
+    `lib/l10/rock-order.ts` and locked with tests. “Now speaking” never
+    targets the Department section.
 18. **Scorecard trend status — docs for Joe (no product change)** —
     report **current** rules for client review. See box below.
 
@@ -802,9 +813,10 @@ now @highplainsbank.com to pass the rules domain gate).
 **Known-remaining (LOW, non-blocking, do when convenient):**
 - `terraform fmt -check` + `validate` never re-run after the CMEK/iam edits
   (CLI not installed in the session env) — run before first apply.
-- Home page query breaks for a user on >15 teams (double-`in` disjunction
-  cap, `app/(app)/home/page.tsx`); scorecard `in`-queries silently cap at 30
-  metrics/team; home 7-day/overdue boundaries computed at UTC midnight (no
+- ~~Home page query breaks for a user on >15 teams~~ **stale — already fixed
+  2026-08-04 (`b8df118`: chunked queries, per-status equality instead of
+  double-`in`); regression tests added 2026-08-10 (`lib/firestore-in.test.ts`)**.
+  Still true: home 7-day/overdue boundaries computed at UTC midnight (no
   business-timezone config).
 - `firestore.indexes.json` carries unused composite indexes (superset —
   harmless, prune someday).

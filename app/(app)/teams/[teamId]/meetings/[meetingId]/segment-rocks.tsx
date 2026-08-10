@@ -8,9 +8,9 @@ import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
-  ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
@@ -60,118 +60,6 @@ type StatusUpdateDoc = {
 };
 
 type Member = { user_id: string; full_name: string };
-
-type RockGroup = {
-  key: string;
-  title: string;
-  rocks: RockDoc[];
-  absent: boolean;
-  isCurrentSpeaker: boolean;
-  /** Department section (shared + Level=Department) — not on the speaking rail. */
-  isDepartmentSection: boolean;
-};
-
-const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
-
-// Within a section: status, then quarter, then due date. No quarter filter —
-// Q3 and Q4 (and any other labels) all stay visible.
-function sortRocks(rocks: RockDoc[]): RockDoc[] {
-  return [...rocks].sort((a, b) => {
-    const byStatus =
-      STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
-    if (byStatus !== 0) return byStatus;
-    const qa = a.quarter ?? "";
-    const qb = b.quarter ?? "";
-    if (qa !== qb) return qa.localeCompare(qb);
-    if (!a.due_date && !b.due_date) return 0;
-    if (!a.due_date) return 1;
-    if (!b.due_date) return -1;
-    return a.due_date.localeCompare(b.due_date);
-  });
-}
-
-// L10 Rocks: Department section first, then person sections.
-// Order = present members in speaking order, then absentees (dimmed) so an
-// absent owner never sits above someone still in the room (matches rail).
-// Department-typed rocks (Level = Department) live in the Department section
-// even when a person is accountable.
-function groupRocksForMeeting(
-  rocks: RockDoc[],
-  members: Member[],
-  speakingOrder: string[],
-  absent: Set<string>,
-  currentSpeaker: string | null,
-): RockGroup[] {
-  const deptRocks: RockDoc[] = [];
-  const personal: RockDoc[] = [];
-  for (const r of rocks) {
-    if (isDepartmentRock(r)) deptRocks.push(r);
-    else personal.push(r);
-  }
-
-  const groups: RockGroup[] = [];
-  if (deptRocks.length > 0) {
-    groups.push({
-      key: "department",
-      title: DEPARTMENT_SECTION_TITLE,
-      rocks: sortRocks(deptRocks),
-      absent: false,
-      isCurrentSpeaker: false,
-      isDepartmentSection: true,
-    });
-  }
-
-  const byOwner = new Map<string, RockDoc[]>();
-  for (const r of personal) {
-    const id = r.owner_id as string;
-    const list = byOwner.get(id) ?? [];
-    list.push(r);
-    byOwner.set(id, list);
-  }
-
-  const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
-  const placed = new Set<string>();
-
-  // Present first (speaking order), then absentees — never interleave.
-  const sectionOrder = ownersPresentThenAbsent(speakingOrder, absent);
-
-  for (const uid of sectionOrder) {
-    const list = byOwner.get(uid);
-    if (!list || list.length === 0) continue;
-    placed.add(uid);
-    groups.push({
-      key: uid,
-      title: nameById.get(uid) ?? "—",
-      rocks: sortRocks(list),
-      absent: absent.has(uid),
-      isCurrentSpeaker: uid === currentSpeaker,
-      isDepartmentSection: false,
-    });
-  }
-
-  // Owners with rocks who aren't in the reconciled order (stale owner_id).
-  // Present orphans before absent orphans; alpha within each bucket.
-  const orphans = [...byOwner.keys()].filter((id) => !placed.has(id));
-  orphans.sort((a, b) => {
-    const aAbs = absent.has(a) ? 1 : 0;
-    const bAbs = absent.has(b) ? 1 : 0;
-    if (aAbs !== bAbs) return aAbs - bAbs;
-    return (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—");
-  });
-  for (const uid of orphans) {
-    const list = byOwner.get(uid)!;
-    groups.push({
-      key: uid,
-      title: nameById.get(uid) ?? "—",
-      rocks: sortRocks(list),
-      absent: absent.has(uid),
-      isCurrentSpeaker: uid === currentSpeaker,
-      isDepartmentSection: false,
-    });
-  }
-
-  return groups;
-}
 
 export function SegmentRocks({
   teamId,
@@ -309,12 +197,14 @@ export function SegmentRocks({
   // while the Rocks tab (which doesn't filter) looked fine. The meeting
   // reviews the rocks the team actually has; cancelled ones stay out.
   const visible = rocks.filter((r) => r.status !== "cancelled");
-  const groups = groupRocksForMeeting(
+  const groups = groupRocksForL10(
     visible,
+    isDepartmentRock,
     members,
     speakingOrder,
     absent,
     currentSpeaker,
+    DEPARTMENT_SECTION_TITLE,
   );
 
   return (

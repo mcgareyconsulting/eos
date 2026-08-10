@@ -364,12 +364,13 @@ function normalizeIssueStatus(
   return "open";
 }
 
-function normalizeHeadlineKind(
+export function normalizeHeadlineKind(
   typeCell: string,
   sheetName?: string,
-): "customer" | "employee" | "cascading" {
+): "customer" | "employee" | "cascading" | "general" {
   const s = `${typeCell} ${sheetName ?? ""}`.toLowerCase();
   if (/cascad/.test(s)) return "cascading";
+  if (/general|fyi/.test(s)) return "general";
   if (/customer|client|win/.test(s)) return "customer";
   if (/employee|people|hr|staff/.test(s)) return "employee";
   return "employee";

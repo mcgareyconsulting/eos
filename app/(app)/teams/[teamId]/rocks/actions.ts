@@ -74,6 +74,33 @@ export async function setRockStatus(
   revalidatePath("/home");
 }
 
+// Manual archive control (Gmail-style icon on the row) — mirrors
+// headlines' setHeadlineArchived. Reversible, so callers don't confirm.
+// Restore also clears completed_at: a still-Done rock keeps its
+// completed_at from before archiving, and the Monday sweep
+// (isActiveDoneRock in lib/todos-archive.ts) would otherwise re-archive it
+// the moment archived_at goes null again. Re-saving Done re-stamps it.
+export async function setRockArchived(
+  teamId: string,
+  rockId: string,
+  archived: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "rocks", rockId, teamId);
+  await db
+    .collection("rocks")
+    .doc(rockId)
+    .update(
+      archived
+        ? { archived_at: FieldValue.serverTimestamp() }
+        : { archived_at: null, completed_at: null },
+    );
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
+  revalidatePath("/home");
+}
+
 // Removes the rock, linked milestones (todos), and entity_comments.
 // Single batch so a partial failure can't orphan children.
 export async function deleteRock(teamId: string, rockId: string) {

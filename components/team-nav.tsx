@@ -16,6 +16,8 @@ import {
   Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { initials } from "@/lib/initials";
+import { setSidebarCollapsed } from "@/components/sidebar-collapse-toggle";
 
 export type ShellTeam = { id: string; name: string };
 
@@ -196,16 +198,35 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
 
   return (
     <div className="px-2 py-3 border-t border-zinc-300 dark:border-zinc-800">
-      <div
-        className="relative px-0 pb-2 group-data-[sidebar-collapsed]/shell:hidden"
-        ref={rootRef}
-      >
+      <div className="relative px-0 pb-2" ref={rootRef}>
+        {/* Collapsed rail: the flyout menu would be clipped by the sidebar's
+            scroll container, so this button expands the sidebar first (same
+            persisted state as the header toggle) and, with multiple teams,
+            opens the switcher menu in the same click. */}
+        <button
+          type="button"
+          className={cn(
+            "mx-auto hidden h-8 w-8 items-center justify-center rounded-md",
+            "text-xs font-semibold text-hpb-blue dark:text-hpb-gold",
+            "bg-hpb-blue/10 hover:bg-hpb-blue/20 dark:bg-hpb-gold/10 dark:hover:bg-hpb-gold/20",
+            "group-data-[sidebar-collapsed]/shell:flex",
+          )}
+          title={multi ? `Switch team — ${activeTeam.name}` : activeTeam.name}
+          aria-label={multi ? "Switch team" : `Team: ${activeTeam.name}`}
+          onClick={() => {
+            setSidebarCollapsed(false);
+            if (multi) setOpen(true);
+          }}
+        >
+          {initials(activeTeam.name) || "?"}
+        </button>
         {multi ? (
           <>
             <button
               type="button"
               className={cn(
                 "flex w-full items-center gap-1 rounded-md px-2 py-1 text-left",
+                "group-data-[sidebar-collapsed]/shell:hidden",
                 "text-xs font-medium uppercase tracking-wide",
                 "text-zinc-600 dark:text-zinc-400",
                 "hover:bg-zinc-100 hover:text-zinc-900",
@@ -235,6 +256,9 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
                   "absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto",
                   "rounded-md border border-zinc-200 bg-white py-1 shadow-lg",
                   "dark:border-zinc-700 dark:bg-zinc-900",
+                  // If the sidebar collapses while the menu is open, hide the
+                  // menu rather than render it inside the 16-wide rail.
+                  "group-data-[sidebar-collapsed]/shell:hidden",
                 )}
               >
                 {sorted.map((t) => {
@@ -271,7 +295,7 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
             )}
           </>
         ) : (
-          <div className="px-2 text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+          <div className="px-2 text-xs font-medium uppercase tracking-wide text-zinc-600 group-data-[sidebar-collapsed]/shell:hidden dark:text-zinc-400">
             {activeTeam.name}
           </div>
         )}

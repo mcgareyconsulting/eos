@@ -24,6 +24,18 @@ function subscribe(onStoreChange: () => void) {
   return () => window.removeEventListener(COLLAPSE_CHANGE_EVENT, onStoreChange);
 }
 
+/** Set the collapsed state from anywhere in the shell (e.g. the collapsed
+ *  team-switcher rail button expands the sidebar before opening its menu). */
+export function setSidebarCollapsed(next: boolean) {
+  getShellEl()?.toggleAttribute("data-sidebar-collapsed", next);
+  try {
+    localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+  } catch {
+    /* private mode etc. — ignore */
+  }
+  window.dispatchEvent(new Event(COLLAPSE_CHANGE_EVENT));
+}
+
 /**
  * Collapse/expand control for the left sidebar. Mirrors ThemeToggle's
  * pattern: the collapsed flag lives as a `data-sidebar-collapsed` attribute
@@ -36,16 +48,7 @@ function subscribe(onStoreChange: () => void) {
 export function SidebarCollapseToggle() {
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, getServerCollapsed);
 
-  const toggle = () => {
-    const next = !collapsed;
-    getShellEl()?.toggleAttribute("data-sidebar-collapsed", next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-    } catch {
-      /* private mode etc. — ignore */
-    }
-    window.dispatchEvent(new Event(COLLAPSE_CHANGE_EVENT));
-  };
+  const toggle = () => setSidebarCollapsed(!collapsed);
 
   return (
     <button

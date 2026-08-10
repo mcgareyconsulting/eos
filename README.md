@@ -109,25 +109,31 @@ rolling (GCP project, IAM access, sign-in domain, security tier), send them
 ## Onboarding flow
 
 - Sign-in is Google OAuth → an HttpOnly session cookie (`lib/firebase/session.ts`); `proxy.ts` gates every route.
-- A signed-in user with **no team** is redirected to `/join`, where they request to join a team.
-- A team **leader** approves/denies requests on the **Members** page; approval writes the membership via an admin-SDK server action.
+- **Members** has two tabs: **This team** (roster + meeting settings) and **All teams** (org directory of every team/roster). Membership is **invite-only**.
+- **Org admin** (`role: "admin"` custom claim): Members → All teams → New team (name → invite leader → Done). Admins have god-mode access to all team data.
+- **Team leader**: on Members, pre-provisions members (name + email). No invite email is sent; people sign in with Google when ready.
+- Grant admin claim: `pnpm admin:set-role --email you@highplainsbank.com --apply` (then sign out/in).
 
 ## Security
 
-Access is gated on team membership in Firestore rules (`firestore.rules`), mirrored by `requireTeamAccess()` on the server. The **sign-in perimeter** is the server-enforced `SIGN_IN_ALLOWLIST` checked in `createSession()` (`lib/firebase/session.ts`): a comma-separated list of allowed domains (`@highplainsbank.com`) and exact emails (the consultant's account, for the duration of the engagement). Accounts outside it are refused a session — the client-side `hd` hint and the provider's domain restriction are not used for enforcement, since neither can express "domain plus one account". Unset, sign-in is open (emulator/trial). As defense-in-depth, the broad org/user/team reads in `firestore.rules` (`inDomain()`) mirror the same perimeter — keep the two in lockstep. Admin in-app is the Identity Platform `role: "admin"` custom claim, granted by HPB. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login.
+**Directory vs data:** `teams`, `team_members`, and `users` are readable org-wide (soft directory). Rocks, issues, todos, headlines, scorecard, meetings, etc. require **team membership** or the **admin** claim — mirrored by `requireTeamAccess()` / `requireTeamLeader()` / `requireAdmin()` on the server.
+
+The **sign-in perimeter** is the server-enforced `SIGN_IN_ALLOWLIST` checked in `createSession()` (`lib/firebase/session.ts`): a comma-separated list of allowed domains (`@highplainsbank.com`) and exact emails (the consultant's account, for the duration of the engagement). Accounts outside it are refused a session — the client-side `hd` hint and the provider's domain restriction are not used for enforcement, since neither can express "domain plus one account". Unset, sign-in is open (emulator/trial). As defense-in-depth, the broad org/user/team reads in `firestore.rules` (`inDomain()`) mirror the same perimeter — keep the two in lockstep. Admin in-app is the Identity Platform `role: "admin"` custom claim. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login.
 
 ## Project structure
 
 ```
 app/
   (auth)/login/                 — Google sign-in
-  join/                         — teamless users request to join
+  join/                         — legacy; redirects to /directory (invite-only)
   (app)/                        — auth-gated route group
     layout.tsx                  — sidebar shell
     home/                       — personal dashboard
+    directory/                  — legacy redirect → Members → All teams
     teams/[teamId]/
       scorecard/ rocks/ todos/
-      issues/ headlines/ members/
+      issues/ headlines/
+      members/                  — This team | All teams tabs; admin new-team
       meetings/                 — L10 list
       meetings/[meetingId]/     — live L10 orchestrator (segment components)
 components/                     — app shell, shared UI

@@ -28,7 +28,9 @@ type RockRow = {
 };
 
 export default async function HomePage() {
-  const { user, teams, db } = await getUserTeamsFirebase();
+  const { user, teams, membershipTeamIds, isAdmin, db } =
+    await getUserTeamsFirebase();
+  // Home aggregates data the user can open: memberships, or all teams for admin.
   const teamIds = teams.map((t) => t.id);
 
   // Firestore `in` caps at 30 values and each query at 30 disjunctions, so
@@ -153,6 +155,23 @@ export default async function HomePage() {
     <div className="space-y-8">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
+        {membershipTeamIds.length === 0 && !isAdmin && (
+          <p className="mt-2 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
+            You&apos;re not on a team yet, so there are no rocks or to-dos here.{" "}
+            <Link
+              href="/directory"
+              className="font-medium text-hpb-blue underline-offset-2 hover:underline dark:text-hpb-gold"
+            >
+              Browse the Members directory
+            </Link>{" "}
+            — a leader will invite you when ready.
+          </p>
+        )}
+        {isAdmin && membershipTeamIds.length === 0 && teams.length > 0 && (
+          <p className="mt-2 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
+            Showing all teams (admin). You are not on a roster yourself.
+          </p>
+        )}
       </header>
 
       <section>

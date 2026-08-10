@@ -98,7 +98,7 @@ pnpm import:csv \
   --project hpb-eos --database "" \
   --team "Enterprise Systems & Data" --create-team \
   --leader-name "Steph Benes" \
-  --member mcgareyconsulting@gmail.com \
+  --member daniel@mcgareyconsulting.com \
   --member joe.creighton@highplainsbank.com \
   --rocks      ~/Downloads/Rocks_Milestones_Enterprise_Systems___Data_07272026.xlsx \
   --milestones ~/Downloads/Rocks_Milestones_Enterprise_Systems___Data_07272026.xlsx \

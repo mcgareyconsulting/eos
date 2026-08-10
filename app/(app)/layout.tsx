@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 
@@ -7,14 +6,19 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, profile, teams } = await getUserTeamsFirebase();
+  const { user, profile, teams, isAdmin, membershipTeamIds } =
+    await getUserTeamsFirebase();
 
-  // Users not on any team can't use the app chrome (it's all team-scoped).
-  // Send them to /join to request membership; a leader approves.
-  if (teams.length === 0) redirect("/join");
-
+  // Teamless users stay in the shell so they can use Directory (org-wide
+  // roster). Team *data* routes still 404 via requireTeamAccess until invited.
   return (
-    <AppShell user={user} profile={profile} teams={teams}>
+    <AppShell
+      user={user}
+      profile={profile}
+      teams={teams}
+      isAdmin={isAdmin}
+      membershipCount={membershipTeamIds.length}
+    >
       {children}
     </AppShell>
   );

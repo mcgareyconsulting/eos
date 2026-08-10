@@ -113,7 +113,7 @@ about 30 seconds, no build:
 
 ```bash
 gcloud run services update eos --region us-east1 --project <PROJECT_ID> \
-  --update-env-vars "^|^SIGN_IN_ALLOWLIST=@highplainsbank.com,mcgareyconsulting@gmail.com"
+  --update-env-vars "^|^SIGN_IN_ALLOWLIST=@highplainsbank.com,daniel@mcgareyconsulting.com"
 ```
 
 (The `^|^` prefix makes `|` the delimiter so the value's own commas survive —

@@ -1,5 +1,10 @@
 import { Check, X, Video, Compass } from "lucide-react";
-import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import {
+  requireTeamAccess,
+  getTeamMembers,
+  getOrgDirectory,
+} from "@/lib/firebase/teams";
 import {
   approveJoinRequest,
   denyJoinRequest,
@@ -9,6 +14,8 @@ import {
 import { AddMemberDrawer } from "./add-member-drawer";
 import { MemberRoleControls } from "./member-role-controls";
 import { SpeakingOrderEditor } from "./speaking-order-editor";
+import { MembersTabs, type MembersTab } from "./members-tabs";
+import { OrgDirectoryPanel } from "./org-directory-panel";
 
 type JoinRequest = {
   user_id: string;
@@ -18,19 +25,47 @@ type JoinRequest = {
 
 export default async function MembersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ teamId: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const sp = await searchParams;
+  const tab: MembersTab = sp.tab === "directory" ? "directory" : "team";
+
+  const { uid, db, team, isAdmin, membershipRole } =
+    await requireTeamAccess(tid);
+
+  if (tab === "directory") {
+    const { membershipTeamIds, user } = await getUserTeamsFirebase();
+    const directory = await getOrgDirectory();
+    return (
+      <div className="space-y-6">
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Team roster and org-wide directory.
+          </p>
+        </header>
+        <MembersTabs teamId={tid} active="directory" />
+        <OrgDirectoryPanel
+          directory={directory}
+          membershipTeamIds={membershipTeamIds}
+          currentUserId={user.id}
+          isAdmin={isAdmin}
+          contextTeamId={tid}
+        />
+      </div>
+    );
+  }
+
   const members = await getTeamMembers(tid);
 
-  const isLeader = members.some(
-    (m) => m.user_id === uid && m.role === "leader",
-  );
+  const isLeader = membershipRole === "leader";
+  const canManage = isLeader || isAdmin;
   const leaderCount = members.filter((m) => m.role === "leader").length;
 
-  // Leaders first, then A–Z — makes who can admin easier to scan.
   const roster = [...members].sort((a, b) => {
     if (a.role === "leader" && b.role !== "leader") return -1;
     if (a.role !== "leader" && b.role === "leader") return 1;
@@ -41,9 +76,8 @@ export default async function MembersPage({
 
   const driver = members.find((m) => m.user_id === team.meetingDriverId) ?? null;
 
-  // Pending join requests (only leaders act on them).
   let pending: JoinRequest[] = [];
-  if (isLeader) {
+  if (canManage) {
     const snap = await db
       .collection("team_join_requests")
       .where("team_id", "==", tid)
@@ -59,17 +93,26 @@ export default async function MembersPage({
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-        {isLeader && <AddMemberDrawer teamId={tid} />}
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
+          {isAdmin && !isLeader && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Viewing as org admin — you can invite and manage roles without
+              being on the roster.
+            </p>
+          )}
+        </div>
+        {canManage && <AddMemberDrawer teamId={tid} />}
       </header>
 
-      {isLeader && (
+      <MembersTabs teamId={tid} active="team" />
+
+      {canManage && (
         <section className="space-y-2">
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Meeting settings
           </h2>
           <div className="space-y-4 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-            {/* Meeting driver — designated facilitator for the live L10. */}
             <form action={setMeetingDriver.bind(null, tid)}>
               <label
                 htmlFor="driver_id"
@@ -105,7 +148,6 @@ export default async function MembersPage({
               </div>
             </form>
 
-            {/* Team Google Meet link — used by the live-meeting Join button. */}
             <form
               action={setMeetLink.bind(null, tid)}
               className="border-t border-zinc-200 dark:border-zinc-800 pt-4"
@@ -212,7 +254,7 @@ export default async function MembersPage({
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
             Team members
           </h2>
-          {isLeader && (
+          {canManage && (
             <p className="text-xs text-zinc-500">
               Leaders can manage members and meeting settings. A team always
               needs at least one leader.
@@ -238,7 +280,7 @@ export default async function MembersPage({
                     Driver
                   </span>
                 )}
-                {isLeader ? (
+                {canManage ? (
                   <MemberRoleControls
                     teamId={tid}
                     userId={m.user_id}

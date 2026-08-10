@@ -1,7 +1,10 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { tokenIsAdmin } from "./admin-claim";
 import { getAdminDb } from "./admin";
 import { verifySession } from "./session";
+
+export { tokenIsAdmin } from "./admin-claim";
 
 // Resolves the current Firebase session user. Per-request de-duped via
 // React cache() so layout + page share a single session verification.
@@ -13,39 +16,56 @@ export const requireFirebaseUser = cache(async () => {
     email: decoded.email ?? null,
     name: decoded.name ?? null,
     picture: decoded.picture ?? null,
+    isAdmin: tokenIsAdmin(decoded),
     db: getAdminDb(),
   };
 });
 
 // Returns the user/profile/teams structure that AppShell + home expect,
-// hydrated from Firebase Auth claims + Firestore. Returns an empty `teams`
-// array for users not yet on a team — the (app) layout redirects those users
-// to /join, where they request membership (a leader approves). We never
-// auto-create a personal "solo team".
+// hydrated from Firebase Auth claims + Firestore.
+//
+// `teams` is what the sidebar can open for *data*:
+//   - normal users: only membership teams
+//   - org admins: every team (god-mode navigation)
+// `membershipTeamIds` is always the real roster rows for this user (even when
+// admin), so Directory can distinguish "on this team" vs "admin access only".
+//
+// Teamless non-admins stay in the app shell (Directory is visible); they are
+// no longer forced through a self-serve /join request list.
 export const getUserTeamsFirebase = cache(async () => {
-  const { uid, name, email, picture, db } = await requireFirebaseUser();
+  const { uid, name, email, picture, isAdmin, db } = await requireFirebaseUser();
 
-  // Load all the user's team memberships, then hydrate the teams.
   const membershipsSnap = await db
     .collection("team_members")
     .where("user_id", "==", uid)
     .get();
 
-  const teamIds = membershipsSnap.docs.map(
+  const membershipTeamIds = membershipsSnap.docs.map(
     (d) => d.data().team_id as string,
   );
 
-  const teamDocs = teamIds.length
-    ? await db.getAll(
-        ...teamIds.map((id) => db.collection("teams").doc(id)),
-      )
-    : [];
+  let teams: { id: string; name: string }[];
 
-  const teams = teamDocs
-    .filter((d) => d.exists)
-    .map((d) => ({ id: d.id, name: (d.data()?.name as string) ?? "Team" }));
+  if (isAdmin) {
+    const allSnap = await db.collection("teams").orderBy("name").get();
+    teams = allSnap.docs.map((d) => ({
+      id: d.id,
+      name: (d.data()?.name as string) ?? "Team",
+    }));
+  } else if (membershipTeamIds.length > 0) {
+    const teamDocs = await db.getAll(
+      ...membershipTeamIds.map((id) => db.collection("teams").doc(id)),
+    );
+    teams = teamDocs
+      .filter((d) => d.exists)
+      .map((d) => ({ id: d.id, name: (d.data()?.name as string) ?? "Team" }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+  } else {
+    teams = [];
+  }
 
-  // Build the profile shape AppShell + home render from.
   const fullName = (name ?? email ?? "").trim();
   const [firstName, ...rest] = fullName.split(/\s+/);
   const lastName = rest.join(" ");
@@ -61,6 +81,8 @@ export const getUserTeamsFirebase = cache(async () => {
       picture: picture ?? null,
     },
     teams,
+    membershipTeamIds,
+    isAdmin,
     db,
   };
 });

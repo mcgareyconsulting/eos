@@ -10,7 +10,7 @@ const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 // long-lived HttpOnly session cookie. ID token must be < 5 min old.
 //
 // This is the sign-in perimeter. When SIGN_IN_ALLOWLIST is set (e.g.
-// "@highplainsbank.com,mcgareyconsulting@gmail.com"), only matching accounts
+// "@highplainsbank.com,daniel@mcgareyconsulting.com"), only matching accounts
 // get a session — enforced HERE because it's the one chokepoint every
 // session passes through. The client-side `hd` hint only pre-filters
 // Google's account chooser, and Firestore rules don't run for the admin-SDK

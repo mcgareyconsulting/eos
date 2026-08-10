@@ -45,7 +45,7 @@ regenerated fresh in the client's project rather than copied:
 - **Open sign-in** (no server-side email check at all) — the client project
   must restrict access, but via the `createSession()` allowlist, **not** the
   hosted-domain hint (§4: the access decision is HPB domain *plus* the
-  consultant Gmail, which a domain restriction can't express).
+  consultant email, which a domain restriction can't express).
 - **The trial's OAuth client** (`187669305497-bgvkukdbaju8se2lthpp9t05be16s34h...`),
   if the Meet/Tasks connectors ship — a fresh OAuth client must be created
   *in the client's project*, with redirect URIs pointing at the client's
@@ -144,11 +144,11 @@ to live data.
       *(already enabled on `hpb-eos-prod`)*
 - [ ] Set the OAuth consent/support email for the project
 - [ ] Access decision (2026-07-27): **`highplainsbank.com` accounts plus
-      `mcgareyconsulting@gmail.com`, no one else.** Neither the provider's
+      `daniel@mcgareyconsulting.com`, no one else.** Neither the provider's
       single-domain restriction nor the `hd` hint can express that — do
       **not** set the provider domain restriction and do **not** bake
       `_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=highplainsbank.com` into the
-      build (either one locks the consultant Gmail out of the sign-in flow).
+      build (either one locks the consultant account out of the sign-in flow).
       Enforcement is the server-side env-driven allowlist in
       `createSession()` (`lib/firebase/session.ts`) + the matching
       `inDomain()` update in `firestore.rules`. If HPB later issues the
@@ -222,7 +222,7 @@ _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 - [ ] Sign in once to confirm — this is the step most likely to be missed;
       skipping it lets the app deploy fine but sign-in silently fails
 - [ ] **Negative test:** sign in with a Google account that is neither
-      `@highplainsbank.com` nor the allowlisted consultant Gmail and confirm
+      `@highplainsbank.com` nor the allowlisted consultant email and confirm
       it is **rejected**. With an allowlist, proving the wrong account fails
       matters more than proving the right one succeeds.
 

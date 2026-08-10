@@ -401,7 +401,7 @@ _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 
 > `_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN` is deliberately **left empty** for
 > this project. Setting it hides every non-`highplainsbank.com` account —
-> including the operator's own `mcgareyconsulting@gmail.com` — from Google's
+> including the operator's own `daniel@mcgareyconsulting.com` — from Google's
 > account picker, with no obvious way back. The real perimeter is the
 > server-side `SIGN_IN_ALLOWLIST` runtime env var (§5.2), not this hint.
 

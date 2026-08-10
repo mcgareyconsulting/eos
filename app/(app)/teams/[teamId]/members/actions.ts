@@ -2,19 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import {
   getTeamMembers,
   requireTeamLeader,
 } from "@/lib/firebase/teams";
+import {
+  assertInviteEmail,
+  ensureAuthUser,
+  writeMembership,
+} from "@/lib/team-invite";
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/members`;
 }
 
 /**
- * Durable L10 speaking order on the team (P1-5). Leaders only.
+ * Durable L10 speaking order on the team (P1-5). Leaders only (or org admin).
  * Must be a full permutation of the current roster.
  */
 export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
@@ -32,15 +36,9 @@ export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
   revalidatePath(pathFor(teamId));
 }
 
-// Loose but practical address check. We normalize to lowercase before use;
-// the allowlist (when set) is the real perimeter gate.
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 // Leader-initiated add: create (or reuse) a Firebase Auth account for the
 // given email, hydrate /users/{uid}, and write team_members. Mirrors the
-// create-accounts CLI + join-approval path so the person can sign in with
+// create-accounts CLI + admin create-team path so the person can sign in with
 // Google later and land on this team with their name already set.
 //
 // Creating an Auth record does NOT email anyone — it's an empty account
@@ -50,82 +48,32 @@ export async function addTeamMember(teamId: string, formData: FormData) {
 
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const emailRaw = String(formData.get("email") ?? "");
 
   if (!firstName) throw new Error("First name is required");
   if (!lastName) throw new Error("Last name is required");
-  if (!email || !isValidEmail(email)) {
-    throw new Error("Enter a valid email address");
-  }
-
-  // Don't let leaders pre-stage accounts that the sign-in perimeter will
-  // reject. When allowlist is unset (open trial), any address is fine.
-  const allowlist = parseAllowlist(process.env.SIGN_IN_ALLOWLIST);
-  if (!isEmailAllowed(allowlist, email)) {
-    throw new Error(
-      "That email isn't on the sign-in allowlist for this app. Use a High Plains Bank address.",
-    );
-  }
+  const email = assertInviteEmail(emailRaw);
 
   const auth = getAdminAuth();
-  let userId: string;
-  const existing = await auth.getUserByEmail(email).catch(() => null);
-  if (existing) {
-    userId = existing.uid;
-  } else {
-    const created = await auth.createUser({
-      email,
-      displayName: `${firstName} ${lastName}`,
-      // emailVerified stays false — nothing here verifies the address;
-      // Google sets it on first sign-in.
-    });
-    userId = created.uid;
-  }
-
-  // Already on this team? Surface a clear error instead of silently no-op'ing.
-  const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
-  const memberSnap = await memberRef.get();
-  if (memberSnap.exists) {
-    throw new Error("That person is already on this team");
-  }
-
-  const fullName = `${firstName} ${lastName}`.trim();
-  const batch = db.batch();
-
-  batch.set(
-    db.collection("users").doc(userId),
-    {
-      display_name: fullName,
-      first_name: firstName,
-      last_name: lastName,
-      email,
-    },
-    { merge: true },
-  );
-
-  batch.set(memberRef, {
-    team_id: teamId,
-    user_id: userId,
-    role: "member",
-    created_at: FieldValue.serverTimestamp(),
+  const userId = await ensureAuthUser(auth, {
+    email,
+    firstName,
+    lastName,
   });
 
-  // If they had a pending join request for this team, close it as approved
-  // so it doesn't linger under Pending requests.
-  const requestRef = db
-    .collection("team_join_requests")
-    .doc(`${teamId}__${userId}`);
-  const requestSnap = await requestRef.get();
-  if (requestSnap.exists && requestSnap.data()?.status === "pending") {
-    batch.update(requestRef, {
-      status: "approved",
-      decided_at: FieldValue.serverTimestamp(),
-      decided_by: leaderUid,
-    });
-  }
+  await writeMembership(db, {
+    teamId,
+    userId,
+    role: "member",
+    firstName,
+    lastName,
+    email,
+    decidedBy: leaderUid,
+  });
 
-  await batch.commit();
   revalidatePath(pathFor(teamId));
+  revalidatePath(`${pathFor(teamId)}?tab=directory`);
+  revalidatePath("/directory");
 }
 
 // Approve a pending join request: write the user's profile + team membership,
@@ -256,9 +204,9 @@ export async function denyJoinRequest(teamId: string, userId: string) {
 
 /**
  * Promote a member to leader, or demote a leader to member.
- * Leaders only. A team must keep at least one leader — demoting the last
- * leader (including yourself) is rejected so the team can't lock itself out
- * of Members admin.
+ * Team leaders or org admins. A team must keep at least one leader — demoting
+ * the last leader (including yourself) is rejected so the team can't lock
+ * itself out of Members management.
  */
 export async function setMemberRole(
   teamId: string,
@@ -302,4 +250,6 @@ export async function setMemberRole(
     { merge: true },
   );
   revalidatePath(pathFor(teamId));
+  revalidatePath(`${pathFor(teamId)}?tab=directory`);
+  revalidatePath("/directory");
 }

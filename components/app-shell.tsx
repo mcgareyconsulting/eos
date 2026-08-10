@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Plug } from "lucide-react";
+import { Home, Plug, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
@@ -17,12 +17,17 @@ export function AppShell({
   user,
   profile,
   teams,
+  isAdmin = false,
+  membershipCount = 0,
   children,
 }: {
   user: { email?: string | null };
   profile: Profile;
-  /** All teams the user belongs to (sidebar switcher when length > 1). */
+  /** Teams the sidebar can open for data (memberships, or all teams if admin). */
   teams: ShellTeam[];
+  isAdmin?: boolean;
+  /** Real membership count (may be 0 for admin with god-mode only). */
+  membershipCount?: number;
   children: React.ReactNode;
 }) {
   const displayName =
@@ -32,22 +37,12 @@ export function AppShell({
     "";
 
   return (
-    // Column wrapper so the environment banner can span the full width above
-    // both the sidebar and the main pane. Without a label it renders nothing
-    // and this collapses to the original single-row layout.
     <div className="group/shell flex h-screen flex-col overflow-hidden">
       <EnvBanner />
       <LiveAuthBanner />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Focus mode: a page can drop the global nav and widen the content
-            by rendering `<div data-meeting-focus hidden />` anywhere inside
-            (the live L10 does). Driven by :has() off the page's own markup
-            rather than by usePathname, deliberately — the router updates the
-            pathname optimistically the moment a navigation starts, so a
-            path-based rule tore the nav away while the PREVIOUS page was
-            still on screen, then swapped the page a beat later. */}
         <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-300 bg-white group-has-[[data-meeting-focus]]/shell:hidden dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="px-4 py-5 border-b border-zinc-300 dark:border-zinc-800">
+          <div className="border-b border-zinc-300 px-4 py-5 dark:border-zinc-800">
             <Link href="/home" className="block">
               <span className="block text-base font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
                 High Plains Bank
@@ -56,24 +51,53 @@ export function AppShell({
                 Employee Owned • Community Driven
               </span>
             </Link>
+            {isAdmin && (
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-hpb-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
+                <Shield className="h-3 w-3" />
+                Admin
+              </span>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <nav className="px-2 py-3 space-y-0.5">
+            <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NavLink href="/integrations" icon={Plug} label="Integrations" />
             </nav>
 
+            {membershipCount === 0 && !isAdmin && (
+              <div className="mx-2 mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                You&apos;re not on a team yet. Open{" "}
+                <Link href="/directory" className="font-medium underline">
+                  Members directory
+                </Link>{" "}
+                — a leader will add you when ready.
+              </div>
+            )}
+
+            {membershipCount === 0 && isAdmin && teams.length === 0 && (
+              <div className="mx-2 mb-2 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[11px] leading-snug text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-300">
+                No teams yet.{" "}
+                <Link
+                  href="/directory/new"
+                  className="font-medium text-hpb-blue underline dark:text-hpb-gold"
+                >
+                  Create a team
+                </Link>
+                .
+              </div>
+            )}
+
             {teams.length > 0 && <TeamNav teams={teams} />}
           </div>
 
-          <div className="border-t border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
+          <div className="border-t border-zinc-300 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
                   {displayName}
                 </div>
-                <SignOutButton className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 underline-offset-2 hover:underline" />
+                <SignOutButton className="mt-0.5 text-xs text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100" />
               </div>
               <ThemeToggle />
             </div>
@@ -81,10 +105,6 @@ export function AppShell({
         </aside>
 
         <main className="min-w-0 flex-1 overflow-auto">
-          {/* Left-aligned (no mx-auto): content hugs the sidebar instead of
-              centering in the pane, which on wide monitors opened a dead gap
-              between nav and page. Still capped — uncapped content stretches
-              card rows into islands on a 27" monitor. */}
           <div className="max-w-[1600px] px-6 py-6">{children}</div>
         </main>
       </div>
@@ -104,9 +124,9 @@ function NavLink({
   return (
     <Link
       href={href}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
     >
-      <Icon className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
+      <Icon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
       <span>{label}</span>
     </Link>
   );

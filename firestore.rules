@@ -30,7 +30,7 @@ service cloud.firestore {
     function inDomain() {
       return authed()
         && (request.auth.token.email.matches(".*@highplainsbank[.]com$")
-            || request.auth.token.email == "mcgareyconsulting@gmail.com");
+            || request.auth.token.email == "daniel@mcgareyconsulting.com");
     }
 
     function isMember(teamId) {
@@ -59,7 +59,11 @@ service cloud.firestore {
       allow write: if uid == request.auth.uid || admin();
     }
 
-    // ---------- teams & memberships ----------
+    // ---------- teams & memberships (org directory) ----------
+    // Soft directory: any signed-in in-domain user may read team names and
+    // rosters. Team *data* (rocks, issues, meetings, …) is membership-gated
+    // below. Writes go through Admin SDK server actions (create team, invite);
+    // client write stays admin-claim only as defense-in-depth.
     match /teams/{teamId} {
       allow read:  if inDomain();
       allow write: if admin();
@@ -70,18 +74,15 @@ service cloud.firestore {
       allow write: if admin();
     }
 
-    // ---------- join requests ----------
-    // A teamless user requests to join a team; a team leader approves/denies.
-    // The actual membership write happens via an admin-SDK server action, so
-    // these client rules are defense-in-depth: a user may create/read their
-    // own pending request; leaders read + decide their team's requests.
+    // ---------- join requests (legacy) ----------
+    // Self-serve join is retired in the app (invite-only). Rules still allow
+    // leaders/admins to read/close leftover pending docs; new creates remain
+    // limited to the requester so old clients cannot spoof others.
     match /team_join_requests/{id} {
       allow read:   if admin()
                     || resource.data.user_id == request.auth.uid
                     || isLeader(resource.data.team_id);
-      allow create: if inDomain()
-                    && request.resource.data.user_id == request.auth.uid
-                    && request.resource.data.status == "pending";
+      allow create: if false; // invite-only; membership via server actions
       allow update, delete: if admin() || isLeader(resource.data.team_id);
     }
 

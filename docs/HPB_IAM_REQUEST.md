@@ -1,6 +1,6 @@
 # IAM request — `hpb-eos-prod` (for HPB's GCP admin)
 
-**From:** Daniel McGarey (`mcgareyconsulting@gmail.com`, currently
+**From:** Daniel McGarey (`daniel@mcgareyconsulting.com`, currently
 `roles/editor` on the project)
 **Date:** 2026-07-27 · **Needed by:** Tue 2026-07-29 EOD to demo from this
 project Wednesday; otherwise the demo runs from our trial environment and
@@ -25,11 +25,11 @@ in your hands.
 
 ```bash
 gcloud projects add-iam-policy-binding hpb-eos-prod \
-  --member=user:mcgareyconsulting@gmail.com --role=roles/resourcemanager.projectIamAdmin
+  --member=user:daniel@mcgareyconsulting.com --role=roles/resourcemanager.projectIamAdmin
 gcloud projects add-iam-policy-binding hpb-eos-prod \
-  --member=user:mcgareyconsulting@gmail.com --role=roles/iam.serviceAccountAdmin
+  --member=user:daniel@mcgareyconsulting.com --role=roles/iam.serviceAccountAdmin
 gcloud projects add-iam-policy-binding hpb-eos-prod \
-  --member=user:mcgareyconsulting@gmail.com --role=roles/run.admin
+  --member=user:daniel@mcgareyconsulting.com --role=roles/run.admin
 ```
 
 Three roles because the bindings sit at three levels: project policy

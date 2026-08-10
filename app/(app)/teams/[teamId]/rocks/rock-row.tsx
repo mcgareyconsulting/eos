@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Archive, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
-import { deleteRock } from "./actions";
+import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
@@ -35,6 +35,7 @@ type Rock = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  archived_at?: unknown | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -82,6 +83,10 @@ export function RockRow({
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
   const remove = deleteRock.bind(null, teamId, rock.id);
+  // Same field the Monday auto-archive sweep sets — a manually archived rock
+  // is indistinguishable from one the sweep moved (see setRockArchived).
+  const archivedRow = rock.archived_at != null;
+  const toggleArchive = setRockArchived.bind(null, teamId, rock.id, !archivedRow);
 
   const detailMilestones = milestones.map((m) => ({
     id: m.id,
@@ -179,18 +184,30 @@ export function RockRow({
               currentUserId={currentUserId}
               teamName={teamName}
             />
-            <ConfirmSubmitForm
-              action={remove}
-              confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
-            >
+            <form action={toggleArchive}>
               <button
                 type="submit"
-                aria-label="Delete rock"
-                className="rounded p-1 text-zinc-200 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-700"
+                aria-label={archivedRow ? "Restore rock" : "Archive rock"}
+                title={archivedRow ? "Restore" : "Archive now"}
+                className="rounded p-1 text-zinc-200 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-700 dark:hover:text-zinc-200"
               >
-                <Trash2 className="h-[15px] w-[15px]" />
+                <Archive className="h-[15px] w-[15px]" />
               </button>
-            </ConfirmSubmitForm>
+            </form>
+            {!archivedRow && (
+              <ConfirmSubmitForm
+                action={remove}
+                confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
+              >
+                <button
+                  type="submit"
+                  aria-label="Delete rock"
+                  className="rounded p-1 text-zinc-200 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-700"
+                >
+                  <Trash2 className="h-[15px] w-[15px]" />
+                </button>
+              </ConfirmSubmitForm>
+            )}
           </div>
         </div>
 

@@ -51,12 +51,6 @@ export function AppShell({
                 Employee Owned • Community Driven
               </span>
             </Link>
-            {isAdmin && (
-              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-hpb-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
-                <Shield className="h-3 w-3" />
-                Admin
-              </span>
-            )}
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -94,8 +88,19 @@ export function AppShell({
           <div className="border-t border-zinc-300 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  {displayName}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {displayName}
+                  </div>
+                  {isAdmin && (
+                    <span
+                      className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-hpb-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold"
+                      title="Org admin"
+                    >
+                      <Shield className="h-2.5 w-2.5" />
+                      Admin
+                    </span>
+                  )}
                 </div>
                 <SignOutButton className="mt-0.5 text-xs text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100" />
               </div>

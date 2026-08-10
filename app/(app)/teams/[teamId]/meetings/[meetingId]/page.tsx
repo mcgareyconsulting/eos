@@ -66,7 +66,12 @@ export default async function MeetingDetailPage({
   // standalone Scorecard page so L10 filters match.
   const scorecardWeekRange = parseWeekRange(weeksParam);
   const scorecardPeriod = parseScorecardPeriod(periodParam);
-  const { uid, db, team } = await requireTeamAccess(tid);
+  const { uid, db, team, isAdmin, membershipRole } = await requireTeamAccess(tid);
+  // Pass 18 #9: only a team leader (or org admin, god-mode bypass) may drive
+  // the shared L10 transport — advance/rewind segments, Finish. Members keep
+  // peeking + catch-up; MeetingRail hides the transport controls when this
+  // is false. Mirrors the server-side gate in meetings/actions.ts.
+  const isLeader = isAdmin || membershipRole === "leader";
 
   const meetingSnap = await db.collection("meetings").doc(mid).get();
   if (!meetingSnap.exists || meetingSnap.data()?.team_id !== tid) notFound();
@@ -308,6 +313,7 @@ export default async function MeetingDetailPage({
           initialSpeakingOrder={speakingOrder}
           initialSpeakerIndex={speakerIndex}
           initialAbsentUserIds={absentUserIds}
+          isLeader={isLeader}
         />
       )}
 

@@ -56,6 +56,7 @@ export function MeetingRail({
   initialSpeakingOrder,
   initialSpeakerIndex,
   initialAbsentUserIds,
+  isLeader,
 }: {
   teamId: string;
   meetingId: string;
@@ -75,6 +76,12 @@ export function MeetingRail({
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
   initialAbsentUserIds: string[];
+  /** Pass 18 #9: team leader or org admin — the only viewers who may drive
+   *  the shared transport (Back/Next/Finish below). Everyone else keeps
+   *  peek (?view=) and the "Group is on X — Catch up" pill; the server
+   *  actions enforce this independently, so hiding the buttons here is a
+   *  UX courtesy, not the security boundary. */
+  isLeader: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -419,8 +426,11 @@ export function MeetingRail({
           )}
         </nav>
 
-        {/* Transport — drives the shared stage; any user. */}
-        {running && (
+        {/* Transport — drives the shared stage. Pass 18 #9: leader/admin
+            only. Members still get peek + catch-up above/below; this block
+            (and Finish) is the group-moving part, so it's hidden rather
+            than shown-disabled — there's nothing for a member to do here. */}
+        {running && isLeader && (
           <div className="space-y-2 px-3 py-3">
             <div className="flex gap-2">
               <button
@@ -465,6 +475,20 @@ export function MeetingRail({
                 the page header) because the global nav is hidden on this
                 route and exit belongs with the other leave-the-meeting
                 action. */}
+            <Link
+              href={`/teams/${teamId}/meetings`}
+              className="block text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"
+            >
+              ← Back to Meetings
+            </Link>
+          </div>
+        )}
+
+        {/* Members (no transport above): still need a way out of the live
+            meeting UI without ending it — the exit link normally bundled
+            with Finish above. */}
+        {running && !isLeader && (
+          <div className="px-3 py-3">
             <Link
               href={`/teams/${teamId}/meetings`}
               className="block text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"

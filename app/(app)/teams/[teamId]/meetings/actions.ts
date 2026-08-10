@@ -7,6 +7,7 @@ import {
   getTeamMembers,
   requireTeamAccess,
   requireTeamDoc,
+  requireTeamLeader,
 } from "@/lib/firebase/teams";
 import {
   SEGMENTS,
@@ -31,8 +32,11 @@ function detailPath(teamId: string, meetingId: string) {
   return `/teams/${teamId}/meetings/${meetingId}`;
 }
 
+// Group-transport action — starting the shared L10 room is a facilitator
+// control, so it requires team leader OR org admin (bypass built into
+// requireTeamLeader). Non-leader members 404 rather than minting a meeting.
 export async function startMeeting(teamId: string) {
-  const { db, team } = await requireTeamAccess(teamId);
+  const { db, team } = await requireTeamLeader(teamId);
 
   // One live meeting per team: if someone already started one, join it
   // instead of minting a duplicate — two people clicking Start at 9:00 (or a
@@ -95,6 +99,10 @@ async function resetTeamIssueVotes(db: Firestore, teamId: string) {
   }
 }
 
+// Group-transport action — moves the shared current_segment for everyone in
+// the room, so only a team leader or org admin (bypass built into
+// requireTeamLeader) may drive it. Members keep local peek (?view=) via the
+// rail; this only gates the write that moves the *group's* stage.
 export async function advanceSegment(
   teamId: string,
   meetingId: string,
@@ -104,7 +112,7 @@ export async function advanceSegment(
   // moved and no-ops instead of skipping a stage.
   expectedCurrent?: Segment,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { db } = await requireTeamLeader(teamId);
   const ref = db.collection("meetings").doc(meetingId);
 
   await db.runTransaction(async (tx) => {
@@ -141,6 +149,10 @@ export async function advanceSegment(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
+// Same class of control as advanceSegment (writes the shared current_segment
+// directly rather than stepping it) — leader/admin-gated for the same
+// reason, even though nothing currently calls this (the rail peeks locally
+// instead; see docs/L10_GAPS.md).
 export async function jumpToSegment(
   teamId: string,
   meetingId: string,
@@ -149,7 +161,7 @@ export async function jumpToSegment(
   if (!SEGMENTS.includes(target) || target === "done") {
     throw new Error("Invalid segment");
   }
-  const { db } = await requireTeamAccess(teamId);
+  const { db } = await requireTeamLeader(teamId);
   const snap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db
     .collection("meetings")
@@ -240,8 +252,10 @@ export async function setDiscussingIssue(
     .update({ current_issue_id: issueId });
 }
 
+// Group-transport action — ending the meeting is a facilitator control
+// (Finish), leader/admin-gated the same as advanceSegment/startMeeting.
 export async function endMeeting(teamId: string, meetingId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { db } = await requireTeamLeader(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
   // Transactional so a second Finish (two people, or a stale tab) can't
   // overwrite ended_at and inflate the recorded duration.

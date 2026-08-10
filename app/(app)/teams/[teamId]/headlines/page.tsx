@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Archive, Megaphone, Smile, Trash2, Users } from "lucide-react";
+import { Archive, Info, Megaphone, Smile, Trash2, Users } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Timestamp } from "firebase-admin/firestore";
@@ -11,12 +12,13 @@ import {
   setHeadlineArchived,
 } from "./actions";
 import { HeadlineDiscussedCheckbox } from "./headline-checkbox";
+import { HeadlineEditButton } from "./headline-edit-modal";
 
 type HeadlineDoc = {
   team_id: string;
   title: string;
   body: string | null;
-  kind: "customer" | "employee" | "cascading";
+  kind: "customer" | "employee" | "cascading" | "general";
   created_by: string | null;
   target_team_ids: string[];
   created_at: Timestamp | null;
@@ -49,6 +51,12 @@ const KIND_META: Record<
     badge:
       "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
     Icon: Megaphone,
+  },
+  general: {
+    label: "General / FYI",
+    badge:
+      "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 ring-slate-200",
+    Icon: Info,
   },
 };
 
@@ -238,6 +246,15 @@ export default async function HeadlinesPage({
               </div>
               {!readOnly && (
                 <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <HeadlineEditButton
+                    teamId={teamId}
+                    headline={{
+                      id: h.id,
+                      title: h.title,
+                      body: h.body,
+                      kind: h.kind,
+                    }}
+                  />
                   <form action={toggleArchive}>
                     <button
                       type="submit"
@@ -249,7 +266,10 @@ export default async function HeadlinesPage({
                     </button>
                   </form>
                   {!archivedRow && (
-                    <form action={remove}>
+                    <ConfirmSubmitForm
+                      action={remove}
+                      confirmMessage="Delete this headline? This can't be undone."
+                    >
                       <button
                         type="submit"
                         className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
@@ -257,7 +277,7 @@ export default async function HeadlinesPage({
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </form>
+                    </ConfirmSubmitForm>
                   )}
                 </div>
               )}
@@ -293,6 +313,7 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
         <option value="customer">Customer</option>
         <option value="employee">Employee</option>
         <option value="cascading">Cascading</option>
+        <option value="general">General / FYI</option>
       </select>
       <textarea
         name="body"

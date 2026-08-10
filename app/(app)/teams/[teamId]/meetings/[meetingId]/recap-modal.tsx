@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
+import { RatingForm } from "@/components/l10/rating-form";
+import { rateMeeting } from "../actions";
 
 export type RecapItem = {
   id: string;
@@ -24,6 +26,9 @@ export type RecapStats = {
 };
 
 export function RecapModal({
+  teamId,
+  meetingId,
+  myRating,
   meetingMinutes,
   notes,
   newRocks,
@@ -36,6 +41,16 @@ export function RecapModal({
   overallAverageRating,
   autoOpen,
 }: {
+  /** Needed only to let the viewer submit their own rating from in here —
+   *  see the inline prompt below. */
+  teamId: string;
+  meetingId: string;
+  /** The current viewer's own rating, or null if they haven't rated yet.
+   *  Finishing the meeting opens this modal for every attendee immediately
+   *  (see meeting-rail.tsx), which can land on top of an unrated attendee
+   *  before they get to the rating form in Conclude — surfacing the prompt
+   *  here too means the recap never covers up a still-open rating. */
+  myRating: { rating: number; notes: string | null } | null;
   meetingMinutes: number | null;
   notes: string | null;
   newRocks: RecapItem[];
@@ -124,6 +139,20 @@ export function RecapModal({
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+          {/* Finishing the meeting opens this recap for everyone right away
+              — including an attendee who hadn't gotten to Conclude's rating
+              form yet. Rather than make them close the recap to find it
+              again, offer it right here so nobody's un-submitted rating gets
+              stranded behind this sheet. */}
+          {myRating == null && (
+            <section className="rounded-lg border-2 border-hpb-blue/30 bg-hpb-blue/5 dark:bg-hpb-blue/10 p-4">
+              <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Rate this meeting
+              </h3>
+              <RecapRatingForm teamId={teamId} meetingId={meetingId} />
+            </section>
+          )}
+
           <Section title="Rocks Created">
             <ItemList
               items={newRocks}
@@ -259,6 +288,31 @@ export function RecapModal({
         </footer>
       </div>
     </div>
+  );
+}
+
+// Thin wrapper mirroring ConcludeReview's MeetingRatingWidget: submits via
+// the same server action and refreshes so the "Meeting Rating" section below
+// (and Conclude, behind this sheet) both pick up the new rating.
+function RecapRatingForm({
+  teamId,
+  meetingId,
+}: {
+  teamId: string;
+  meetingId: string;
+}) {
+  const router = useRouter();
+
+  async function submit(score: number, notes: string) {
+    const fd = new FormData();
+    fd.set("rating", String(score));
+    fd.set("notes", notes);
+    await rateMeeting(teamId, meetingId, fd);
+    router.refresh();
+  }
+
+  return (
+    <RatingForm initialScore={null} initialNotes="" submitAction={submit} />
   );
 }
 

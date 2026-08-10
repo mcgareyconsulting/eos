@@ -172,7 +172,14 @@ export function EntityComments({
                       title="Delete comment"
                       aria-label="Delete comment"
                       className="shrink-0 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                      onClick={() =>
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            "Delete this comment? This can't be undone.",
+                          )
+                        ) {
+                          return;
+                        }
                         start(async () => {
                           try {
                             await deleteEntityComment(teamId, c.id);
@@ -181,8 +188,8 @@ export function EntityComments({
                               e instanceof Error ? e.message : String(e),
                             );
                           }
-                        })
-                      }
+                        });
+                      }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

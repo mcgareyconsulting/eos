@@ -105,6 +105,11 @@ export default async function MeetingDetailPage({
     // ConcludeReview) into NaN.
     .filter((r): r is MeetingRating => Number.isFinite(r.rating));
 
+  // The current viewer's own rating, if any — passed to the recap so it can
+  // offer a "Rate this meeting" prompt when the post-Finish redirect opens
+  // the recap over an unsubmitted rating (see RecapModal below).
+  const myRating = ratings.find((r) => r.user_id === uid) ?? null;
+
   const live = !m.ended_at;
   // Normalize what's stored before rendering from it: an unknown/legacy
   // segment falls back to Segue rather than rendering an empty header, and
@@ -410,6 +415,9 @@ export default async function MeetingDetailPage({
         )}
 
         <RecapModal
+          teamId={tid}
+          meetingId={mid}
+          myRating={myRating}
           meetingMinutes={meetingMinutes}
           notes={m.notes ?? null}
           newRocks={newRocks}

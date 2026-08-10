@@ -10,6 +10,7 @@ import {
   Pencil,
   Archive,
 } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
@@ -313,7 +314,10 @@ function IssueRow({
           </button>
         </form>
         {!archived && (
-          <form action={remove}>
+          <ConfirmSubmitForm
+            action={remove}
+            confirmMessage="Delete this issue? This will also delete its votes and comments. This can't be undone."
+          >
             <button
               type="submit"
               className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
@@ -321,7 +325,7 @@ function IssueRow({
             >
               <Trash2 className="h-4 w-4" />
             </button>
-          </form>
+          </ConfirmSubmitForm>
         )}
       </div>
     </div>

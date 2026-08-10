@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Archive, Lock, Trash2 } from "lucide-react";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/dates";
 import { normalizeDescription } from "@/lib/csv-import";
@@ -140,7 +141,10 @@ export function TodoListRow({
             </button>
           </form>
           {!archived && (
-            <form action={remove}>
+            <ConfirmSubmitForm
+              action={remove}
+              confirmMessage="Delete this to-do? This can't be undone."
+            >
               <button
                 type="submit"
                 className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
@@ -148,7 +152,7 @@ export function TodoListRow({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
-            </form>
+            </ConfirmSubmitForm>
           )}
         </div>
       </div>

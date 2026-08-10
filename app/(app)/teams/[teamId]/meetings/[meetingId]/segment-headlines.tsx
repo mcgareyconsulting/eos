@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Smile, Users, Megaphone, Trash2 } from "lucide-react";
+import { Smile, Users, Megaphone, Info, Trash2 } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -11,6 +11,7 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { addHeadline, deleteHeadline } from "../../headlines/actions";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
+import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
 import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -33,7 +34,7 @@ export type HeadlineDoc = {
   team_id: string;
   title: string;
   body: string | null;
-  kind: "customer" | "employee" | "cascading";
+  kind: "customer" | "employee" | "cascading" | "general";
   created_by: string | null;
   created_at: MaybeTimestamp;
   discussed?: boolean;
@@ -66,6 +67,12 @@ const KIND_META: Record<
     badge:
       "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
     Icon: Megaphone,
+  },
+  general: {
+    label: "General / FYI",
+    badge:
+      "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 ring-slate-200",
+    Icon: Info,
   },
 };
 
@@ -194,25 +201,36 @@ export function SegmentHeadlines({
                 </div>
               </div>
               {!readOnly && (
-                <form
-                  action={remove}
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        "Delete this headline? This can't be undone.",
+                <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <HeadlineEditButton
+                    teamId={teamId}
+                    headline={{
+                      id: h.id,
+                      title: h.title,
+                      body: h.body,
+                      kind: h.kind,
+                    }}
+                  />
+                  <form
+                    action={remove}
+                    onSubmit={(e) => {
+                      if (
+                        !window.confirm(
+                          "Delete this headline? This can't be undone.",
+                        )
                       )
-                    )
-                      e.preventDefault();
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="mt-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                    aria-label="Delete headline"
+                        e.preventDefault();
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
+                      aria-label="Delete headline"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </form>
+                </div>
               )}
             </div>
           );
@@ -255,6 +273,7 @@ function QuickAddHeadline({ teamId }: { teamId: string }) {
         <option value="customer">Customer</option>
         <option value="employee">Employee</option>
         <option value="cascading">Cascading</option>
+        <option value="general">General / FYI</option>
       </select>
       <input
         type="text"

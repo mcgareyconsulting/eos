@@ -196,7 +196,10 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
 
   return (
     <div className="px-2 py-3 border-t border-zinc-300 dark:border-zinc-800">
-      <div className="relative px-0 pb-2" ref={rootRef}>
+      <div
+        className="relative px-0 pb-2 group-data-[sidebar-collapsed]/shell:hidden"
+        ref={rootRef}
+      >
         {multi ? (
           <>
             <button
@@ -300,10 +303,11 @@ function NavLink({
   return (
     <Link
       href={href}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      title={label}
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center"
     >
-      <Icon className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
-      <span>{label}</span>
+      <Icon className="w-4 h-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
+      <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
     </Link>
   );
 }

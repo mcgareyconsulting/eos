@@ -170,6 +170,9 @@ export default async function HomePage() {
       status: (x.status as string) ?? null,
       archived_at: x.archived_at ?? null,
     });
+    if (typeof x.title === "string" && x.title) {
+      rockTitleById.set(d.id, x.title);
+    }
   }
 
   const myMilestones = todos.filter(
@@ -198,8 +201,10 @@ export default async function HomePage() {
   const sortedActiveTodos = mineFirst(allActiveTodos.sort(byDue));
   const sortedRocks = mineFirst(rocks);
 
+  const showMilestones = futureMilestones.length > 0;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
         {membershipTeamIds.length === 0 && !isAdmin && (
@@ -221,104 +226,170 @@ export default async function HomePage() {
         )}
       </header>
 
-      <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
-          Active To-Dos ({sortedActiveTodos.length})
-        </h2>
-        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+      {/*
+        My-90 style board: 1 col mobile → 2 cols from lg → 3 when milestones
+        are present (xl). Cards scroll independently so a long list doesn't
+        push the rest off-screen.
+      */}
+      <div
+        className={
+          "grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start " +
+          (showMilestones ? "xl:grid-cols-3" : "")
+        }
+      >
+        <HomeColumn
+          title="Active To-Dos"
+          count={sortedActiveTodos.length}
+        >
           {sortedActiveTodos.length === 0 && <Empty>No open to-dos.</Empty>}
           {sortedActiveTodos.map((t) => {
             const isMilestone = Boolean(t.source_rock_id);
             return (
-              <Link
+              <HomeRow
                 key={t.id}
                 href={`/teams/${t.team_id}/${isMilestone ? "rocks" : "todos"}`}
-                className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                {isMilestone ? (
-                  <Flag className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
-                ) : (
-                  <Circle className="w-4 h-4 text-zinc-300" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="truncate">{t.title}</div>
-                  {isMilestone && (
-                    <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
-                      {rockTitleById.get(t.source_rock_id ?? "") ?? "—"}
-                    </div>
-                  )}
-                </div>
-                {!isMilestone && (
-                  <OwnerLabel
-                    isMine={t.owner_id === user.id}
-                    name={t.owner_id ? nameByUserId.get(t.owner_id) ?? null : null}
-                  />
-                )}
-                <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
-                <DueLabel due={t.due_date} />
-              </Link>
+                icon={
+                  isMilestone ? (
+                    <Flag className="h-4 w-4 shrink-0 text-zinc-500" />
+                  ) : (
+                    <Circle className="h-4 w-4 shrink-0 text-zinc-300" />
+                  )
+                }
+                title={t.title}
+                subtitle={
+                  isMilestone
+                    ? (rockTitleById.get(t.source_rock_id ?? "") ?? "—")
+                    : null
+                }
+                meta={
+                  <>
+                    {!isMilestone && (
+                      <OwnerLabel
+                        isMine={t.owner_id === user.id}
+                        name={
+                          t.owner_id
+                            ? (nameByUserId.get(t.owner_id) ?? null)
+                            : null
+                        }
+                      />
+                    )}
+                    <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
+                    <DueLabel due={t.due_date} />
+                  </>
+                }
+              />
             );
           })}
-        </div>
-      </section>
+        </HomeColumn>
 
-      {futureMilestones.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
-            Rock Milestones ({futureMilestones.length})
-          </h2>
-          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-            {mineFirst(futureMilestones).map((m) => (
-              <Link
-                key={m.id}
-                href={`/teams/${m.team_id}/rocks`}
-                className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-              >
-                <Flag className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
-                <div className="flex-1 min-w-0">
-                  <div className="truncate">{m.title}</div>
-                  <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
-                    {rockTitleById.get(m.source_rock_id ?? "") ?? "—"}
-                  </div>
-                </div>
-                <TeamLabel name={teamNameById.get(m.team_id) ?? ""} />
-                <DueLabel due={m.due_date} />
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400 mb-3">
-          Active Rocks ({sortedRocks.length})
-        </h2>
-        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+        <HomeColumn title="Active Rocks" count={sortedRocks.length}>
           {sortedRocks.length === 0 && <Empty>No active rocks.</Empty>}
           {sortedRocks.map((r) => (
-            <Link
+            <HomeRow
               key={r.id}
               href={`/teams/${r.team_id}/rocks`}
-              className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-            >
-              <Target className="w-4 h-4 text-zinc-500 dark:text-zinc-500" />
-              <div className="flex-1 min-w-0">
-                <div className="truncate">{r.title}</div>
-                <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                  {r.quarter}
-                </div>
-              </div>
-              <OwnerLabel
-                isMine={r.owner_id === user.id}
-                name={r.owner_id ? nameByUserId.get(r.owner_id) ?? null : null}
-              />
-              <TeamLabel name={teamNameById.get(r.team_id) ?? ""} />
-              <StatusBadge status={r.status} />
-            </Link>
+              icon={<Target className="h-4 w-4 shrink-0 text-zinc-500" />}
+              title={r.title}
+              subtitle={r.quarter || null}
+              meta={
+                <>
+                  <OwnerLabel
+                    isMine={r.owner_id === user.id}
+                    name={
+                      r.owner_id
+                        ? (nameByUserId.get(r.owner_id) ?? null)
+                        : null
+                    }
+                  />
+                  <TeamLabel name={teamNameById.get(r.team_id) ?? ""} />
+                  <StatusBadge status={r.status} />
+                </>
+              }
+            />
           ))}
-        </div>
-      </section>
+        </HomeColumn>
+
+        {showMilestones && (
+          <HomeColumn
+            title="Rock Milestones"
+            count={futureMilestones.length}
+          >
+            {mineFirst(futureMilestones).map((m) => (
+              <HomeRow
+                key={m.id}
+                href={`/teams/${m.team_id}/rocks`}
+                icon={<Flag className="h-4 w-4 shrink-0 text-zinc-500" />}
+                title={m.title}
+                subtitle={rockTitleById.get(m.source_rock_id ?? "") ?? "—"}
+                meta={
+                  <>
+                    <TeamLabel name={teamNameById.get(m.team_id) ?? ""} />
+                    <DueLabel due={m.due_date} />
+                  </>
+                }
+              />
+            ))}
+          </HomeColumn>
+        )}
+      </div>
     </div>
+  );
+}
+
+function HomeColumn({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex min-h-0 min-w-0 flex-col">
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        {title} ({count})
+      </h2>
+      <div className="max-h-[min(70vh,40rem)] divide-y divide-zinc-200 overflow-y-auto rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function HomeRow({
+  href,
+  icon,
+  title,
+  subtitle,
+  meta,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string | null;
+  meta: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-start gap-3 px-3.5 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+    >
+      <span className="mt-0.5">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
+          {title}
+        </div>
+        {subtitle ? (
+          <div className="truncate text-xs text-zinc-600 dark:text-zinc-400">
+            {subtitle}
+          </div>
+        ) : null}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {meta}
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -351,7 +422,7 @@ function OwnerLabel({
 function TeamLabel({ name }: { name: string }) {
   if (!name) return null;
   return (
-    <span className="hidden md:inline-flex items-center text-xs text-zinc-500 dark:text-zinc-500 whitespace-nowrap">
+    <span className="inline-flex items-center text-xs whitespace-nowrap text-zinc-500">
       {name}
     </span>
   );
@@ -360,9 +431,7 @@ function TeamLabel({ name }: { name: string }) {
 function DueLabel({ due }: { due: string | null }) {
   if (!due)
     return (
-      <span className="text-xs text-zinc-500 dark:text-zinc-500 w-24 text-right">
-        —
-      </span>
+      <span className="text-xs whitespace-nowrap text-zinc-500">No due date</span>
     );
   // Local-midnight comparison via daysUntil — bare `new Date("YYYY-MM-DD")`
   // parses as UTC midnight and marks items due today as overdue all day in
@@ -371,7 +440,7 @@ function DueLabel({ due }: { due: string | null }) {
   return (
     <span
       className={
-        "text-xs whitespace-nowrap w-24 text-right " +
+        "text-xs whitespace-nowrap " +
         (overdue ? "text-red-600" : "text-zinc-600 dark:text-zinc-400")
       }
     >

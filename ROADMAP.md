@@ -1,7 +1,7 @@
 ---
 project: HPB
 updated: 2026-08-11
-verified: main @ 90ec7cb
+verified: main @ 902b37f  # prod runs 90ec7cb — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -10,8 +10,8 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [QW1, N18, F3, U1, N3, N2, P3-2, N4, P2-1]
-  awaiting: [N1, P3-1, P1-7, N10, F2, B1, P3-5]
+  next: [F5, QW1, N18, F3, N3, N2, P3-2, N4]
+  awaiting: [N1, P3-1, N10, F2, B1, P3-5]
 ---
 
 # HPB · ROADMAP
@@ -27,12 +27,14 @@ The merged client-feedback priority list is agent-local on the consultant
 machine (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`) and
 is a working aid, never an authority.
 
-**Deployment truth as of 2026-08-10:** `main` = `90ec7cb` (PR #22 quick-win
-batch + PR #24 team management) is **live on Cloud Run** (service `eos`,
-`hpb-eos-prod`, us-east1). Operator confirmed prod surfaces current teams
-infra (Members / multi-team). Prior live rev `eos-00042-pvp` is superseded
-(exact new revision id not captured here — optional: record on next ops
-touch). F1 is `done`.
+**Deployment truth as of 2026-08-11:** **prod ≠ main.** Cloud Run (service
+`eos`, `hpb-eos-prod`, us-east1) runs `90ec7cb` — the F1 ship (PR #22
+quick wins + PR #24 team management), confirmed by the operator; prior rev
+`eos-00042-pvp` superseded and the new revision id was never captured.
+`main` has since moved to `902b37f`, adding **PR #26** (settings/profile +
+Google Tasks completion) and **PR #27** (custom agendas). Those three
+tracker items are sandbox-proven and **invisible to the client until F5
+ships**. F1 `done`; F5 opened.
 
 ## Queue — the single ordering
 
@@ -49,21 +51,26 @@ by cost-to-close, then by size:
 | # | Item | Effort | Why here |
 |---|---|---|---|
 | now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
-| 2 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 3 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 4 | **U1** | S | Oldest small open tracker row (08-03); zero deps, zero client input |
+| 1 | **F5** | S | Prod lags `main` by two feature PRs; three tracker items are built but invisible to the client |
+| 2 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
+| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
 | 5 | **N3** | M | No deps; migration integrity before broader rollout |
 | 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
 | 7 | **P3-2** | M | Largest tracker row with no external gate |
 | 8 | **N4** | L | Design precedes build; absorbs N13 |
-| 9 | **P2-1** | XL | Re-confirmed three times, but it is a quarter-scale build — sequenced last deliberately, not deprioritised |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
-question 3) · **P1-7** (Open question 2, plus its own OAuth client) ·
-**N10** (Cloud Storage bucket — rides with F2) · **F2** (security-tier
-selection + IAM resolution) · **B1**, **P3-5** (client BigQuery conventions).
+question 3) · **N10** (Cloud Storage bucket — rides with F2) · **F2**
+(security-tier selection + IAM resolution) · **B1**, **P3-5** (client
+BigQuery conventions).
+
+**Reconciled 2026-08-11** against `origin/main`: **U1**, **P1-7** (PR #26)
+and **P2-1** (PR #27) left the queue as `shipped` — all three now wait on
+**F5** to reach `verified`. The queue built earlier that day was authored
+against `90ec7cb` while the remote was five commits ahead; re-verify
+`queue` against `origin/main`, not local `main`, whenever the two differ.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -114,6 +121,20 @@ logged.
 - 2026-08-10 · note · src roadmap-prior#resume-here — "App UI still needs a Cloud Run ship for prod users to see Members tabs / create-team; local sandbox already has it"
 - 2026-08-10 · note · src roadmap-prior#resume-here — live rev recorded as `eos-00042-pvp`, built before the PR #22 / #24 merges
 - 2026-08-10 · done · src operator — prod confirmed: current teams infra live; F1 closed; queue.now → N1
+
+### F5 · Ship PR #26 + #27 to Cloud Run prod
+*W0 · not-started · due — · deps — · owner daniel · src pr#26,pr#27 · upd 2026-08-11*
+
+Effort S. Prod is `90ec7cb` (the F1 ship). `main` has since taken **PR #26**
+(settings/profile + Google Tasks completion pull) and **PR #27** (custom
+agendas) — three client-tracker items the client cannot see. Same shape as
+F1. Extra steps this time: deploy `firestore.rules` (PR #27 added agenda
+rules), and each user must **Connect Google Tasks once on the live URL**
+because sandbox tokens do not carry to `hpb-eos-prod-db`. Gates U1, P1-7,
+P2-1 reaching `verified`. Capture the revision id this time.
+
+**Trail**
+- 2026-08-11 · note · src pr#26,pr#27 — merged to origin/main; prod still on the F1 revision
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -442,7 +463,21 @@ M14).
 - 2026-08-10 · note · src roadmap-prior#pass-18 — rules table written against lib/scorecard.ts + tests; delivery pending
 
 ### P2-1 · Custom meeting agendas
-*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-11 · upd 2026-08-10*
+*W3 · shipped · due — · deps F5 · owner daniel · src roadmap-prior#pass-11 · upd 2026-08-11*
+
+**Core shipped PR #27** (`feature/agenda`): `lib/l10/agenda.ts` (+190 lines
+of tests) with two built-in presets (**Level 10**, **L10 Condensed**),
+per-team custom agendas in Firestore with an editor
+(`agendas.tsx` / `agenda-editor.tsx` / `agendas-panel.tsx`), agenda
+**selected at meeting start** (`start-meeting-picker`), and a
+`MeetingAgendaSnapshot` stamped onto the meeting so a later agenda edit
+cannot rewrite history. Rules updated. This closes the client's stated ask
+(≥4 formats via the editor + pick-at-start, Jenna #8 / Stephanie Pass 13
+#8). **Verified not built** — reopen as P2-1b only if asked: scheduled /
+recurring meetings, push-an-agenda-to-all-teams, and shipped presets beyond
+the two L10 variants (Quarterly / Annual / 1-on-1 / Focus Day / Vision
+Building are user-creatable, not preset). Sandbox state; **not on prod** —
+gated on F5. Original scope below.
 
 Effort XL — the biggest single build item, and the client has re-confirmed
 it three times (Pass 11 config doc; Stephanie in live use, Pass 13 #8;
@@ -490,11 +525,13 @@ Related to N10 (links on entities) — keep the two write paths coherent.
 - 2026-08-04 · note · src audit-2026-08-04#verified-sound — existing linkify verified safe (React elements, https-only)
 
 ### U1 · Integrations nav → Settings
-*W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#17 · upd 2026-08-10*
+*W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#17 · upd 2026-08-11*
 
-Effort S. Move Integrations out of the top nav into Settings/profile
-(Steph). Still open as of the 08-04 client progress snapshot; not in the
-PR #22 batch.
+Effort S. **Shipped PR #26** (`feature/settings-profile`). `/settings`
+holds profile (name/email), the Google Tasks connector and Sign out;
+sidebar gear → Settings with the collapsed rail showing an initials
+avatar; `/integrations` (and the OAuth callback) redirect to `/settings`.
+Sandbox-proven; **not on prod** — gated on F5.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#17 — Steph: Integrations belongs under Settings / profile
@@ -544,7 +581,18 @@ work — that instruction predates this file and stands.
 ## Workstream 4 — Integrations & platform ops
 
 ### P1-7 · Google Tasks two-way sync
-*W4 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#10 · upd 2026-08-10*
+*W4 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#10 · upd 2026-08-11*
+
+**Shipped PR #26** (`feature/settings-profile`) — **completion only**.
+Google → EOS sets `completed_at` when a mirrored task is completed in
+Google; title/due/uncomplete from Google are ignored (EOS stays source of
+truth for fields). Pull runs on Settings / To-Dos load and the **Sync
+Google Tasks** button; `POST /api/google/tasks/pull` (Bearer secret)
+exists but **no Cloud Scheduler is required for the pilot**. Residual:
+milestones still never mirror (Open question 2 stays open), To-Dos UI is
+not live so a Sync/refresh is needed after a pull, and prod requires each
+user to **Connect once on the live URL** — sandbox tokens do not carry to
+`hpb-eos-prod-db`. Original framing below.
 
 Effort M–L. Today is one-way push (`lib/google/tasks.ts`); Steph completed
 a task in Google Tasks and it did not complete in EOS — the client expects
@@ -677,6 +725,9 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-10 · Q-home15 · answered — "Home breaks over 15 teams" was stale: fixed 2026-08-04 (`b8df118`, chunked queries, per-status equality); regression tests added 2026-08-10 (`lib/firestore-in.test.ts`)
 - 2026-08-10 · Q-tracker · answered — 2026-08-10 tracker re-read: only new content vs the 08-03 copy is Brian's calculated-measurable detail on P3-1; all other 22 rows already triaged
 - 2026-08-10 · F1 · done — ship merged main (PR #22 + #24) to Cloud Run prod; operator confirmed current teams infra live; supersedes `eos-00042-pvp`
+- 2026-08-11 · U1 · closed — Integrations → Settings/profile shipped (PR #26); `/integrations` redirects; awaits F5 for prod
+- 2026-08-11 · P1-7 · closed — Google Tasks two-way **completion** shipped (PR #26): pull on Settings/To-Dos load + Sync button, no Scheduler for pilot; milestones still unmirrored (Open question 2 stays open)
+- 2026-08-11 · P2-1 · closed — custom agendas core shipped (PR #27): 2 built-in presets, per-team editor, pick-at-start, agenda snapshot on meeting; scheduled/recurring + push-to-all-teams not built
 - 2026-08-11 · Q-queues · answered — three parallel queues (root front matter W2-only, agent-local P0–P3 aid, docs/ROADMAP.md numbered lists) consolidated into one cross-workstream `queue.next`; docs/ROADMAP.md banner-superseded; `queue.now` N1 → F4 because N1 is gated on Steph's calendar and a client-gated `now` stalls the queue
 
 ## Sources

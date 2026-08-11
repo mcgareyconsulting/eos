@@ -187,7 +187,7 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
         // Stay in the same section on the other team.
         router.push(pathForTeam(teamId, pathSection, pathname));
       }
-      // On /home or /integrations, only the nav target team changes.
+      // On /home or /settings, only the nav target team changes.
     },
     [isMember, pathSection, pathTeamId, pathname, router],
   );

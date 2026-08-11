@@ -89,24 +89,24 @@ export default async function HomePage() {
 
   const [todoSnaps, rockSnaps, sharedRockSnaps, memberSnaps, myMetricsSnap] =
     await Promise.all([
-      // Open todos on my teams (team-visible) + my private. Filtered to mine
-      // for the To-Dos column; milestones used for rock expand + inclusion.
+      // Open todos for the viewer's teams. Admin SDK can read everything; we
+      // filter private rows in memory below (owner only). Prefer one query with
+      // the existing team_id+completed_at composite over dual visibility queries
+      // that need a 4-field index (team_id+completed_at+visibility+owner_id)
+      // which is easy to miss in deploy — that gap dropped *all* private
+      // to-dos from Home while Google Tasks still received them on write.
       Promise.all(
-        teamChunks.flatMap((ids) => {
-          const open = db
+        teamChunks.map((ids) =>
+          db
             .collection("todos")
             .where("team_id", "in", ids)
-            .where("completed_at", "==", null);
-          return [
-            open.where("visibility", "==", "team").get(),
-            open
-              .where("visibility", "==", "private")
-              .where("owner_id", "==", user.id)
-              .get(),
-          ];
-        }),
+            .where("completed_at", "==", null)
+            .get(),
+        ),
       ),
-      // Active rocks home'd on my teams.
+      // Rocks: `team_id in` × `status in [2 values]` would multiply to 2× the
+      // chunk size in disjunctions (over the 30 cap at 16+ teams), so run one
+      // query per (chunk, status) pair instead.
       Promise.all(
         teamChunks.flatMap((ids) =>
           ["on_track", "off_track"].map((status) =>
@@ -160,9 +160,22 @@ export default async function HomePage() {
     }
   }
 
-  const todos = todoSnaps.flatMap((snap) =>
-    snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TodoRow, "id">) })),
-  ) as TodoRow[];
+  const todos = todoSnaps
+    .flatMap((snap) =>
+      snap.docs.map((d) => {
+        const data = d.data() as Omit<TodoRow, "id"> & {
+          archived_at?: unknown | null;
+        };
+        return { id: d.id, ...data };
+      }),
+    )
+    .filter((t) => {
+      // Active Home board: skip archived (can be incomplete if manual-archived).
+      if (t.archived_at != null) return false;
+      // Privacy: private only for the owner; missing/legacy visibility = team.
+      if (t.visibility === "private") return t.owner_id === user.id;
+      return true;
+    }) as TodoRow[];
 
   const rockById = new Map<string, RockRow>();
   for (const snap of rockSnaps) {
@@ -496,6 +509,11 @@ export default async function HomePage() {
               Browse the Members directory
             </Link>{" "}
             — a leader will invite you when ready.
+          </p>
+        )}
+        {isAdmin && membershipTeamIds.length === 0 && teams.length > 0 && (
+          <p className="mt-2 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
+            Showing all teams (admin). You are not on a roster yourself.
           </p>
         )}
       </header>

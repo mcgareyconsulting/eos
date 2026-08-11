@@ -93,6 +93,76 @@ are not gated by those rules.
 
 ---
 
+## 2b. Reassign user (old Google account → new)
+
+When someone switches Google accounts (e.g. consultant
+`mcgareyconsulting@gmail.com` → `daniel@mcgareyconsulting.com`), Firebase
+creates a **new uid**. Private to-dos and every `owner_id` stay on the old
+uid, so the new login cannot see them — even though Google Tasks may still
+have been written under the old connection.
+
+Use **`scripts/reassign-user.ts`** (dry-run by default).
+
+- **`--to` must exist in Firebase Auth** (sign in once as the new email).
+- **`--from` may be Auth-deleted** (“orphan”): data still lives in Firestore.
+  Prefer `--from-uid <oldUid>` (from `users/` or `team_members.user_id`).
+  `--from-email` also works if a `users/{uid}` doc still has that email.
+
+**Find the old uid** (Auth already deleted):
+
+```bash
+# Console: Firestore → hpb-eos-sandbox-db → users / team_members
+# Or list teams + try email resolve (script prints Firestore hits):
+unset FIREBASE_AUTH_EMULATOR_HOST FIRESTORE_EMULATOR_HOST
+export NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false
+export NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod
+
+pnpm tsx scripts/reassign-user.ts \
+  --from-email mcgareyconsulting@gmail.com \
+  --to-email daniel@mcgareyconsulting.com \
+  --database hpb-eos-sandbox-db
+# If Auth is gone, script uses users/ match or tells you to pass --from-uid
+```
+
+**Sandbox first (orphan-safe):**
+
+```bash
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
+  --to-email daniel@mcgareyconsulting.com \
+  --database hpb-eos-sandbox-db
+
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
+  --to-email daniel@mcgareyconsulting.com \
+  --database hpb-eos-sandbox-db \
+  --apply
+```
+
+**Prod DB** (only when sandbox looks right):
+
+```bash
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
+  --to-email daniel@mcgareyconsulting.com \
+  --database hpb-eos-prod-db \
+  --apply
+```
+
+After apply:
+
+1. Full sign-out in the app, then sign in as the **new** email  
+2. Confirm private to-dos on Home + team To-Dos  
+3. Re-grant org admin on the new email if the old account had it:
+   `pnpm admin:set-role --email daniel@mcgareyconsulting.com --apply`  
+4. Settings → Google Tasks: reconnect if the OAuth row did not move  
+5. Optional: disable/delete the old Auth user in Firebase Console once
+   you no longer need it (script does **not** delete Auth)
+
+One team only: add `--team <teamId>`. Keep old roster row: `--keep-from-membership`.
+
+---
+
 ## 3. Grant org admin claim (`role: "admin"`)
 
 ### On this feature branch (script present)

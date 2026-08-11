@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
+import {
+  normalizeAgendaItems,
+  type AgendaItem,
+  type AgendaOption,
+} from "@/lib/l10/agenda";
 import { SEGMENT_LABELS } from "@/lib/l10/segments";
-import { startMeeting } from "./actions";
+import { AgendasPanel, StartMeetingPicker } from "./agendas";
 import { MeetingsList, type MeetingListDoc } from "./meetings-list";
-import { StartMeetingButton } from "./start-meeting-button";
 
 type MeetingDoc = {
   team_id: string;
@@ -12,6 +16,8 @@ type MeetingDoc = {
   ended_at: Timestamp | null;
   current_segment: keyof typeof SEGMENT_LABELS;
   notes: string | null;
+  agenda_name?: string | null;
+  agenda_items?: AgendaItem[];
 };
 
 export default async function MeetingsPage({
@@ -21,15 +27,36 @@ export default async function MeetingsPage({
 }) {
   const { teamId: tid } = await params;
   const { db, isAdmin, membershipRole } = await requireTeamAccess(tid);
-  // Pass 18 #9: starting the shared L10 room is a facilitator control —
-  // startMeeting requires leader/admin server-side, so don't show members a
-  // Start button that would 404. Join-live stays open to everyone.
+  // Start meeting + agenda management: leader/admin only.
+  // Join-live stays open to everyone.
   const isLeader = isAdmin || membershipRole === "leader";
 
   const snap = await db.collection("meetings").where("team_id", "==", tid).get();
 
-  // Serialize for the client component: Timestamps become millis (the list
-  // subscribes for live updates and re-normalizes onSnapshot Timestamps).
+  // Custom agendas only for leaders (built-ins are in code — no seed).
+  // Skip legacy auto-seeded docs (`${teamId}__l10`) so they don't duplicate
+  // the built-in Level 10 / L10 Condensed rows.
+  const customs: AgendaOption[] = isLeader
+    ? (
+        await db.collection("agendas").where("team_id", "==", tid).get()
+      ).docs
+        .filter(
+          (d) =>
+            d.id !== `${tid}__l10` && d.id !== `${tid}__l10-condensed`,
+        )
+        .map((d) => {
+          const x = d.data();
+          const items = normalizeAgendaItems(x.items) ?? [];
+          return {
+            id: d.id,
+            name: String(x.name ?? "Agenda").trim() || "Agenda",
+            items,
+          };
+        })
+        .filter((a) => a.items.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
   const initialMeetings: MeetingListDoc[] = snap.docs.map((d) => {
     const x = d.data() as MeetingDoc;
     return {
@@ -38,13 +65,11 @@ export default async function MeetingsPage({
       started_at: x.started_at?.toMillis?.() ?? null,
       ended_at: x.ended_at?.toMillis?.() ?? null,
       current_segment: x.current_segment,
+      agenda_name: x.agenda_name ?? null,
+      agenda_items: normalizeAgendaItems(x.agenda_items) ?? null,
     };
   });
 
-  // Average meeting-effectiveness rating across all attendees, per meeting.
-  // Bounded by team meeting history (a year of weekly L10s is ~52 reads).
-  // Static: ratings only render on completed meetings, so the live list
-  // doesn't need them to update in realtime.
   const ratingsByMeeting: Record<string, number | null> = {};
   await Promise.all(
     initialMeetings.map(async (m) => {
@@ -59,8 +84,6 @@ export default async function MeetingsPage({
       }
       const ratings = r.docs
         .map((d) => (d.data() as { rating: number }).rating)
-        // Same malformed-doc guard as the detail page — one bad rating
-        // otherwise renders a NaN star badge.
         .filter((n) => Number.isFinite(n));
       if (ratings.length === 0) {
         ratingsByMeeting[m.id] = null;
@@ -74,37 +97,43 @@ export default async function MeetingsPage({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
         <HeaderAction
           teamId={tid}
           meetings={initialMeetings}
           isLeader={isLeader}
+          customs={customs}
         />
       </header>
 
-      <MeetingsList
-        teamId={tid}
-        initialMeetings={initialMeetings}
-        ratingsByMeeting={ratingsByMeeting}
-      />
+      {isLeader && <AgendasPanel teamId={tid} customs={customs} />}
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold tracking-tight">
+          {isLeader ? "History" : "Meetings"}
+        </h2>
+        <MeetingsList
+          teamId={tid}
+          initialMeetings={initialMeetings}
+          ratingsByMeeting={ratingsByMeeting}
+        />
+      </section>
     </div>
   );
 }
 
-// "Start meeting" — or, when the team already has a live meeting, a Resume
-// link into it. The server action also guards against duplicate live
-// meetings, but the button saying the right thing matters more for a
-// latecomer scanning the page.
 function HeaderAction({
   teamId,
   meetings,
   isLeader,
+  customs,
 }: {
   teamId: string;
   meetings: MeetingListDoc[];
   isLeader: boolean;
+  customs: AgendaOption[];
 }) {
   const liveMeeting = meetings.find((m) => m.ended_at == null);
   if (liveMeeting) {
@@ -119,9 +148,5 @@ function HeaderAction({
     );
   }
   if (!isLeader) return null;
-  async function action() {
-    "use server";
-    await startMeeting(teamId);
-  }
-  return <StartMeetingButton action={action} />;
+  return <StartMeetingPicker teamId={teamId} customs={customs} />;
 }

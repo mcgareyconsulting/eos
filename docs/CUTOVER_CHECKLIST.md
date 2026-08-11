@@ -249,9 +249,13 @@ _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 ### 9. OAuth connectors (Meet / Google Tasks), if shipped by then
 
 Google Tasks is **per-user**: each person connects their own Google account
-on `/integrations`. Tokens are stored under `google_tasks_connections/{uid}`
-(admin SDK only). Missing `GOOGLE_OAUTH_*` on the Cloud Run service shows as
-"Not configured — set GOOGLE_OAUTH_CLIENT_ID / _SECRET" on that page.
+under **Settings** (`/settings`; `/integrations` redirects there). Tokens are
+stored under `google_tasks_connections/{uid}` (admin SDK only). Missing
+`GOOGLE_OAUTH_*` on the Cloud Run service shows as "Not configured — set
+GOOGLE_OAUTH_CLIENT_ID / _SECRET" on that page.
+
+Two-way **completion**: EOS → Google on write; Google → EOS via pull
+(Settings / To-Dos load, "Sync now", and `POST /api/google/tasks/pull`).
 
 - [ ] Create a **new** OAuth 2.0 Web client in the client's project
       (Console → APIs & Services → Credentials) — do not reuse the trial's
@@ -266,8 +270,14 @@ on `/integrations`. Tokens are stored under `google_tasks_connections/{uid}`
       this must be pinned rather than derived on Cloud Run) as Cloud Run env
       vars, and `GOOGLE_OAUTH_CLIENT_SECRET` as a secret mount. `pnpm ship`
       does **not** set these — update the service explicitly (see
-      `.env.example`). Without them, Integrations shows the client-id/secret
+      `.env.example`). Without them, Settings shows the client-id/secret
       error and all Task pushes are no-ops.
+- [ ] Set `GOOGLE_TASKS_PULL_SECRET` on Cloud Run (long random string). Create
+      a Cloud Scheduler job every 5 minutes:
+      `POST https://<service-url>/api/google/tasks/pull` with header
+      `Authorization: Bearer <GOOGLE_TASKS_PULL_SECRET>`. Without the secret
+      or job, on-demand Sync / page-load pull still works for the signed-in
+      user; teammates may lag until the owner opens Settings or To-Dos.
 
 ### 10. Custom domain (optional)
 

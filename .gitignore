@@ -77,3 +77,6 @@ terraform/crash.log
 # Plan files embed a full tfstate — resource attributes in the clear, including
 # Cloud Run env vars. Never commit one.
 terraform/*.tfplan
+
+# DannyOS roadmap build artifact (derived from ROADMAP.md)
+roadmap.json

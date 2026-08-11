@@ -1,5 +1,13 @@
 # EOS Platform — Feature & Infrastructure Roadmap
 
+> **SUPERSEDED 2026-08-11 by `/ROADMAP.md` at the repo root.** That file is
+> the status authority and holds the **single queue**. This document is
+> retained as a *source* — the Pass 10–18 reasoning trail and the verbatim
+> Pass 14 feedback triage — and must not be used for ordering. The
+> "▶ RESUME HERE" section and the Pass 14 prioritized queue below are
+> **historical**: their numbered lists were folded into the root queue and
+> are no longer maintained. State changes land in the root file only.
+
 > **Status:** Planning notes only. Nothing here is scheduled or implemented yet.
 > This document tracks client requests as they come in. It is captured in
 > stages — each pass adds context. We'll scope and roll features later.
@@ -580,7 +588,10 @@ On-track / No data).
 - P3-* as capacity allows (P3-4 done)
 
 Working priority list is agent-local — not in this repo
-(`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
+(`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`). **It is a
+working aid, never an authority, and no longer carries ordering** — see the
+Queue section of `/ROADMAP.md` (root) for the single queue and the ID
+reconciliation between the two schemes.
 
 ---
 
@@ -690,7 +701,7 @@ Pass 11/13 so we don't double-count.
 | 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
 | 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | ✅ **Built 2026-08-10 (`feature/team-management`, P2-7).** Soft directory + hard data; org admin claim; Members → This team / All teams; invite-only. Deploy app + rules for prod. Stretch (CSV import, private teams, ninety Owner/Implementer) still open. |
 | 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | ✅ **Done 2026-08-11 (`feature/settings-profile`, P1-7).** Completion pull (Settings/To-Dos load + Sync); push unchanged. Scheduler optional. Milestones still not mirrored. |
-| 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
+| 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe). **Brian (tracker update 2026-08-10):** per-branch direct-input metrics (Bennett / Flagler / Keenesburg / Longmont / Wiggins Teller Transactions, each owned by that BSM) roll up to a Leadership **"Total Teller Transactions" = sum**. He must be able to **edit the formula** (e.g. add a branch) **without losing history** on the calculated metric. | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). Requirements now concrete: (a) metric kind = `calculated` with a formula over sibling metric ids, (b) cross-team share-up (branch team → leadership team), (c) **versioned formula** — editing membership must not rewrite or drop prior periods. |
 | 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | ✅ **Done Pass 16 (P2-4 + P2-5).** Move button + LT tab; comments on issue/rock detail. |
 | 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | ✅ **Done Pass 15 (P1-1).** Sidebar team switcher over all memberships. |
 | 14 | 08-03 | Steph | Headlines | Categorization good; add **General / FYI** category (beyond Other) | **Small product** — headline category enum. |
@@ -722,7 +733,7 @@ Pass 11/13 so we don't double-count.
 10. **Custom agendas + pick template at start** (#8) — still largest build; re-confirmed by Jenna + Steph (Pass 13).
 11. **Archive-after-meeting + archive toggle** across entities (#5) — still open for todos/rocks/issues. ✅ Headline selective archive (#7) Pass 16 P2-3.
 12. **Issue ST↔LT move + LT tab** (#12, #21) ✅ Pass 16 P2-4; **comments** (#6) ✅ Pass 16 P2-5 (binary attachments still deferred).
-13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1).
+13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1) — now the **top-value open scorecard ask**, with concrete requirements from Brian (sum-of-branches → leadership, editable formula, history preserved).
 14. Headline **FYI category** (#14); **rich text / links** (#15, #22) — include **issue descriptions** (and rock descriptions / headline body / comments); comments already linkify URLs (P2-5). Full editor still P3-2.
 15. Integrations nav → settings (#17) ✅ **2026-08-11**. Rock/quarter **default flexibility** (#2, #19) ✅ Pass 16 P2-6 (empty milestone due; free-text quarter; smarter monthly stages later).
 

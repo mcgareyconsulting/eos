@@ -14,13 +14,13 @@ import {
   normalizeSegment,
 } from "@/lib/l10/segments";
 import {
-  BUILT_IN_AGENDA_PRESETS,
   agendaIncludesSegment,
   defaultL10Items,
   firstAgendaSegment,
   nextInAgenda,
   normalizeAgendaItems,
   prevInAgenda,
+  resolveBuiltInAgenda,
   resolveMeetingAgenda,
   validateAgendaName,
   type AgendaItem,
@@ -42,46 +42,9 @@ function detailPath(teamId: string, meetingId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Agenda templates (per-team). Leaders create/edit; any member may read.
-// A snapshot is stamped onto each meeting at start so later template edits
-// never rewrite a live or historical meeting.
+// Custom agenda templates (per-team Firestore docs). Built-ins live in code
+// (see lib/l10/agenda.ts) and need no seed. Snapshot stamped at meeting start.
 // ---------------------------------------------------------------------------
-
-/** Seed Level 10 + L10 Condensed when a team has no agendas yet.
- *  Uses deterministic doc ids so concurrent first visits can't double-seed. */
-export async function ensureDefaultAgendas(teamId: string): Promise<void> {
-  const { db, uid } = await requireTeamAccess(teamId);
-  const existing = await db
-    .collection("agendas")
-    .where("team_id", "==", teamId)
-    .limit(1)
-    .get();
-  if (!existing.empty) return;
-
-  const batch = db.batch();
-  for (const preset of BUILT_IN_AGENDA_PRESETS) {
-    // Stable id: concurrent ensureDefaultAgendas calls merge instead of
-    // minting four Level-10s for one team.
-    const ref = db.collection("agendas").doc(`${teamId}__${preset.key}`);
-    batch.set(
-      ref,
-      {
-        team_id: teamId,
-        name: preset.name,
-        items: preset.items(),
-        is_default: preset.is_default,
-        created_by: uid,
-        created_at: FieldValue.serverTimestamp(),
-        updated_at: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-  }
-  await batch.commit();
-  // No revalidatePath here: this runs from the Meetings page render on first
-  // visit (seed-if-empty). revalidatePath during render is unsupported in
-  // Next.js. The same request already re-queries agendas after this returns.
-}
 
 export async function createAgenda(
   teamId: string,
@@ -97,7 +60,6 @@ export async function createAgenda(
     team_id: teamId,
     name,
     items,
-    is_default: false,
     created_by: uid,
     created_at: FieldValue.serverTimestamp(),
     updated_at: FieldValue.serverTimestamp(),
@@ -130,23 +92,12 @@ export async function deleteAgenda(
   agendaId: string,
 ): Promise<void> {
   const { db } = await requireTeamLeader(teamId);
-  const snap = await requireTeamDoc(db, "agendas", agendaId, teamId);
-  if (snap.data()?.is_default) {
-    throw new Error("The default Level 10 agenda cannot be deleted");
-  }
-  // Keep at least one template so Start meeting always has a choice.
-  const siblings = await db
-    .collection("agendas")
-    .where("team_id", "==", teamId)
-    .limit(2)
-    .get();
-  if (siblings.size <= 1) {
-    throw new Error("Keep at least one agenda for the team");
-  }
+  await requireTeamDoc(db, "agendas", agendaId, teamId);
   await db.collection("agendas").doc(agendaId).delete();
   revalidatePath(listPath(teamId));
 }
 
+/** Built-in id (`builtin:l10`) or a team custom agenda doc id. */
 async function loadAgendaSnapshot(
   db: Firestore,
   teamId: string,
@@ -156,6 +107,9 @@ async function loadAgendaSnapshot(
   agenda_name: string;
   agenda_items: AgendaItem[];
 }> {
+  const builtin = resolveBuiltInAgenda(agendaId);
+  if (builtin) return builtin;
+
   if (agendaId) {
     const snap = await db.collection("agendas").doc(agendaId).get();
     if (snap.exists && snap.data()?.team_id === teamId) {
@@ -170,31 +124,15 @@ async function loadAgendaSnapshot(
       }
     }
   }
-  // Prefer the team's default template when none (or a stale id) was chosen.
-  // Filter in memory so we don't need a composite team_id+is_default index.
-  const teamAgendas = await db
-    .collection("agendas")
-    .where("team_id", "==", teamId)
-    .get();
-  const preferred =
-    teamAgendas.docs.find((d) => d.data().is_default) ??
-    teamAgendas.docs[0] ??
-    null;
-  if (preferred) {
-    const items =
-      normalizeAgendaItems(preferred.data().items) ?? defaultL10Items();
-    return {
-      agenda_id: preferred.id,
-      agenda_name:
-        String(preferred.data().name ?? "Level 10").trim() || "Level 10",
-      agenda_items: items,
-    };
-  }
-  return {
-    agenda_id: null,
-    agenda_name: "Level 10",
-    agenda_items: defaultL10Items(),
-  };
+
+  // Fallback: Level 10 built-in (always available).
+  return (
+    resolveBuiltInAgenda("builtin:l10") ?? {
+      agenda_id: "builtin:l10",
+      agenda_name: "Level 10",
+      agenda_items: defaultL10Items(),
+    }
+  );
 }
 
 // Group-transport action — starting the shared L10 room is a facilitator

@@ -134,13 +134,13 @@ app/
       scorecard/ rocks/ todos/
       issues/ headlines/
       members/                  — This team | All teams tabs; admin new-team
-      meetings/                 — agenda templates + meeting history
-      meetings/[meetingId]/     — live meeting orchestrator (segment components)
+      meetings/                 — agendas (built-in + custom) + history
+      meetings/[meetingId]/     — live meeting orchestrator
 components/                     — app shell, shared UI
 lib/
   firebase/                     — admin, client, auth, session, teams helpers
-  l10/segments.ts               — built-in stage tools (labels, default timings)
-  l10/agenda.ts                 — agenda templates + meeting agenda snapshots
+  l10/segments.ts               — stage tools (labels, default timings)
+  l10/agenda.ts                 — built-in agendas + meeting snapshots
   dates.ts  scorecard.ts        — date bucketing + metric formatting
 scripts/seed-demo.ts            — comprehensive demo seed
 firestore.rules                 — security rules

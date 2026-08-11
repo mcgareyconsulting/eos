@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   AGENDA_TOOL_TYPES,
   availableToolsToAdd,
+  builtInAgendaOptions,
   clampSegmentToAgenda,
   defaultL10CondensedItems,
   defaultL10Items,
@@ -10,9 +11,11 @@ import {
   formatAgendaDuration,
   isFirstAgendaSegment,
   isLastAgendaSegment,
+  mergeAgendaOptions,
   nextInAgenda,
   normalizeAgendaItems,
   prevInAgenda,
+  resolveBuiltInAgenda,
   resolveMeetingAgenda,
   totalAgendaSeconds,
   totalAgendaMinutes,
@@ -37,6 +40,28 @@ describe("default L10 agenda", () => {
 describe("L10 Condensed", () => {
   test("sums to 60 minutes", () => {
     assert.equal(totalAgendaMinutes(defaultL10CondensedItems()), 60);
+  });
+});
+
+describe("built-in agendas", () => {
+  test("exposes Level 10 and L10 Condensed without Firestore", () => {
+    const opts = builtInAgendaOptions();
+    assert.equal(opts.length, 2);
+    assert.ok(opts.every((o) => o.builtin));
+    assert.equal(resolveBuiltInAgenda("builtin:l10")?.agenda_name, "Level 10");
+    assert.equal(
+      resolveBuiltInAgenda("builtin:l10-condensed")?.agenda_name,
+      "L10 Condensed",
+    );
+    assert.equal(resolveBuiltInAgenda("nope"), null);
+  });
+
+  test("mergeAgendaOptions puts built-ins first", () => {
+    const merged = mergeAgendaOptions([
+      { id: "c1", name: "Custom", items: defaultL10Items() },
+    ]);
+    assert.equal(merged[0]?.id, "builtin:l10");
+    assert.equal(merged[merged.length - 1]?.id, "c1");
   });
 });
 

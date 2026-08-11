@@ -3,7 +3,6 @@ import {
   SEGMENT_LABELS,
   SEGMENTS,
   type Segment,
-  isSegment,
   normalizeSegment,
 } from "./segments";
 
@@ -18,35 +17,34 @@ export const AGENDA_TOOL_TYPES = SEGMENTS.filter(
 export type AgendaToolType = (typeof AGENDA_TOOL_TYPES)[number];
 
 export type AgendaItem = {
-  /** Built-in L10 stage this row drives. */
   type: AgendaToolType;
-  /** Allotted time for this stage (seconds). */
   duration_seconds: number;
   /** Optional display override; falls back to SEGMENT_LABELS[type]. */
   label?: string | null;
 };
 
-export type AgendaDoc = {
-  id: string;
-  team_id: string;
-  name: string;
-  items: AgendaItem[];
-  /** Built-in seed that cannot be deleted (can still be edited). */
-  is_default?: boolean;
-  created_at?: unknown;
-  updated_at?: unknown;
-  created_by?: string | null;
-};
-
-/** Snapshot stamped onto a meeting at start so later template edits never
- *  rewrite a live or historical meeting's rail/timers. */
+/** Snapshot stamped onto a meeting at start. */
 export type MeetingAgendaSnapshot = {
   agenda_id: string | null;
   agenda_name: string;
   agenda_items: AgendaItem[];
 };
 
-export function isAgendaToolType(s: string | null | undefined): s is AgendaToolType {
+/** Option shown in Start meeting / Agendas UI. */
+export type AgendaOption = {
+  id: string;
+  name: string;
+  items: AgendaItem[];
+  /** True for code presets (not stored in Firestore). */
+  builtin?: boolean;
+};
+
+const MAX_ITEM_SECONDS = 8 * 60 * 60;
+const MIN_ITEM_SECONDS = 60;
+
+export function isAgendaToolType(
+  s: string | null | undefined,
+): s is AgendaToolType {
   return !!s && (AGENDA_TOOL_TYPES as readonly string[]).includes(s);
 }
 
@@ -57,7 +55,10 @@ export function agendaItemLabel(item: AgendaItem): string {
 }
 
 export function totalAgendaSeconds(items: readonly AgendaItem[]): number {
-  return items.reduce((sum, it) => sum + Math.max(0, it.duration_seconds || 0), 0);
+  return items.reduce(
+    (sum, it) => sum + Math.max(0, it.duration_seconds || 0),
+    0,
+  );
 }
 
 export function totalAgendaMinutes(items: readonly AgendaItem[]): number {
@@ -72,10 +73,7 @@ export function defaultL10Items(): AgendaItem[] {
   }));
 }
 
-/**
- * L10 Condensed (~60 minutes): same stages, shorter Issues hour.
- * 3+3+3+3+3+40+5 = 60.
- */
+/** L10 Condensed (~60 min): same stages, shorter Issues block. */
 export function defaultL10CondensedItems(): AgendaItem[] {
   const condensed: Record<AgendaToolType, number> = {
     segue: 3 * 60,
@@ -92,40 +90,49 @@ export function defaultL10CondensedItems(): AgendaItem[] {
   }));
 }
 
-/** Built-in templates offered when seeding a team (and as clone sources). */
-export const BUILT_IN_AGENDA_PRESETS: ReadonlyArray<{
-  key: "l10" | "l10-condensed";
+/** Built-in templates — always available, never seeded into Firestore. */
+export const BUILT_IN_AGENDAS: ReadonlyArray<{
+  id: "builtin:l10" | "builtin:l10-condensed";
   name: string;
   items: () => AgendaItem[];
-  is_default: boolean;
 }> = [
+  { id: "builtin:l10", name: "Level 10", items: defaultL10Items },
   {
-    key: "l10",
-    name: "Level 10",
-    items: defaultL10Items,
-    is_default: true,
-  },
-  {
-    key: "l10-condensed",
+    id: "builtin:l10-condensed",
     name: "L10 Condensed",
     items: defaultL10CondensedItems,
-    is_default: false,
   },
 ];
 
-const MAX_ITEM_SECONDS = 8 * 60 * 60; // 8h cap per stage
-const MIN_ITEM_SECONDS = 60; // 1 minute floor
+export function builtInAgendaOptions(): AgendaOption[] {
+  return BUILT_IN_AGENDAS.map((p) => ({
+    id: p.id,
+    name: p.name,
+    items: p.items(),
+    builtin: true,
+  }));
+}
+
+export function resolveBuiltInAgenda(
+  id: string | null | undefined,
+): MeetingAgendaSnapshot | null {
+  const preset = BUILT_IN_AGENDAS.find((p) => p.id === id);
+  if (!preset) return null;
+  return {
+    agenda_id: preset.id,
+    agenda_name: preset.name,
+    agenda_items: preset.items(),
+  };
+}
+
+export function isBuiltInAgendaId(id: string | null | undefined): boolean {
+  return !!id && BUILT_IN_AGENDAS.some((p) => p.id === id);
+}
 
 /**
- * Sanitize client/server agenda items:
- * - only known tool types
- * - unique types (first wins)
- * - clamp durations
- * - strip empty labels
+ * Sanitize agenda items: known tools only, unique types, clamped durations.
  */
-export function normalizeAgendaItems(
-  raw: unknown,
-): AgendaItem[] | null {
+export function normalizeAgendaItems(raw: unknown): AgendaItem[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const seen = new Set<string>();
   const out: AgendaItem[] = [];
@@ -171,7 +178,7 @@ export function validateAgendaName(name: unknown): string {
   return n;
 }
 
-/** Resolve the agenda snapshot for a meeting doc (legacy-safe). */
+/** Resolve agenda snapshot from a meeting doc (legacy-safe). */
 export function resolveMeetingAgenda(data: {
   agenda_id?: string | null;
   agenda_name?: string | null;
@@ -208,14 +215,10 @@ export function nextInAgenda(
   const order = agendaSegmentList(items);
   if (order.length === 0) return "done";
   const cur = normalizeSegment(current);
-  // "done" stays terminal
   if (cur === "done") return "done";
   const i = cur ? order.indexOf(cur as AgendaToolType) : -1;
   if (i < 0) return order[0]!;
-  if (i >= order.length - 1) {
-    // Last agenda item: do not auto-write "done" (endMeeting owns that).
-    return order[i]!;
-  }
+  if (i >= order.length - 1) return order[i]!;
   return order[i + 1]!;
 }
 
@@ -249,20 +252,16 @@ export function isLastAgendaSegment(
   segment: string | null | undefined,
 ): boolean {
   const last = lastAgendaSegment(items);
-  const cur = normalizeSegment(segment);
-  return !!last && cur === last;
+  return !!last && normalizeSegment(segment) === last;
 }
 
 export function isFirstAgendaSegment(
   items: readonly AgendaItem[],
   segment: string | null | undefined,
 ): boolean {
-  const first = firstAgendaSegment(items);
-  const cur = normalizeSegment(segment);
-  return cur === first;
+  return normalizeSegment(segment) === firstAgendaSegment(items);
 }
 
-/** Whether a view/peek target is on this meeting's agenda. */
 export function isOnAgenda(
   items: readonly AgendaItem[],
   segment: string | null | undefined,
@@ -272,10 +271,6 @@ export function isOnAgenda(
   return agendaSegmentList(items).includes(cur as AgendaToolType);
 }
 
-/**
- * If the stored segment is not on the agenda (template shrank, bad data),
- * fall back to the first agenda item.
- */
 export function clampSegmentToAgenda(
   items: readonly AgendaItem[],
   segment: string | null | undefined,
@@ -287,7 +282,6 @@ export function clampSegmentToAgenda(
   return firstAgendaSegment(items);
 }
 
-/** Tools not yet on the agenda (for the editor's "Add stage" list). */
 export function availableToolsToAdd(
   items: readonly AgendaItem[],
 ): AgendaToolType[] {
@@ -299,7 +293,6 @@ export function defaultDurationForTool(type: AgendaToolType): number {
   return SEGMENT_DURATION_SECONDS[type] ?? 5 * 60;
 }
 
-/** Format seconds as "5 min" / "1 hr 30 min" for list UI. */
 export function formatAgendaDuration(totalSeconds: number): string {
   const mins = Math.max(0, Math.round(totalSeconds / 60));
   if (mins < 60) return `${mins} min`;
@@ -309,11 +302,17 @@ export function formatAgendaDuration(totalSeconds: number): string {
   return `${h} hr ${m} min`;
 }
 
-/** Type guard used by server actions when accepting segment jumps. */
 export function agendaIncludesSegment(
   items: readonly AgendaItem[],
   target: Segment,
 ): boolean {
   if (target === "done") return false;
   return isOnAgenda(items, target);
+}
+
+/** Merge built-ins + team customs for Start meeting / list UIs. */
+export function mergeAgendaOptions(
+  customs: AgendaOption[],
+): AgendaOption[] {
+  return [...builtInAgendaOptions(), ...customs];
 }

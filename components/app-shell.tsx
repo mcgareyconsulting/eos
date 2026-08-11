@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Plug, Shield } from "lucide-react";
+import { Home, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
 import { EnvBanner } from "@/components/env-badge";
@@ -80,7 +80,6 @@ export function AppShell({
           <div className="flex-1 overflow-y-auto">
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
-              <NavLink href="/integrations" icon={Plug} label="Integrations" />
             </nav>
 
             {membershipCount === 0 && !isAdmin && (
@@ -113,9 +112,13 @@ export function AppShell({
             <div className="flex items-center gap-2 group-data-[sidebar-collapsed]/shell:justify-center">
               <div className="min-w-0 flex-1 group-data-[sidebar-collapsed]/shell:hidden">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <Link
+                    href="/settings"
+                    title="Settings"
+                    className="truncate text-sm font-medium text-zinc-900 hover:text-hpb-blue dark:text-zinc-100 dark:hover:text-hpb-gold"
+                  >
                     {displayName}
-                  </div>
+                  </Link>
                   {isAdmin && (
                     <span
                       className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-hpb-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold"
@@ -126,8 +129,26 @@ export function AppShell({
                     </span>
                   )}
                 </div>
-                <SignOutButton className="mt-0.5 text-xs text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100" />
+                <div className="mt-0.5 flex items-center gap-2 text-xs">
+                  <Link
+                    href="/settings"
+                    className="text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+                  >
+                    Settings
+                  </Link>
+                  <span className="text-zinc-300 dark:text-zinc-600" aria-hidden>
+                    ·
+                  </span>
+                  <SignOutButton className="text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100" />
+                </div>
               </div>
+              <Link
+                href="/settings"
+                title="Settings"
+                className="hidden h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:inline-flex dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                <Settings className="h-4 w-4" />
+              </Link>
               <ThemeToggle />
             </div>
           </div>

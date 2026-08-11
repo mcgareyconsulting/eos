@@ -6,23 +6,24 @@ import {
   resolveRedirectUri,
   appOrigin,
   consumeOAuthState,
+  GOOGLE_TASKS_SETTINGS_PATH,
 } from "@/lib/google/tasks";
 
 // Handles the OAuth redirect back from Google: validates the CSRF state
 // (server-side — see saveOAuthState), exchanges the code for tokens,
-// persists the refresh token, and bounces the user back to /integrations
+// persists the refresh token, and bounces the user back to Settings
 // with a status flag.
 export async function GET(request: NextRequest) {
   const origin = appOrigin(request.url);
   const session = await verifySession();
   if (!session) {
     const login = new URL("/login", origin);
-    login.searchParams.set("next", "/integrations");
+    login.searchParams.set("next", GOOGLE_TASKS_SETTINGS_PATH);
     return NextResponse.redirect(login);
   }
 
   const url = new URL(request.url);
-  const back = new URL("/integrations", origin);
+  const back = new URL(GOOGLE_TASKS_SETTINGS_PATH, origin);
 
   const finish = (status: string) => {
     back.searchParams.set("google", status);

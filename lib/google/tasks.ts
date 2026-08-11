@@ -1,12 +1,18 @@
-// Google Tasks connector — one-way push (EOS to-dos → Google Tasks).
+// Google Tasks connector — two-way **completion** sync for pure to-dos.
 //
 // SCOPE (per-user OAuth):
 //   - Each EOS user connects their own Google account. Tokens live in the
 //     admin-only Firestore doc `google_tasks_connections/{uid}`. No shared
-//     app-wide connection, no write-back from Tasks → EOS, no polling.
-//   - A to-do is mirrored into the **owner's** "EOS · L10 To-Dos" list when
-//     that owner has connected. If the owner hasn't connected, the push is a
-//     no-op (the EOS write still succeeds).
+//     app-wide connection.
+//   - EOS → Google: create/update/delete mirrored tasks in the owner's
+//     "EOS · L10 To-Dos" list (title, notes, due, completed status).
+//   - Google → EOS: when a mirrored task is completed in Google Tasks, set
+//     `completed_at` on the linked EOS to-do. Field edits in Google (title,
+//     due, notes) and un-complete are ignored — EOS stays source of truth
+//     for fields. Google Tasks has no webhooks; pull runs on Settings /
+//     To-Dos load, "Sync now", and POST /api/google/tasks/pull (scheduler).
+//   - If the owner hasn't connected, push/pull are no-ops (EOS writes still
+//     succeed).
 //
 // No SDK dependency: OAuth token exchange/refresh and the Tasks REST calls are
 // done with plain fetch. Auth is user-OAuth (the Tasks API does not accept a
@@ -47,7 +53,7 @@ export function resolveRedirectUri(requestUrl: string): string {
 }
 
 // The app's public origin, for building in-app redirects (e.g. back to
-// /integrations after the callback). MUST NOT be derived from request.url on
+// /settings after the callback). MUST NOT be derived from request.url on
 // Cloud Run: inside the container that URL's host is the bind address
 // (0.0.0.0:8080), so a relative redirect would send the browser to
 // http://0.0.0.0:8080/... (ERR_CONNECTION_REFUSED). Reuses the pinned redirect
@@ -56,6 +62,9 @@ export function appOrigin(requestUrl: string): string {
   return new URL(resolveRedirectUri(requestUrl)).origin;
 }
 
+/** In-app page that owns the Google Tasks connector UI. */
+export const GOOGLE_TASKS_SETTINGS_PATH = "/settings";
+
 type Connection = {
   refresh_token: string;
   access_token?: string | null;
@@ -63,6 +72,7 @@ type Connection = {
   tasklist_id?: string | null;
   connected_by_uid?: string | null;
   connected_email?: string | null;
+  last_pull_at_ms?: number | null;
 };
 
 function clientCreds(): { clientId: string; clientSecret: string } | null {
@@ -92,16 +102,24 @@ export async function getTasksStatus(uid: string): Promise<{
   configured: boolean;
   connected: boolean;
   email: string | null;
+  lastPullAtMs: number | null;
 }> {
   const configured = googleOAuthConfigured();
   if (!configured) {
-    return { configured: false, connected: false, email: null };
+    return {
+      configured: false,
+      connected: false,
+      email: null,
+      lastPullAtMs: null,
+    };
   }
   const conn = await getConnection(uid).catch(() => null);
   return {
     configured: true,
     connected: !!conn,
     email: conn?.connected_email ?? null,
+    lastPullAtMs:
+      typeof conn?.last_pull_at_ms === "number" ? conn.last_pull_at_ms : null,
   };
 }
 
@@ -379,4 +397,182 @@ export async function deleteTaskForTodo(
   } catch (e) {
     console.error("[google-tasks] delete failed:", e);
   }
+}
+
+// --- Google → EOS completion pull ------------------------------------------
+
+export type GoogleTaskStatusRow = {
+  id: string;
+  status: string; // "completed" | "needsAction" | …
+};
+
+export type TodoPullCandidate = {
+  id: string;
+  google_task_id?: string | null;
+  owner_id?: string | null;
+  completed_at?: unknown | null;
+};
+
+/**
+ * Pure matcher: which EOS todos should flip to complete given Google task
+ * statuses. Only completion is applied (not reopen, not field edits).
+ * Exported for unit tests.
+ */
+export function selectTodosToCompleteFromGoogle(
+  googleTasks: GoogleTaskStatusRow[],
+  todos: TodoPullCandidate[],
+  ownerUid: string,
+): string[] {
+  if (!ownerUid) return [];
+  const completedIds = new Set(
+    googleTasks
+      .filter((t) => t.id && t.status === "completed")
+      .map((t) => t.id),
+  );
+  if (completedIds.size === 0) return [];
+
+  const out: string[] = [];
+  for (const todo of todos) {
+    const taskId = todo.google_task_id;
+    if (!taskId || !completedIds.has(taskId)) continue;
+    if (todo.owner_id !== ownerUid) continue;
+    if (todo.completed_at != null) continue;
+    out.push(todo.id);
+  }
+  return out;
+}
+
+async function listTasklistTasks(
+  tasklistId: string,
+  accessToken: string,
+): Promise<GoogleTaskStatusRow[]> {
+  const rows: GoogleTaskStatusRow[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      showCompleted: "true",
+      showHidden: "true",
+      maxResults: "100",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const listing = await tasksFetch(
+      `/lists/${tasklistId}/tasks?${params.toString()}`,
+      accessToken,
+    );
+    const items = (listing.items ?? []) as {
+      id?: string;
+      status?: string;
+    }[];
+    for (const item of items) {
+      if (!item.id) continue;
+      rows.push({ id: item.id, status: item.status ?? "needsAction" });
+    }
+    pageToken =
+      typeof listing.nextPageToken === "string"
+        ? listing.nextPageToken
+        : undefined;
+  } while (pageToken);
+  return rows;
+}
+
+/**
+ * Pull completed status from Google Tasks into EOS for this owner.
+ * Never throws; never re-pushes to Google (avoids completion loops).
+ */
+export async function pullCompletionsForOwner(
+  ownerUid: string,
+): Promise<{ updated: number }> {
+  if (!ownerUid || !googleOAuthConfigured()) return { updated: 0 };
+  try {
+    const auth = await getAuthContext(ownerUid);
+    if (!auth) return { updated: 0 };
+
+    const googleTasks = await listTasklistTasks(auth.tasklistId, auth.token);
+    const completedIds = googleTasks
+      .filter((t) => t.status === "completed")
+      .map((t) => t.id);
+    if (completedIds.length === 0) {
+      await connectionRef(ownerUid).set(
+        { last_pull_at_ms: Date.now(), updated_at: FieldValue.serverTimestamp() },
+        { merge: true },
+      );
+      return { updated: 0 };
+    }
+
+    const db = getAdminDb();
+    // Match by google_task_id (single-field equality). Chunk in case a
+    // user has many completed mirrors — Firestore `in` caps at 30.
+    const candidates: TodoPullCandidate[] = [];
+    for (let i = 0; i < completedIds.length; i += 30) {
+      const chunk = completedIds.slice(i, i + 30);
+      const snap = await db
+        .collection("todos")
+        .where("google_task_id", "in", chunk)
+        .get();
+      for (const d of snap.docs) {
+        const data = d.data();
+        candidates.push({
+          id: d.id,
+          google_task_id: (data.google_task_id as string | null) ?? null,
+          owner_id: (data.owner_id as string | null) ?? null,
+          completed_at: data.completed_at ?? null,
+        });
+      }
+    }
+
+    const toComplete = selectTodosToCompleteFromGoogle(
+      googleTasks,
+      candidates,
+      ownerUid,
+    );
+    let updated = 0;
+    for (const todoId of toComplete) {
+      await db.collection("todos").doc(todoId).update({
+        completed_at: FieldValue.serverTimestamp(),
+      });
+      updated += 1;
+    }
+
+    await connectionRef(ownerUid).set(
+      { last_pull_at_ms: Date.now(), updated_at: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+    return { updated };
+  } catch (e) {
+    console.error("[google-tasks] pull failed:", e);
+    return { updated: 0 };
+  }
+}
+
+/**
+ * Background sweep: pull completions for every connected user.
+ * Used by POST /api/google/tasks/pull (Cloud Scheduler). Never throws.
+ */
+export async function pullCompletionsForAllConnected(): Promise<{
+  users: number;
+  updated: number;
+}> {
+  if (!googleOAuthConfigured()) return { users: 0, updated: 0 };
+  try {
+    const snap = await getAdminDb().collection("google_tasks_connections").get();
+    let users = 0;
+    let updated = 0;
+    for (const doc of snap.docs) {
+      const data = doc.data() as Connection;
+      if (!data.refresh_token) continue;
+      users += 1;
+      const result = await pullCompletionsForOwner(doc.id);
+      updated += result.updated;
+    }
+    return { users, updated };
+  } catch (e) {
+    console.error("[google-tasks] pull-all failed:", e);
+    return { users: 0, updated: 0 };
+  }
+}
+
+/** Shared secret for the scheduler pull route (env). Empty = route disabled. */
+export function googleTasksPullSecret(): string | null {
+  const s = process.env.GOOGLE_TASKS_PULL_SECRET?.trim();
+  return s || null;
 }

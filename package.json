@@ -18,6 +18,7 @@
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",
+    "user:reassign": "tsx scripts/reassign-user.ts",
     "db:copy": "tsx scripts/copy-db.ts",
     "ship": "bash scripts/deploy.sh"
   },

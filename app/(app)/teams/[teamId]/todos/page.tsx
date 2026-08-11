@@ -5,6 +5,7 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
+import { pullCompletionsForOwner } from "@/lib/google/tasks";
 import { AddTodoModal } from "./add-todo-modal";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 
@@ -132,6 +133,14 @@ export default async function TodosPage({
   const { archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(tid);
+  // Best-effort Google → EOS completion pull for the signed-in user so
+  // Tasks completed outside the app show up when opening To-Dos.
+  // Soft-fail at the call site too so a Google outage never blanks the list.
+  try {
+    await pullCompletionsForOwner(uid);
+  } catch (e) {
+    console.error("[todos] google pull on load failed:", e);
+  }
   const members = await getTeamMembers(tid);
   const speakingOrder = reconcileSpeakingOrder(team.speakingOrder, members);
 
@@ -170,8 +179,14 @@ export default async function TodosPage({
       continue;
     }
     const visibility = t.visibility === "private" ? "private" : "team";
-    // Private items only for the owner.
-    if (visibility === "private" && t.owner_id !== uid) continue;
+    // Private items only for the owner (string-compare; never hide the
+    // viewer's own private rows due to a type quirk).
+    if (
+      visibility === "private" &&
+      String(t.owner_id ?? "") !== String(uid)
+    ) {
+      continue;
+    }
     allTodos.push({
       id: d.id,
       title: t.title,

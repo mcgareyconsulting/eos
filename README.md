@@ -12,7 +12,7 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 - **To-Dos** — 7-day action items, team or private, assignable, with due dates.
 - **Issues** — team issues ranked by votes (3 credits per person), worked through live during the meeting.
 - **Headlines** — customer wins, employee news, and cascading messages.
-- **Level 10 Meeting** — a live, timed 90-minute orchestrator (Segue → Scorecard → Rocks → Headlines → To-Dos → Issues → Conclude) with shared segment state, presence, meeting-rating (each attendee rates the meeting 1–10), and a post-meeting recap.
+- **Level 10 Meeting** — a live, timed orchestrator with **custom agendas** (stage order + durations; pick template at Start). Default Level 10 is Segue → Scorecard → Rocks → Headlines → To-Dos → Issues → Conclude (90 min). Shared segment state, meeting-rating (each attendee rates the meeting 1–10), and a post-meeting recap.
 
 ## Setup
 
@@ -134,12 +134,13 @@ app/
       scorecard/ rocks/ todos/
       issues/ headlines/
       members/                  — This team | All teams tabs; admin new-team
-      meetings/                 — L10 list
-      meetings/[meetingId]/     — live L10 orchestrator (segment components)
+      meetings/                 — agenda templates + meeting history
+      meetings/[meetingId]/     — live meeting orchestrator (segment components)
 components/                     — app shell, shared UI
 lib/
   firebase/                     — admin, client, auth, session, teams helpers
-  l10/segments.ts               — meeting segment definitions + timings
+  l10/segments.ts               — built-in stage tools (labels, default timings)
+  l10/agenda.ts                 — agenda templates + meeting agenda snapshots
   dates.ts  scorecard.ts        — date bucketing + metric formatting
 scripts/seed-demo.ts            — comprehensive demo seed
 firestore.rules                 — security rules

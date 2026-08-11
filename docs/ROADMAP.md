@@ -532,7 +532,7 @@ On-track / No data).
 #### Still open (prior backlog, not replaced)
 - **P1-7** Google Tasks two-way (optional)
 - **P1-2** allowlist + membership ops for demo users (ongoing)
-- **P2-1** custom agendas (out of band)
+- **P2-1** custom agendas — 🟡 MVP on `feature/agenda` (templates + pick-at-start; more presets / freeform / org-push still open)
 - **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
 - Pass 11 Directory stretch: private-team flag, Owner/Implementer roles
 - P3-* as capacity allows

@@ -10,12 +10,21 @@ import {
   requireTeamLeader,
 } from "@/lib/firebase/teams";
 import {
-  SEGMENTS,
-  nextSegment,
-  prevSegment,
   type Segment,
   normalizeSegment,
 } from "@/lib/l10/segments";
+import {
+  BUILT_IN_AGENDA_PRESETS,
+  agendaIncludesSegment,
+  defaultL10Items,
+  firstAgendaSegment,
+  nextInAgenda,
+  normalizeAgendaItems,
+  prevInAgenda,
+  resolveMeetingAgenda,
+  validateAgendaName,
+  type AgendaItem,
+} from "@/lib/l10/agenda";
 import {
   clampSpeakerIndex,
   firstPresentIndex,
@@ -32,10 +41,172 @@ function detailPath(teamId: string, meetingId: string) {
   return `/teams/${teamId}/meetings/${meetingId}`;
 }
 
+// ---------------------------------------------------------------------------
+// Agenda templates (per-team). Leaders create/edit; any member may read.
+// A snapshot is stamped onto each meeting at start so later template edits
+// never rewrite a live or historical meeting.
+// ---------------------------------------------------------------------------
+
+/** Seed Level 10 + L10 Condensed when a team has no agendas yet.
+ *  Uses deterministic doc ids so concurrent first visits can't double-seed. */
+export async function ensureDefaultAgendas(teamId: string): Promise<void> {
+  const { db, uid } = await requireTeamAccess(teamId);
+  const existing = await db
+    .collection("agendas")
+    .where("team_id", "==", teamId)
+    .limit(1)
+    .get();
+  if (!existing.empty) return;
+
+  const batch = db.batch();
+  for (const preset of BUILT_IN_AGENDA_PRESETS) {
+    // Stable id: concurrent ensureDefaultAgendas calls merge instead of
+    // minting four Level-10s for one team.
+    const ref = db.collection("agendas").doc(`${teamId}__${preset.key}`);
+    batch.set(
+      ref,
+      {
+        team_id: teamId,
+        name: preset.name,
+        items: preset.items(),
+        is_default: preset.is_default,
+        created_by: uid,
+        created_at: FieldValue.serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  await batch.commit();
+  // No revalidatePath here: this runs from the Meetings page render on first
+  // visit (seed-if-empty). revalidatePath during render is unsupported in
+  // Next.js. The same request already re-queries agendas after this returns.
+}
+
+export async function createAgenda(
+  teamId: string,
+  input: { name: string; items: AgendaItem[] },
+): Promise<{ id: string }> {
+  const { db, uid } = await requireTeamLeader(teamId);
+  const name = validateAgendaName(input.name);
+  const items = normalizeAgendaItems(input.items);
+  if (!items) throw new Error("Agenda needs at least one stage");
+
+  const ref = db.collection("agendas").doc();
+  await ref.set({
+    team_id: teamId,
+    name,
+    items,
+    is_default: false,
+    created_by: uid,
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  revalidatePath(listPath(teamId));
+  return { id: ref.id };
+}
+
+export async function updateAgenda(
+  teamId: string,
+  agendaId: string,
+  input: { name: string; items: AgendaItem[] },
+): Promise<void> {
+  const { db } = await requireTeamLeader(teamId);
+  await requireTeamDoc(db, "agendas", agendaId, teamId);
+  const name = validateAgendaName(input.name);
+  const items = normalizeAgendaItems(input.items);
+  if (!items) throw new Error("Agenda needs at least one stage");
+
+  await db.collection("agendas").doc(agendaId).update({
+    name,
+    items,
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  revalidatePath(listPath(teamId));
+}
+
+export async function deleteAgenda(
+  teamId: string,
+  agendaId: string,
+): Promise<void> {
+  const { db } = await requireTeamLeader(teamId);
+  const snap = await requireTeamDoc(db, "agendas", agendaId, teamId);
+  if (snap.data()?.is_default) {
+    throw new Error("The default Level 10 agenda cannot be deleted");
+  }
+  // Keep at least one template so Start meeting always has a choice.
+  const siblings = await db
+    .collection("agendas")
+    .where("team_id", "==", teamId)
+    .limit(2)
+    .get();
+  if (siblings.size <= 1) {
+    throw new Error("Keep at least one agenda for the team");
+  }
+  await db.collection("agendas").doc(agendaId).delete();
+  revalidatePath(listPath(teamId));
+}
+
+async function loadAgendaSnapshot(
+  db: Firestore,
+  teamId: string,
+  agendaId: string | null | undefined,
+): Promise<{
+  agenda_id: string | null;
+  agenda_name: string;
+  agenda_items: AgendaItem[];
+}> {
+  if (agendaId) {
+    const snap = await db.collection("agendas").doc(agendaId).get();
+    if (snap.exists && snap.data()?.team_id === teamId) {
+      const items = normalizeAgendaItems(snap.data()?.items);
+      if (items) {
+        return {
+          agenda_id: snap.id,
+          agenda_name:
+            String(snap.data()?.name ?? "Agenda").trim() || "Agenda",
+          agenda_items: items,
+        };
+      }
+    }
+  }
+  // Prefer the team's default template when none (or a stale id) was chosen.
+  // Filter in memory so we don't need a composite team_id+is_default index.
+  const teamAgendas = await db
+    .collection("agendas")
+    .where("team_id", "==", teamId)
+    .get();
+  const preferred =
+    teamAgendas.docs.find((d) => d.data().is_default) ??
+    teamAgendas.docs[0] ??
+    null;
+  if (preferred) {
+    const items =
+      normalizeAgendaItems(preferred.data().items) ?? defaultL10Items();
+    return {
+      agenda_id: preferred.id,
+      agenda_name:
+        String(preferred.data().name ?? "Level 10").trim() || "Level 10",
+      agenda_items: items,
+    };
+  }
+  return {
+    agenda_id: null,
+    agenda_name: "Level 10",
+    agenda_items: defaultL10Items(),
+  };
+}
+
 // Group-transport action — starting the shared L10 room is a facilitator
 // control, so it requires team leader OR org admin (bypass built into
 // requireTeamLeader). Non-leader members 404 rather than minting a meeting.
-export async function startMeeting(teamId: string) {
+//
+// `agendaId` selects the template; its stages + durations are snapshotted
+// onto the meeting doc so later template edits never rewrite a live room.
+export async function startMeeting(
+  teamId: string,
+  agendaId?: string | null,
+) {
   const { db, team } = await requireTeamLeader(teamId);
 
   // One live meeting per team: if someone already started one, join it
@@ -63,18 +234,24 @@ export async function startMeeting(teamId: string) {
   const members = await getTeamMembers(teamId);
   const speakingOrder = reconcileSpeakingOrder(team.speakingOrder, members);
 
+  const agenda = await loadAgendaSnapshot(db, teamId, agendaId);
+  const first = firstAgendaSegment(agenda.agenda_items);
+
   const ref = db.collection("meetings").doc();
   await ref.set({
     team_id: teamId,
     started_at: FieldValue.serverTimestamp(),
     ended_at: null,
-    current_segment: "segue",
+    current_segment: first,
     segment_started_at: FieldValue.serverTimestamp(),
     current_issue_id: null,
     notes: null,
     absent_user_ids: [],
     speaking_order: speakingOrder,
     speaking_index: 0,
+    agenda_id: agenda.agenda_id,
+    agenda_name: agenda.agenda_name,
+    agenda_items: agenda.agenda_items,
   });
   revalidatePath(`/teams/${teamId}/issues`);
   redirect(detailPath(teamId, ref.id));
@@ -124,14 +301,28 @@ export async function advanceSegment(
     // after someone finished must not rewrite history.
     if (snap.data()?.ended_at != null) return;
 
-    const current = normalizeSegment(snap.data()?.current_segment as string) ?? "segue";
-    if (expectedCurrent && current !== (normalizeSegment(expectedCurrent) ?? expectedCurrent)) return;
+    const agenda = resolveMeetingAgenda(snap.data() as {
+      agenda_id?: string | null;
+      agenda_name?: string | null;
+      agenda_items?: unknown;
+    });
+    const current =
+      normalizeSegment(snap.data()?.current_segment as string) ??
+      firstAgendaSegment(agenda.agenda_items);
+    if (
+      expectedCurrent &&
+      current !== (normalizeSegment(expectedCurrent) ?? expectedCurrent)
+    ) {
+      return;
+    }
 
     const target =
-      direction === "next" ? nextSegment(current) : prevSegment(current);
+      direction === "next"
+        ? nextInAgenda(agenda.agenda_items, current)
+        : prevInAgenda(agenda.agenda_items, current);
     // "done" is only ever written by endMeeting (the Finish button) — Next on
-    // Conclude stops there rather than stranding a live meeting in a state
-    // the page has no rendering for.
+    // the last agenda stage stops there rather than stranding a live meeting
+    // in a state the page has no rendering for.
     if (target === "done" || target === current) return;
 
     tx.update(ref, {
@@ -158,11 +349,19 @@ export async function jumpToSegment(
   meetingId: string,
   target: Segment,
 ) {
-  if (!SEGMENTS.includes(target) || target === "done") {
+  if (target === "done") {
     throw new Error("Invalid segment");
   }
   const { db } = await requireTeamLeader(teamId);
   const snap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const agenda = resolveMeetingAgenda(snap.data() as {
+    agenda_id?: string | null;
+    agenda_name?: string | null;
+    agenda_items?: unknown;
+  });
+  if (!agendaIncludesSegment(agenda.agenda_items, target)) {
+    throw new Error("Segment is not on this meeting's agenda");
+  }
   await db
     .collection("meetings")
     .doc(meetingId)

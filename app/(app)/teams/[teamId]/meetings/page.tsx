@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
+import { normalizeAgendaItems, type AgendaItem } from "@/lib/l10/agenda";
 import { SEGMENT_LABELS } from "@/lib/l10/segments";
-import { startMeeting } from "./actions";
+import { ensureDefaultAgendas } from "./actions";
+import { AgendasPanel, type AgendaListItem } from "./agendas-panel";
 import { MeetingsList, type MeetingListDoc } from "./meetings-list";
-import { StartMeetingButton } from "./start-meeting-button";
+import { StartMeetingPicker } from "./start-meeting-picker";
 
 type MeetingDoc = {
   team_id: string;
@@ -12,6 +14,8 @@ type MeetingDoc = {
   ended_at: Timestamp | null;
   current_segment: keyof typeof SEGMENT_LABELS;
   notes: string | null;
+  agenda_name?: string | null;
+  agenda_items?: AgendaItem[];
 };
 
 export default async function MeetingsPage({
@@ -26,7 +30,13 @@ export default async function MeetingsPage({
   // Start button that would 404. Join-live stays open to everyone.
   const isLeader = isAdmin || membershipRole === "leader";
 
-  const snap = await db.collection("meetings").where("team_id", "==", tid).get();
+  // Seed Level 10 + L10 Condensed the first time a team opens Meetings.
+  await ensureDefaultAgendas(tid);
+
+  const [snap, agendasSnap] = await Promise.all([
+    db.collection("meetings").where("team_id", "==", tid).get(),
+    db.collection("agendas").where("team_id", "==", tid).get(),
+  ]);
 
   // Serialize for the client component: Timestamps become millis (the list
   // subscribes for live updates and re-normalizes onSnapshot Timestamps).
@@ -38,8 +48,28 @@ export default async function MeetingsPage({
       started_at: x.started_at?.toMillis?.() ?? null,
       ended_at: x.ended_at?.toMillis?.() ?? null,
       current_segment: x.current_segment,
+      agenda_name: x.agenda_name ?? null,
+      agenda_items: normalizeAgendaItems(x.agenda_items) ?? null,
     };
   });
+
+  const agendas: AgendaListItem[] = agendasSnap.docs
+    .map((d) => {
+      const x = d.data();
+      const items = normalizeAgendaItems(x.items) ?? [];
+      return {
+        id: d.id,
+        name: String(x.name ?? "Agenda").trim() || "Agenda",
+        items,
+        is_default: !!x.is_default,
+      };
+    })
+    .filter((a) => a.items.length > 0)
+    .sort((a, b) => {
+      // Default first, then name.
+      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
   // Average meeting-effectiveness rating across all attendees, per meeting.
   // Bounded by team meeting history (a year of weekly L10s is ~52 reads).
@@ -74,21 +104,27 @@ export default async function MeetingsPage({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
         <HeaderAction
           teamId={tid}
           meetings={initialMeetings}
           isLeader={isLeader}
+          agendas={agendas}
         />
       </header>
 
-      <MeetingsList
-        teamId={tid}
-        initialMeetings={initialMeetings}
-        ratingsByMeeting={ratingsByMeeting}
-      />
+      <AgendasPanel teamId={tid} agendas={agendas} canEdit={isLeader} />
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold tracking-tight">History</h2>
+        <MeetingsList
+          teamId={tid}
+          initialMeetings={initialMeetings}
+          ratingsByMeeting={ratingsByMeeting}
+        />
+      </section>
     </div>
   );
 }
@@ -101,10 +137,12 @@ function HeaderAction({
   teamId,
   meetings,
   isLeader,
+  agendas,
 }: {
   teamId: string;
   meetings: MeetingListDoc[];
   isLeader: boolean;
+  agendas: AgendaListItem[];
 }) {
   const liveMeeting = meetings.find((m) => m.ended_at == null);
   if (liveMeeting) {
@@ -119,9 +157,5 @@ function HeaderAction({
     );
   }
   if (!isLeader) return null;
-  async function action() {
-    "use server";
-    await startMeeting(teamId);
-  }
-  return <StartMeetingButton action={action} />;
+  return <StartMeetingPicker teamId={teamId} agendas={agendas} />;
 }

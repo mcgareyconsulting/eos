@@ -9,21 +9,26 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useAuthUid } from "@/lib/firebase/use-collection";
 import { cn } from "@/lib/utils";
 import {
-  SEGMENTS,
   SEGMENT_LABELS,
-  SEGMENT_DURATION_SECONDS,
-  TOTAL_MEETING_SECONDS,
   normalizeSegment,
   type Segment,
 } from "@/lib/l10/segments";
+import {
+  agendaItemLabel,
+  agendaSegmentList,
+  durationMapFromAgenda,
+  isFirstAgendaSegment,
+  isLastAgendaSegment,
+  resolveMeetingAgenda,
+  totalAgendaSeconds,
+  type AgendaItem,
+} from "@/lib/l10/agenda";
 import { LocalTime } from "@/components/local-time";
 import { formatClock } from "@/lib/l10/format-clock";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { useNow } from "@/lib/l10/use-now";
 import { advanceSegment, endMeeting } from "../actions";
 import { SpeakingOrderRail } from "./speaking-order-rail";
-
-const VISIBLE = SEGMENTS.filter((s) => s !== "done");
 
 // How long the Finish button stays armed before falling back to its safe
 // label. Long enough to move the mouse, short enough that a stray click a
@@ -57,6 +62,8 @@ export function MeetingRail({
   initialSpeakerIndex,
   initialAbsentUserIds,
   isLeader,
+  initialAgendaItems,
+  initialAgendaName,
 }: {
   teamId: string;
   meetingId: string;
@@ -82,6 +89,9 @@ export function MeetingRail({
    *  actions enforce this independently, so hiding the buttons here is a
    *  UX courtesy, not the security boundary. */
   isLeader: boolean;
+  /** Snapshot stamped at meeting start (order + per-stage budgets). */
+  initialAgendaItems: AgendaItem[];
+  initialAgendaName: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -98,6 +108,8 @@ export function MeetingRail({
     speakingOrder: string[];
     speakerIndex: number;
     absentUserIds: string[];
+    agendaItems: AgendaItem[];
+    agendaName: string;
   } | null>(null);
   const uid = useAuthUid();
 
@@ -111,13 +123,23 @@ export function MeetingRail({
         if (!x) return;
         const ts = x.segment_started_at as
           { toMillis?: () => number } | null | undefined;
+        const agenda = resolveMeetingAgenda(x as {
+          agenda_id?: string | null;
+          agenda_name?: string | null;
+          agenda_items?: unknown;
+        });
         setLive({
-          segment: normalizeSegment(x.current_segment as string) ?? "segue",
+          segment:
+            normalizeSegment(x.current_segment as string) ??
+            agenda.agenda_items[0]?.type ??
+            "segue",
           startedAtMs: ts?.toMillis?.() ?? null,
           ended: x.ended_at != null,
           speakingOrder: (x.speaking_order as string[]) ?? [],
           speakerIndex: (x.speaking_index as number) ?? 0,
           absentUserIds: (x.absent_user_ids as string[]) ?? [],
+          agendaItems: agenda.agenda_items,
+          agendaName: agenda.agenda_name,
         });
       },
       (e) => console.error("[meeting-rail] subscribe:", e),
@@ -127,14 +149,25 @@ export function MeetingRail({
 
   const startedAtMs = live?.startedAtMs ?? initialStartedAtMs;
   const ended = live?.ended ?? initialEnded;
+  const agendaItems = live?.agendaItems ?? initialAgendaItems;
+  const agendaName = live?.agendaName ?? initialAgendaName;
+  const visible = agendaItems;
+  const agendaOrder = agendaSegmentList(agendaItems);
+  const durationByType = durationMapFromAgenda(agendaItems);
+  const totalMeetingSeconds = totalAgendaSeconds(agendaItems);
+
   // Normalize what the snapshot claims: an unknown/legacy segment falls back
-  // to Segue, and "done" without ended_at (a legacy stuck meeting — the
-  // server no longer writes that combination) renders as Conclude so the
-  // transport and Finish stay on screen instead of stranding the room.
+  // to the first agenda stage, and "done" without ended_at (a legacy stuck
+  // meeting — the server no longer writes that combination) renders as the
+  // last stage so the transport and Finish stay on screen.
   const activeSegmentRaw = live?.segment ?? initialSegment;
   const activeSegment: Segment = (() => {
-    const n = normalizeSegment(activeSegmentRaw) ?? "segue";
-    return n === "done" && !ended ? "conclude" : n;
+    const n = normalizeSegment(activeSegmentRaw);
+    if (n === "done" && !ended) {
+      return agendaOrder[agendaOrder.length - 1] ?? "conclude";
+    }
+    if (n && n !== "done" && agendaOrder.includes(n)) return n;
+    return agendaOrder[0] ?? "segue";
   })();
   // Reconcile the snapshot's raw order against the roster, same as the Segue
   // and Rocks segments do — otherwise a member who joined mid-quarter never
@@ -209,9 +242,11 @@ export function MeetingRail({
       else router.push(pathname);
     });
 
-  const activeIndex = SEGMENTS.indexOf(activeSegment);
+  const activeIndex = agendaOrder.indexOf(activeSegment as (typeof agendaOrder)[number]);
   const peeking = viewSegment !== activeSegment;
   const running = !ended && activeSegment !== "done";
+  const atFirst = isFirstAgendaSegment(agendaItems, activeSegment);
+  const atLast = isLastAgendaSegment(agendaItems, activeSegment);
 
   // One clock for both readouts (see lib/l10/use-now.ts).
   const now = useNow();
@@ -219,7 +254,7 @@ export function MeetingRail({
     now !== null && meetingStartedAtMs
       ? Math.floor((now - meetingStartedAtMs) / 1000)
       : null;
-  const segmentBudget = SEGMENT_DURATION_SECONDS[activeSegment] ?? 0;
+  const segmentBudget = durationByType[activeSegment] ?? 0;
   const segmentElapsed =
     now !== null && startedAtMs ? Math.floor((now - startedAtMs) / 1000) : null;
   const segmentRemaining =
@@ -250,24 +285,33 @@ export function MeetingRail({
               {totalElapsed === null ? "—:—" : formatClock(totalElapsed)}
               <span className="text-zinc-400 dark:text-zinc-500">
                 {" / "}
-                {formatClock(TOTAL_MEETING_SECONDS)}
+                {formatClock(totalMeetingSeconds)}
               </span>
             </span>
           </div>
-          {/* Time-based 90-minute bar (distinct from the segment-index bar
+          {/* Time-based meeting bar (distinct from the segment-index bar
               removed per client feedback — that one overstated progress
               because segment budgets are wildly uneven; elapsed wall-clock
-              over a fixed total can't). */}
+              over a fixed total can't). Total comes from the agenda snapshot. */}
           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
             <div
               className={cn(
                 "h-full rounded-full transition-[width] duration-1000 ease-linear",
-                totalElapsed !== null && totalElapsed > TOTAL_MEETING_SECONDS
+                totalElapsed !== null &&
+                  totalMeetingSeconds > 0 &&
+                  totalElapsed > totalMeetingSeconds
                   ? "bg-red-500"
                   : "bg-hpb-blue",
               )}
               style={{
-                width: `${Math.min(100, ((totalElapsed ?? 0) / TOTAL_MEETING_SECONDS) * 100)}%`,
+                width: `${
+                  totalMeetingSeconds > 0
+                    ? Math.min(
+                        100,
+                        ((totalElapsed ?? 0) / totalMeetingSeconds) * 100,
+                      )
+                    : 0
+                }%`,
               }}
             />
           </div>
@@ -286,10 +330,15 @@ export function MeetingRail({
               />
             </div>
           )}
+          {agendaName && (
+            <div className="mt-0.5 truncate text-[10px] text-zinc-500 dark:text-zinc-400">
+              {agendaName}
+            </div>
+          )}
 
           <div className="mt-3">
             <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              {SEGMENT_LABELS[activeSegment]}
+              {SEGMENT_LABELS[activeSegment] ?? activeSegment}
             </div>
             <div
               className={cn(
@@ -351,21 +400,27 @@ export function MeetingRail({
         )}
 
         {/* Agenda. Clicking a row peeks locally (?view=) — it never moves the
-            group; only Back/Next below do that. */}
+            group; only Back/Next below do that. Order + budgets come from
+            the meeting's agenda snapshot (not the global L10 defaults). */}
         <nav className="px-2 py-2">
           {running && (
             <div className="px-1 pb-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
-              Step {Math.min(activeIndex + 1, SEGMENTS.length - 1)} of{" "}
-              {SEGMENTS.length - 1}
+              Step{" "}
+              {activeIndex >= 0
+                ? Math.min(activeIndex + 1, visible.length)
+                : "—"}{" "}
+              of {visible.length}
             </div>
           )}
           <ul className="space-y-0.5">
-            {VISIBLE.map((s, idx) => {
+            {visible.map((item, idx) => {
+              const s = item.type;
+              const label = agendaItemLabel(item);
               const isActive = s === activeSegment;
               const isViewed = s === viewSegment;
-              const isPast = idx < activeIndex;
+              const isPast = activeIndex >= 0 && idx < activeIndex;
               return (
-                <li key={s}>
+                <li key={`${s}-${idx}`}>
                   <button
                     type="button"
                     onClick={() => peek(s)}
@@ -374,7 +429,7 @@ export function MeetingRail({
                     title={
                       isActive
                         ? "Group is here"
-                        : `Peek at ${SEGMENT_LABELS[s]} (just you)`
+                        : `Peek at ${label} (just you)`
                     }
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition disabled:cursor-default",
@@ -395,9 +450,7 @@ export function MeetingRail({
                     >
                       {isPast ? <Check className="h-3 w-3" /> : <>{idx + 1}</>}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">
-                      {SEGMENT_LABELS[s]}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
                     {isActive && !isViewed && (
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-hpb-blue" />
                     )}
@@ -407,7 +460,7 @@ export function MeetingRail({
                         isViewed ? "text-white/70" : "text-zinc-400",
                       )}
                     >
-                      {Math.round(SEGMENT_DURATION_SECONDS[s] / 60)} MIN
+                      {Math.round(item.duration_seconds / 60)} MIN
                     </span>
                   </button>
                 </li>
@@ -419,9 +472,15 @@ export function MeetingRail({
               so there aren't two competing buttons for the same action. */}
           {running && peeking && (
             <p className="mt-2 rounded-md bg-hpb-blue/5 px-2 py-1.5 text-[11px] leading-snug text-zinc-600 dark:bg-hpb-blue/10 dark:text-zinc-300">
-              Peeking at <strong>{SEGMENT_LABELS[viewSegment]}</strong>
+              Peeking at{" "}
+              <strong>
+                {SEGMENT_LABELS[viewSegment] ?? viewSegment}
+              </strong>
               <br />
-              Group is on <strong>{SEGMENT_LABELS[activeSegment]}</strong>
+              Group is on{" "}
+              <strong>
+                {SEGMENT_LABELS[activeSegment] ?? activeSegment}
+              </strong>
             </p>
           )}
         </nav>
@@ -436,7 +495,7 @@ export function MeetingRail({
               <button
                 type="button"
                 onClick={() => drive("prev")}
-                disabled={driving || activeSegment === "segue"}
+                disabled={driving || atFirst}
                 className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 ← Back
@@ -444,12 +503,12 @@ export function MeetingRail({
               <button
                 type="button"
                 onClick={() => drive("next")}
-                // Conclude is the last stop — Finish (below) is how the
-                // meeting ends. Advancing past it used to write "done"
-                // without ended_at and blank the whole page.
-                disabled={driving || activeSegment === "conclude"}
+                // Last agenda stage is the stop — Finish (below) ends the
+                // meeting. Advancing past it used to write "done" without
+                // ended_at and blank the whole page.
+                disabled={driving || atLast}
                 title={
-                  activeSegment === "conclude"
+                  atLast
                     ? "This is the last segment — use Finish to end the meeting"
                     : undefined
                 }

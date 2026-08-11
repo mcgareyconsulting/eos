@@ -8,7 +8,12 @@ import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { LocalTime } from "@/components/local-time";
-import { SEGMENT_LABELS, SEGMENTS, normalizeSegment } from "@/lib/l10/segments";
+import {
+  agendaSegmentList,
+  defaultL10Items,
+  type AgendaItem,
+} from "@/lib/l10/agenda";
+import { SEGMENT_LABELS, normalizeSegment } from "@/lib/l10/segments";
 import { deleteMeeting } from "./actions";
 
 // Timestamps arrive two ways: serialized to millis by the server render
@@ -27,6 +32,8 @@ export type MeetingListDoc = {
   started_at: TsLike;
   ended_at: TsLike;
   current_segment: string;
+  agenda_name?: string | null;
+  agenda_items?: AgendaItem[] | null;
 };
 
 // Live meetings list. The one-shot server render used to be the whole page,
@@ -61,7 +68,6 @@ export function MeetingsList({
   const sorted = [...meetings].sort(
     (a, b) => (toMs(b.started_at) ?? 0) - (toMs(a.started_at) ?? 0),
   );
-  const segmentCount = SEGMENTS.length - 1; // exclude "done"
 
   return (
     <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -69,7 +75,7 @@ export function MeetingsList({
         <EmptyState
           icon={Calendar}
           title="No meetings yet"
-          hint="Click “Start meeting” to run your first timed Level 10."
+          hint="Click “Start meeting” and pick an agenda to run your first timed meeting."
         />
       )}
       {sorted.map((m) => {
@@ -84,17 +90,32 @@ export function MeetingsList({
             ? Math.max(1, Math.round((endedMs - startedMs) / 60000))
             : null;
 
-        const segment = normalizeSegment(
-          m.current_segment as string,
+        const agendaOrder = agendaSegmentList(
+          m.agenda_items?.length ? m.agenda_items : defaultL10Items(),
         );
-        const segIdx = segment ? SEGMENTS.indexOf(segment) : -1;
+        const segmentCount = agendaOrder.length;
+        const segment = normalizeSegment(m.current_segment as string);
+        const segIdx =
+          segment && segment !== "done"
+            ? agendaOrder.indexOf(segment)
+            : -1;
         const stepNumber =
           live && segIdx >= 0 ? Math.min(segIdx + 1, segmentCount) : null;
+        const agendaName =
+          typeof m.agenda_name === "string" && m.agenda_name.trim()
+            ? m.agenda_name.trim()
+            : null;
         const progressLabel = live
           ? stepNumber != null && segment
-            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[segment]}`
-            : "In progress"
-          : `Completed · ${duration ?? "—"} min`;
+            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[segment]}${
+                agendaName ? ` · ${agendaName}` : ""
+              }`
+            : agendaName
+              ? `In progress · ${agendaName}`
+              : "In progress"
+          : `Completed · ${duration ?? "—"} min${
+              agendaName ? ` · ${agendaName}` : ""
+            }`;
 
         return (
           <div

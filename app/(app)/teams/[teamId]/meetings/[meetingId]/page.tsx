@@ -9,6 +9,11 @@ import {
   normalizeSegment,
   SEGMENT_LABELS,
 } from "@/lib/l10/segments";
+import {
+  clampSegmentToAgenda,
+  isOnAgenda,
+  resolveMeetingAgenda,
+} from "@/lib/l10/agenda";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
 import { loadScorecardEntries } from "@/lib/scorecard-entries";
@@ -45,6 +50,9 @@ type MeetingDoc = {
   absent_user_ids?: string[];
   speaking_order?: string[];
   speaking_index?: number;
+  agenda_id?: string | null;
+  agenda_name?: string | null;
+  agenda_items?: unknown;
 };
 
 export default async function MeetingDetailPage({
@@ -116,14 +124,20 @@ export default async function MeetingDetailPage({
   const myRating = ratings.find((r) => r.user_id === uid) ?? null;
 
   const live = !m.ended_at;
+  const agenda = resolveMeetingAgenda(m);
   // Normalize what's stored before rendering from it: an unknown/legacy
-  // segment falls back to Segue rather than rendering an empty header, and
-  // "done" on a meeting that never got ended_at (legacy stuck state — the
-  // server no longer writes that combination) renders as Conclude so the
-  // room can actually finish.
+  // segment falls back to the first agenda stage rather than rendering an
+  // empty header, and "done" on a meeting that never got ended_at (legacy
+  // stuck state — the server no longer writes that combination) renders as
+  // the last agenda stage so the room can actually finish.
   const storedSegment: Segment = (() => {
-    const n = normalizeSegment(m.current_segment) ?? "segue";
-    return n === "done" && live ? "conclude" : n;
+    const n = normalizeSegment(m.current_segment);
+    if (n === "done" && live) {
+      return (
+        agenda.agenda_items[agenda.agenda_items.length - 1]?.type ?? "conclude"
+      );
+    }
+    return clampSegmentToAgenda(agenda.agenda_items, n);
   })();
   const segmentStartedAtMs = m.segment_started_at?.toMillis?.() ?? null;
   const meetingStartedAtMs = m.started_at?.toMillis?.() ?? null;
@@ -139,8 +153,14 @@ export default async function MeetingDetailPage({
 
   // Which stage THIS client is showing. With no ?view we follow the shared
   // active stage; a valid ?view lets the user peek elsewhere without moving
-  // the group. The live active stage is reconciled client-side in MeetingRail.
-  const viewParam = isSegment(view) && view !== "done" ? view : null;
+  // the group — only stages on this meeting's agenda. The live active stage
+  // is reconciled client-side in MeetingRail.
+  const viewParam =
+    isSegment(view) &&
+    view !== "done" &&
+    isOnAgenda(agenda.agenda_items, view)
+      ? view
+      : null;
   const viewSegment: Segment = viewParam ?? storedSegment;
   const following = viewParam === null;
   const showConclude = (live && viewSegment === "conclude") || !live;
@@ -314,6 +334,8 @@ export default async function MeetingDetailPage({
           initialSpeakerIndex={speakerIndex}
           initialAbsentUserIds={absentUserIds}
           isLeader={isLeader}
+          initialAgendaItems={agenda.agenda_items}
+          initialAgendaName={agenda.agenda_name}
         />
       )}
 
@@ -333,7 +355,8 @@ export default async function MeetingDetailPage({
                   {SEGMENT_LABELS[viewSegment]}
                 </h1>
                 <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {team.name} L10
+                  {team.name}
+                  {agenda.agenda_name ? ` · ${agenda.agenda_name}` : " · L10"}
                 </span>
               </div>
             </div>
@@ -371,7 +394,10 @@ export default async function MeetingDetailPage({
             <header className="flex items-end justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">
-                  {team.name} L10
+                  {team.name}
+                  {agenda.agenda_name
+                    ? ` · ${agenda.agenda_name}`
+                    : " · Level 10"}
                 </h1>
               </div>
               <Link
@@ -434,9 +460,10 @@ export default async function MeetingDetailPage({
           stats={recapStats}
           attendeeRatings={attendeeRatings}
           overallAverageRating={overallAverageRating}
+          agendaName={agenda.agenda_name}
           // Never auto-open on a live meeting: the data above is only
           // fetched once ended_at exists, so a shared/stale ?recap=1 link
-          // would open an all-empty recap over the running L10.
+          // would open an all-empty recap over a still-running meeting.
           autoOpen={recap === "1" && !live}
         />
       </div>

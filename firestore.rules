@@ -201,6 +201,16 @@ service cloud.firestore {
       allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
+    // ---------- meeting agendas (templates) ----------
+    // Per-team templates for meeting stage order + durations. Reads for
+    // members; writes go through Admin SDK server actions (leader-gated).
+    // Client write stays admin-claim only as defense-in-depth.
+    match /agendas/{agendaId} {
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow update, delete: if admin() || isMember(resource.data.team_id);
+    }
+
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
       allow read, update, delete: if admin() || isMember(resource.data.team_id);

@@ -574,7 +574,7 @@ On-track / No data).
 - **P1-7** Google Tasks two-way ✅ **2026-08-11** (`feature/settings-profile`) — completion pull via Sync/load; Scheduler optional
 - **P3-4** Integrations → Settings ✅ **2026-08-11** (`feature/settings-profile`)
 - **P1-2** allowlist + membership ops for demo users (ongoing)
-- **P2-1** custom agendas (out of band)
+- **P2-1** custom agendas — 🟡 MVP on `feature/agenda` (templates + pick-at-start; more presets / freeform / org-push still open)
 - **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
 - Pass 11 Directory stretch: private-team flag, Owner/Implementer roles
 - P3-* as capacity allows (P3-4 done)

@@ -40,6 +40,7 @@ export function RecapModal({
   attendeeRatings,
   overallAverageRating,
   autoOpen,
+  agendaName,
 }: {
   /** Needed only to let the viewer submit their own rating from in here —
    *  see the inline prompt below. */
@@ -62,7 +63,13 @@ export function RecapModal({
   attendeeRatings: RecapMeetingRating[];
   overallAverageRating: number | null;
   autoOpen: boolean;
+  /** Snapshot name from the meeting doc (e.g. "Level 10", "L10 Condensed").
+   *  Legacy meetings without a stamp fall back to "Level 10". */
+  agendaName?: string | null;
 }) {
+  const resolvedAgendaName =
+    (typeof agendaName === "string" && agendaName.trim()) || "Level 10";
+  const recapTitle = `Past ${resolvedAgendaName}`;
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -116,12 +123,12 @@ export function RecapModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Past L10 condensed"
+        aria-label={recapTitle}
         className="absolute right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl border-l border-zinc-300 dark:border-zinc-800 flex flex-col"
       >
         <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-300 dark:border-zinc-800">
           <div>
-            <h2 className="text-base font-semibold">Past L10 Condensed</h2>
+            <h2 className="text-base font-semibold">{recapTitle}</h2>
             {meetingMinutes != null && (
               <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                 {meetingMinutes} min meeting

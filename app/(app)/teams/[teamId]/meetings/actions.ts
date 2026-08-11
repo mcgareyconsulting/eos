@@ -10,12 +10,21 @@ import {
   requireTeamLeader,
 } from "@/lib/firebase/teams";
 import {
-  SEGMENTS,
-  nextSegment,
-  prevSegment,
   type Segment,
   normalizeSegment,
 } from "@/lib/l10/segments";
+import {
+  agendaIncludesSegment,
+  defaultL10Items,
+  firstAgendaSegment,
+  nextInAgenda,
+  normalizeAgendaItems,
+  prevInAgenda,
+  resolveBuiltInAgenda,
+  resolveMeetingAgenda,
+  validateAgendaName,
+  type AgendaItem,
+} from "@/lib/l10/agenda";
 import {
   clampSpeakerIndex,
   firstPresentIndex,
@@ -32,10 +41,110 @@ function detailPath(teamId: string, meetingId: string) {
   return `/teams/${teamId}/meetings/${meetingId}`;
 }
 
+// ---------------------------------------------------------------------------
+// Custom agenda templates (per-team Firestore docs). Built-ins live in code
+// (see lib/l10/agenda.ts) and need no seed. Snapshot stamped at meeting start.
+// ---------------------------------------------------------------------------
+
+export async function createAgenda(
+  teamId: string,
+  input: { name: string; items: AgendaItem[] },
+): Promise<{ id: string }> {
+  const { db, uid } = await requireTeamLeader(teamId);
+  const name = validateAgendaName(input.name);
+  const items = normalizeAgendaItems(input.items);
+  if (!items) throw new Error("Agenda needs at least one stage");
+
+  const ref = db.collection("agendas").doc();
+  await ref.set({
+    team_id: teamId,
+    name,
+    items,
+    created_by: uid,
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  revalidatePath(listPath(teamId));
+  return { id: ref.id };
+}
+
+export async function updateAgenda(
+  teamId: string,
+  agendaId: string,
+  input: { name: string; items: AgendaItem[] },
+): Promise<void> {
+  const { db } = await requireTeamLeader(teamId);
+  await requireTeamDoc(db, "agendas", agendaId, teamId);
+  const name = validateAgendaName(input.name);
+  const items = normalizeAgendaItems(input.items);
+  if (!items) throw new Error("Agenda needs at least one stage");
+
+  await db.collection("agendas").doc(agendaId).update({
+    name,
+    items,
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  revalidatePath(listPath(teamId));
+}
+
+export async function deleteAgenda(
+  teamId: string,
+  agendaId: string,
+): Promise<void> {
+  const { db } = await requireTeamLeader(teamId);
+  await requireTeamDoc(db, "agendas", agendaId, teamId);
+  await db.collection("agendas").doc(agendaId).delete();
+  revalidatePath(listPath(teamId));
+}
+
+/** Built-in id (`builtin:l10`) or a team custom agenda doc id. */
+async function loadAgendaSnapshot(
+  db: Firestore,
+  teamId: string,
+  agendaId: string | null | undefined,
+): Promise<{
+  agenda_id: string | null;
+  agenda_name: string;
+  agenda_items: AgendaItem[];
+}> {
+  const builtin = resolveBuiltInAgenda(agendaId);
+  if (builtin) return builtin;
+
+  if (agendaId) {
+    const snap = await db.collection("agendas").doc(agendaId).get();
+    if (snap.exists && snap.data()?.team_id === teamId) {
+      const items = normalizeAgendaItems(snap.data()?.items);
+      if (items) {
+        return {
+          agenda_id: snap.id,
+          agenda_name:
+            String(snap.data()?.name ?? "Agenda").trim() || "Agenda",
+          agenda_items: items,
+        };
+      }
+    }
+  }
+
+  // Fallback: Level 10 built-in (always available).
+  return (
+    resolveBuiltInAgenda("builtin:l10") ?? {
+      agenda_id: "builtin:l10",
+      agenda_name: "Level 10",
+      agenda_items: defaultL10Items(),
+    }
+  );
+}
+
 // Group-transport action — starting the shared L10 room is a facilitator
 // control, so it requires team leader OR org admin (bypass built into
 // requireTeamLeader). Non-leader members 404 rather than minting a meeting.
-export async function startMeeting(teamId: string) {
+//
+// `agendaId` selects the template; its stages + durations are snapshotted
+// onto the meeting doc so later template edits never rewrite a live room.
+export async function startMeeting(
+  teamId: string,
+  agendaId?: string | null,
+) {
   const { db, team } = await requireTeamLeader(teamId);
 
   // One live meeting per team: if someone already started one, join it
@@ -63,18 +172,24 @@ export async function startMeeting(teamId: string) {
   const members = await getTeamMembers(teamId);
   const speakingOrder = reconcileSpeakingOrder(team.speakingOrder, members);
 
+  const agenda = await loadAgendaSnapshot(db, teamId, agendaId);
+  const first = firstAgendaSegment(agenda.agenda_items);
+
   const ref = db.collection("meetings").doc();
   await ref.set({
     team_id: teamId,
     started_at: FieldValue.serverTimestamp(),
     ended_at: null,
-    current_segment: "segue",
+    current_segment: first,
     segment_started_at: FieldValue.serverTimestamp(),
     current_issue_id: null,
     notes: null,
     absent_user_ids: [],
     speaking_order: speakingOrder,
     speaking_index: 0,
+    agenda_id: agenda.agenda_id,
+    agenda_name: agenda.agenda_name,
+    agenda_items: agenda.agenda_items,
   });
   revalidatePath(`/teams/${teamId}/issues`);
   redirect(detailPath(teamId, ref.id));
@@ -124,14 +239,28 @@ export async function advanceSegment(
     // after someone finished must not rewrite history.
     if (snap.data()?.ended_at != null) return;
 
-    const current = normalizeSegment(snap.data()?.current_segment as string) ?? "segue";
-    if (expectedCurrent && current !== (normalizeSegment(expectedCurrent) ?? expectedCurrent)) return;
+    const agenda = resolveMeetingAgenda(snap.data() as {
+      agenda_id?: string | null;
+      agenda_name?: string | null;
+      agenda_items?: unknown;
+    });
+    const current =
+      normalizeSegment(snap.data()?.current_segment as string) ??
+      firstAgendaSegment(agenda.agenda_items);
+    if (
+      expectedCurrent &&
+      current !== (normalizeSegment(expectedCurrent) ?? expectedCurrent)
+    ) {
+      return;
+    }
 
     const target =
-      direction === "next" ? nextSegment(current) : prevSegment(current);
+      direction === "next"
+        ? nextInAgenda(agenda.agenda_items, current)
+        : prevInAgenda(agenda.agenda_items, current);
     // "done" is only ever written by endMeeting (the Finish button) — Next on
-    // Conclude stops there rather than stranding a live meeting in a state
-    // the page has no rendering for.
+    // the last agenda stage stops there rather than stranding a live meeting
+    // in a state the page has no rendering for.
     if (target === "done" || target === current) return;
 
     tx.update(ref, {
@@ -158,11 +287,19 @@ export async function jumpToSegment(
   meetingId: string,
   target: Segment,
 ) {
-  if (!SEGMENTS.includes(target) || target === "done") {
+  if (target === "done") {
     throw new Error("Invalid segment");
   }
   const { db } = await requireTeamLeader(teamId);
   const snap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const agenda = resolveMeetingAgenda(snap.data() as {
+    agenda_id?: string | null;
+    agenda_name?: string | null;
+    agenda_items?: unknown;
+  });
+  if (!agendaIncludesSegment(agenda.agenda_items, target)) {
+    throw new Error("Segment is not on this meeting's agenda");
+  }
   await db
     .collection("meetings")
     .doc(meetingId)

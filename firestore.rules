@@ -201,6 +201,22 @@ service cloud.firestore {
       allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
+    // ---------- meeting agendas (templates) ----------
+    // Per-team templates for meeting stage order + durations.
+    // Management is leader/admin-only (matches requireTeamLeader server
+    // actions). Members may still read so a future client path can show the
+    // name of the template used on a live meeting without Admin SDK.
+    // Real writes go through Admin SDK; client write is defense-in-depth.
+    match /agendas/{agendaId} {
+      allow read:   if admin() || isMember(resource.data.team_id);
+      allow create: if admin()
+                    || (isLeader(request.resource.data.team_id)
+                        && isMember(request.resource.data.team_id));
+      allow update, delete: if admin()
+                    || (isLeader(resource.data.team_id)
+                        && isMember(resource.data.team_id));
+    }
+
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
       allow read, update, delete: if admin() || isMember(resource.data.team_id);

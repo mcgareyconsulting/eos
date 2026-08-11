@@ -15,6 +15,7 @@ import { setRockStatus } from "./actions";
 import {
   STATUSES,
   STATUS_LABELS,
+  STATUS_PILL_BASE,
   STATUS_STYLES,
   type RockStatus,
   isRockStatus,
@@ -294,14 +295,15 @@ export function StatusPopover({
         aria-haspopup="dialog"
         aria-expanded={open}
         className={cn(
-          "relative inline-flex h-6 w-[6.75rem] items-center justify-center rounded-full px-2 text-xs font-medium ring-1 ring-inset focus:outline-none focus-visible:ring-2 hover:brightness-95 hover:ring-2 dark:hover:brightness-110",
+          STATUS_PILL_BASE,
+          "relative w-[6.75rem] justify-center gap-0.5 pr-5 focus:outline-none focus-visible:ring-2 hover:brightness-95 dark:hover:brightness-110",
           STATUS_STYLES[current],
         )}
       >
         <span className="truncate text-center">{STATUS_LABELS[current]}</span>
         <ChevronDown
           className={cn(
-            "absolute right-1.5 h-3 w-3 shrink-0 opacity-60 transition-transform",
+            "absolute right-1.5 h-2.5 w-2.5 shrink-0 opacity-70 transition-transform",
             open && "rotate-180",
           )}
         />

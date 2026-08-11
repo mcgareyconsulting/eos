@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDateShort } from "@/lib/dates";
+import { formatDateShort, relativeDueLabel } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
-import { dueToneClass } from "@/lib/due";
+import { dueToneClass, urgencyChipClass } from "@/lib/due";
 
 // Plain-data shape passed from the Server Component (unchanged from
 // milestones.tsx — Firestore Timestamps can't cross the RSC boundary, so the
@@ -29,6 +31,9 @@ type Member = { user_id: string; full_name: string };
  *
  * Always tickable. Milestones get checked off live during the L10 — that is
  * the point of walking the rocks — so there is no read-only mode to opt into.
+ *
+ * variant "row" = expanded rock row on team page.
+ * variant "modal" = rock detail: open as cards, completed collapsed.
  */
 export function MilestoneChecklist({
   teamId,
@@ -49,46 +54,44 @@ export function MilestoneChecklist({
     return members?.find((x) => x.user_id === m.owner_id)?.full_name ?? "—";
   };
 
+  if (variant === "modal") {
+    return (
+      <ModalMilestoneList
+        teamId={teamId}
+        milestones={milestones}
+        nameFor={nameFor}
+      />
+    );
+  }
+
   return (
-    <ul
-      className={cn(
-        variant === "modal" &&
-          "divide-y divide-zinc-100 overflow-hidden rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800",
-      )}
-    >
+    <ul>
       {milestones.map((m) => (
         <li key={m.id}>
-          <label
-            className={cn(
-              "flex cursor-pointer items-center gap-2.5",
-              variant === "modal"
-                ? "px-3.5 py-2.5 text-[13.5px] hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
-                : "rounded-md px-1.5 py-1 text-[13px] hover:bg-zinc-100 dark:hover:bg-zinc-800",
-              m.completed && variant === "modal" && "bg-zinc-50 dark:bg-zinc-800/40",
-            )}
-          >
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-[7px] px-2 py-1.5 hover:bg-zinc-200/50 dark:hover:bg-zinc-800">
             <TodoCheckbox
               teamId={teamId}
               todoId={m.id}
               completed={m.completed}
+              appearance="milestone"
             />
             <span
               className={cn(
-                "min-w-0 flex-1 truncate",
+                "min-w-0 flex-1 truncate text-[13px]",
                 m.completed
-                  ? "text-zinc-400 line-through dark:text-zinc-500"
-                  : "text-zinc-800 dark:text-zinc-200",
+                  ? "text-zinc-400 dark:text-zinc-500"
+                  : "font-medium text-zinc-800 dark:text-zinc-200",
               )}
               title={m.description ?? undefined}
             >
               {m.title}
             </span>
-            <span className="shrink-0 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+            <span className="shrink-0 text-[11.5px] text-zinc-400">
               {nameFor(m)}
             </span>
             <span
               className={cn(
-                "w-16 shrink-0 text-right text-[11.5px] tabular-nums",
+                "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
                 dueToneClass(m.due_date, m.completed),
               )}
             >
@@ -98,6 +101,99 @@ export function MilestoneChecklist({
         </li>
       ))}
     </ul>
+  );
+}
+
+function ModalMilestoneList({
+  teamId,
+  milestones,
+  nameFor,
+}: {
+  teamId: string;
+  milestones: MilestoneSerialized[];
+  nameFor: (m: MilestoneSerialized) => string;
+}) {
+  const open = milestones.filter((m) => !m.completed);
+  const done = milestones.filter((m) => m.completed);
+  const [showDone, setShowDone] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      {open.map((m) => (
+        <label
+          key={m.id}
+          className="flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-zinc-200 px-3.5 py-[11px] dark:border-zinc-700"
+        >
+          <TodoCheckbox
+            teamId={teamId}
+            todoId={m.id}
+            completed={m.completed}
+            appearance="milestone"
+          />
+          <span
+            className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-zinc-900 dark:text-zinc-100"
+            title={m.description ?? undefined}
+          >
+            {m.title}
+          </span>
+          <span className="shrink-0 text-[11.5px] text-zinc-400">
+            {nameFor(m)}
+          </span>
+          {m.due_date ? (
+            <span className={urgencyChipClass(m.due_date)}>
+              {relativeDueLabel(m.due_date)}
+            </span>
+          ) : null}
+        </label>
+      ))}
+
+      {done.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowDone((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                showDone && "rotate-90",
+              )}
+            />
+            Completed ({done.length})
+          </button>
+          {showDone && (
+            <ul className="mt-1.5 space-y-0.5 rounded-[10px] bg-zinc-50 p-1 dark:bg-zinc-800/50">
+              {done.map((m) => (
+                <li key={m.id}>
+                  <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-[11px] py-2">
+                    <TodoCheckbox
+                      teamId={teamId}
+                      todoId={m.id}
+                      completed={m.completed}
+                      appearance="milestone"
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate text-[13px] text-zinc-400"
+                      title={m.description ?? undefined}
+                    >
+                      {m.title}
+                    </span>
+                    <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400">
+                      {formatDateShort(m.due_date)}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {open.length === 0 && done.length === 0 && (
+        <p className="text-[13px] italic text-zinc-400">No milestones yet.</p>
+      )}
+    </div>
   );
 }
 
@@ -116,7 +212,7 @@ export function MilestoneProgress({
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="relative block h-1 w-[52px] overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+      <span className="relative block h-1 w-11 overflow-hidden rounded-full bg-[#ececee] dark:bg-zinc-700">
         <span
           className={cn("absolute inset-y-0 left-0", barClass)}
           style={{ width: `${pct}%` }}

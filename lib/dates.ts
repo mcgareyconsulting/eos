@@ -152,14 +152,16 @@ export function daysUntil(due: string, from: Date = new Date()): number {
 
 // "in 12d" / "3d overdue" / "today" — the at-a-glance urgency label next to a
 // due date. Empty string for no date so callers can render nothing.
+// When `done`, past dates read as "25d ago" (never "overdue").
 export function relativeDueLabel(
   due: string | null | undefined,
   from: Date = new Date(),
+  done = false,
 ): string {
   if (!due) return "";
   const n = daysUntil(due, from);
   if (n === 0) return "today";
-  if (n < 0) return `${-n}d overdue`;
+  if (n < 0) return done ? `${-n}d ago` : `${-n}d overdue`;
   if (n < 45) return `in ${n}d`;
   return `in ${Math.round(n / 7)}w`;
 }

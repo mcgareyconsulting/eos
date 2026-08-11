@@ -2,10 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Target } from "lucide-react";
-import { daysUntil, formatDateOnly } from "@/lib/dates";
+import { ChevronRight } from "lucide-react";
+import { formatDateShort, relativeDueLabel } from "@/lib/dates";
+import { dueToneClass, urgencyChipClass } from "@/lib/due";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
+import {
+  STATUS_BAR,
+  isRockStatus,
+  type RockStatus,
+} from "@/app/(app)/teams/[teamId]/rocks/status";
 
 export type HomeRockListItem = {
   id: string;
@@ -15,10 +21,10 @@ export type HomeRockListItem = {
   quarter: string;
   team_id: string;
   href: string;
-  /** Team acronym or person initials/name */
-  pillLabel: string;
-  pillTitle?: string;
-  pillKind: "team" | "person";
+  /** "You", person name, or team name for department rocks */
+  ownerLabel: string;
+  milestoneDone: number;
+  milestoneTotal: number;
   milestones: HomeMilestoneListItem[];
 };
 
@@ -26,12 +32,17 @@ export type HomeMilestoneListItem = {
   id: string;
   title: string;
   due_date: string | null;
+  /** Resolved display name; "You" when viewer owns it */
+  ownerLabel: string;
   isMine: boolean;
 };
 
+const ROCK_COLS =
+  "grid grid-cols-[24px_minmax(0,1fr)_116px_110px_96px_88px] gap-2.5";
+
 /**
- * Rocks column: collapsed by default; expand shows all milestones with
- * the viewer's milestones highlighted.
+ * Rocks column: 6-column table (3a). Expand shows milestones in-column
+ * with a status rail; viewer's milestones use blue "You" in the owner cell.
  */
 export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -47,162 +58,200 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
 
   if (rocks.length === 0) {
     return (
-      <p className="px-3.5 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
         No rocks to show.
       </p>
     );
   }
 
   return (
-    <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-      {rocks.map((r) => {
-        const expanded = open.has(r.id);
-        const hasMs = r.milestones.length > 0;
-        return (
-          <li key={r.id}>
-            <div className="flex items-start gap-1 px-2 py-2.5 sm:px-3">
-              <button
-                type="button"
-                onClick={() => hasMs && toggle(r.id)}
-                disabled={!hasMs}
-                aria-expanded={expanded}
-                aria-label={
-                  hasMs
-                    ? expanded
-                      ? `Collapse milestones for ${r.title}`
-                      : `Expand milestones for ${r.title}`
-                    : undefined
-                }
+    <div>
+      <div
+        className={cn(
+          ROCK_COLS,
+          "border-b border-zinc-100 bg-zinc-50 px-4 py-[7px] dark:border-zinc-800 dark:bg-zinc-800/50",
+        )}
+      >
+        <div aria-hidden />
+        {(
+          [
+            ["Rock", ""],
+            ["Owner", ""],
+            ["Progress", ""],
+            ["Due", ""],
+            ["Status", "text-right"],
+          ] as const
+        ).map(([label, align]) => (
+          <div
+            key={label}
+            className={cn(
+              "text-[9.5px] font-extrabold uppercase tracking-[0.07em] text-zinc-400",
+              align,
+            )}
+          >
+            {label}
+          </div>
+        ))}
+      </div>
+
+      <ul>
+        {rocks.map((r) => {
+          const expanded = open.has(r.id);
+          const hasMs = r.milestones.length > 0;
+          const status: RockStatus = isRockStatus(r.status)
+            ? r.status
+            : "on_track";
+          const bar = STATUS_BAR[status];
+          const total = r.milestoneTotal;
+          const done = r.milestoneDone;
+          const pct = total ? Math.round((done / total) * 100) : 0;
+
+          return (
+            <li
+              key={r.id}
+              className="border-b border-zinc-100 last:border-b-0 dark:border-zinc-800"
+            >
+              <div
                 className={cn(
-                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-                  hasMs
-                    ? "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    : "text-zinc-300 dark:text-zinc-700",
+                  ROCK_COLS,
+                  "items-center px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/40",
                 )}
               >
-                <ChevronRight
-                  className={cn(
-                    "h-4 w-4 transition-transform",
-                    expanded && "rotate-90",
-                  )}
-                />
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start gap-2">
-                  <Target className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={r.href}
-                      className="block truncate text-sm font-medium text-zinc-900 hover:underline dark:text-zinc-100"
+                <div className="flex h-6 w-6 items-center justify-center">
+                  {hasMs ? (
+                    <button
+                      type="button"
+                      onClick={() => toggle(r.id)}
+                      aria-expanded={expanded}
+                      aria-label={
+                        expanded
+                          ? `Collapse milestones for ${r.title}`
+                          : `Expand milestones for ${r.title}`
+                      }
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     >
-                      {r.title}
-                    </Link>
-                    {r.quarter ? (
-                      <div className="truncate text-xs text-zinc-600 dark:text-zinc-400">
-                        {r.quarter}
-                      </div>
-                    ) : null}
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <ContextPill
-                        label={r.pillLabel}
-                        title={r.pillTitle}
-                        kind={r.pillKind}
+                      <ChevronRight
+                        className={cn(
+                          "h-4 w-4 transition-transform",
+                          expanded && "rotate-90",
+                        )}
                       />
-                      <StatusBadge status={r.status} />
-                      <DueLabel due={r.due_date} />
-                      {hasMs ? (
-                        <span className="text-xs text-zinc-500">
-                          {r.milestones.length} milestone
-                          {r.milestones.length === 1 ? "" : "s"}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
+                    </button>
+                  ) : null}
                 </div>
 
-                {expanded && hasMs ? (
-                  <ul className="mt-2 ml-6 space-y-1 border-l border-zinc-200 pl-3 dark:border-zinc-700">
-                    {r.milestones.map((m) => (
+                <Link
+                  href={r.href}
+                  className="min-w-0 truncate text-[13.5px] font-bold text-zinc-900 hover:underline dark:text-zinc-100"
+                >
+                  {r.title}
+                </Link>
+
+                <div className="truncate text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                  {r.ownerLabel}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {total > 0 ? (
+                    <>
+                      <span className="relative block h-[4.5px] w-[58px] overflow-hidden rounded-full bg-[#ececee] dark:bg-zinc-700">
+                        <span
+                          className={cn("absolute inset-y-0 left-0", bar)}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums text-zinc-500">
+                        {done}/{total}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0">
+                  {r.due_date ? (
+                    <>
+                      <div className="text-[12.5px] tabular-nums text-zinc-700 dark:text-zinc-300">
+                        {formatDateShort(r.due_date)}
+                      </div>
+                      <div
+                        className={cn(
+                          "text-[10px] font-bold",
+                          dueToneClass(r.due_date, status === "done"),
+                        )}
+                      >
+                        {relativeDueLabel(r.due_date)}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-[12.5px] text-zinc-400">—</span>
+                  )}
+                </div>
+
+                <div className="justify-self-end">
+                  <StatusBadge status={status} compact />
+                </div>
+              </div>
+
+              {expanded && hasMs ? (
+                <div className="flex border-t border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
+                  <div className={cn("w-[3px] shrink-0", bar)} aria-hidden />
+                  <ul className="min-w-0 flex-1 py-1">
+                    {r.milestones.map((m, i) => (
                       <li
                         key={m.id}
                         className={cn(
-                          "rounded-md px-2 py-1.5 text-sm",
-                          m.isMine
-                            ? "bg-hpb-blue/10 ring-1 ring-hpb-blue/25 dark:bg-hpb-blue/20 dark:ring-hpb-blue/40"
-                            : "text-zinc-700 dark:text-zinc-300",
+                          "grid grid-cols-[21px_minmax(0,1fr)_116px_110px_96px_88px] items-center gap-2.5 px-4 py-[7px]",
+                          i > 0 &&
+                            "border-t border-zinc-100 dark:border-zinc-800",
                         )}
                       >
-                        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                        <div className="flex justify-center">
                           <span
-                            className={cn(
-                              "min-w-0",
-                              m.isMine &&
-                                "font-medium text-zinc-900 dark:text-zinc-50",
-                            )}
-                          >
-                            {m.isMine ? (
-                              <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
-                                You
-                              </span>
-                            ) : null}
-                            {m.title}
-                          </span>
-                          <DueLabel due={m.due_date} />
+                            className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
+                            aria-hidden
+                          />
+                        </div>
+                        <div className="min-w-0 truncate text-[12.5px] font-semibold text-zinc-600 dark:text-zinc-300">
+                          {m.title}
+                        </div>
+                        <div
+                          className={cn(
+                            "truncate text-[11.5px]",
+                            m.isMine
+                              ? "font-extrabold text-hpb-blue"
+                              : "font-semibold text-zinc-500 dark:text-zinc-400",
+                          )}
+                        >
+                          {m.ownerLabel}
+                        </div>
+                        <div />
+                        <div
+                          className={cn(
+                            "text-[11.5px] font-semibold tabular-nums",
+                            dueToneClass(m.due_date),
+                          )}
+                        >
+                          {m.due_date ? formatDateShort(m.due_date) : "—"}
+                        </div>
+                        <div className="justify-self-end">
+                          {m.due_date ? (
+                            <span className={urgencyChipClass(m.due_date)}>
+                              {relativeDueLabel(m.due_date)}
+                            </span>
+                          ) : null}
                         </div>
                       </li>
                     ))}
                   </ul>
-                ) : null}
-              </div>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
-function ContextPill({
-  label,
-  title,
-  kind,
-}: {
-  label: string;
-  title?: string;
-  kind: "team" | "person";
-}) {
-  return (
-    <span
-      title={title || label}
-      className={cn(
-        // Wider max so full team / owner names stay readable; still truncates
-        // very long labels with the title tooltip as backup.
-        "inline-flex max-w-[14rem] truncate rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-        kind === "team"
-          ? "bg-hpb-gold/15 text-hpb-brown ring-hpb-gold/40 dark:bg-hpb-gold/20 dark:text-hpb-gold"
-          : "bg-zinc-100 text-zinc-700 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700",
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-function DueLabel({ due }: { due: string | null }) {
-  if (!due)
-    return (
-      <span className="text-xs whitespace-nowrap text-zinc-500">No due</span>
-    );
-  const overdue = daysUntil(due) < 0;
-  return (
-    <span
-      className={
-        "text-xs whitespace-nowrap " +
-        (overdue ? "text-red-600" : "text-zinc-600 dark:text-zinc-400")
-      }
-    >
-      Due {formatDateOnly(due)}
-    </span>
-  );
-}
+/** Re-export for callers that want the chip without importing due.ts. */
+export { urgencyChipClass };

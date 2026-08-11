@@ -91,6 +91,7 @@ export async function addTodo(teamId: string, formData: FormData) {
   if (taskId) await ref.update({ google_task_id: taskId });
 
   revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
 }
 
 export async function toggleTodo(
@@ -118,6 +119,7 @@ export async function toggleTodo(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
   revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
 }
 
 export async function updateTodoTitle(

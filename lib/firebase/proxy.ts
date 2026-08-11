@@ -7,10 +7,15 @@ import { NextResponse, type NextRequest } from "next/server";
 // Net effect: same security, no Edge-runtime conflicts.
 export function gateRequest(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+  // Session-less paths. /api/google/tasks/pull is called by Cloud Scheduler
+  // (or curl) with Authorization: Bearer $GOOGLE_TASKS_PULL_SECRET — the
+  // route handler enforces the secret; middleware only needs to not bounce
+  // to /login before that runs.
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico";
+    pathname === "/favicon.ico" ||
+    pathname === "/api/google/tasks/pull";
 
   const hasSession = request.cookies.has("__firebase_session");
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { daysUntil, formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { chunkForInQuery } from "@/lib/firestore-in";
 import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
-import { Circle, Flag, Target } from "lucide-react";
+import { Circle, Flag, Lock, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
@@ -42,24 +42,20 @@ export default async function HomePage() {
   const teamChunks = chunkForInQuery(teamIds);
 
   const [todoSnaps, rockSnaps, memberSnaps] = await Promise.all([
-    // Todos: team-visible items, plus (separate query) the viewer's OWN
-    // private items — mirrors the To-Dos / meeting pages so other members'
-    // private to-dos never render here. The two queries are disjoint
-    // (visibility differs), so a plain merge can't duplicate rows.
+    // Open todos for the viewer's teams. Admin SDK can read everything; we
+    // filter private rows in memory below (owner only). Prefer one query with
+    // the existing team_id+completed_at composite over dual visibility queries
+    // that need a 4-field index (team_id+completed_at+visibility+owner_id)
+    // which is easy to miss in deploy — that gap dropped *all* private
+    // to-dos from Home while Google Tasks still received them on write.
     Promise.all(
-      teamChunks.flatMap((ids) => {
-        const open = db
+      teamChunks.map((ids) =>
+        db
           .collection("todos")
           .where("team_id", "in", ids)
-          .where("completed_at", "==", null);
-        return [
-          open.where("visibility", "==", "team").get(),
-          open
-            .where("visibility", "==", "private")
-            .where("owner_id", "==", user.id)
-            .get(),
-        ];
-      }),
+          .where("completed_at", "==", null)
+          .get(),
+      ),
     ),
     // Rocks: `team_id in` × `status in [2 values]` would multiply to 2× the
     // chunk size in disjunctions (over the 30 cap at 16+ teams), so run one
@@ -104,9 +100,22 @@ export default async function HomePage() {
     }
   }
 
-  const todos = todoSnaps.flatMap((snap) =>
-    snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TodoRow, "id">) })),
-  ) as TodoRow[];
+  const todos = todoSnaps
+    .flatMap((snap) =>
+      snap.docs.map((d) => {
+        const data = d.data() as Omit<TodoRow, "id"> & {
+          archived_at?: unknown | null;
+        };
+        return { id: d.id, ...data };
+      }),
+    )
+    .filter((t) => {
+      // Active Home board: skip archived (can be incomplete if manual-archived).
+      if (t.archived_at != null) return false;
+      // Privacy: private only for the owner; missing/legacy visibility = team.
+      if (t.visibility === "private") return t.owner_id === user.id;
+      return true;
+    }) as TodoRow[];
   const rocks = rockSnaps.flatMap((snap) =>
     snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RockRow, "id">) })),
   ) as RockRow[];
@@ -263,6 +272,12 @@ export default async function HomePage() {
                 }
                 meta={
                   <>
+                    {!isMilestone && t.visibility === "private" && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                        <Lock className="h-3 w-3" aria-hidden />
+                        Private
+                      </span>
+                    )}
                     {!isMilestone && (
                       <OwnerLabel
                         isMine={t.owner_id === user.id}

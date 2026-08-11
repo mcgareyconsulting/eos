@@ -39,8 +39,8 @@ export function setSidebarCollapsed(next: boolean) {
 /**
  * Collapse/expand control for the left sidebar. Mirrors ThemeToggle's
  * pattern: the collapsed flag lives as a `data-sidebar-collapsed` attribute
- * on the shell root (set by a pre-hydration inline script in AppShell to
- * avoid a flash), and we read it via useSyncExternalStore instead of
+ * on the shell root (applied by SidebarCollapseBoot via useLayoutEffect from
+ * localStorage), and we read it via useSyncExternalStore instead of
  * mirroring it into useState+useEffect — getServerSnapshot (false) keeps
  * SSR/hydration consistent, and the dispatched event below notifies this
  * hook (and any other instance) when toggle() changes the attribute.

@@ -5,7 +5,11 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
-import { pullCompletionsForOwner } from "@/lib/google/tasks";
+import {
+  getTasksStatus,
+  pullCompletionsForOwner,
+} from "@/lib/google/tasks";
+import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
 import { AddTodoModal } from "./add-todo-modal";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 
@@ -141,6 +145,7 @@ export default async function TodosPage({
   } catch (e) {
     console.error("[todos] google pull on load failed:", e);
   }
+  const tasksStatus = await getTasksStatus(uid);
   const members = await getTeamMembers(tid);
   const speakingOrder = reconcileSpeakingOrder(team.speakingOrder, members);
 
@@ -262,11 +267,17 @@ export default async function TodosPage({
             </Link>
           </div>
           {!showArchived && (
-            <AddTodoModal
-              teamId={tid}
-              members={members}
-              defaultOwnerId={uid}
-            />
+            <>
+              <SyncGoogleTasksButton
+                configured={tasksStatus.configured}
+                connected={tasksStatus.connected}
+              />
+              <AddTodoModal
+                teamId={tid}
+                members={members}
+                defaultOwnerId={uid}
+              />
+            </>
           )}
         </div>
       </header>

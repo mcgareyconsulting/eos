@@ -1,41 +1,23 @@
 "use client";
 
 import { useTransition } from "react";
-import { Loader2, RefreshCw, Unplug } from "lucide-react";
-import {
-  disconnectGoogleTasks,
-  syncGoogleTasksNow,
-} from "./actions";
+import { useRouter } from "next/navigation";
+import { Loader2, Unplug } from "lucide-react";
+import { disconnectGoogleTasks } from "./actions";
+import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
 
 export function GoogleTasksActions({ connected }: { connected: boolean }) {
-  const [syncPending, startSync] = useTransition();
+  const router = useRouter();
   const [disconnectPending, startDisconnect] = useTransition();
-  const busy = syncPending || disconnectPending;
 
   if (!connected) return null;
 
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2">
+      <SyncGoogleTasksButton connected={connected} configured />
       <button
         type="button"
-        disabled={busy}
-        onClick={() => {
-          startSync(async () => {
-            await syncGoogleTasksNow();
-          });
-        }}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-      >
-        {syncPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-        ) : (
-          <RefreshCw className="h-4 w-4" aria-hidden />
-        )}
-        {syncPending ? "Syncing…" : "Sync now"}
-      </button>
-      <button
-        type="button"
-        disabled={busy}
+        disabled={disconnectPending}
         onClick={() => {
           if (
             !confirm(
@@ -46,6 +28,7 @@ export function GoogleTasksActions({ connected }: { connected: boolean }) {
           }
           startDisconnect(async () => {
             await disconnectGoogleTasks();
+            router.refresh();
           });
         }}
         className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"

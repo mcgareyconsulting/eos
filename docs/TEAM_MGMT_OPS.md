@@ -101,21 +101,39 @@ creates a **new uid**. Private to-dos and every `owner_id` stay on the old
 uid, so the new login cannot see them — even though Google Tasks may still
 have been written under the old connection.
 
-Use **`scripts/reassign-user.ts`** (dry-run by default). Both emails must
-already exist in Firebase Auth (sign in once with each if needed).
+Use **`scripts/reassign-user.ts`** (dry-run by default).
 
-**Sandbox first:**
+- **`--to` must exist in Firebase Auth** (sign in once as the new email).
+- **`--from` may be Auth-deleted** (“orphan”): data still lives in Firestore.
+  Prefer `--from-uid <oldUid>` (from `users/` or `team_members.user_id`).
+  `--from-email` also works if a `users/{uid}` doc still has that email.
+
+**Find the old uid** (Auth already deleted):
 
 ```bash
-# Resolve + plan (no writes)
-pnpm user:reassign \
+# Console: Firestore → hpb-eos-sandbox-db → users / team_members
+# Or list teams + try email resolve (script prints Firestore hits):
+unset FIREBASE_AUTH_EMULATOR_HOST FIRESTORE_EMULATOR_HOST
+export NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false
+export NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod
+
+pnpm tsx scripts/reassign-user.ts \
   --from-email mcgareyconsulting@gmail.com \
   --to-email daniel@mcgareyconsulting.com \
   --database hpb-eos-sandbox-db
+# If Auth is gone, script uses users/ match or tells you to pass --from-uid
+```
 
-# Apply after reviewing the plan
-pnpm user:reassign \
-  --from-email mcgareyconsulting@gmail.com \
+**Sandbox first (orphan-safe):**
+
+```bash
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
+  --to-email daniel@mcgareyconsulting.com \
+  --database hpb-eos-sandbox-db
+
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
   --to-email daniel@mcgareyconsulting.com \
   --database hpb-eos-sandbox-db \
   --apply
@@ -124,8 +142,8 @@ pnpm user:reassign \
 **Prod DB** (only when sandbox looks right):
 
 ```bash
-pnpm user:reassign \
-  --from-email mcgareyconsulting@gmail.com \
+pnpm tsx scripts/reassign-user.ts \
+  --from-uid <OLD_UID> \
   --to-email daniel@mcgareyconsulting.com \
   --database hpb-eos-prod-db \
   --apply

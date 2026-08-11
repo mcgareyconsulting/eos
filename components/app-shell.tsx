@@ -1,23 +1,12 @@
 import Link from "next/link";
 import { Home, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
 import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
-import { SignOutButton } from "@/components/sign-out-button";
 import { TeamNav, type ShellTeam } from "@/components/team-nav";
-
-// Runs before hydration to avoid a flash of the wrong sidebar width. Mirrors
-// the theme no-flash script in the root layout (app/layout.tsx), but scoped
-// to this subtree since app/(app)/layout.tsx doesn't own <head>.
-const noFlashScript = `(() => {
-  try {
-    var el = document.getElementById('app-shell');
-    if (el && localStorage.getItem('eos:sidebar-collapsed') === '1') {
-      el.setAttribute('data-sidebar-collapsed', '');
-    }
-  } catch (_) {}
-})();`;
+import { initials } from "@/lib/initials";
 
 type Profile = {
   full_name: string;
@@ -48,6 +37,7 @@ export function AppShell({
     [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
     user.email ||
     "";
+  const avatarInitials = initials(displayName) || "?";
 
   return (
     <div
@@ -55,7 +45,8 @@ export function AppShell({
       className="group/shell flex h-screen flex-col overflow-hidden"
       suppressHydrationWarning
     >
-      <script dangerouslySetInnerHTML={{ __html: noFlashScript }} />
+      {/* useLayoutEffect boot — not an inline <script> (React 19 client warning) */}
+      <SidebarCollapseBoot />
       <EnvBanner />
       <LiveAuthBanner />
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -108,44 +99,61 @@ export function AppShell({
             {teams.length > 0 && <TeamNav teams={teams} />}
           </div>
 
-          <div className="border-t border-zinc-300 bg-white px-4 py-3 group-data-[sidebar-collapsed]/shell:px-2 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center gap-2 group-data-[sidebar-collapsed]/shell:justify-center">
-              <div className="min-w-0 flex-1 group-data-[sidebar-collapsed]/shell:hidden">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <Link
-                    href="/settings"
-                    title="Settings"
-                    className="truncate text-sm font-medium text-zinc-900 hover:text-hpb-blue dark:text-zinc-100 dark:hover:text-hpb-gold"
-                  >
-                    {displayName}
-                  </Link>
-                  {isAdmin && (
-                    <span
-                      className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-hpb-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold"
-                      title="Org admin"
-                    >
-                      <Shield className="h-2.5 w-2.5" />
-                      Admin
-                    </span>
-                  )}
+          <div className="border-t border-zinc-300 bg-white px-4 py-3 group-data-[sidebar-collapsed]/shell:px-2 group-data-[sidebar-collapsed]/shell:py-2 dark:border-zinc-800 dark:bg-zinc-900">
+            {/* Expanded: name + admin · settings · theme in a row */}
+            <div className="flex items-center gap-2 group-data-[sidebar-collapsed]/shell:hidden">
+              <div className="min-w-0 flex-1">
+                <div className="break-words text-sm font-medium leading-snug text-zinc-900 dark:text-zinc-100">
+                  {displayName}
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs">
-                  <Link
-                    href="/settings"
-                    className="text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+                {isAdmin && (
+                  <span
+                    className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-hpb-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold"
+                    title="Org admin"
                   >
-                    Settings
-                  </Link>
-                  <span className="text-zinc-300 dark:text-zinc-600" aria-hidden>
-                    ·
+                    <Shield className="h-2.5 w-2.5" />
+                    Admin
                   </span>
-                  <SignOutButton className="text-zinc-600 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100" />
-                </div>
+                )}
               </div>
               <Link
                 href="/settings"
                 title="Settings"
-                className="hidden h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:inline-flex dark:text-zinc-400 dark:hover:bg-zinc-800"
+                aria-label="Settings"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              >
+                <Settings className="h-4 w-4" />
+              </Link>
+              <ThemeToggle />
+            </div>
+
+            {/* Collapsed: initials (→ settings) with settings + theme stacked */}
+            <div className="hidden flex-col items-center gap-1.5 group-data-[sidebar-collapsed]/shell:flex">
+              <Link
+                href="/settings"
+                title={displayName || "Settings"}
+                aria-label={
+                  displayName
+                    ? `Settings — ${displayName}`
+                    : "Settings"
+                }
+                className="relative flex h-9 w-9 items-center justify-center rounded-full bg-hpb-blue/10 text-[11px] font-semibold tracking-wide text-hpb-blue hover:bg-hpb-blue/15 dark:bg-hpb-gold/15 dark:text-hpb-gold dark:hover:bg-hpb-gold/25"
+              >
+                {avatarInitials}
+                {isAdmin && (
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-hpb-blue text-white dark:bg-hpb-gold dark:text-zinc-900"
+                    title="Org admin"
+                  >
+                    <Shield className="h-2 w-2" aria-hidden />
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/settings"
+                title="Settings"
+                aria-label="Settings"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               >
                 <Settings className="h-4 w-4" />
               </Link>

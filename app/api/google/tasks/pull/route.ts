@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   googleOAuthConfigured,
@@ -37,6 +38,12 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await pullCompletionsForAllConnected();
+  // So the next navigation/reload of To-Dos/Home picks up completed_at writes.
+  // Open tabs still need a browser refresh (standalone To-Dos is not live).
+  if (result.updated > 0) {
+    revalidatePath("/home");
+    revalidatePath("/teams", "layout");
+  }
   return NextResponse.json({ ok: true, ...result });
 }
 

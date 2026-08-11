@@ -1,30 +1,32 @@
-// Reassign all EOS data from one real Firebase Auth user to another.
+// Reassign all EOS data from one uid to another (real Auth, or orphaned
+// Firestore-only identity after Auth was deleted).
 //
 // Typical case: consultant switched Google accounts
 //   mcgareyconsulting@gmail.com  →  daniel@mcgareyconsulting.com
 // Private to-dos (and every other owner_id) stay on the old uid, so the new
 // login cannot see them. This script rewrites ownership + memberships.
 //
+// **From may have no Auth record** (deleted in Console). Resolve via:
+//   --from-uid <oldUid>   OR   --from-email (looks up users/{uid} by email)
+// **To must still exist in Firebase Auth** (you sign in as them).
+//
 // Dry-run by default. Pass --apply to write.
 //
-// Usage:
+// Usage (Auth deleted for old email — preferred):
 //   pnpm tsx scripts/reassign-user.ts \
-//     --from-email mcgareyconsulting@gmail.com \
+//     --from-uid OLD_UID_FROM_FIRESTORE \
 //     --to-email daniel@mcgareyconsulting.com \
 //     --database hpb-eos-sandbox-db
 //
+// Usage (both still in Auth):
 //   pnpm tsx scripts/reassign-user.ts \
-//     --from-email mcgareyconsulting@gmail.com \
-//     --to-email daniel@mcgareyconsulting.com \
-//     --database hpb-eos-sandbox-db \
-//     --apply
+//     --from-email old@… --to-email new@… --database hpb-eos-sandbox-db
 //
 // Optional:
 //   --team <teamId>     only one team (default: every team `from` is on)
-//   --from-uid / --to-uid  skip email lookup
 //   --keep-from-membership  leave old roster rows (default: remove after merge)
 //
-// Does NOT delete Firebase Auth users. After apply: sign out/in as the new
+// Does NOT recreate or delete Auth users. After apply: sign out/in as the new
 // account; re-grant admin claim on the new email if needed; reconnect Google
 // Tasks under Settings if the connection did not move.
 
@@ -93,11 +95,58 @@ async function main() {
 
   if ((!fromEmail && !fromUid) || (!toEmail && !toUid)) {
     console.error(
-      "Required: --from-email <old> --to-email <new>\n" +
-        "   or: --from-uid <oldUid> --to-uid <newUid>\n" +
-        "Optional: --database <id>  --team <teamId>  --apply  --keep-from-membership",
+      "Required: --from-email <old> OR --from-uid <oldUid>\n" +
+        "      and --to-email <new>   OR --to-uid <newUid>\n" +
+        "Optional: --database <id>  --team <teamId>  --apply  --keep-from-membership\n" +
+        "\nIf old Auth was deleted, use --from-uid (copy uid from Firestore\n" +
+        "users/ or team_members/ user_id). --to must still exist in Auth.",
     );
     process.exit(1);
+  }
+
+  const projectId =
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    "(unset — ADC will pick default)";
+  const authEmulator = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const firestoreEmulator = process.env.FIRESTORE_EMULATOR_HOST;
+  const useEmulatorFlag = process.env.NEXT_PUBLIC_FIREBASE_USE_EMULATOR;
+
+  console.log(`\nEnvironment (reassign-user)`);
+  console.log(`  projectId              : ${projectId}`);
+  console.log(`  NEXT_PUBLIC_FIREBASE_DATABASE_ID (env default): ${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || "(unset)"}`);
+  console.log(`  --database             : ${databaseId || "(default / env)"}`);
+  console.log(`  FIREBASE_AUTH_EMULATOR_HOST : ${authEmulator || "(unset — live Auth)"}`);
+  console.log(`  FIRESTORE_EMULATOR_HOST     : ${firestoreEmulator || "(unset — live Firestore)"}`);
+  console.log(`  NEXT_PUBLIC_FIREBASE_USE_EMULATOR : ${useEmulatorFlag ?? "(unset)"}`);
+  console.log(
+    `  credentials            : ${process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? "FIREBASE_SERVICE_ACCOUNT_JSON" : "Application Default Credentials"}`,
+  );
+
+  if (authEmulator || firestoreEmulator || useEmulatorFlag === "true") {
+    console.error(
+      "\n*** Emulator / demo mode is active in this shell's env. ***\n" +
+        "Auth lookups will hit the local emulator (or demo project), not hpb-eos-prod.\n" +
+        "Fix for this command only:\n" +
+        "  unset FIREBASE_AUTH_EMULATOR_HOST FIRESTORE_EMULATOR_HOST\n" +
+        "  # and use a .env that points at the real project, e.g.:\n" +
+        "  NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false\n" +
+        "  NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod\n" +
+        "Or pass a real project via SA JSON for hpb-eos-prod.\n",
+    );
+    process.exit(1);
+  }
+
+  if (
+    typeof projectId === "string" &&
+    (projectId.startsWith("demo-") || projectId === "(unset — ADC will pick default)")
+  ) {
+    console.warn(
+      `\n⚠ projectId looks wrong for prod ops: ${projectId}\n` +
+        "  Set NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod in .env.local (or export it)\n" +
+        "  for this shell before re-running.\n",
+    );
   }
 
   let app: App = getApps()[0]!;
@@ -106,7 +155,8 @@ async function main() {
     app = json
       ? initializeApp({ credential: cert(JSON.parse(json)) })
       : initializeApp({
-          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+          projectId:
+            process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || undefined,
         });
   }
   const auth = getAuth(app);
@@ -114,28 +164,171 @@ async function main() {
     ? getFirestore(app, databaseId)
     : getFirestore(app);
 
-  if (!fromUid) {
-    const u = await auth.getUserByEmail(fromEmail!);
-    fromUid = u.uid;
+  async function findFirestoreUidsByEmail(email: string): Promise<string[]> {
+    const hits = new Set<string>();
+    // Exact email field (common on users/ profiles)
+    try {
+      const snap = await db
+        .collection("users")
+        .where("email", "==", email)
+        .limit(10)
+        .get();
+      for (const d of snap.docs) hits.add(d.id);
+    } catch {
+      /* missing index or empty */
+    }
+    // Case variants
+    try {
+      const snap = await db
+        .collection("users")
+        .where("email", "==", email.toLowerCase())
+        .limit(10)
+        .get();
+      for (const d of snap.docs) hits.add(d.id);
+    } catch {
+      /* ignore */
+    }
+    return [...hits];
   }
-  if (!toUid) {
-    const u = await auth.getUserByEmail(toEmail!);
-    toUid = u.uid;
+
+  /** Resolve --from: Auth if present, else Firestore users/ by email (orphan). */
+  async function resolveFrom(): Promise<{
+    uid: string;
+    email: string | null;
+    authPresent: boolean;
+  }> {
+    if (fromUid) {
+      try {
+        const u = await auth.getUser(fromUid);
+        return {
+          uid: fromUid,
+          email: u.email ?? fromEmail ?? null,
+          authPresent: true,
+        };
+      } catch {
+        // Orphan uid — still OK if Firestore has data for it
+        const prof = await db.collection("users").doc(fromUid).get();
+        const mem = await db
+          .collection("team_members")
+          .where("user_id", "==", fromUid)
+          .limit(1)
+          .get();
+        if (!prof.exists && mem.empty) {
+          console.error(
+            `--from-uid ${fromUid} has no Auth record AND no users/ or\n` +
+              `team_members rows in database ${databaseId || "(default)"}.\n` +
+              `Wrong uid or wrong --database?`,
+          );
+          process.exit(1);
+        }
+        const email =
+          (prof.data()?.email as string | undefined) ?? fromEmail ?? null;
+        console.warn(
+          `\n⚠ --from-uid ${fromUid} has NO Firebase Auth record (deleted?).\n` +
+            `  Continuing as orphan reassignment from Firestore data only.\n`,
+        );
+        return { uid: fromUid, email, authPresent: false };
+      }
+    }
+
+    // --from-email path
+    const email = fromEmail!;
+    try {
+      const u = await auth.getUserByEmail(email);
+      return { uid: u.uid, email: u.email ?? email, authPresent: true };
+    } catch (err) {
+      const code =
+        (err as { code?: string }).code ||
+        (err as { errorInfo?: { code?: string } }).errorInfo?.code;
+      if (code !== "auth/user-not-found") throw err;
+
+      const firestoreHits = await findFirestoreUidsByEmail(email);
+      if (firestoreHits.length === 1) {
+        console.warn(
+          `\n⚠ Auth has no user for ${email} (deleted?).\n` +
+            `  Using Firestore users/${firestoreHits[0]} as --from-uid.\n`,
+        );
+        return {
+          uid: firestoreHits[0]!,
+          email,
+          authPresent: false,
+        };
+      }
+      if (firestoreHits.length > 1) {
+        console.error(
+          `Auth missing for ${email}, but multiple Firestore users/ docs match:\n` +
+            firestoreHits.map((id) => `  ${id}`).join("\n") +
+            `\nPass one explicitly: --from-uid <uid>`,
+        );
+        process.exit(1);
+      }
+      console.error(
+        `\nCannot resolve --from-email ${email}:\n` +
+          `  • No Firebase Auth user (expected if you deleted it)\n` +
+          `  • No users/{uid} with email==${email} in database ${databaseId || "(default)"}\n` +
+          `\nFind the old uid in Console → Firestore → users or team_members,\n` +
+          `then re-run with --from-uid <thatUid> --to-email ${toEmail ?? "…"}\n`,
+      );
+      process.exit(1);
+    }
   }
+
+  /** Resolve --to: must exist in Auth (destination login). */
+  async function resolveTo(): Promise<{
+    uid: string;
+    email: string | null;
+  }> {
+    if (toUid) {
+      try {
+        const u = await auth.getUser(toUid);
+        return { uid: toUid, email: u.email ?? toEmail ?? null };
+      } catch {
+        console.error(
+          `--to-uid ${toUid} is not in Firebase Auth.\n` +
+            `  Sign in once as the NEW account, or create the user in Console.`,
+        );
+        process.exit(1);
+      }
+    }
+    try {
+      const u = await auth.getUserByEmail(toEmail!);
+      return { uid: u.uid, email: u.email ?? toEmail! };
+    } catch (err) {
+      const code =
+        (err as { code?: string }).code ||
+        (err as { errorInfo?: { code?: string } }).errorInfo?.code;
+      if (code === "auth/user-not-found") {
+        console.error(
+          `--to-email ${toEmail} is not in Firebase Auth for project ${projectId}.\n` +
+            `  Sign in to the app once as that email, then retry.`,
+        );
+        process.exit(1);
+      }
+      throw err;
+    }
+  }
+
+  const fromResolved = await resolveFrom();
+  const toResolved = await resolveTo();
+  fromUid = fromResolved.uid;
+  toUid = toResolved.uid;
 
   if (fromUid === toUid) {
     console.error("--from and --to resolve to the same uid");
     process.exit(1);
   }
 
-  // Confirm both Auth records exist
-  const fromAuth = await auth.getUser(fromUid);
-  const toAuth = await auth.getUser(toUid);
+  // toAuth-shaped object for later (email on google_tasks_connections, etc.)
+  const toAuth = {
+    email: toResolved.email,
+    uid: toUid,
+  };
 
-  console.log(`\nReassign user (real Auth → real Auth)`);
+  console.log(`\nReassign user (Firestore data → live Auth account)`);
   console.log(`  database : ${databaseId || "(default)"}`);
   console.log(
-    `  from     : ${fromAuth.email ?? "(no email)"}  uid=${fromUid}`,
+    `  from     : ${fromResolved.email ?? "(no email)"}  uid=${fromUid}` +
+      (fromResolved.authPresent ? "" : "  [Auth deleted — orphan]"),
   );
   console.log(`  to       : ${toAuth.email ?? "(no email)"}  uid=${toUid}`);
   console.log(`  teams    : ${teamFilter ?? "all teams from is on"}`);

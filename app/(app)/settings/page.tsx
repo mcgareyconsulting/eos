@@ -1,6 +1,7 @@
 import { CheckCircle2, AlertTriangle, ExternalLink, User } from "lucide-react";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTasksStatus, pullCompletionsForOwner } from "@/lib/google/tasks";
+import { SignOutButton } from "@/components/sign-out-button";
 import { GoogleTasksActions } from "./google-tasks-actions";
 
 // Per-user profile + integrations. Google Tasks is two-way on completion:
@@ -49,7 +50,7 @@ export default async function SettingsPage({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-hpb-blue dark:text-hpb-gold">
             <User className="h-5 w-5" aria-hidden />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold">Profile</h2>
             <p className="mt-1 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
               {displayName}
@@ -63,6 +64,9 @@ export default async function SettingsPage({
               Name and email come from your Google sign-in. Contact an admin to
               change account access.
             </p>
+            <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+              <SignOutButton className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800" />
+            </div>
           </div>
         </div>
       </section>

@@ -520,11 +520,23 @@ export async function pullCompletionsForOwner(
       }
     }
 
-    const toComplete = selectTodosToCompleteFromGoogle(
+    // Prefer owner match (same Google account that owns the mirror). If the
+    // todo was reassigned or owner_id drifted, still complete any incomplete
+    // row that has this google_task_id — the id is the join key we created.
+    let toComplete = selectTodosToCompleteFromGoogle(
       googleTasks,
       candidates,
       ownerUid,
     );
+    if (toComplete.length === 0) {
+      toComplete = candidates
+        .filter((t) => {
+          if (t.completed_at != null) return false;
+          if (!t.google_task_id) return false;
+          return completedIds.includes(t.google_task_id);
+        })
+        .map((t) => t.id);
+    }
     let updated = 0;
     for (const todoId of toComplete) {
       await db.collection("todos").doc(todoId).update({

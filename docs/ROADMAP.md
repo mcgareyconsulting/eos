@@ -5,7 +5,7 @@
 > stages — each pass adds context. We'll scope and roll features later.
 
 **Client:** High Plains Bank (HPB)
-**Last updated:** 2026-08-10 — _PR #22 quick-win batches: P18 items 5, 7, 8, 9, 11, 12, 14, 16, 17 shipped (+ Pass 14 #14 FYI category); >15-team Home note was stale_
+**Last updated:** 2026-08-11 — _Settings/profile (P3-4) + Google Tasks two-way completion (P1-7) on `feature/settings-profile` — Sync/refresh path; Cloud Scheduler optional/deferred_
 
 ---
 
@@ -224,6 +224,8 @@ membership; scorecard weekly grid w/ owners/goals/averages.
 - Google Tasks two-way sync for private to-dos (client's only flagged
   Phase-1 integration; needs per-user Google OAuth + token storage —
   security-review item).
+  → ✅ **Done 2026-08-11** (completion two-way; see ▶ RESUME HERE
+  settings-profile). Milestones still not mirrored.
 - Insights dashboard (meeting-rating trend, issue solve rate, to-dos
   created/over-time, rock %, milestone trend, revised-due-date counts,
   avg time in Issues). NOTE: the audit-log trigger already captures the
@@ -376,6 +378,45 @@ It works in two primary ways:
 ---
 
 ## ▶ RESUME HERE — next session
+
+### Settings / profile + Google Tasks two-way (2026-08-11) — `feature/settings-profile`
+
+**P3-4 (Integrations → Settings / profile)** and **P1-7 (Google Tasks
+complete in Tasks → complete in EOS)** — shipped and sandbox-proven.
+
+**Settings / profile UX:**
+- `/settings` — profile (name/email), Google Tasks connector, **Sign out**
+- Sidebar: full name + Admin pill under it; **gear** → Settings (no
+  duplicate Settings/Sign-out links); collapsed rail = **initials avatar**
+  (→ Settings) stacked with gear + theme
+- `/integrations` redirects to `/settings` (OAuth callback too)
+
+**Google Tasks two-way (completion only):**
+- EOS → Google: create/update/delete pure to-dos (unchanged push)
+- Google → EOS: pull sets `completed_at` when a mirrored task is completed
+  in Google (title/due/uncomplete from Google ignored — EOS remains source
+  of truth for fields)
+- Pull triggers: open Settings / To-Dos, **Sync Google Tasks** (Settings +
+  To-Dos header), optional `POST /api/google/tasks/pull` (Bearer secret)
+- **No Cloud Scheduler required for pilot** — Sync / page load is enough;
+  cron route remains for later if wanted (`GOOGLE_TASKS_PULL_SECRET` +
+  Scheduler every ~5–15m)
+- Proxy: `/api/google/tasks/pull` is session-public; route enforces secret
+
+**Ops (prod ship):**
+- Deploy app; each user **Connect**s Google Tasks once on the live URL
+  (sandbox tokens do not carry to `hpb-eos-prod-db`)
+- Operator account reassign (Auth deleted for old gmail):  
+  `scripts/reassign-user.ts --from-uid … --to-email daniel@… --database
+  hpb-eos-prod-db` (sandbox already exercised)
+- Docs: `docs/TEAM_MGMT_OPS.md` §2b (reassign); cutover checklist §9 paths
+
+**Still out of scope / known gaps:**
+- Rock **milestones** still not mirrored to Google Tasks
+- To-Dos UI is not live — Sync or hard refresh after pull (completed items
+  appear under owner **Done**, leave Home open list)
+- Tokens stay in Firestore `google_tasks_connections/{uid}` (Secret Manager
+  later if needed)
 
 ### Team management / tenancy (2026-08-10) — `feature/team-management`
 
@@ -530,12 +571,13 @@ On-track / No data).
     `CLIENT_GCP_SETUP.md`, `TEAM_MGMT_OPS.md`.
 
 #### Still open (prior backlog, not replaced)
-- **P1-7** Google Tasks two-way (optional)
+- **P1-7** Google Tasks two-way ✅ **2026-08-11** (`feature/settings-profile`) — completion pull via Sync/load; Scheduler optional
+- **P3-4** Integrations → Settings ✅ **2026-08-11** (`feature/settings-profile`)
 - **P1-2** allowlist + membership ops for demo users (ongoing)
 - **P2-1** custom agendas (out of band)
 - **Recap attribution** mid-L10 standalone creates (`L10_GAPS` / T1)
 - Pass 11 Directory stretch: private-team flag, Owner/Implementer roles
-- P3-* as capacity allows
+- P3-* as capacity allows (P3-4 done)
 
 Working priority list is agent-local — not in this repo
 (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`).
@@ -647,14 +689,14 @@ Pass 11/13 so we don't double-count.
 | 7 | 07-30 | Jenna | Headlines | **Mark off headlines discussed in meeting**; keep standing headlines (e.g. open positions); **don't auto-archive all** — only checked-off | ✅ **Done Pass 16 (P2-3).** Discuss checkbox + selective archive at meeting end. |
 | 8 | 07-30 | Jenna | Meetings | Likes it; **adjust speaking sequence**; is order = join order?; **≥4 agenda formats** now, more later; **select agenda at meeting start** | **Confirmed.** Speaking order = team `speaking_order` (editable?) — verify UI. Custom agendas = Pass 11 / Pass 13 #8. |
 | 9 | 07-30 | Jenna | Members | Multi-team org; needs **admin testing**; **employee issues must not leak across individuals/teams** | ✅ **Built 2026-08-10 (`feature/team-management`, P2-7).** Soft directory + hard data; org admin claim; Members → This team / All teams; invite-only. Deploy app + rules for prod. Stretch (CSV import, private teams, ninety Owner/Implementer) still open. |
-| 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | **Integration bug / incomplete.** Today is **one-way push** (`lib/google/tasks.ts`). Client wants **Tasks → EOS** completion sync. Elevates Pass 11 Phase-1 Tasks ask to **two-way is required**. |
+| 10 | 07-30 | Steph | To-Dos | **Google Tasks complete → mark complete in tool** (two-way) — **not working** | ✅ **Done 2026-08-11 (`feature/settings-profile`, P1-7).** Completion pull (Settings/To-Dos load + Sync); push unchanged. Scheduler optional. Milestones still not mirrored. |
 | 11 | 07-30 | Jessica | Scorecard | **Calculated measurables** from other metrics; **share-up** to other teams (Transformation uses this — confirm with Joe) | **Major product gap** vs ninety. Formula metrics + cross-team rollup. New — not in prior passes. Scope carefully (warehouse vs live). |
 | 12 | 07-30 | Jessica | Issues | **Move short-term ↔ long-term**; **comment / bigger description edit in-meeting** for decision notes | ✅ **Done Pass 16 (P2-4 + P2-5).** Move button + LT tab; comments on issue/rock detail. |
 | 13 | 08-03 | Steph | Teams | **On multiple teams — no toggle** to switch; suggest click current team → dropdown. Wants admin testing when ready | ✅ **Done Pass 15 (P1-1).** Sidebar team switcher over all memberships. |
 | 14 | 08-03 | Steph | Headlines | Categorization good; add **General / FYI** category (beyond Other) | **Small product** — headline category enum. |
 | 15 | 08-03 | Steph | Headlines | **Hyperlinks + rich text** (bullets, bold) in headlines | **Product** — rich text / linkify across headlines (and issues #21). |
 | 16 | 08-03 | Steph | Headlines | **No submit loading feedback** → pressed multiple times → **4 duplicates** | **Bug — high confidence.** Disable button + pending state on create. Same pattern audit for all create forms. |
-| 17 | 08-03 | Steph | Integrations | Move Integrations out of top nav into **Settings / profile** | **UX polish** — nav hierarchy. |
+| 17 | 08-03 | Steph | Integrations | Move Integrations out of top nav into **Settings / profile** | ✅ **Done 2026-08-11 (`feature/settings-profile`, P3-4).** `/settings`; sidebar gear; sign-out on Settings; `/integrations` redirects. |
 | 18 | 08-03 | Steph | Rocks | When screen full, **status dropdown at bottom is clipped / unreachable** | **Bug.** Related Pass 13 #1 popover flip/max-height — extend same treatment to status control at list bottom (collision / flip). |
 | 19 | 08-03 | Steph | Rocks | **Milestone default dates = calendar quarter end** — prefer no date or today; rock quarters need more flexibility | ✅ **Done Pass 16 (P2-6).** Milestone due empty by default; free-text quarter. Optional monthly-stage suggestions still later. |
 | 20 | 08-03 | Steph | Rocks | **Cannot edit milestone dates after set** | **Bug / missing edit path.** |
@@ -672,7 +714,7 @@ Pass 11/13 so we don't double-count.
 6. **Status comment discoverability** after save (#3). ✅ Pass 15 P0
 
 **Integrations / access:**
-7. **Google Tasks two-way completion** (#10) — today one-way only; client expects Tasks→EOS.
+7. **Google Tasks two-way completion** (#10) ✅ **2026-08-11** — see ▶ RESUME HERE (settings-profile). Sync/load; Scheduler optional.
 8. **Members / issue privacy** multi-team (#9) ✅ **2026-08-10** — see ▶ RESUME HERE (team management). Prod: ship app + rules + allowlist.
 9. Ops still: allowlist + membership for access issues (Pass 13 #2) — operator email now `daniel@mcgareyconsulting.com`.
 
@@ -682,7 +724,7 @@ Pass 11/13 so we don't double-count.
 12. **Issue ST↔LT move + LT tab** (#12, #21) ✅ Pass 16 P2-4; **comments** (#6) ✅ Pass 16 P2-5 (binary attachments still deferred).
 13. **Scorecard interval tabs** working (#1) ✅ Pass 15 P1-3 (metric interval model). **Calculated + share-up** (#11) still open (P3-1).
 14. Headline **FYI category** (#14); **rich text / links** (#15, #22) — include **issue descriptions** (and rock descriptions / headline body / comments); comments already linkify URLs (P2-5). Full editor still P3-2.
-15. Integrations nav → settings (#17). Rock/quarter **default flexibility** (#2, #19) ✅ Pass 16 P2-6 (empty milestone due; free-text quarter; smarter monthly stages later).
+15. Integrations nav → settings (#17) ✅ **2026-08-11**. Rock/quarter **default flexibility** (#2, #19) ✅ Pass 16 P2-6 (empty milestone due; free-text quarter; smarter monthly stages later).
 
 ### Pass 13 (retained) + Pass 14 overlap
 
@@ -750,12 +792,12 @@ before doing further L10 work. Cross-check Pass 13 client bugs against
 above for the full drift map. Drift-fix subagent batch ran this session
 (scorecard 13wk+groups, rock types+progress+desc, issue owner+priority+
 desc, meeting-rating change (#9), home 7-day milestones, todo desc).
-**Next run = the "new asks" list in Pass 11** (Google Tasks sync is the
-client's flagged phase-1 integration; custom agendas is the biggest
-build; attachments need a Cloud Storage bucket added to the Terraform
-footprint). Features 1 and 4 have client-driven scope changes noted in
-Pass 11. Client BQ conventions still outstanding but now more urgent
-(two-way BigQuery).
+**Next run = the "new asks" list in Pass 11** (Google Tasks two-way
+completion ✅ 2026-08-11 — see ▶ RESUME HERE; custom agendas is the biggest
+remaining build; attachments need a Cloud Storage bucket added to the
+Terraform footprint). Features 1 and 4 have client-driven scope changes
+noted in Pass 11. Client BQ conventions still outstanding but now more
+urgent (two-way BigQuery).
 
 Pass 10 (2026-07-01) resolved the session-start checklist: stack surfaced,
 audit-log capture point (Option 2), nightly cadence, and collection list

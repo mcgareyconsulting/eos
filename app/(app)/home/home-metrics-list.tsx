@@ -61,7 +61,12 @@ export function HomeMetricsList({ metrics }: { metrics: HomeMetricListItem[] }) 
         const tone = STATUS_TONE[m.status];
         const avg = average(m.values);
         const avgOk = onTrack(avg, m.goal, m.direction);
-        const { hit, recorded, pct } = hitRate(m.values, m.goal, m.direction);
+        const {
+          hit,
+          recorded,
+          pct,
+          applicable: hitApplies,
+        } = hitRate(m.values, m.goal, m.direction);
         const avgTone =
           avgOk == null
             ? "text-zinc-600 dark:text-zinc-400"
@@ -127,7 +132,7 @@ export function HomeMetricsList({ metrics }: { metrics: HomeMetricListItem[] }) 
                     >
                       {tone.label}
                     </span>
-                    {recorded > 0 && (
+                    {hitApplies && recorded > 0 && (
                       <>
                         <span className="relative block h-1 w-11 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                           <span

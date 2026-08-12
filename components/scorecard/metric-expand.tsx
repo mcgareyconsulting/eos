@@ -45,7 +45,11 @@ export function MetricExpand({
   const tone = STATUS_TONE[status];
   const avg = average(values);
   const avgOk = onTrack(avg, metric.goal, metric.direction);
-  const { hit, recorded } = hitRate(values, metric.goal, metric.direction);
+  const {
+    hit,
+    recorded,
+    applicable: hitApplies,
+  } = hitRate(values, metric.goal, metric.direction);
   const missing = missingCount(values);
 
   // "Aug 3" style labels for the chart's x axis — the grid's own column labels
@@ -74,9 +78,15 @@ export function MetricExpand({
             </span>
           </Fact>
           <Fact label="Periods hit">
-            <span className="tabular-nums">
-              {recorded ? `${hit} of ${recorded}` : "—"}
-            </span>
+            {hitApplies ? (
+              <span className="tabular-nums">
+                {recorded ? `${hit} of ${recorded}` : "—"}
+              </span>
+            ) : (
+              <span className="text-zinc-500 dark:text-zinc-400">
+                Set a goal
+              </span>
+            )}
           </Fact>
           <Fact label="Missing" last>
             <span

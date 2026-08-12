@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Archive, Lock, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, formatDateShort } from "@/lib/dates";
+import { dueToneClass } from "@/lib/due";
 import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { TodoCheckbox } from "./todo-row";
@@ -33,11 +34,14 @@ export function TodoListRow({
   todo,
   ownerName,
   members,
+  /** Owner cards already name the owner — don't repeat it on every row. */
+  hideOwner = false,
 }: {
   teamId: string;
   todo: TodoListItem;
   ownerName: string;
   members: Member[];
+  hideOwner?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const remove = deleteTodo.bind(null, teamId, todo.id);
@@ -78,6 +82,7 @@ export function TodoListRow({
               teamId={teamId}
               todoId={todo.id}
               completed={todo.completed}
+              appearance="milestone"
             />
           </div>
         )}
@@ -97,28 +102,35 @@ export function TodoListRow({
             {todo.title}
           </span>
           {todo.visibility === "private" && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-zinc-500">
+            <span
+              className="ml-1.5 inline-flex translate-y-px items-center text-zinc-400"
+              title="Private — only you can see this to-do"
+            >
               <Lock className="h-3 w-3" />
-              private
-            </span>
-          )}
-          {closedPending && (
-            <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-              Closes Monday
+              <span className="sr-only">Private</span>
             </span>
           )}
           {archived && (
             <span className="mt-0.5 block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-              Closed On: {todo.closed_on ?? "—"}
+              Closed {todo.closed_on ?? "—"}
             </span>
           )}
         </button>
 
-        <div className="w-28 shrink-0 pt-0.5 text-right text-xs text-zinc-600 dark:text-zinc-400">
-          {ownerName}
-        </div>
-        <div className="w-20 shrink-0 pt-0.5 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
-          {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
+        {!hideOwner && (
+          <div className="w-28 shrink-0 pt-0.5 text-right text-xs text-zinc-600 dark:text-zinc-400">
+            {ownerName}
+          </div>
+        )}
+        <div
+          className={cn(
+            "w-14 shrink-0 pt-0.5 text-right text-xs font-semibold tabular-nums",
+            archived
+              ? "text-zinc-400 dark:text-zinc-500"
+              : dueToneClass(todo.due_date, todo.completed),
+          )}
+        >
+          {formatDateShort(todo.due_date)}
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"
@@ -179,14 +191,16 @@ export function TodoListRow({
             )}
           </div>
           <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-            <div>
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Owner
-              </dt>
-              <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
-                {ownerName}
-              </dd>
-            </div>
+            {hideOwner ? null : (
+              <div>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Owner
+                </dt>
+                <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
+                  {ownerName}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                 Due
@@ -195,21 +209,13 @@ export function TodoListRow({
                 {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
               </dd>
             </div>
-            <div>
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Visibility
-              </dt>
-              <dd className="mt-0.5 capitalize text-zinc-700 dark:text-zinc-300">
-                {todo.visibility}
-              </dd>
-            </div>
-            {archived && (
+            {todo.visibility === "private" && (
               <div>
                 <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  Closed On
+                  Visibility
                 </dt>
-                <dd className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
-                  {todo.closed_on ?? "—"}
+                <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
+                  Private
                 </dd>
               </div>
             )}

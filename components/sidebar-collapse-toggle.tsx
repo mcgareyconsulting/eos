@@ -24,8 +24,7 @@ function subscribe(onStoreChange: () => void) {
   return () => window.removeEventListener(COLLAPSE_CHANGE_EVENT, onStoreChange);
 }
 
-/** Set the collapsed state from anywhere in the shell (e.g. the collapsed
- *  team-switcher rail button expands the sidebar before opening its menu). */
+/** Set the collapsed state from anywhere in the shell. */
 export function setSidebarCollapsed(next: boolean) {
   getShellEl()?.toggleAttribute("data-sidebar-collapsed", next);
   try {
@@ -45,8 +44,12 @@ export function setSidebarCollapsed(next: boolean) {
  * SSR/hydration consistent, and the dispatched event below notifies this
  * hook (and any other instance) when toggle() changes the attribute.
  */
+export function useSidebarCollapsed(): boolean {
+  return useSyncExternalStore(subscribe, readCollapsed, getServerCollapsed);
+}
+
 export function SidebarCollapseToggle() {
-  const collapsed = useSyncExternalStore(subscribe, readCollapsed, getServerCollapsed);
+  const collapsed = useSidebarCollapsed();
 
   const toggle = () => setSidebarCollapsed(!collapsed);
 

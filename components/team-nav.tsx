@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -17,11 +25,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/initials";
-import { setSidebarCollapsed } from "@/components/sidebar-collapse-toggle";
+import {
+  setSidebarCollapsed,
+  useSidebarCollapsed,
+} from "@/components/sidebar-collapse-toggle";
 
 export type ShellTeam = { id: string; name: string };
 
 const PREFERRED_TEAM_KEY = "eos:active-team-id";
+
+/** Matches the anchored menu's max-h-64; used to keep the flyout on screen. */
+const FLYOUT_MAX_H = 256;
 
 const TEAM_SECTIONS = [
   "scorecard",
@@ -157,8 +171,44 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const multi = sorted.length > 1;
+  const collapsed = useSidebarCollapsed();
+
+  // Collapsed, the menu can't live in normal flow: the sidebar's scroll
+  // container clips it vertically and the 16-wide rail clips it horizontally.
+  // Position it `fixed` beside the rail button instead of expanding the
+  // sidebar out from under the click.
+  const [flyout, setFlyout] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  useLayoutEffect(() => {
+    if (!open || !collapsed) {
+      setFlyout(null);
+      return;
+    }
+    const place = () => {
+      const rect = railRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Keep the menu on screen — the team block sits near the sidebar's foot.
+      const top = Math.max(
+        8,
+        Math.min(rect.top, window.innerHeight - FLYOUT_MAX_H - 8),
+      );
+      setFlyout({ top, left: rect.right + 8 });
+    };
+    place();
+    window.addEventListener("resize", place);
+    // Capture: the sidebar's own scroller moves the anchor, and scroll
+    // events from it don't bubble to window.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, collapsed]);
 
   useEffect(() => {
     if (!open) return;
@@ -199,12 +249,19 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
   return (
     <div className="px-2 py-3 border-t border-zinc-300 dark:border-zinc-800">
       <div className="relative px-0 pb-2" ref={rootRef}>
-        {/* Collapsed rail: the flyout menu would be clipped by the sidebar's
-            scroll container, so this button expands the sidebar first (same
-            persisted state as the header toggle) and, with multiple teams,
-            opens the switcher menu in the same click. */}
+        {/* Collapsed rail. With several teams this opens the switcher as a
+            fixed flyout beside the rail — the sidebar stays collapsed. With
+            one team there's no menu, so the button just expands. */}
         <button
+          ref={railRef}
           type="button"
+          {...(multi
+            ? {
+                "aria-haspopup": "listbox" as const,
+                "aria-expanded": open,
+                "aria-controls": listId,
+              }
+            : {})}
           className={cn(
             "mx-auto hidden h-8 w-8 items-center justify-center rounded-md",
             "text-xs font-semibold text-hpb-blue dark:text-hpb-gold",
@@ -214,8 +271,8 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
           title={multi ? `Switch team — ${activeTeam.name}` : activeTeam.name}
           aria-label={multi ? "Switch team" : `Team: ${activeTeam.name}`}
           onClick={() => {
-            setSidebarCollapsed(false);
-            if (multi) setOpen(true);
+            if (multi) setOpen((v) => !v);
+            else setSidebarCollapsed(false);
           }}
         >
           {initials(activeTeam.name) || "?"}
@@ -252,13 +309,24 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
                 id={listId}
                 role="listbox"
                 aria-label="Switch team"
+                style={
+                  flyout
+                    ? {
+                        top: flyout.top,
+                        left: flyout.left,
+                        maxHeight: FLYOUT_MAX_H,
+                      }
+                    : undefined
+                }
                 className={cn(
-                  "absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto",
-                  "rounded-md border border-zinc-200 bg-white py-1 shadow-lg",
+                  "z-50 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg",
                   "dark:border-zinc-700 dark:bg-zinc-900",
-                  // If the sidebar collapses while the menu is open, hide the
-                  // menu rather than render it inside the 16-wide rail.
-                  "group-data-[sidebar-collapsed]/shell:hidden",
+                  flyout
+                    ? "fixed w-56"
+                    : "absolute left-0 right-0 mt-1 max-h-64",
+                  // One frame can land with the menu open and collapsed but
+                  // unmeasured; don't flash it inside the 16-wide rail.
+                  collapsed && !flyout && "hidden",
                 )}
               >
                 {sorted.map((t) => {

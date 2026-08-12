@@ -53,17 +53,19 @@ export function average(values: (number | null)[]): number | null {
  * - watch → At-risk
  * - ok    → On-track
  * - empty → no recent scores
+ * - nogoal → scores exist but there's no goal to measure them against
  *
  * Status uses the N most recently *populated* scores (default 3),
  * matching ninety's Trends rule — empty weeks don't count.
  */
-export type TrendStatus = "ok" | "watch" | "off" | "empty";
+export type TrendStatus = "ok" | "watch" | "off" | "empty" | "nogoal";
 
 export const TREND_STATUS_LABEL: Record<TrendStatus, string> = {
   off: "Off-track",
   watch: "At-risk",
   ok: "On-track",
   empty: "No data",
+  nogoal: "No goal",
 };
 
 export function trendStatus(
@@ -80,7 +82,7 @@ export function trendStatus(
     }
   }
   if (recorded.length === 0) return "empty";
-  if (goal == null) return "ok";
+  if (goal == null) return "nogoal";
 
   let off = 0;
   for (const v of recorded) {
@@ -113,6 +115,7 @@ export const STATUS_FILTER_OPTIONS: {
   { value: "off", label: "Off-track" },
   { value: "watch", label: "At-risk" },
   { value: "ok", label: "On-track" },
+  { value: "nogoal", label: "No goal" },
   { value: "empty", label: "No data" },
 ];
 
@@ -139,7 +142,8 @@ const STATUS_SORT_RANK: Record<TrendStatus, number> = {
   off: 0,
   watch: 1,
   empty: 2,
-  ok: 3,
+  nogoal: 3,
+  ok: 4,
 };
 
 export function statusSortRank(status: TrendStatus): number {
@@ -194,6 +198,15 @@ export const STATUS_TONE: Record<
     text: "text-red-600 dark:text-red-400",
     icon: "text-red-600",
   },
+  nogoal: {
+    label: TREND_STATUS_LABEL.nogoal,
+    accent: "#a1a1aa",
+    railBorder: "border-l-zinc-400 dark:border-l-zinc-600",
+    rail: "bg-zinc-400 dark:bg-zinc-600",
+    pill: "bg-zinc-100 text-zinc-600 ring-zinc-300 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-600",
+    text: "text-zinc-600 dark:text-zinc-300",
+    icon: "text-zinc-400 dark:text-zinc-500",
+  },
   empty: {
     label: TREND_STATUS_LABEL.empty,
     accent: "#d4d4d8",
@@ -205,15 +218,25 @@ export const STATUS_TONE: Record<
   },
 };
 
-/** Periods that met the goal, out of the periods that have a value. */
+/**
+ * Periods that met the goal, out of the periods that have a value.
+ *
+ * `applicable` is false when the metric has no goal — every period then
+ * "misses" vacuously, so callers must render that as "—", not "0 of N hit".
+ */
 export function hitRate(
   values: (number | null)[],
   goal: number | null,
   direction: GoalDirection,
-): { hit: number; recorded: number; pct: number } {
+): { hit: number; recorded: number; pct: number; applicable: boolean } {
   const recorded = values.filter((v) => v != null).length;
   const hit = values.filter((v) => onTrack(v, goal, direction) === true).length;
-  return { hit, recorded, pct: recorded ? Math.round((hit / recorded) * 100) : 0 };
+  return {
+    hit,
+    recorded,
+    pct: recorded ? Math.round((hit / recorded) * 100) : 0,
+    applicable: goal != null,
+  };
 }
 
 /** Periods in the window with no entry at all — the sparse-data signal. */

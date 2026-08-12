@@ -9,34 +9,25 @@ import {
   createRockWithMilestones,
   updateRockWithMilestones,
 } from "./actions";
-import { normalizeRockType, type RockType } from "./rock-type";
+import {
+  ROCK_KIND_OPTIONS,
+  toFormRockType,
+  type RockType,
+} from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 
 type Member = { user_id: string; full_name: string };
 type ShareTeam = { id: string; name: string };
 
-/** Create/edit chooser — team vs individual (person owner is separate). */
-const ROCK_KIND_OPTIONS: {
-  value: RockType;
-  label: string;
-  hint: string;
-}[] = [
-  {
-    value: "individual",
-    label: "Individual",
-    hint: "Personal priority — lists under the owner",
-  },
-  {
-    value: "department",
-    label: "Team rock",
-    hint: "Team priority — Department section; still needs an owner",
-  },
-  {
-    value: "company",
-    label: "Company",
-    hint: "Company-wide priority — with Department section rocks",
-  },
-];
+/**
+ * Create/edit chooser — team vs individual (person owner is separate).
+ * The kinds themselves come from rock-type.ts so the badge dropdown and this
+ * modal can't drift; only the explanatory hints live here.
+ */
+const KIND_HINTS: Record<string, string> = {
+  individual: "Personal priority — lists under the owner",
+  department: "Team priority — Department section; still needs an owner",
+};
 
 type DraftMilestone = {
   /** React key; also the todo doc id when this row already exists. */
@@ -209,7 +200,8 @@ export function RockModal({
 
   const editing = !!rock;
   const initialOwner = personOwnerId(rock?.owner_id, currentUserId);
-  const initialType = normalizeRockType(rock?.rock_type);
+  // Legacy company rocks open as Team — the form has no Company option.
+  const initialType = toFormRockType(rock?.rock_type);
 
   const [title, setTitle] = useState(rock?.title ?? "");
   const [description, setDescription] = useState(rock?.description ?? "");
@@ -366,7 +358,7 @@ export function RockModal({
               <div
                 role="radiogroup"
                 aria-label="Rock kind"
-                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
               >
                 {ROCK_KIND_OPTIONS.map((opt) => {
                   const selected = rockType === opt.value;
@@ -395,7 +387,7 @@ export function RockModal({
                         {opt.label}
                       </div>
                       <p className="mt-0.5 text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">
-                        {opt.hint}
+                        {KIND_HINTS[opt.value]}
                       </p>
                     </button>
                   );

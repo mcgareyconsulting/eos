@@ -14,7 +14,7 @@ import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
-  normalizeRockType,
+  toFormRockType,
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
 } from "./rock-type";
@@ -74,7 +74,7 @@ export function RockRow({
   const [expanded, setExpanded] = useState(false);
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
-  const type = normalizeRockType(rock.rock_type);
+  const type = toFormRockType(rock.rock_type);
   // Always prefer person name; legacy null owner shows as em dash.
   const displayOwner = ownerName || "—";
   const doneCount = milestones.filter((m) => m.completed).length;

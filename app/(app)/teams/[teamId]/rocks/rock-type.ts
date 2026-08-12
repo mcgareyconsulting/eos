@@ -18,6 +18,21 @@ export const ROCK_TYPE_LABELS: Record<RockType, string> = {
   individual: "Individual",
 };
 
+/**
+ * The only kinds offered on create/edit: Individual vs Team. "company" stays
+ * in RockType for legacy docs — it still sorts into the Department section
+ * (isDepartmentRock) but is no longer selectable, and reads back as Team.
+ */
+export const ROCK_KIND_OPTIONS: { value: RockType; label: string }[] = [
+  { value: "individual", label: "Individual" },
+  { value: "department", label: "Team" },
+];
+
+/** Normalize onto the two selectable kinds — legacy company folds into Team. */
+export function toFormRockType(v: string | null | undefined): RockType {
+  return normalizeRockType(v) === "individual" ? "individual" : "department";
+}
+
 export const ROCK_TYPE_STYLES: Record<RockType, string> = {
   company:
     "bg-hpb-blue/10 dark:bg-hpb-blue/20 text-hpb-blue dark:text-white ring-hpb-blue/30",

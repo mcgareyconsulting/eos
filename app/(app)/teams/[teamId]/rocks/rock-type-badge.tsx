@@ -4,11 +4,11 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { setRockType } from "./actions";
 import {
-  ROCK_TYPES,
+  ROCK_KIND_OPTIONS,
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
   type RockType,
-  normalizeRockType,
+  toFormRockType,
 } from "./rock-type";
 
 // Small clickable chip showing a rock's type (company/department/individual),
@@ -23,7 +23,7 @@ export function RockTypeBadge({
   rockId: string;
   rockType: string | null | undefined;
 }) {
-  const current = normalizeRockType(rockType);
+  const current = toFormRockType(rockType);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -74,22 +74,22 @@ export function RockTypeBadge({
           aria-label="Rock type"
           className="absolute left-0 top-full z-20 mt-1 w-36 rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg p-1 text-sm"
         >
-          {ROCK_TYPES.map((t) => (
+          {ROCK_KIND_OPTIONS.map((opt) => (
             <button
-              key={t}
+              key={opt.value}
               type="button"
               role="option"
-              aria-selected={t === current}
-              onClick={() => choose(t)}
+              aria-selected={opt.value === current}
+              onClick={() => choose(opt.value)}
               className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800"
             >
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
-                  ROCK_TYPE_STYLES[t],
+                  ROCK_TYPE_STYLES[opt.value],
                 )}
               >
-                {ROCK_TYPE_LABELS[t]}
+                {opt.label}
               </span>
             </button>
           ))}

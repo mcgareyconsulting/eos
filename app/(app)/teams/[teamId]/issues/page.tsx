@@ -1,6 +1,8 @@
-import Link from "next/link";
-import { Archive } from "lucide-react";
+import { EntityPageHeader } from "@/components/entity-page-header";
+import { EntityViewTabs } from "@/components/entity-view-tabs";
+import { OwnerFilter } from "@/components/owner-filter";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { IssueFormModal } from "./issue-form-modal";
 import { IssuesList, type IssueDoc } from "./issues-list";
 
 function formatClosedOn(
@@ -21,10 +23,10 @@ export default async function IssuesPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ archived?: string }>;
+  searchParams: Promise<{ archived?: string; owner?: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { archived: archivedParam } = await searchParams;
+  const { archived: archivedParam, owner: ownerParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
@@ -52,6 +54,16 @@ export default async function IssuesPage({
     };
   });
 
+  const rosterIds = new Set(members.map((m) => m.user_id));
+  const filterRaw = ownerParam || "all";
+  const legacyMapped =
+    filterRaw === "self" || filterRaw === "mine"
+      ? uid
+      : filterRaw === "team" || filterRaw === "others"
+        ? "all"
+        : filterRaw;
+  const ownerFilter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
+
   const activeCount = allIssues.filter((i) => !i.archived).length;
   const archivedCount = allIssues.filter((i) => i.archived).length;
   const initialIssues = showArchived
@@ -60,39 +72,26 @@ export default async function IssuesPage({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Issues</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {showArchived
-              ? "Solved or dropped in an L10 archive when that meeting ends; mid-week closes archive Monday morning."
-              : "Close in the L10 to archive at Finish. Outside the meeting, closed issues stay gray until Monday cleanup."}
-          </p>
-        </div>
-        <div className="flex items-center gap-1 text-sm">
-          <Link
-            href={`/teams/${tid}/issues`}
-            className={
-              !showArchived
-                ? "rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            }
-          >
-            Active ({activeCount})
-          </Link>
-          <Link
-            href={`/teams/${tid}/issues?archived=1`}
-            className={
-              showArchived
-                ? "inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            }
-          >
-            <Archive className="h-3.5 w-3.5" />
-            Archived ({archivedCount})
-          </Link>
-        </div>
-      </header>
+      <EntityPageHeader
+        title="Issues"
+        filter={<OwnerFilter members={members} currentUserId={uid} />}
+        tabs={
+          <EntityViewTabs
+            basePath={`/teams/${tid}/issues`}
+            showArchived={showArchived}
+            activeCount={activeCount}
+            archivedCount={archivedCount}
+            owner={ownerFilter !== "all" ? ownerFilter : undefined}
+          />
+        }
+        add={
+          <IssueFormModal
+            teamId={tid}
+            members={members}
+            defaultOwnerId={uid}
+          />
+        }
+      />
 
       <IssuesList
         teamId={tid}
@@ -100,6 +99,7 @@ export default async function IssuesPage({
         members={members}
         initialIssues={initialIssues}
         showArchived={showArchived}
+        ownerFilter={ownerFilter}
       />
     </div>
   );

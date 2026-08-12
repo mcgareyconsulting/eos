@@ -1,10 +1,11 @@
-import Link from "next/link";
 import { Archive, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { EntityPageHeader } from "@/components/entity-page-header";
+import { EntityViewTabs } from "@/components/entity-view-tabs";
+import { OwnerFilter } from "@/components/owner-filter";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
-import { OwnerFilter } from "./owner-filter";
 import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
 import {
@@ -285,68 +286,35 @@ export default async function RocksPage({
       ? "No rocks yet."
       : `No rocks for ${ownerName(filter)}.`;
 
-  const ownerQuery =
-    filter !== "all" && filter !== "team" ? `owner=${filter}` : "";
+  const ownerFilter =
+    filter !== "all" && filter !== "team" ? filter : undefined;
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rocks</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {showArchived
-              ? "Done rocks move here after the Monday archive sweep (completed before this week)."
-              : "Quarterly priorities. Mark a rock Done — it stays on Active until next Monday’s archive sweep."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center rounded-[9px] bg-zinc-100 p-[3px] text-sm dark:bg-zinc-800">
-            <Link
-              href={
-                ownerQuery
-                  ? `/teams/${teamId}/rocks?${ownerQuery}`
-                  : `/teams/${teamId}/rocks`
-              }
-              className={
-                !showArchived
-                  ? "rounded-[7px] bg-white px-3 py-[5px] font-bold text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
-                  : "rounded-[7px] px-3 py-[5px] font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              }
-            >
-              Active ({activeRockCount})
-            </Link>
-            <Link
-              href={
-                ownerQuery
-                  ? `/teams/${teamId}/rocks?archived=1&${ownerQuery}`
-                  : `/teams/${teamId}/rocks?archived=1`
-              }
-              className={
-                showArchived
-                  ? "inline-flex items-center gap-1.5 rounded-[7px] bg-white px-3 py-[5px] font-bold text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
-                  : "inline-flex items-center gap-1.5 rounded-[7px] px-3 py-[5px] font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              }
-            >
-              <Archive className="h-3.5 w-3.5" />
-              Archived ({archivedRockCount})
-            </Link>
-          </div>
-          {!showArchived && (
-            <>
-              <OwnerFilter members={members} currentUserId={uid} />
-              <NewRockButton
-                teamId={teamId}
-                members={members}
-                quarter={quarter}
-                defaultDue={eoq}
-                currentUserId={uid}
-                teamName={team.name}
-                shareTeams={shareTeams}
-              />
-            </>
-          )}
-        </div>
-      </header>
+      <EntityPageHeader
+        title="Rocks"
+        filter={<OwnerFilter members={members} currentUserId={uid} />}
+        tabs={
+          <EntityViewTabs
+            basePath={`/teams/${teamId}/rocks`}
+            showArchived={showArchived}
+            activeCount={activeRockCount}
+            archivedCount={archivedRockCount}
+            owner={ownerFilter}
+          />
+        }
+        add={
+          <NewRockButton
+            teamId={teamId}
+            members={members}
+            quarter={quarter}
+            defaultDue={eoq}
+            currentUserId={uid}
+            teamName={team.name}
+            shareTeams={shareTeams}
+          />
+        }
+      />
 
       {sections.length === 0 ? (
         <RockSection title={showArchived ? "Archived" : "Rocks"}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Smile, Users, Megaphone, Info, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -48,34 +48,11 @@ export type HeadlineDoc = {
 
 type Member = { user_id: string; full_name: string };
 
-const KIND_META: Record<
-  HeadlineDoc["kind"],
-  { label: string; badge: string; Icon: typeof Smile }
-> = {
-  customer: {
-    label: "Customer",
-    badge:
-      "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 ring-emerald-200",
-    Icon: Smile,
-  },
-  employee: {
-    label: "Employee",
-    badge:
-      "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 ring-blue-200",
-    Icon: Users,
-  },
-  cascading: {
-    label: "Cascading",
-    badge:
-      "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-amber-200",
-    Icon: Megaphone,
-  },
-  general: {
-    label: "General / FYI",
-    badge:
-      "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 ring-slate-200",
-    Icon: Info,
-  },
+const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
+  customer: "Customer",
+  employee: "Employee",
+  cascading: "Cascading",
+  general: "General / FYI",
 };
 
 function isArchived(h: HeadlineDoc): boolean {
@@ -132,7 +109,7 @@ export function SegmentHeadlines({
   const ownerGroups = groupByOwner(sortedTeam, creatorName);
 
   function renderRow(h: HeadlineDoc) {
-    const meta = KIND_META[h.kind] ?? KIND_META.customer;
+    const kindLabel = KIND_LABEL[h.kind] ?? KIND_LABEL.customer;
     const remove = deleteHeadline.bind(null, teamId, h.id);
     const readOnly = !!h.broadcast;
     const discussed = h.discussed === true;
@@ -149,12 +126,6 @@ export function SegmentHeadlines({
           discussed={discussed}
           disabled={readOnly}
         />
-        <div
-          className={`mt-0.5 rounded-full p-1.5 ring-1 ring-inset ${meta.badge}`}
-          title={meta.label}
-        >
-          <meta.Icon className="h-3.5 w-3.5" />
-        </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <div
@@ -180,7 +151,7 @@ export function SegmentHeadlines({
             />
           )}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-            {meta.label}
+            {kindLabel}
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
             {creatorName(h)} ·{" "}
             <LocalTime

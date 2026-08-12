@@ -174,7 +174,7 @@ export function ScorecardPanel({
       acc[trendStatus(valuesFor(m.id), m.goal, m.direction)] += 1;
       return acc;
     },
-    { ok: 0, watch: 0, off: 0, empty: 0 },
+    { ok: 0, watch: 0, off: 0, empty: 0, nogoal: 0 },
   );
 
   return (

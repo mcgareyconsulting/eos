@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Archive, Target } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { OwnerFilter } from "./owner-filter";
@@ -9,7 +10,6 @@ import { RockRow } from "./rock-row";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
-  isSharedDepartmentOwner,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
@@ -23,6 +23,7 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  shared_team_ids?: string[] | null;
   archived_at?: unknown;
 };
 
@@ -75,7 +76,13 @@ export default async function RocksPage({
   const { owner: ownerParam, archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(teamId);
-  const members = await getTeamMembers(teamId);
+  const [{ teams: userTeams }, members] = await Promise.all([
+    getUserTeamsFirebase(),
+    getTeamMembers(teamId),
+  ]);
+  const shareTeams = userTeams
+    .filter((t) => t.id !== teamId)
+    .map((t) => ({ id: t.id, name: t.name }));
 
   const quarter = currentQuarter();
   const eoq = toDateString(endOfQuarter());
@@ -106,6 +113,7 @@ export default async function RocksPage({
       status: x.status as string,
       description: (x.description as string | null) ?? null,
       rock_type: (x.rock_type as string | null) ?? null,
+      shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       archived_at: x.archived_at ?? null,
     };
   });
@@ -322,6 +330,7 @@ export default async function RocksPage({
                 defaultDue={eoq}
                 currentUserId={uid}
                 teamName={team.name}
+                shareTeams={shareTeams}
               />
             </>
           )}
@@ -349,17 +358,14 @@ export default async function RocksPage({
                 teamId={teamId}
                 userId={uid}
                 rock={r}
-                ownerName={
-                  isSharedDepartmentOwner(r.owner_id)
-                    ? DEPARTMENT_SECTION_TITLE
-                    : ownerName(r.owner_id)
-                }
+                ownerName={ownerName(r.owner_id)}
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={eoq}
                 statusHistory={statusByRock.get(r.id) ?? []}
                 currentUserId={uid}
                 teamName={team.name}
+                shareTeams={shareTeams}
               />
             ))}
           </RockSection>

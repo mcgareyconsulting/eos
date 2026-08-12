@@ -9,10 +9,34 @@ import {
   createRockWithMilestones,
   updateRockWithMilestones,
 } from "./actions";
-import { DEPARTMENT_OWNER_VALUE, DEPARTMENT_SECTION_TITLE } from "./rock-type";
+import { normalizeRockType, type RockType } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 
 type Member = { user_id: string; full_name: string };
+type ShareTeam = { id: string; name: string };
+
+/** Create/edit chooser — team vs individual (person owner is separate). */
+const ROCK_KIND_OPTIONS: {
+  value: RockType;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "individual",
+    label: "Individual",
+    hint: "Personal priority — lists under the owner",
+  },
+  {
+    value: "department",
+    label: "Team rock",
+    hint: "Team priority — Department section; still needs an owner",
+  },
+  {
+    value: "company",
+    label: "Company",
+    hint: "Company-wide priority — with Department section rocks",
+  },
+];
 
 type DraftMilestone = {
   /** React key; also the todo doc id when this row already exists. */
@@ -30,12 +54,22 @@ type RockForEdit = {
   owner_id: string | null;
   quarter: string;
   due_date: string | null;
+  rock_type?: string | null;
+  shared_team_ids?: string[] | null;
 };
 
 let draftSeq = 0;
 function blankRow(ownerId: string): DraftMilestone {
   draftSeq += 1;
   return { key: `draft-${draftSeq}`, title: "", owner_id: ownerId, due_date: "" };
+}
+
+function personOwnerId(
+  ownerId: string | null | undefined,
+  fallback: string,
+): string {
+  if (!ownerId || ownerId === "team") return fallback;
+  return ownerId;
 }
 
 /** Header button on the Rocks page. Replaces AddRockDrawer. */
@@ -46,6 +80,7 @@ export function NewRockButton({
   defaultDue,
   currentUserId,
   teamName,
+  shareTeams = [],
 }: {
   teamId: string;
   members: Member[];
@@ -53,6 +88,7 @@ export function NewRockButton({
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -73,6 +109,7 @@ export function NewRockButton({
           defaultDue={defaultDue}
           currentUserId={currentUserId}
           teamName={teamName}
+          shareTeams={shareTeams}
           onClose={() => setOpen(false)}
         />
       )}
@@ -89,6 +126,7 @@ export function EditRockButton({
   defaultDue,
   currentUserId,
   teamName,
+  shareTeams = [],
   className,
 }: {
   teamId: string;
@@ -98,6 +136,7 @@ export function EditRockButton({
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -122,6 +161,7 @@ export function EditRockButton({
           defaultDue={defaultDue}
           currentUserId={currentUserId}
           teamName={teamName}
+          shareTeams={shareTeams}
           rock={rock}
           milestones={milestones}
           onClose={() => setOpen(false)}
@@ -132,9 +172,8 @@ export function EditRockButton({
 }
 
 /**
- * One modal for create and edit: rock fields plus the milestones, saved
- * together. Replaces add-rock-drawer.tsx + edit-rock-drawer.tsx and the
- * inline add-milestone form that used to live in the expanded row.
+ * Create/edit: home team (context), rock kind, person owner, optional share,
+ * rich description, milestones.
  */
 export function RockModal({
   teamId,
@@ -143,6 +182,7 @@ export function RockModal({
   defaultDue,
   currentUserId,
   teamName,
+  shareTeams = [],
   rock,
   milestones = [],
   focusMilestones = false,
@@ -155,6 +195,7 @@ export function RockModal({
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
   /** Present = edit mode. */
   rock?: RockForEdit;
   milestones?: MilestoneSerialized[];
@@ -167,22 +208,23 @@ export function RockModal({
   const [error, setError] = useState<string | null>(null);
 
   const editing = !!rock;
-  const initialOwner = rock
-    ? (rock.owner_id ?? DEPARTMENT_OWNER_VALUE)
-    : currentUserId;
+  const initialOwner = personOwnerId(rock?.owner_id, currentUserId);
+  const initialType = normalizeRockType(rock?.rock_type);
 
   const [title, setTitle] = useState(rock?.title ?? "");
   const [description, setDescription] = useState(rock?.description ?? "");
   const [ownerId, setOwnerId] = useState(initialOwner);
+  const [rockType, setRockType] = useState<RockType>(initialType);
+  const [sharedTeamIds, setSharedTeamIds] = useState<string[]>(() => {
+    const ids = rock?.shared_team_ids ?? [];
+    return ids.filter((id) => id && id !== teamId);
+  });
   const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
   // P2-6: due is a create-mode suggestion only. An existing rock with a
   // cleared due date stays empty — never re-seed end-of-quarter on edit.
   const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 
-  // Milestone owner inherits the rock owner; a department-shared rock falls
-  // back to the signed-in user (milestones are todos and need a person).
-  const inheritOwner =
-    ownerId === DEPARTMENT_OWNER_VALUE ? currentUserId : ownerId;
+  const inheritOwner = ownerId || currentUserId;
 
   const [rows, setRows] = useState<DraftMilestone[]>(() => {
     const base = editing
@@ -198,11 +240,8 @@ export function RockModal({
           blankRow(currentUserId),
           blankRow(currentUserId),
         ];
-    // "Add milestone" entry point: start on a fresh row, not the rock fields.
     return focusMilestones ? [...base, blankRow(inheritOwner)] : base;
   });
-  // The milestone input to focus on mount — the appended fresh row, then any
-  // row added with the button below.
   const [focusKey, setFocusKey] = useState<string | null>(() =>
     focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
   );
@@ -221,16 +260,28 @@ export function RockModal({
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  function toggleShareTeam(id: string) {
+    setSharedTeamIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!title.trim()) {
       setError("Title required");
       return;
     }
+    if (!ownerId || ownerId === "team") {
+      setError("Owner is required — pick a person accountable for this rock.");
+      return;
+    }
     const fd = new FormData();
     fd.set("title", title);
     fd.set("description", description);
     fd.set("owner_id", ownerId);
+    fd.set("rock_type", rockType);
+    fd.set("shared_team_ids", JSON.stringify(sharedTeamIds));
     fd.set("quarter", qtr);
     fd.set("due_date", due);
     fd.set(
@@ -269,13 +320,17 @@ export function RockModal({
         role="dialog"
         aria-modal="true"
         aria-label={editing ? "Edit rock" : "New rock"}
-        className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
+        <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3.5 dark:border-zinc-800">
           <div>
             {teamName && (
               <div className="text-[9.5px] font-bold uppercase tracking-[0.09em] text-zinc-400">
                 {teamName}
+                <span className="font-medium normal-case tracking-normal text-zinc-400">
+                  {" "}
+                  · home team
+                </span>
               </div>
             )}
             <h2 className="mt-0.5 text-base font-semibold">
@@ -293,16 +348,60 @@ export function RockModal({
         </header>
 
         <form onSubmit={submit} className="flex flex-1 flex-col overflow-y-auto">
-          <div className="space-y-3.5 px-5 py-4">
+          <div className="space-y-4 px-6 py-5">
             <Field label="Title" required>
               <input
                 autoFocus={!focusMilestones}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Launch private banking division"
+                placeholder="e.g. EOS platform deployment"
                 className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
               />
             </Field>
+
+            <div>
+              <div className="mb-1.5 text-[11.5px] font-semibold text-zinc-600 dark:text-zinc-400">
+                Rock kind <span className="text-red-600">*</span>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Rock kind"
+                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+              >
+                {ROCK_KIND_OPTIONS.map((opt) => {
+                  const selected = rockType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setRockType(opt.value)}
+                      className={cn(
+                        "rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40",
+                        selected
+                          ? "border-hpb-blue bg-hpb-blue/[0.07] ring-1 ring-hpb-blue dark:bg-hpb-blue/15"
+                          : "border-zinc-300 bg-white hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "text-[13.5px] font-bold",
+                          selected
+                            ? "text-hpb-blue dark:text-hpb-gold"
+                            : "text-zinc-800 dark:text-zinc-100",
+                        )}
+                      >
+                        {opt.label}
+                      </div>
+                      <p className="mt-0.5 text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">
+                        {opt.hint}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <Field label="Description" hint="(optional)">
               <RichTextEditor
@@ -313,27 +412,22 @@ export function RockModal({
               />
             </Field>
 
-            <div className="grid grid-cols-3 gap-2.5">
-              <Field label="Owner">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <Field label="Owner" required>
                 <select
                   value={ownerId}
                   onChange={(e) => setOwnerId(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 >
-                  <option value={DEPARTMENT_OWNER_VALUE}>
-                    {DEPARTMENT_SECTION_TITLE}
-                  </option>
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </option>
                   ))}
                 </select>
-                {ownerId === DEPARTMENT_OWNER_VALUE && (
-                  <p className="mt-1 text-[11px] text-zinc-500">
-                    Department rocks appear at the top of the list for everyone.
-                  </p>
-                )}
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Accountable person — even for team rocks.
+                </p>
               </Field>
               <Field label="Quarter">
                 <input
@@ -358,6 +452,39 @@ export function RockModal({
                 </p>
               </Field>
             </div>
+
+            {shareTeams.length > 0 && (
+              <Field
+                label="Share with teams"
+                hint="(optional — same rock on other teams' lists)"
+              >
+                <div className="flex flex-wrap gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/80 p-2 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  {shareTeams.map((t) => {
+                    const on = sharedTeamIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleShareTeam(t.id)}
+                        aria-pressed={on}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-[12px] font-semibold ring-1 ring-inset transition-colors",
+                          on
+                            ? "bg-hpb-blue text-white ring-hpb-blue"
+                            : "bg-white text-zinc-600 ring-zinc-300 hover:ring-hpb-blue/50 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-zinc-700",
+                        )}
+                      >
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Home team stays {teamName ?? "this team"}. Sharing is
+                  team-to-team, not person-to-person.
+                </p>
+              </Field>
+            )}
 
             <div className="border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
               <div className="mb-2">
@@ -447,7 +574,7 @@ export function RockModal({
             )}
           </div>
 
-          <footer className="mt-auto flex items-center justify-between gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
+          <footer className="mt-auto flex items-center justify-between gap-2 border-t border-zinc-200 px-6 py-3 dark:border-zinc-800">
             <span className="text-[11.5px] text-zinc-400">
               {filled.length
                 ? `Saves the rock and ${filled.length} milestone${filled.length === 1 ? "" : "s"} together.`
@@ -463,7 +590,7 @@ export function RockModal({
               </button>
               <button
                 type="submit"
-                disabled={pending || !title.trim()}
+                disabled={pending || !title.trim() || !ownerId}
                 className="rounded-md bg-hpb-blue px-3.5 py-1.5 text-[13.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50"
               >
                 {pending

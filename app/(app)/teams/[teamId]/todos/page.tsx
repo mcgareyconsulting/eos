@@ -1,16 +1,23 @@
-import Link from "next/link";
 import { Archive, CheckSquare, Flag } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { EntityPageHeader } from "@/components/entity-page-header";
+import { EntityViewTabs } from "@/components/entity-view-tabs";
+import { OwnerFilter } from "@/components/owner-filter";
+import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
-import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
+import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
 import {
   getTasksStatus,
   pullCompletionsForOwner,
 } from "@/lib/google/tasks";
-import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
+import { cn } from "@/lib/utils";
 import { AddTodoModal } from "./add-todo-modal";
+import {
+  MilestoneTodoRow,
+  type MilestoneTodoItem,
+} from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 
 type TodoDoc = {
@@ -49,13 +56,7 @@ function formatClosedOn(
   return `${m}/${day}/${y}`;
 }
 
-type MilestoneDueSoon = {
-  id: string;
-  title: string;
-  owner_id: string | null;
-  due_date: string | null;
-  rock_title: string;
-};
+
 
 type OwnerGroup = {
   key: string;
@@ -131,10 +132,10 @@ export default async function TodosPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ archived?: string }>;
+  searchParams: Promise<{ archived?: string; owner?: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { archived: archivedParam } = await searchParams;
+  const { archived: archivedParam, owner: ownerParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(tid);
   // Best-effort Google → EOS completion pull for the signed-in user so
@@ -154,33 +155,38 @@ export default async function TodosPage({
     db.collection("rocks").where("team_id", "==", tid).get(),
   ]);
 
-  const rockTitleById = new Map(
-    rocksSnap.docs.map((d) => [d.id, String(d.data().title ?? "Rock")]),
+  const rocksById = new Map(
+    rocksSnap.docs.map((d) => {
+      const x = d.data();
+      return [
+        d.id,
+        {
+          title: String(x.title ?? "Rock"),
+          status: String(x.status ?? ""),
+          archived_at: x.archived_at ?? null,
+        },
+      ];
+    }),
   );
 
   // Project plain fields — completed_at is a Timestamp and can't cross the
   // RSC boundary into the client list row.
   const allTodos: TodoListItem[] = [];
-  // Milestones due within 7 days (or overdue) surface here so they don't
-  // live only under Rocks — Jenna reported a due-today milestone never
-  // appeared on To-Dos (P0-4 / P14-4).
-  const dueSoonMilestones: MilestoneDueSoon[] = [];
+  const allMilestones: MilestoneTodoItem[] = [];
   for (const d of snap.docs) {
     const t = d.data() as TodoDoc;
     if (t.source_rock_id) {
-      if (
-        !showArchived &&
-        !t.completed_at &&
-        isDueWithinDays(t.due_date, 7)
-      ) {
-        dueSoonMilestones.push({
-          id: d.id,
-          title: t.title,
-          owner_id: t.owner_id ?? null,
-          due_date: t.due_date ?? null,
-          rock_title: rockTitleById.get(t.source_rock_id) ?? "Rock",
-        });
-      }
+      const rock = rocksById.get(t.source_rock_id);
+      if (isMilestoneHiddenByRock(rock)) continue;
+      if (t.completed_at || isArchived(t)) continue;
+      allMilestones.push({
+        id: d.id,
+        title: t.title,
+        owner_id: t.owner_id ?? null,
+        due_date: t.due_date ?? null,
+        completed: false,
+        rock_title: rock?.title ?? "Rock",
+      });
       continue;
     }
     const visibility = t.visibility === "private" ? "private" : "team";
@@ -205,11 +211,29 @@ export default async function TodosPage({
     });
   }
 
+  const rosterIds = new Set(members.map((m) => m.user_id));
+  const filterRaw = ownerParam || "all";
+  const legacyMapped =
+    filterRaw === "self" || filterRaw === "mine"
+      ? uid
+      : filterRaw === "team" || filterRaw === "others"
+        ? "all"
+        : filterRaw;
+  const ownerFilter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
+
   const activeTodos = allTodos.filter((t) => !t.archived);
   const archivedTodos = allTodos.filter((t) => t.archived);
-  const todos = showArchived ? archivedTodos : activeTodos;
+  const scoped = (list: TodoListItem[]) =>
+    ownerFilter === "all"
+      ? list
+      : list.filter((t) => t.owner_id === ownerFilter);
+  const todos = scoped(showArchived ? archivedTodos : activeTodos);
 
-  dueSoonMilestones.sort(byDue);
+  const visibleMilestones = (
+    ownerFilter === "all"
+      ? allMilestones
+      : allMilestones.filter((m) => m.owner_id === ownerFilter)
+  ).sort(byDue);
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -233,104 +257,44 @@ export default async function TodosPage({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">To-Dos</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {showArchived
-              ? "Items closed in an L10 land here when that meeting ends; other completed items after the Monday cleanup. Restore anytime."
-              : "Check off work anytime — no strikethrough. Closed during an L10 archives when that meeting ends; otherwise done items stay until Monday morning cleanup."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-sm">
-            <Link
-              href={`/teams/${tid}/todos`}
-              className={
-                !showArchived
-                  ? "rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                  : "rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              }
-            >
-              Active ({activeTodos.length})
-            </Link>
-            <Link
-              href={`/teams/${tid}/todos?archived=1`}
-              className={
-                showArchived
-                  ? "inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                  : "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              }
-            >
-              <Archive className="h-3.5 w-3.5" />
-              Archived ({archivedTodos.length})
-            </Link>
-          </div>
-          {!showArchived && (
-            <>
-              <SyncGoogleTasksButton
-                configured={tasksStatus.configured}
-                connected={tasksStatus.connected}
-              />
-              <AddTodoModal
-                teamId={tid}
-                members={members}
-                defaultOwnerId={uid}
-              />
-            </>
-          )}
-        </div>
-      </header>
-
-      {!showArchived && dueSoonMilestones.length > 0 && (
-        <section>
-          <SectionHeader>
-            Due soon · milestones ({dueSoonMilestones.length})
-          </SectionHeader>
-          <List>
-            {dueSoonMilestones.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center gap-3 px-4 py-3 text-sm"
-              >
-                <Flag
-                  className="h-4 w-4 shrink-0 text-zinc-500"
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{m.title}</div>
-                  <div className="truncate text-xs text-zinc-500">
-                    Milestone · {m.rock_title}
-                  </div>
-                </div>
-                <span className="shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
-                  {ownerName(m.owner_id)}
-                </span>
-                <span className="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
-                  {m.due_date ? formatDateOnly(m.due_date) : "—"}
-                </span>
-              </div>
-            ))}
-          </List>
-          <p className="mt-1.5 text-xs text-zinc-500">
-            Check off milestones on the Rocks tab. Shown here when due within 7
-            days.
-          </p>
-        </section>
-      )}
+      <EntityPageHeader
+        title="To-Dos"
+        leading={
+          <SyncGoogleTasksButton
+            configured={tasksStatus.configured}
+            connected={tasksStatus.connected}
+            showHint={false}
+          />
+        }
+        filter={<OwnerFilter members={members} currentUserId={uid} />}
+        tabs={
+          <EntityViewTabs
+            basePath={`/teams/${tid}/todos`}
+            showArchived={showArchived}
+            activeCount={activeTodos.length}
+            archivedCount={archivedTodos.length}
+            owner={ownerFilter !== "all" ? ownerFilter : undefined}
+          />
+        }
+        add={
+          <AddTodoModal
+            teamId={tid}
+            members={members}
+            defaultOwnerId={uid}
+          />
+        }
+      />
 
       {showArchived ? (
-        archivedFlat.length === 0 ? (
-          <List>
+        <BoardColumn title="To-Dos" count={archivedFlat.length}>
+          {archivedFlat.length === 0 ? (
             <EmptyState
               icon={Archive}
               title="No archived to-dos"
               hint="Completed to-dos archive when an L10 ends, or archive them manually."
             />
-          </List>
-        ) : (
-          <List>
-            {archivedFlat.map((t) => (
+          ) : (
+            archivedFlat.map((t) => (
               <TodoListRow
                 key={t.id}
                 teamId={tid}
@@ -338,49 +302,38 @@ export default async function TodosPage({
                 ownerName={ownerName(t.owner_id)}
                 members={members}
               />
-            ))}
-          </List>
-        )
+            ))
+          )}
+        </BoardColumn>
       ) : (
-        <>
-          {groups.length === 0 && (
-            <List>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)] lg:items-start">
+          <BoardColumn title="To-Dos" count={openCount}>
+            {groups.length === 0 && (
               <EmptyState
                 icon={CheckSquare}
                 title="No to-dos yet"
                 hint="Add a to-do, or capture one during the Level 10."
               />
-            </List>
-          )}
-
-          {openCount === 0 && groups.some((g) => g.done.length > 0) && (
-            <p className="text-center text-sm text-hpb-green">
-              All to-dos done — they archive when the L10 ends.
-            </p>
-          )}
-
-          {/* One card per owner — same blocking as L10 To-Dos / Rocks. */}
-          {groups.map((g) => (
-            <section
-              key={g.key}
-              className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <header className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-                  {initials(g.title) || "?"}
-                </span>
-                <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                  {g.title}
-                </h2>
-                <span className="text-xs text-zinc-500">
-                  {g.open.length}
-                  {g.done.length > 0 ? ` · ${g.done.length} done` : ""}
-                </span>
-              </header>
-              <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {g.open.length === 0 && g.done.length === 0 && (
-                  <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
-                )}
+            )}
+            {openCount === 0 && groups.some((g) => g.done.length > 0) && (
+              <p className="px-4 py-2 text-center text-sm text-hpb-green">
+                All to-dos done — they archive when the L10 ends.
+              </p>
+            )}
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
+                    {initials(g.title) || "?"}
+                  </span>
+                  <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                    {g.title}
+                  </h3>
+                  <span className="text-xs text-zinc-500">
+                    {g.open.length}
+                    {g.done.length > 0 ? ` · ${g.done.length} done` : ""}
+                  </span>
+                </div>
                 {g.open.map((t) => (
                   <TodoListRow
                     key={t.id}
@@ -407,27 +360,56 @@ export default async function TodosPage({
                   </>
                 )}
               </div>
-            </section>
-          ))}
-        </>
+            ))}
+          </BoardColumn>
+
+          <BoardColumn title="Milestones" count={visibleMilestones.length}>
+            {visibleMilestones.length === 0 ? (
+              <EmptyState
+                icon={Flag}
+                title="No open milestones"
+                hint="Rock milestones show here while their parent rock is still active."
+              />
+            ) : (
+              visibleMilestones.map((m) => (
+                <MilestoneTodoRow
+                  key={m.id}
+                  teamId={tid}
+                  milestone={m}
+                  ownerName={ownerName(m.owner_id)}
+                />
+              ))
+            )}
+          </BoardColumn>
+        </div>
       )}
     </div>
   );
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function BoardColumn({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
   return (
-    <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-      {children}
-    </h2>
-  );
-}
-
-function List({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-      {children}
-    </div>
+    <section className="flex min-h-0 min-w-0 flex-col">
+      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+        {title}{" "}
+        <span className="font-bold text-zinc-400">({count})</span>
+      </h2>
+      <div
+        className={cn(
+          "max-h-[min(70vh,40rem)] overflow-y-auto rounded-xl border border-zinc-300 bg-white divide-y divide-zinc-100 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900",
+        )}
+      >
+        {children}
+      </div>
+    </section>
   );
 }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -96,11 +97,7 @@ export function AddTodoModal({
       <button
         type="button"
         onClick={openModal}
-        className={
-          compact
-            ? "inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-            : "inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-        }
+        className={entityAddButtonClass}
       >
         <Plus className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
         {buttonLabel}

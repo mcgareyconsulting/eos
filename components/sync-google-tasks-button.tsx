@@ -38,7 +38,7 @@ export function SyncGoogleTasksButton({
       <Link
         href="/settings"
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800",
+          "inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-300 px-3 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800",
           className,
         )}
         title="Connect Google Tasks in Settings to sync completions"
@@ -50,7 +50,7 @@ export function SyncGoogleTasksButton({
   }
 
   return (
-    <div className={cn("flex flex-col items-end gap-1", className)}>
+    <div className={cn(showHint ? "flex flex-col items-end gap-1" : "inline-flex", className)}>
       <button
         type="button"
         disabled={pending}
@@ -67,7 +67,7 @@ export function SyncGoogleTasksButton({
             );
           });
         }}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         title="Pull completions from Google Tasks into EOS"
       >
         {pending ? (

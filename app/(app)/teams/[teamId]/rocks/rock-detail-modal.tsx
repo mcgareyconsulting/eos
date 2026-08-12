@@ -11,7 +11,7 @@ import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
   ROCK_TYPE_LABELS,
-  normalizeRockType,
+  toFormRockType,
 } from "./rock-type";
 import {
   STATUS_BANNER,
@@ -121,7 +121,7 @@ export function RockDetailModal({
   statusHistory?: StatusUpdateSerialized[];
   onClose: () => void;
 }) {
-  const type = normalizeRockType(rock.rock_type);
+  const type = toFormRockType(rock.rock_type);
   const status: RockStatus | null = isRockStatus(rock.status)
     ? rock.status
     : null;

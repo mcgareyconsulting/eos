@@ -66,12 +66,14 @@ export function IssuesList({
   members,
   initialIssues,
   showArchived = false,
+  ownerFilter = "all",
 }: {
   teamId: string;
   userId: string;
   members: Member[];
   initialIssues: IssueDoc[];
   showArchived?: boolean;
+  ownerFilter?: string;
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
@@ -83,15 +85,17 @@ export function IssuesList({
   );
 
   const live = useCollection<IssueDoc>(issuesQuery, initialIssues, "issues");
-  const issues = live.filter((i) =>
-    showArchived ? isArchivedIssue(i) : !isArchivedIssue(i),
-  );
+  const issues = live.filter((i) => {
+    const inView = showArchived ? isArchivedIssue(i) : !isArchivedIssue(i);
+    if (!inView) return false;
+    if (ownerFilter === "all") return true;
+    return i.owner_id === ownerFilter;
+  });
 
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short);
   const rankedLong = rankLongTerm(long);
   const list = tab === "short" ? rankedShort : rankedLong;
-  const defaultType: IssueType = tab === "long" ? "long" : "short";
 
   const ownerName = (id: string | null) =>
     id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
@@ -121,19 +125,6 @@ export function IssuesList({
         >
           Long-term ({rankedLong.length})
         </button>
-        <div className="ml-auto">
-          {!showArchived && (
-            <IssueFormModal
-              teamId={teamId}
-              members={members}
-              defaultOwnerId={userId}
-              defaultType={defaultType}
-              buttonLabel={
-                tab === "long" ? "Add long-term issue" : "Add issue"
-              }
-            />
-          )}
-        </div>
       </div>
 
       {issues.length === 0 ? (

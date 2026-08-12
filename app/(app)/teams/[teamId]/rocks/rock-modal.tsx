@@ -3,13 +3,18 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, X } from "lucide-react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import { cn } from "@/lib/utils";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   createRockWithMilestones,
   updateRockWithMilestones,
 } from "./actions";
-import { DEPARTMENT_OWNER_VALUE, DEPARTMENT_SECTION_TITLE } from "./rock-type";
+import {
+  ROCK_KIND_OPTIONS,
+  toFormRockType,
+  type RockType,
+} from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 
 type Member = { user_id: string; full_name: string };
@@ -30,7 +35,16 @@ type RockForEdit = {
   owner_id: string | null;
   quarter: string;
   due_date: string | null;
+  rock_type?: string | null;
 };
+
+function personOwnerId(
+  ownerId: string | null | undefined,
+  fallback: string,
+): string {
+  if (!ownerId || ownerId === "team") return fallback;
+  return ownerId;
+}
 
 let draftSeq = 0;
 function blankRow(ownerId: string): DraftMilestone {
@@ -60,10 +74,10 @@ export function NewRockButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-[9px] bg-hpb-blue px-3 py-[7px] text-[12.5px] font-extrabold text-white hover:bg-[#00257a] focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+        className={entityAddButtonClass}
       >
         <Plus className="h-4 w-4" strokeWidth={2.5} />
-        New Rock
+        Add Rock
       </button>
       {open && (
         <RockModal
@@ -167,22 +181,21 @@ export function RockModal({
   const [error, setError] = useState<string | null>(null);
 
   const editing = !!rock;
-  const initialOwner = rock
-    ? (rock.owner_id ?? DEPARTMENT_OWNER_VALUE)
-    : currentUserId;
+  const initialOwner = personOwnerId(rock?.owner_id, currentUserId);
 
   const [title, setTitle] = useState(rock?.title ?? "");
   const [description, setDescription] = useState(rock?.description ?? "");
   const [ownerId, setOwnerId] = useState(initialOwner);
+  const [rockType, setRockType] = useState<RockType>(
+    toFormRockType(rock?.rock_type),
+  );
   const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
   // P2-6: due is a create-mode suggestion only. An existing rock with a
   // cleared due date stays empty — never re-seed end-of-quarter on edit.
   const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 
-  // Milestone owner inherits the rock owner; a department-shared rock falls
-  // back to the signed-in user (milestones are todos and need a person).
-  const inheritOwner =
-    ownerId === DEPARTMENT_OWNER_VALUE ? currentUserId : ownerId;
+  // Milestone owner inherits the rock owner. Team rocks still have a person.
+  const inheritOwner = ownerId || currentUserId;
 
   const [rows, setRows] = useState<DraftMilestone[]>(() => {
     const base = editing
@@ -227,10 +240,15 @@ export function RockModal({
       setError("Title required");
       return;
     }
+    if (!ownerId || ownerId === "team") {
+      setError("Owner is required — pick a person accountable for this rock.");
+      return;
+    }
     const fd = new FormData();
     fd.set("title", title);
     fd.set("description", description);
     fd.set("owner_id", ownerId);
+    fd.set("rock_type", rockType);
     fd.set("quarter", qtr);
     fd.set("due_date", due);
     fd.set(
@@ -313,27 +331,34 @@ export function RockModal({
               />
             </Field>
 
-            <div className="grid grid-cols-3 gap-2.5">
-              <Field label="Owner">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <Field label="Type">
+                <select
+                  value={rockType}
+                  onChange={(e) =>
+                    setRockType(toFormRockType(e.target.value))
+                  }
+                  className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                  {ROCK_KIND_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Owner" required>
                 <select
                   value={ownerId}
                   onChange={(e) => setOwnerId(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 >
-                  <option value={DEPARTMENT_OWNER_VALUE}>
-                    {DEPARTMENT_SECTION_TITLE}
-                  </option>
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </option>
                   ))}
                 </select>
-                {ownerId === DEPARTMENT_OWNER_VALUE && (
-                  <p className="mt-1 text-[11px] text-zinc-500">
-                    Department rocks appear at the top of the list for everyone.
-                  </p>
-                )}
               </Field>
               <Field label="Quarter">
                 <input
@@ -342,20 +367,14 @@ export function RockModal({
                   placeholder="e.g. 2026-Q3"
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Free text — calendar Q, fiscal period, or custom label.
-                </p>
               </Field>
-              <Field label="Due date">
+              <Field label="Due date" hint="(optional)">
                 <input
                   type="date"
                   value={due}
                   onChange={(e) => setDue(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Optional — clear it if there is no date yet.
-                </p>
               </Field>
             </div>
 
@@ -463,7 +482,7 @@ export function RockModal({
               </button>
               <button
                 type="submit"
-                disabled={pending || !title.trim()}
+                disabled={pending || !title.trim() || !ownerId}
                 className="rounded-md bg-hpb-blue px-3.5 py-1.5 text-[13.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50"
               >
                 {pending

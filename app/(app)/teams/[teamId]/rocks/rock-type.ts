@@ -3,19 +3,30 @@
 // predate this field, so a missing/invalid value is always treated as
 // "individual" — never write undefined, always normalize on read.
 //
-// Department section rocks (top of Rocks list / L10):
-//   - owner_id null (shared department ownership), OR
-//   - rock_type === "department" even when a person is accountable.
-// See isDepartmentRock / DEPARTMENT_OWNER_VALUE.
+// Team-section rocks (top of Rocks list / L10):
+//   - owner_id null (legacy shared ownership), OR
+//   - rock_type === "department" (UI label: Team) even when a person is accountable.
+// Create/edit type is Individual | Team; owner is always a person.
 
 export const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
 
 export const ROCK_TYPE_LABELS: Record<RockType, string> = {
   company: "Company",
-  department: "Department",
+  /** Stored as department; create/edit UI says Team. */
+  department: "Team",
   individual: "Individual",
 };
+
+/** Create/edit chooser — Individual vs Team. Company is treated as Team. */
+export const ROCK_KIND_OPTIONS: { value: RockType; label: string }[] = [
+  { value: "individual", label: "Individual" },
+  { value: "department", label: "Team" },
+];
+
+export function toFormRockType(v: string | null | undefined): RockType {
+  return normalizeRockType(v) === "individual" ? "individual" : "department";
+}
 
 export const ROCK_TYPE_STYLES: Record<RockType, string> = {
   company:

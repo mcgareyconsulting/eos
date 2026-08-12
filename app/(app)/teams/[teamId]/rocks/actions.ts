@@ -189,8 +189,7 @@ function milestoneDoc(
   };
 }
 
-// The fields both save paths read off the modal's FormData. Owner = "team"
-// → null owner_id (Department section); else a person, defaulting to me.
+// Owner is always a person; type (individual / team) is a separate field.
 function parseRockFields(formData: FormData, uid: string) {
   const title = String(formData.get("title") ?? "").trim();
   // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
@@ -198,6 +197,16 @@ function parseRockFields(formData: FormData, uid: string) {
   if (!title || !quarter) throw new Error("Title and quarter required");
 
   const ownerRaw = String(formData.get("owner_id") ?? "").trim();
+  // Reject legacy "team" / Department sentinel — team rocks still need a person.
+  if (!ownerRaw || ownerRaw === "team") {
+    throw new Error(
+      "Owner is required — pick a person accountable for this rock.",
+    );
+  }
+
+  const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
+  const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
+
   return {
     title,
     quarter,
@@ -205,7 +214,8 @@ function parseRockFields(formData: FormData, uid: string) {
     // end-of-quarter as a suggestion; it must never be re-forced here.
     due_date: String(formData.get("due_date") ?? "").trim() || null,
     description: String(formData.get("description") ?? "").trim() || null,
-    owner_id: ownerRaw === "team" ? null : ownerRaw || uid,
+    owner_id: ownerRaw || uid,
+    rock_type,
   };
 }
 
@@ -215,13 +225,8 @@ export async function createRockWithMilestones(
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
 
-  const { title, quarter, due_date, description, owner_id } = parseRockFields(
-    formData,
-    uid,
-  );
-
-  const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
-  const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
+  const { title, quarter, due_date, description, owner_id, rock_type } =
+    parseRockFields(formData, uid);
 
   const milestones = parseMilestones(formData.get("milestones"));
 
@@ -242,12 +247,10 @@ export async function createRockWithMilestones(
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
   });
-  // A milestone is a todo, and a todo needs a person: department-shared rocks
-  // fall back to whoever created it.
   for (const m of milestones) {
     batch.set(
       db.collection("todos").doc(),
-      milestoneDoc(teamId, rockRef.id, m, owner_id ?? uid),
+      milestoneDoc(teamId, rockRef.id, m, owner_id),
     );
   }
   await batch.commit();
@@ -264,10 +267,8 @@ export async function updateRockWithMilestones(
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
 
-  const { title, quarter, due_date, description, owner_id } = parseRockFields(
-    formData,
-    uid,
-  );
+  const { title, quarter, due_date, description, owner_id, rock_type } =
+    parseRockFields(formData, uid);
 
   const milestones = parseMilestones(formData.get("milestones"));
   const keptIds = new Set(
@@ -292,6 +293,7 @@ export async function updateRockWithMilestones(
     due_date,
     description,
     owner_id,
+    rock_type,
   });
 
   // Rows the user removed in the modal.
@@ -300,7 +302,7 @@ export async function updateRockWithMilestones(
   }
 
   const existingIds = new Set(existingSnap.docs.map((d) => d.id));
-  const fallbackOwner = owner_id ?? uid;
+  const fallbackOwner = owner_id;
   for (const m of milestones) {
     if (m.id && existingIds.has(m.id)) {
       batch.update(db.collection("todos").doc(m.id), {

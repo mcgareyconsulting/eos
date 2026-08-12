@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import { addIssue, updateIssueMeta } from "./actions";
 import type { IssueType } from "@/lib/issues";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -146,7 +147,7 @@ export function IssueFormModal({
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+          className={entityAddButtonClass}
         >
           <Plus className="h-4 w-4" />
           {buttonLabel}

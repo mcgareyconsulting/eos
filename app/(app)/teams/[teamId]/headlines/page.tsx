@@ -6,6 +6,8 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
+import { RichText } from "@/components/rich-text";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
 import {
   addHeadline,
@@ -186,9 +188,10 @@ export default async function HeadlinesPage({
             </div>
           )}
           {body && (
-            <div className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
-              {body}
-            </div>
+            <RichText
+              value={body}
+              className="mt-0.5 text-zinc-600 dark:text-zinc-400"
+            />
           )}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
             {meta.label}
@@ -361,11 +364,12 @@ function AddHeadlineForm({ teamId }: { teamId: string }) {
         <option value="cascading">Cascading</option>
         <option value="general">General / FYI</option>
       </select>
-      <textarea
+      <RichTextEditor
         name="body"
         placeholder="Detail (optional)"
-        rows={2}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 md:col-span-6"
+        rows={7}
+        textareaClassName="min-h-[9rem] leading-relaxed"
+        className="md:col-span-6"
       />
       <PendingSubmitButton
         idleLabel="Add headline"

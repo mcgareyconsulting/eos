@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { Pencil, X } from "lucide-react";
 import { updateHeadline } from "./actions";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 export type HeadlineEditValues = {
   id: string;
@@ -100,7 +101,7 @@ export function HeadlineEditButton({
             role="dialog"
             aria-modal="true"
             aria-label="Edit headline"
-            className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
           >
             <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
               <h2 className="text-base font-semibold tracking-tight">
@@ -116,10 +117,10 @@ export function HeadlineEditButton({
               </button>
             </div>
 
-            <form
-              onSubmit={submit}
-              className="flex flex-col gap-3 overflow-y-auto px-5 py-4"
-            >
+            {/* Fields scroll; the footer stays pinned so Save is always reachable
+                no matter how much the author writes in Detail. */}
+            <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
               <label className="block space-y-1">
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Headline
@@ -158,12 +159,13 @@ export function HeadlineEditButton({
                   Detail{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
-                <textarea
+                <RichTextEditor
                   value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  rows={4}
+                  onChange={setBody}
+                  rows={16}
                   placeholder="Detail (optional)"
-                  className="w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
+                  textareaClassName="leading-relaxed"
+                  className="dark:bg-zinc-950"
                 />
               </label>
 
@@ -172,8 +174,9 @@ export function HeadlineEditButton({
                   {error}
                 </p>
               )}
+              </div>
 
-              <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+              <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
                 <button
                   type="button"
                   onClick={() => setOpen(false)}

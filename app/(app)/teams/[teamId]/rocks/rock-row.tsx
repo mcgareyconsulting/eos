@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Archive, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
+import { RichText } from "@/components/rich-text";
+import { hasRichMarkup } from "@/lib/rich-text";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
@@ -242,14 +244,22 @@ export function RockRow({
             </dl>
 
             <div className="space-y-2.5 px-3.5 py-3">
-              {hasDescription && (
-                <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                    Description:{" "}
-                  </span>
-                  {rock.description}
-                </p>
-              )}
+              {hasDescription &&
+                (hasRichMarkup(rock.description) ? (
+                  <div className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                      Description
+                    </span>
+                    <RichText value={rock.description} className="mt-0.5" />
+                  </div>
+                ) : (
+                  <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                      Description:{" "}
+                    </span>
+                    {rock.description}
+                  </p>
+                ))}
 
               {latestNote?.comment && (
                 <div className="rounded-r-lg border-l-[3px] border-status-amber bg-[rgba(240,180,41,.10)] px-3 py-2 dark:bg-[rgba(240,180,41,.16)]">

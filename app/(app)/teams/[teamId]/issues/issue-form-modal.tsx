@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { addIssue, updateIssueMeta } from "./actions";
 import type { IssueType } from "@/lib/issues";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 type Member = { user_id: string; full_name: string };
 
@@ -254,12 +255,13 @@ export function IssueFormModal({
                   Description{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
-                <textarea
+                <RichTextEditor
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={setDescription}
                   placeholder="Decision notes, context, links…"
                   rows={8}
-                  className="min-h-[10rem] w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
+                  textareaClassName="min-h-[10rem] leading-relaxed"
+                  className="dark:bg-zinc-950"
                 />
               </label>
 

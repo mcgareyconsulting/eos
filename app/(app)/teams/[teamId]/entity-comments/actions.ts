@@ -13,8 +13,11 @@ function parentCollection(type: CommentEntityType): "issues" | "rocks" {
 }
 
 /**
- * Append a free-form comment on an issue or rock.
- * Links in the body are fine (Google Docs etc.); binary attachments are out of scope.
+ * Append a free-form comment on an issue or rock. The body may carry the same
+ * markdown subset as description fields (see lib/rich-text.ts) — bold,
+ * bullets, links — and is stored verbatim as plain text; rendering, and the
+ * https/mailto href allowlist, happen at read time. Binary attachments are
+ * still out of scope; a link to a Doc is the substitute (N10).
  */
 export async function addEntityComment(
   teamId: string,

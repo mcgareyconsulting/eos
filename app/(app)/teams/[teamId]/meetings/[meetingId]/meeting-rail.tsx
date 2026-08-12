@@ -16,6 +16,7 @@ import {
 import {
   agendaItemLabel,
   agendaSegmentList,
+  type AgendaToolType,
   durationMapFromAgenda,
   isFirstAgendaSegment,
   isLastAgendaSegment,
@@ -67,9 +68,9 @@ export function MeetingRail({
 }: {
   teamId: string;
   meetingId: string;
-  viewSegment: Segment;
+  viewSegment: AgendaToolType;
   following: boolean;
-  initialSegment: Segment;
+  initialSegment: AgendaToolType;
   initialStartedAtMs: number | null;
   /** Meeting `started_at` — fixed for the life of the meeting, so a plain
    *  prop is enough; it never needs to come off the snapshot. */
@@ -161,7 +162,7 @@ export function MeetingRail({
   // meeting — the server no longer writes that combination) renders as the
   // last stage so the transport and Finish stay on screen.
   const activeSegmentRaw = live?.segment ?? initialSegment;
-  const activeSegment: Segment = (() => {
+  const activeSegment: AgendaToolType = (() => {
     const n = normalizeSegment(activeSegmentRaw);
     if (n === "done" && !ended) {
       return agendaOrder[agendaOrder.length - 1] ?? "conclude";
@@ -228,7 +229,7 @@ export function MeetingRail({
     router.push(pathname);
     router.refresh();
   };
-  const peek = (s: Segment) =>
+  const peek = (s: AgendaToolType) =>
     s === activeSegment ? goLive() : router.push(`${pathname}?view=${s}`);
 
   // Driving the shared stage is a deliberate act — snap the driver back to live
@@ -242,9 +243,9 @@ export function MeetingRail({
       else router.push(pathname);
     });
 
-  const activeIndex = agendaOrder.indexOf(activeSegment as (typeof agendaOrder)[number]);
+  const activeIndex = agendaOrder.indexOf(activeSegment);
   const peeking = viewSegment !== activeSegment;
-  const running = !ended && activeSegment !== "done";
+  const running = !ended;
   const atFirst = isFirstAgendaSegment(agendaItems, activeSegment);
   const atLast = isLastAgendaSegment(agendaItems, activeSegment);
 

@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-11
+updated: 2026-08-12
 verified: main @ 902b37f  # prod runs 90ec7cb — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -488,10 +488,26 @@ editor (rename/reorder/durations/custom + tool sections, push-to-all-teams),
 scheduled/recurring meetings, archive-on-close semantics. Joe is surveying
 1-on-1 tool demand org-wide — if real, it feeds the template list.
 
+**Post-ship fix (2026-08-12):** the shipped code left three `TS2367`
+always-true comparisons against `"done"` in `meeting-rail.tsx` /
+`meetings/[meetingId]/page.tsx`. `AGENDA_TOOL_TYPES` deliberately excludes
+`"done"`, and both `activeSegment` / `viewSegment` route it away in their
+IIFEs, so assignment narrowing made every downstream `!== "done"` guard dead
+code. Behaviour was correct but **`next build` could not type-check**, so the
+branch was unbuildable. Fixed by encoding the invariant in the types —
+`activeSegment`, `viewSegment`, `storedSegment`, the `MeetingRail`
+`viewSegment` / `initialSegment` props and the `SegmentContent` `segment`
+prop are now `AgendaToolType` rather than `Segment` — and dropping the three
+dead guards plus one now-redundant `as` cast. The legacy stuck-meeting
+handling (stored `"done"` with no `ended_at`) is untouched: it still lives in
+the IIFEs, which is the only place it ever did the work. Live meeting,
+concluded meeting and `?view=` peek all re-verified in the sandbox.
+
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — full scope captured from the ninety.io config doc; flagged biggest single build item
 - 2026-07-29 · transcript · src roadmap-prior#pass-13 — Stephanie re-confirmed flexible templates in live use
 - 2026-07-30 · transcript · src tracker-2026-08-03#8 — Jenna: ≥4 agenda formats now, select agenda at meeting start
+- 2026-08-12 · fix · src session — 3 dead `!== "done"` comparisons broke `next build` type-check; segments retyped to `AgendaToolType` so the "done is never a viewable stage" invariant is compiler-enforced
 
 ### P3-1 · Calculated measurables + cross-team share-up
 *W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#11 · upd 2026-08-10*
@@ -512,17 +528,76 @@ uses share-up — confirm with Joe (Open question 3).
 - 2026-08-10 · note · src tracker-2026-08-03#11 — Brian's detail: sum-of-branches → leadership, editable formula, history preserved — the only new content in the 08-10 tracker re-read
 
 ### P3-2 · Rich text / links across descriptions
-*W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#15 · upd 2026-08-10*
+*W3 · in-progress · due — · deps F5 · owner daniel · src tracker-2026-08-03#15 · upd 2026-08-11*
 
-Effort M. Hyperlinks + rich text (bullets, bold) in headlines, issue
-descriptions, rock descriptions, comments (Steph #15/#22, Jenna #6 echo).
-Comments already linkify URLs (Pass 16 P2-5, React-element rendering,
-`https?://` only — audit-verified no XSS); this item is the full editor.
-Related to N10 (links on entities) — keep the two write paths coherent.
+**Core built and sandbox-verified on `feature/rich-text`** (not committed,
+not PR'd). Chosen shape: a **constrained markdown
+subset stored in the existing plain-string field** — bold, italic, bullets,
+numbered lists, `[label](url)` and bare URLs — not an HTML editor. That
+choice is the point: descriptions stay one plain string, so there is **no
+migration, no second format to read, and nothing downstream (BigQuery batch,
+Google Tasks notes, CSV export) has to learn HTML**, and the renderer keeps
+the React-element property the 2026-08-04 audit relied on — no
+`dangerouslySetInnerHTML` anywhere, so no HTML sink to sanitize.
+
+Files: `lib/rich-text.ts` (parser + `safeHref` + `richTextToPlain`, 47
+tests), `lib/rich-text-toolbar.ts` (caret transforms, 19 tests),
+`components/rich-text.tsx` (renderer, server- and client-safe),
+`components/rich-text-editor.tsx` (toolbar + ⌘B/⌘I/⌘K + Preview; works
+controlled for modals and uncontrolled for the server-action form).
+
+Wired on all four entity families — **headlines** (tab + edit modal + inline
+add form + L10 segment), **issue** descriptions (form + detail modal),
+**rock** descriptions (modal + card row + detail modal), **to-do**
+descriptions (add modal + edit drawer + list row). L10 segments inherit it
+by delegating to the same row/modal components. `href` is allowlisted to
+`https?://` / `mailto:` — a `javascript:` or quote-break-out target renders
+as literal text (verified by server-render). Google Tasks notes are
+flattened via `richTextToPlain` so `**bold**` never reaches an owner's task
+list. Marker-free text renders byte-identical markup to before.
+
+**Verified in the running app 2026-08-12** (sandbox DB, real Google sign-in):
+created + persisted + re-rendered a headline, an issue and a rock; the
+uncontrolled add-form clears both fields on submit; clicking a field label
+focuses the box instead of firing Bold; `javascript:` targets render as
+literal text in a real browser; the L10 Headlines segment and the `?view=`
+peek path both render markup. **Bonus found:** Stephanie's existing
+"Weekly Leadership updates" headline already contained `- ` bullets and a
+bare Sheets URL, so pre-existing client content renders as real lists and
+live links with no migration.
+
+Running it caught three defects unit tests could not: the bullet/number
+button was a **no-op on an empty line** (a blank line counted as
+"already marked", so the toggle stripped instead of inserted); a **no-op
+transform never returned focus** to the textarea (the effect keyed on
+`[text]`, so an unchanged value meant no re-render, no effect, and the next
+keystrokes went nowhere); and the **headline modal was far too small** for
+the volume the client writes (`max-w-lg` + 4 rows → `max-w-4xl` + 16 rows,
+with the footer pinned so Save can't scroll out of reach). All three fixed,
+first two with regression tests.
+
+**Comments unified 2026-08-12.** The links-only `linkify` in
+`entity-comments.tsx` (Pass 16 P2-5) is **deleted** — comments now use the
+same `RichText` renderer and `RichTextEditor` composer as every description
+field, so there is one markup path in the app rather than two. The editor
+gained an `onKeyDown` passthrough so the composer keeps ⌘/Ctrl+Enter-to-post
+alongside ⌘B/I/K. Verified in the app: a comment with bold, bullets and a
+link posted via ⌘Enter, rendered correctly, and a `javascript:` target stayed
+literal text.
+
+Still plain text by choice: rock status notes (`comment`), meeting notes and
+L10 rating notes. These never had a second renderer, so they are scope, not
+drift — say the word and they are a small follow-up.
+No prod exposure until F5. Related to N10 (links on entities) — one write
+path now, so keep it that way.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#15 — Steph: hyperlinks + rich text in headlines
 - 2026-08-04 · note · src audit-2026-08-04#verified-sound — existing linkify verified safe (React elements, https-only)
+- 2026-08-11 · decision · src session — markdown subset in the existing string field over a Tiptap/HTML editor: no migration, no sanitizer, no dual-format read path, and downstream consumers keep plain text
+- 2026-08-11 · build · src session — parser + toolbar + renderer + editor built and wired across headlines/issues/rocks/todos; 66 new unit tests
+- 2026-08-12 · verify · src session — driven in the running app against the sandbox DB; 3 defects found and fixed (empty-line list button, focus lost on no-op toolbar click, undersized headline modal); 68 new unit tests, 317 total green; full `next build` now passes
+- 2026-08-12 · cleanup · src session — comments folded onto the shared renderer; P2-5 `linkify` deleted, so one markup path remains; stored bodies arrive CRLF from the browser, now covered by a parser test
 
 ### U1 · Integrations nav → Settings
 *W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#17 · upd 2026-08-11*

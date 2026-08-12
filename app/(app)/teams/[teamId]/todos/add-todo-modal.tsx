@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 type Member = { user_id: string; full_name: string };
 
@@ -204,12 +205,12 @@ export function AddTodoModal({
                   Notes{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
-                <textarea
+                <RichTextEditor
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={setDescription}
                   placeholder="Add notes or context"
                   rows={3}
-                  className="w-full resize-none rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                  className="dark:bg-zinc-950"
                 />
               </label>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { RichText } from "@/components/rich-text";
 import { DetailModal } from "@/components/detail-modal";
 import { EntityComments } from "@/components/entity-comments";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
@@ -201,9 +202,10 @@ export function RockDetailModal({
 
         <SectionHeading>Description</SectionHeading>
         {hasDescription ? (
-          <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-            {rock.description}
-          </p>
+          <RichText
+            value={rock.description}
+            className="text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300"
+          />
         ) : (
           <p className="text-[13px] italic text-zinc-400">Not defined yet.</p>
         )}

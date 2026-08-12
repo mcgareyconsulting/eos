@@ -6,6 +6,7 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/dates";
 import { normalizeDescription } from "@/lib/csv-import";
+import { RichText } from "@/components/rich-text";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoDrawer } from "./edit-todo-drawer";
 import { deleteTodo, setTodoArchived } from "./actions";
@@ -169,9 +170,10 @@ export function TodoListRow({
               Description
             </h4>
             {hasDescription ? (
-              <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-                {description}
-              </p>
+              <RichText
+                value={description}
+                className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
+              />
             ) : (
               <p className="text-xs italic text-zinc-400">No description.</p>
             )}

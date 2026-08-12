@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { richTextToPlain } from "@/lib/rich-text";
 import { formatDateShort } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass } from "@/lib/due";
@@ -79,7 +80,7 @@ export function MilestoneChecklist({
                   ? "text-zinc-400 line-through dark:text-zinc-500"
                   : "text-zinc-800 dark:text-zinc-200",
               )}
-              title={m.description ?? undefined}
+              title={richTextToPlain(m.description) || undefined}
             >
               {m.title}
             </span>

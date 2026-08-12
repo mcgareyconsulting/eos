@@ -281,7 +281,7 @@ export default async function RocksPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-sm">
+          <div className="inline-flex items-center rounded-[9px] bg-zinc-100 p-[3px] text-sm dark:bg-zinc-800">
             <Link
               href={
                 ownerQuery
@@ -290,8 +290,8 @@ export default async function RocksPage({
               }
               className={
                 !showArchived
-                  ? "rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                  : "rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  ? "rounded-[7px] bg-white px-3 py-[5px] font-bold text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
+                  : "rounded-[7px] px-3 py-[5px] font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               }
             >
               Active ({activeRockCount})
@@ -304,8 +304,8 @@ export default async function RocksPage({
               }
               className={
                 showArchived
-                  ? "inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                  : "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  ? "inline-flex items-center gap-1.5 rounded-[7px] bg-white px-3 py-[5px] font-bold text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
+                  : "inline-flex items-center gap-1.5 rounded-[7px] px-3 py-[5px] font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               }
             >
               <Archive className="h-3.5 w-3.5" />
@@ -342,7 +342,7 @@ export default async function RocksPage({
         </RockSection>
       ) : (
         sections.map((g) => (
-          <RockSection key={g.key} title={`${g.title} (${g.rocks.length})`}>
+          <RockSection key={g.key} title={g.title} count={g.rocks.length}>
             {g.rocks.map((r) => (
               <RockRow
                 key={r.id}
@@ -371,15 +371,20 @@ export default async function RocksPage({
 
 function RockSection({
   title,
+  count,
   children,
 }: {
   title: string;
+  count?: number;
   children: React.ReactNode;
 }) {
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
         {title}
+        {count != null ? (
+          <span className="font-bold text-zinc-400"> ({count})</span>
+        ) : null}
       </h2>
       <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {children}

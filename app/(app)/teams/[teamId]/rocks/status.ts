@@ -11,14 +11,46 @@ export const STATUS_LABELS: Record<RockStatus, string> = {
   cancelled: "Cancelled",
 };
 
+/** Shared pill chrome — pair with STATUS_STYLES for tint/text/ring. */
+export const STATUS_PILL_BASE =
+  "inline-flex items-center rounded-full px-2.5 h-[22px] text-[11px] font-extrabold ring-1 ring-inset";
+
+// Tint / text / ring with better contrast than brand green/brown on light tint.
 export const STATUS_STYLES: Record<RockStatus, string> = {
   on_track:
-    "bg-hpb-green/10 dark:bg-hpb-green/15 text-hpb-green dark:text-hpb-green ring-hpb-green/30",
+    "bg-[rgba(44,179,74,.10)] text-[#177a3d] ring-[rgba(44,179,74,.35)] dark:bg-[rgba(44,179,74,.15)] dark:text-hpb-green dark:ring-[rgba(44,179,74,.45)]",
   off_track:
-    "bg-hpb-gold/15 dark:bg-hpb-gold/20 text-hpb-brown dark:text-hpb-gold ring-hpb-gold/40",
-  done: "bg-hpb-blue/10 dark:bg-hpb-blue/20 text-hpb-blue dark:text-white ring-hpb-blue/30",
+    "bg-[rgba(240,180,41,.16)] text-[#8a5a10] ring-[rgba(240,180,41,.55)] dark:bg-[rgba(240,180,41,.24)] dark:text-status-amber dark:ring-[rgba(240,180,41,.55)]",
+  done: "bg-[rgba(0,51,160,.08)] text-hpb-blue ring-[rgba(0,51,160,.30)] dark:bg-[rgba(0,51,160,.20)] dark:text-white dark:ring-[rgba(0,51,160,.40)]",
   cancelled:
-    "bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 ring-zinc-200 dark:ring-zinc-700",
+    "bg-zinc-50 text-zinc-600 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-700",
+};
+
+/** Full-width banner tint + bottom border (detail modal). */
+export const STATUS_BANNER: Record<
+  RockStatus,
+  { bg: string; border: string; text: string }
+> = {
+  on_track: {
+    bg: "bg-[rgba(44,179,74,.10)] dark:bg-[rgba(44,179,74,.15)]",
+    border: "border-[rgba(44,179,74,.35)]",
+    text: "text-[#177a3d] dark:text-hpb-green",
+  },
+  off_track: {
+    bg: "bg-[rgba(240,180,41,.16)] dark:bg-[rgba(240,180,41,.24)]",
+    border: "border-[rgba(240,180,41,.55)]",
+    text: "text-[#8a5a10] dark:text-status-amber",
+  },
+  done: {
+    bg: "bg-[rgba(0,51,160,.08)] dark:bg-[rgba(0,51,160,.20)]",
+    border: "border-[rgba(0,51,160,.30)]",
+    text: "text-hpb-blue dark:text-white",
+  },
+  cancelled: {
+    bg: "bg-zinc-50 dark:bg-zinc-900",
+    border: "border-zinc-200 dark:border-zinc-700",
+    text: "text-zinc-600 dark:text-zinc-400",
+  },
 };
 
 export function isRockStatus(v: string): v is RockStatus {
@@ -29,7 +61,7 @@ export function isRockStatus(v: string): v is RockStatus {
 // Same semantics as STATUS_STYLES, but a single opaque fill.
 export const STATUS_BAR: Record<RockStatus, string> = {
   on_track: "bg-hpb-green",
-  off_track: "bg-hpb-gold",
+  off_track: "bg-status-amber",
   done: "bg-hpb-blue",
   cancelled: "bg-zinc-300 dark:bg-zinc-700",
 };

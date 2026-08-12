@@ -60,9 +60,9 @@ export function NewRockButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+        className="inline-flex items-center gap-1.5 rounded-[9px] bg-hpb-blue px-3 py-[7px] text-[12.5px] font-extrabold text-white hover:bg-[#00257a] focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="h-4 w-4" strokeWidth={2.5} />
         New Rock
       </button>
       {open && (

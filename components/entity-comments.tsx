@@ -178,36 +178,37 @@ export function EntityComments({
         </ul>
       )}
 
-      <div className="space-y-2">
-        <RichTextEditor
-          value={body}
-          onChange={setBody}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          rows={2}
-          placeholder="Add a comment… (⌘/Ctrl+Enter to post)"
-        />
-        <div className="flex items-center justify-between gap-2">
-          {error ? (
-            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
-          ) : (
-            <span className="text-[10px] text-zinc-400">
-              Formatting supported · links open in a new tab
-            </span>
-          )}
+      <div className="space-y-1.5">
+        <div className="flex items-end gap-2">
+          <RichTextEditor
+            value={body}
+            onChange={setBody}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            rows={2}
+            placeholder="Add a comment…"
+            className="w-full flex-1 rounded-[10px] focus-within:border-hpb-blue focus-within:shadow-[0_0_0_3px_rgba(0,51,160,.10)] focus-within:ring-0 dark:focus-within:border-hpb-blue"
+          />
           <button
             type="button"
             onClick={submit}
             disabled={pending || !body.trim()}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="h-10 shrink-0 rounded-[10px] bg-hpb-blue px-4 text-[12.5px] font-extrabold text-white hover:bg-[#00257a] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "Posting…" : "Post comment"}
+            {pending ? "Posting…" : "Post"}
           </button>
         </div>
+        {error ? (
+          <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+        ) : (
+          <p className="text-[11px] text-zinc-400">
+            Formatting supported · links open in a new tab · ⌘/Ctrl+Enter
+          </p>
+        )}
       </div>
     </section>
   );

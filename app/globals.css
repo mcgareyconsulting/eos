@@ -23,6 +23,8 @@
   --color-hpb-gold: #ffc845;
   --color-hpb-green: #2cb34a;
   --color-hpb-brown: #603813;
+  /* Warning amber for Off Track (gold is brand, not urgency). */
+  --color-status-amber: #f0b429;
 }
 
 body {

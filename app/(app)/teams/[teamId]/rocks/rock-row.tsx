@@ -43,13 +43,8 @@ type Rock = {
 type Member = { user_id: string; full_name: string };
 
 /**
- * Collapsed row: status as a 3px rail + pill, owner · quarter · milestone
- * progress on one meta line, due date with a relative-days label.
- *
- * Expanded: a compact summary strip (owner / quarter / due / milestones), the
- * success criterion, the LATEST status note only, and a tickable milestone
- * checklist. The full status history and every editing affordance live in the
- * detail modal / RockModal — that split is what de-clutters the expand.
+ * Collapsed row: status rail + pill, owner · quarter · milestone progress,
+ * due date with relative label. Expanded panel indented under the title.
  */
 export function RockRow({
   teamId,
@@ -85,8 +80,6 @@ export function RockRow({
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
   const remove = deleteRock.bind(null, teamId, rock.id);
-  // Same field the Monday auto-archive sweep sets — a manually archived rock
-  // is indistinguishable from one the sweep moved (see setRockArchived).
   const archivedRow = rock.archived_at != null;
   const toggleArchive = setRockArchived.bind(null, teamId, rock.id, !archivedRow);
 
@@ -146,15 +139,15 @@ export function RockRow({
               <span className="truncate">{displayOwner}</span>
               <span className="text-zinc-300 dark:text-zinc-600">·</span>
               <span className="tabular-nums">{rock.quarter || "—"}</span>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
               {milestones.length > 0 ? (
-                <MilestoneProgress
-                  milestones={milestones}
-                  barClass={STATUS_BAR[status]}
-                />
-              ) : (
-                <span className="italic text-zinc-400">no milestones</span>
-              )}
+                <>
+                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                  <MilestoneProgress
+                    milestones={milestones}
+                    barClass={STATUS_BAR[status]}
+                  />
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -165,10 +158,17 @@ export function RockRow({
             <div
               className={cn(
                 "text-[10.5px] font-semibold",
-                dueToneClass(rock.due_date, status === "done" || status === "cancelled"),
+                dueToneClass(
+                  rock.due_date,
+                  status === "done" || status === "cancelled",
+                ),
               )}
             >
-              {relativeDueLabel(rock.due_date)}
+              {relativeDueLabel(
+                rock.due_date,
+                new Date(),
+                status === "done" || status === "cancelled",
+              )}
             </div>
           </div>
 
@@ -185,13 +185,14 @@ export function RockRow({
               defaultDue={defaultDue}
               currentUserId={currentUserId}
               teamName={teamName}
+              className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
             />
             <form action={toggleArchive}>
               <button
                 type="submit"
                 aria-label={archivedRow ? "Restore rock" : "Archive rock"}
                 title={archivedRow ? "Restore" : "Archive now"}
-                className="rounded p-1 text-zinc-200 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-700 dark:hover:text-zinc-200"
+                className="rounded p-1 text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
               >
                 <Archive className="h-[15px] w-[15px]" />
               </button>
@@ -204,7 +205,7 @@ export function RockRow({
                 <button
                   type="submit"
                   aria-label="Delete rock"
-                  className="rounded p-1 text-zinc-200 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-700"
+                  className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
                 >
                   <Trash2 className="h-[15px] w-[15px]" />
                 </button>
@@ -214,7 +215,7 @@ export function RockRow({
         </div>
 
         {expanded && (
-          <div className="mt-2.5 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
+          <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
             <dl className="flex flex-wrap border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               <Fact label="Owner">{displayOwner}</Fact>
               <Fact label="Quarter">{rock.quarter || "—"}</Fact>
@@ -228,7 +229,11 @@ export function RockRow({
                     dueToneClass(rock.due_date, status === "done"),
                   )}
                 >
-                  {relativeDueLabel(rock.due_date)}
+                  {relativeDueLabel(
+                    rock.due_date,
+                    new Date(),
+                    status === "done",
+                  )}
                 </span>
               </Fact>
               <Fact label="Milestones" last>
@@ -257,8 +262,8 @@ export function RockRow({
                 ))}
 
               {latestNote?.comment && (
-                <div className="rounded-r-md border-l-[3px] border-hpb-gold bg-hpb-gold/10 px-2.5 py-1.5">
-                  <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-hpb-brown dark:text-hpb-gold">
+                <div className="rounded-r-lg border-l-[3px] border-status-amber bg-[rgba(240,180,41,.10)] px-3 py-2 dark:bg-[rgba(240,180,41,.16)]">
+                  <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#8a5a10] dark:text-status-amber">
                     Latest status note
                   </div>
                   <p className="mt-0.5 text-[12.5px] leading-snug text-zinc-700 dark:text-zinc-300">
@@ -291,7 +296,7 @@ export function RockRow({
                   ownerName={displayOwner}
                   milestones={detailMilestones}
                   statusHistory={statusHistory}
-                  className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
                   Full detail &amp; status history →
                 </RockDetailTrigger>
@@ -320,7 +325,7 @@ function AddMilestoneLink(props: {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-xs font-semibold text-hpb-blue hover:brightness-110 dark:text-hpb-gold"
+        className="inline-flex items-center gap-1 text-xs font-extrabold text-hpb-blue hover:brightness-110 dark:text-hpb-gold"
       >
         <Plus className="h-3 w-3" strokeWidth={2.4} />
         Add milestone

@@ -1,11 +1,44 @@
 import Link from "next/link";
-import { daysUntil, formatDateOnly, isDueWithinDays } from "@/lib/dates";
+import { Lock } from "lucide-react";
+import { formatDateShort } from "@/lib/dates";
+import { dueToneClass } from "@/lib/due";
 import { chunkForInQuery } from "@/lib/firestore-in";
-import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
-import { Circle, Flag, Lock, Target } from "lucide-react";
+import {
+  byDueDateAsc,
+  homeRockPillKind,
+  rockHasMyOpenMilestone,
+  selectHomeTodos,
+  selectMilestonesForRocks,
+  shouldShowHomeRock,
+  todoVisibilityLabel,
+} from "@/lib/home-board";
+import {
+  statusSortRank,
+  trendStatus,
+  type GoalDirection,
+} from "@/lib/scorecard";
+import {
+  entriesToRecord,
+  loadScorecardEntries,
+} from "@/lib/scorecard-entries";
+import {
+  buildScorecardColumns,
+  normalizeMetricInterval,
+  oldestPeriodStart,
+  PERIOD_LABELS,
+  type MetricInterval,
+} from "@/lib/scorecard-periods";
 import { EmptyState } from "@/components/empty-state";
-import { StatusBadge } from "@/components/status-badge";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import {
+  HomeRocksList,
+  type HomeRockListItem,
+} from "./home-rocks-list";
+import {
+  HomeMetricsList,
+  type HomeMetricListItem,
+} from "./home-metrics-list";
+import { cn } from "@/lib/utils";
 
 type TodoRow = {
   id: string;
@@ -26,63 +59,90 @@ type RockRow = {
   quarter: string;
   owner_id: string | null;
   team_id: string;
+  rock_type?: string | null;
   archived_at?: unknown | null;
+  shared_team_ids?: string[] | null;
+};
+
+type MetricRow = {
+  id: string;
+  team_id: string;
+  name: string;
+  unit: string;
+  goal: number | null;
+  direction: GoalDirection;
+  owner_id: string | null;
+  sort_order: number;
+  interval: MetricInterval;
 };
 
 export default async function HomePage() {
   const { user, teams, membershipTeamIds, isAdmin, db } =
     await getUserTeamsFirebase();
-  // Home aggregates data the user can open: memberships, or all teams for admin.
-  const teamIds = teams.map((t) => t.id);
 
-  // Firestore `in` caps at 30 values and each query at 30 disjunctions, so
-  // every team_id list goes through chunkForInQuery (same pattern as
-  // lib/scorecard-entries.ts). Chunks are empty when the user has no teams,
-  // so each Promise.all resolves to [].
-  const teamChunks = chunkForInQuery(teamIds);
+  // Prefer real memberships for "my teams"; admins with no roster see nothing
+  // personal (won't happen in prod). Fall back to navigable teams if needed.
+  const myTeamIdsList =
+    membershipTeamIds.length > 0 ? membershipTeamIds : teams.map((t) => t.id);
+  const myTeamIds = new Set(myTeamIdsList);
+  const teamChunks = chunkForInQuery(myTeamIdsList);
 
-  const [todoSnaps, rockSnaps, memberSnaps] = await Promise.all([
-    // Open todos for the viewer's teams. Admin SDK can read everything; we
-    // filter private rows in memory below (owner only). Prefer one query with
-    // the existing team_id+completed_at composite over dual visibility queries
-    // that need a 4-field index (team_id+completed_at+visibility+owner_id)
-    // which is easy to miss in deploy — that gap dropped *all* private
-    // to-dos from Home while Google Tasks still received them on write.
-    Promise.all(
-      teamChunks.map((ids) =>
-        db
-          .collection("todos")
-          .where("team_id", "in", ids)
-          .where("completed_at", "==", null)
-          .get(),
-      ),
-    ),
-    // Rocks: `team_id in` × `status in [2 values]` would multiply to 2× the
-    // chunk size in disjunctions (over the 30 cap at 16+ teams), so run one
-    // query per (chunk, status) pair instead.
-    Promise.all(
-      teamChunks.flatMap((ids) =>
-        ["on_track", "off_track"].map((status) =>
+  const [todoSnaps, rockSnaps, sharedRockSnaps, memberSnaps, myMetricsSnap] =
+    await Promise.all([
+      // Open todos for the viewer's teams. Admin SDK can read everything; we
+      // filter private rows in memory below (owner only). Prefer one query with
+      // the existing team_id+completed_at composite over dual visibility queries
+      // that need a 4-field index (team_id+completed_at+visibility+owner_id)
+      // which is easy to miss in deploy — that gap dropped *all* private
+      // to-dos from Home while Google Tasks still received them on write.
+      Promise.all(
+        teamChunks.map((ids) =>
           db
-            .collection("rocks")
+            .collection("todos")
             .where("team_id", "in", ids)
-            .where("status", "==", status)
+            .where("completed_at", "==", null)
             .get(),
         ),
       ),
-    ),
-    Promise.all(
-      teamChunks.map((ids) =>
-        db.collection("team_members").where("team_id", "in", ids).get(),
+      // Rocks: `team_id in` × `status in [2 values]` would multiply to 2× the
+      // chunk size in disjunctions (over the 30 cap at 16+ teams), so run one
+      // query per (chunk, status) pair instead.
+      Promise.all(
+        teamChunks.flatMap((ids) =>
+          ["on_track", "off_track"].map((status) =>
+            db
+              .collection("rocks")
+              .where("team_id", "in", ids)
+              .where("status", "==", status)
+              .get(),
+          ),
+        ),
       ),
-    ),
-  ]);
+      // Rocks shared *into* my teams (field optional; empty until share ships).
+      // Status filtered in memory so we only need the array-contains index.
+      Promise.all(
+        myTeamIdsList.map((teamId) =>
+          db
+            .collection("rocks")
+            .where("shared_team_ids", "array-contains", teamId)
+            .get(),
+        ),
+      ),
+      Promise.all(
+        teamChunks.map((ids) =>
+          db.collection("team_members").where("team_id", "in", ids).get(),
+        ),
+      ),
+      // Personal scorecard metrics I own (any team).
+      db.collection("scorecard_metrics").where("owner_id", "==", user.id).get(),
+    ]);
 
-  // Hydrate display names for every teammate across the user's teams. One
-  // batched getAll() — no per-row N+1.
   const memberUids = new Set<string>(
     memberSnaps.flatMap((s) => s.docs.map((d) => d.data().user_id as string)),
   );
+  // Always resolve current user for pill labels.
+  memberUids.add(user.id);
+
   const nameByUserId = new Map<string, string>();
   if (memberUids.size > 0) {
     const userDocs = await db.getAll(
@@ -116,106 +176,329 @@ export default async function HomePage() {
       if (t.visibility === "private") return t.owner_id === user.id;
       return true;
     }) as TodoRow[];
-  const rocks = rockSnaps.flatMap((snap) =>
-    snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RockRow, "id">) })),
-  ) as RockRow[];
 
-  // due_date asc, nulls last
-  const byDue = <T extends { due_date: string | null }>(a: T, b: T) => {
-    if (!a.due_date && !b.due_date) return 0;
-    if (!a.due_date) return 1;
-    if (!b.due_date) return -1;
-    return a.due_date.localeCompare(b.due_date);
-  };
-  todos.sort(byDue);
-  rocks.sort(byDue);
-
-  const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
-  const rockTitleById = new Map(rocks.map((r) => [r.id, r.title]));
-
-  const mineFirst = <T extends { owner_id: string | null }>(rows: T[]) =>
-    [...rows].sort(
-      (a, b) => Number(b.owner_id === user.id) - Number(a.owner_id === user.id),
-    );
-
-  // Split: pure to-dos (no parent rock) vs milestones (linked to a rock and
-  // owned by the current user). Prevents double-counting in the to-dos section.
-  const pureTodos = todos.filter((t) => !t.source_rock_id);
-
-  // The rocks fetch above only pulls on_track/off_track rocks, so a
-  // done/cancelled/archived rock behind one of my milestones won't be in
-  // `rocks`. Fetch those specific rock docs (by id, not another status
-  // query) so stale milestones can be filtered out below — old May
-  // milestones under a long-finished rock shouldn't haunt Home forever.
-  const myMilestoneRockIds = new Set(
-    todos
-      .filter((t) => t.source_rock_id && t.owner_id === user.id)
-      .map((t) => t.source_rock_id as string),
-  );
-  const knownRockIds = new Set(rocks.map((r) => r.id));
-  const unknownRockIds = [...myMilestoneRockIds].filter(
-    (id) => !knownRockIds.has(id),
-  );
-  const extraRockDocs = unknownRockIds.length
-    ? await db.getAll(
-        ...unknownRockIds.map((id) => db.collection("rocks").doc(id)),
-      )
-    : [];
-
-  const rockStatusById = new Map<
-    string,
-    { status: string | null; archived_at: unknown }
-  >();
-  for (const r of rocks) {
-    rockStatusById.set(r.id, {
-      status: r.status,
-      archived_at: r.archived_at ?? null,
-    });
+  const rockById = new Map<string, RockRow>();
+  for (const snap of rockSnaps) {
+    for (const d of snap.docs) {
+      rockById.set(d.id, {
+        id: d.id,
+        ...(d.data() as Omit<RockRow, "id">),
+      });
+    }
   }
-  for (const d of extraRockDocs) {
-    if (!d.exists) continue;
-    const x = d.data() ?? {};
-    rockStatusById.set(d.id, {
-      status: (x.status as string) ?? null,
-      archived_at: x.archived_at ?? null,
-    });
-    if (typeof x.title === "string" && x.title) {
-      rockTitleById.set(d.id, x.title);
+  for (const snap of sharedRockSnaps) {
+    for (const d of snap.docs) {
+      if (rockById.has(d.id)) continue;
+      const row = {
+        id: d.id,
+        ...(d.data() as Omit<RockRow, "id">),
+      };
+      // Shared query is unfiltered by status; drop inactive here.
+      if (row.status !== "on_track" && row.status !== "off_track") continue;
+      if (row.archived_at != null) continue;
+      rockById.set(d.id, row);
     }
   }
 
-  const myMilestones = todos.filter(
-    (t) =>
-      t.source_rock_id &&
-      t.owner_id === user.id &&
-      !isMilestoneHiddenByRock(
-        t.source_rock_id ? rockStatusById.get(t.source_rock_id) : null,
+  // Rocks I only see via milestone assignment may live on teams already in
+  // rockById; if not, fetch by id from my open milestones.
+  const myMilestoneRockIds = [
+    ...new Set(
+      todos
+        .filter((t) => t.source_rock_id && t.owner_id === user.id)
+        .map((t) => t.source_rock_id as string),
+    ),
+  ];
+  const missingRockIds = myMilestoneRockIds.filter((id) => !rockById.has(id));
+  if (missingRockIds.length > 0) {
+    const extra = await db.getAll(
+      ...missingRockIds.map((id) => db.collection("rocks").doc(id)),
+    );
+    for (const d of extra) {
+      if (!d.exists) continue;
+      rockById.set(d.id, {
+        id: d.id,
+        ...(d.data() as Omit<RockRow, "id">),
+      });
+      const ownerId = d.data()?.owner_id as string | null | undefined;
+      if (ownerId && !nameByUserId.has(ownerId)) {
+        memberUids.add(ownerId);
+      }
+    }
+    // Hydrate any newly discovered rock owners.
+    const needNames = [...memberUids].filter((id) => !nameByUserId.has(id));
+    if (needNames.length > 0) {
+      const more = await db.getAll(
+        ...needNames.map((id) => db.collection("users").doc(id)),
+      );
+      for (const d of more) {
+        if (!d.exists) continue;
+        const data = d.data() ?? {};
+        const name =
+          (data.display_name as string) ||
+          [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
+          (data.email as string) ||
+          "";
+        if (name) nameByUserId.set(d.id, name);
+      }
+    }
+  }
+
+  // Team names: membership teams + any parent team on a rock we show.
+  const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
+  const unknownTeamIds = [...rockById.values()]
+    .map((r) => r.team_id)
+    .filter((id) => id && !teamNameById.has(id));
+  if (unknownTeamIds.length > 0) {
+    const teamDocs = await db.getAll(
+      ...[...new Set(unknownTeamIds)].map((id) =>
+        db.collection("teams").doc(id),
       ),
+    );
+    for (const d of teamDocs) {
+      if (!d.exists) continue;
+      teamNameById.set(d.id, (d.data()?.name as string) ?? "Team");
+    }
+  }
+
+  const rocks = [...rockById.values()];
+  const rockStatusById = new Map(
+    rocks.map((r) => [
+      r.id,
+      { status: r.status, archived_at: r.archived_at ?? null },
+    ]),
   );
 
-  // Further split milestones by due date: milestones due within 7 days (or
-  // overdue) appear in Active To-Dos; others stay in Rock Milestones.
-  // Use local-midnight parsing — bare `new Date("YYYY-MM-DD")` is UTC and
-  // can mis-bucket near timezone edges (P0-4).
-  const dueSoonMilestones = myMilestones.filter((m) =>
-    isDueWithinDays(m.due_date, 7),
+  // Open milestones on known rocks (for expand + my-milestone inclusion).
+  const openMilestones = selectMilestonesForRocks(
+    todos.filter((t) => t.source_rock_id) as TodoRow[],
+    rockStatusById,
   );
 
-  const futureMilestones = myMilestones.filter(
-    (m) => !isDueWithinDays(m.due_date, 7),
+  // Candidate rocks for Home (before loading full milestone counts).
+  const shownCandidateIds = new Set<string>();
+  for (const r of rocks) {
+    const mine = rockHasMyOpenMilestone(r.id, openMilestones, user.id);
+    if (
+      shouldShowHomeRock(r, {
+        uid: user.id,
+        myTeamIds,
+        hasMyOpenMilestone: mine,
+      })
+    ) {
+      shownCandidateIds.add(r.id);
+    }
+  }
+
+  // All milestones (open + completed) for shown rocks — progress fractions
+  // need done/total; expand lists open ones only.
+  const allMsByRock = new Map<
+    string,
+    Array<TodoRow & { completed: boolean }>
+  >();
+  if (shownCandidateIds.size > 0) {
+    const msSnaps = await Promise.all(
+      [...shownCandidateIds].map((rockId) =>
+        db.collection("todos").where("source_rock_id", "==", rockId).get(),
+      ),
+    );
+    let i = 0;
+    for (const rockId of shownCandidateIds) {
+      const snap = msSnaps[i++]!;
+      const list: Array<TodoRow & { completed: boolean }> = [];
+      for (const d of snap.docs) {
+        const data = d.data() as Omit<TodoRow, "id">;
+        list.push({
+          id: d.id,
+          ...data,
+          completed: data.completed_at != null,
+        });
+        if (data.owner_id) memberUids.add(data.owner_id);
+      }
+      list.sort(byDueDateAsc);
+      allMsByRock.set(rockId, list);
+    }
+    // Resolve any milestone owners not already named.
+    const needNames = [...memberUids].filter((id) => !nameByUserId.has(id));
+    if (needNames.length > 0) {
+      const more = await db.getAll(
+        ...needNames.map((id) => db.collection("users").doc(id)),
+      );
+      for (const d of more) {
+        if (!d.exists) continue;
+        const data = d.data() ?? {};
+        const name =
+          (data.display_name as string) ||
+          [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
+          (data.email as string) ||
+          "";
+        if (name) nameByUserId.set(d.id, name);
+      }
+    }
+  }
+
+  // Open milestones for expand: prefer full-fetch rows; fall back to team query.
+  const openMsByRock = new Map<string, Array<TodoRow & { completed: boolean }>>();
+  for (const [rid, list] of allMsByRock) {
+    openMsByRock.set(
+      rid,
+      list.filter((m) => !m.completed),
+    );
+  }
+  for (const m of openMilestones) {
+    const rid = m.source_rock_id as string;
+    if (!rid || allMsByRock.has(rid)) continue;
+    const list = openMsByRock.get(rid) ?? [];
+    list.push({ ...m, completed: false });
+    openMsByRock.set(rid, list);
+  }
+  for (const list of openMsByRock.values()) {
+    list.sort(byDueDateAsc);
+  }
+
+  const myTodos = selectHomeTodos(todos, user.id).sort(byDueDateAsc);
+
+  const homeRocks: RockRow[] = rocks
+    .filter((r) =>
+      shouldShowHomeRock(r, {
+        uid: user.id,
+        myTeamIds,
+        hasMyOpenMilestone: rockHasMyOpenMilestone(
+          r.id,
+          openMilestones,
+          user.id,
+        ),
+      }),
+    )
+    .sort(byDueDateAsc);
+
+  const rockItems: HomeRockListItem[] = homeRocks.map((r) => {
+    const kind = homeRockPillKind(r);
+    const teamName = teamNameById.get(r.team_id) ?? "Team";
+    // Owner column: "You" / person name / team name for department rocks.
+    let ownerLabel: string;
+    if (kind === "team") {
+      ownerLabel = teamName;
+    } else if (r.owner_id === user.id) {
+      ownerLabel = "You";
+    } else {
+      ownerLabel =
+        (r.owner_id && nameByUserId.get(r.owner_id)) || "Unknown owner";
+    }
+
+    const allMs = allMsByRock.get(r.id) ?? [];
+    const openMs = openMsByRock.get(r.id) ?? allMs.filter((m) => !m.completed);
+    const milestoneTotal = allMs.length;
+    const milestoneDone = allMs.filter((m) => m.completed).length;
+
+    return {
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      due_date: r.due_date,
+      quarter: r.quarter || "",
+      team_id: r.team_id,
+      href: `/teams/${r.team_id}/rocks`,
+      ownerLabel,
+      milestoneDone,
+      milestoneTotal,
+      milestones: openMs.map((m) => {
+        const isMine = m.owner_id === user.id;
+        return {
+          id: m.id,
+          title: m.title,
+          due_date: m.due_date,
+          isMine,
+          ownerLabel: isMine
+            ? "You"
+            : (m.owner_id && nameByUserId.get(m.owner_id)) || "—",
+        };
+      }),
+    };
+  });
+
+  // Personal scorecard: metrics I own on teams I can open.
+  const myMetrics: MetricRow[] = myMetricsSnap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        team_id: (x.team_id as string) ?? "",
+        name: (x.name as string) ?? "Metric",
+        unit: (x.unit as string) ?? "number",
+        goal: (x.goal as number | null) ?? null,
+        direction: (x.direction as GoalDirection) ?? "gte",
+        owner_id: (x.owner_id as string | null) ?? null,
+        sort_order: (x.sort_order as number) ?? 0,
+        interval: normalizeMetricInterval(x.interval as string | null),
+      };
+    })
+    .filter((m) => m.team_id && myTeamIds.has(m.team_id));
+
+  // Ensure team names for metric teams (usually already loaded).
+  const metricTeamMissing = myMetrics
+    .map((m) => m.team_id)
+    .filter((id) => !teamNameById.has(id));
+  if (metricTeamMissing.length > 0) {
+    const teamDocs = await db.getAll(
+      ...[...new Set(metricTeamMissing)].map((id) =>
+        db.collection("teams").doc(id),
+      ),
+    );
+    for (const d of teamDocs) {
+      if (!d.exists) continue;
+      teamNameById.set(d.id, (d.data()?.name as string) ?? "Team");
+    }
+  }
+
+  const entryOldest = [
+    oldestPeriodStart("weekly", 13),
+    oldestPeriodStart("monthly", 12),
+    oldestPeriodStart("quarterly", 8),
+    oldestPeriodStart("annual", 5),
+  ].sort()[0]!;
+
+  const entryRecord = entriesToRecord(
+    await loadScorecardEntries(
+      db,
+      myMetrics.map((m) => m.id),
+      entryOldest,
+    ),
   );
 
-  // Combine pure todos with due-soon milestones for the Active To-Dos section
-  const allActiveTodos = [...pureTodos, ...dueSoonMilestones];
-  const sortedActiveTodos = mineFirst(allActiveTodos.sort(byDue));
-  const sortedRocks = mineFirst(rocks);
+  const metricItems: HomeMetricListItem[] = myMetrics.map((m) => {
+    const columns = buildScorecardColumns(m.interval, undefined, 13);
+    const values = columns.map(
+      (c) => entryRecord[`${m.id}__${c.id}`] ?? null,
+    );
+    const status = trendStatus(values, m.goal, m.direction);
+    return {
+      id: m.id,
+      name: m.name,
+      teamName: teamNameById.get(m.team_id) ?? "Team",
+      unit: m.unit,
+      goal: m.goal,
+      direction: m.direction,
+      intervalLabel: PERIOD_LABELS[m.interval],
+      columns,
+      values,
+      status,
+    };
+  });
 
-  const showMilestones = futureMilestones.length > 0;
+  metricItems.sort(
+    (a, b) =>
+      statusSortRank(a.status) - statusSortRank(b.status) ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Your to-dos, rocks, and scorecard metrics across teams.
+        </p>
         {membershipTeamIds.length === 0 && !isAdmin && (
           <p className="mt-2 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
             You&apos;re not on a team yet, so there are no rocks or to-dos here.{" "}
@@ -235,119 +518,59 @@ export default async function HomePage() {
         )}
       </header>
 
-      {/*
-        My-90 style board: 1 col mobile → 2 cols from lg → 3 when milestones
-        are present (xl). Cards scroll independently so a long list doesn't
-        push the rest off-screen.
-      */}
-      <div
-        className={
-          "grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start " +
-          (showMilestones ? "xl:grid-cols-3" : "")
-        }
-      >
-        <HomeColumn
-          title="Active To-Dos"
-          count={sortedActiveTodos.length}
-        >
-          {sortedActiveTodos.length === 0 && <Empty>No open to-dos.</Empty>}
-          {sortedActiveTodos.map((t) => {
-            const isMilestone = Boolean(t.source_rock_id);
-            return (
-              <HomeRow
-                key={t.id}
-                href={`/teams/${t.team_id}/${isMilestone ? "rocks" : "todos"}`}
-                icon={
-                  isMilestone ? (
-                    <Flag className="h-4 w-4 shrink-0 text-zinc-500" />
-                  ) : (
-                    <Circle className="h-4 w-4 shrink-0 text-zinc-300" />
-                  )
-                }
-                title={t.title}
-                subtitle={
-                  isMilestone
-                    ? (rockTitleById.get(t.source_rock_id ?? "") ?? "—")
-                    : null
-                }
-                meta={
-                  <>
-                    {!isMilestone && t.visibility === "private" && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                        <Lock className="h-3 w-3" aria-hidden />
-                        Private
-                      </span>
-                    )}
-                    {!isMilestone && (
-                      <OwnerLabel
-                        isMine={t.owner_id === user.id}
-                        name={
-                          t.owner_id
-                            ? (nameByUserId.get(t.owner_id) ?? null)
-                            : null
-                        }
-                      />
-                    )}
-                    <TeamLabel name={teamNameById.get(t.team_id) ?? ""} />
-                    <DueLabel due={t.due_date} />
-                  </>
-                }
-              />
-            );
-          })}
-        </HomeColumn>
-
-        <HomeColumn title="Active Rocks" count={sortedRocks.length}>
-          {sortedRocks.length === 0 && <Empty>No active rocks.</Empty>}
-          {sortedRocks.map((r) => (
-            <HomeRow
-              key={r.id}
-              href={`/teams/${r.team_id}/rocks`}
-              icon={<Target className="h-4 w-4 shrink-0 text-zinc-500" />}
-              title={r.title}
-              subtitle={r.quarter || null}
-              meta={
-                <>
-                  <OwnerLabel
-                    isMine={r.owner_id === user.id}
-                    name={
-                      r.owner_id
-                        ? (nameByUserId.get(r.owner_id) ?? null)
-                        : null
-                    }
-                  />
-                  <TeamLabel name={teamNameById.get(r.team_id) ?? ""} />
-                  <StatusBadge status={r.status} />
-                </>
-              }
-            />
-          ))}
-        </HomeColumn>
-
-        {showMilestones && (
-          <HomeColumn
-            title="Rock Milestones"
-            count={futureMilestones.length}
-          >
-            {mineFirst(futureMilestones).map((m) => (
-              <HomeRow
-                key={m.id}
-                href={`/teams/${m.team_id}/rocks`}
-                icon={<Flag className="h-4 w-4 shrink-0 text-zinc-500" />}
-                title={m.title}
-                subtitle={rockTitleById.get(m.source_rock_id ?? "") ?? "—"}
-                meta={
-                  <>
-                    <TeamLabel name={teamNameById.get(m.team_id) ?? ""} />
-                    <DueLabel due={m.due_date} />
-                  </>
-                }
-              />
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2.8fr)] lg:items-start">
+          <HomeColumn title="To-Dos" count={myTodos.length}>
+            {myTodos.length === 0 && <Empty>No open to-dos of yours.</Empty>}
+            {myTodos.map((t) => (
+              <TodoRowLink key={t.id} todo={t} />
             ))}
           </HomeColumn>
-        )}
+
+          <HomeColumn title="Rocks" count={rockItems.length} flush>
+            <HomeRocksList rocks={rockItems} />
+          </HomeColumn>
+        </div>
+
+        <HomeColumn title="My metrics" count={metricItems.length} flush>
+          <HomeMetricsList metrics={metricItems} />
+        </HomeColumn>
       </div>
     </div>
+  );
+}
+
+function TodoRowLink({ todo }: { todo: TodoRow }) {
+  const isPrivate = todoVisibilityLabel(todo.visibility) === "Private";
+  return (
+    <Link
+      href={`/teams/${todo.team_id}/todos`}
+      className="grid grid-cols-[20px_1fr_auto] items-center gap-2.5 px-3.5 py-[11px] text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+    >
+      <span
+        className="h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
+        aria-hidden
+      />
+      <div className="flex min-w-0 items-center gap-1.5">
+        {isPrivate ? (
+          <Lock
+            className="h-3 w-3 shrink-0 text-zinc-400"
+            aria-label="Private"
+          />
+        ) : null}
+        <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+          {todo.title}
+        </span>
+      </div>
+      <span
+        className={cn(
+          "text-[11.5px] font-bold tabular-nums whitespace-nowrap",
+          dueToneClass(todo.due_date),
+        )}
+      >
+        {todo.due_date ? formatDateShort(todo.due_date) : "—"}
+      </span>
+    </Link>
   );
 }
 
@@ -355,111 +578,32 @@ function HomeColumn({
   title,
   count,
   children,
+  flush,
 }: {
   title: string;
   count: number;
   children: React.ReactNode;
+  /** Skip divide-y (Rocks table manages its own grid/header). */
+  flush?: boolean;
 }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-col">
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-        {title} ({count})
+      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+        {title}{" "}
+        <span className="font-bold text-zinc-400">({count})</span>
       </h2>
-      <div className="max-h-[min(70vh,40rem)] divide-y divide-zinc-200 overflow-y-auto rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      <div
+        className={cn(
+          "max-h-[min(70vh,40rem)] overflow-y-auto rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900",
+          !flush && "divide-y divide-zinc-100 dark:divide-zinc-800",
+        )}
+      >
         {children}
       </div>
     </section>
   );
 }
 
-function HomeRow({
-  href,
-  icon,
-  title,
-  subtitle,
-  meta,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string | null;
-  meta: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-3 px-3.5 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
-    >
-      <span className="mt-0.5">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-zinc-900 dark:text-zinc-100">
-          {title}
-        </div>
-        {subtitle ? (
-          <div className="truncate text-xs text-zinc-600 dark:text-zinc-400">
-            {subtitle}
-          </div>
-        ) : null}
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {meta}
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 function Empty({ children }: { children: React.ReactNode }) {
   return <EmptyState title={children} />;
-}
-
-function OwnerLabel({
-  isMine,
-  name,
-}: {
-  isMine: boolean;
-  name: string | null;
-}) {
-  const label = isMine ? "You" : name ?? "—";
-  return (
-    <span
-      className={
-        "inline-flex items-center text-xs whitespace-nowrap " +
-        (isMine
-          ? "text-zinc-900 dark:text-zinc-100 font-medium"
-          : "text-zinc-600 dark:text-zinc-400")
-      }
-    >
-      {label}
-    </span>
-  );
-}
-
-function TeamLabel({ name }: { name: string }) {
-  if (!name) return null;
-  return (
-    <span className="inline-flex items-center text-xs whitespace-nowrap text-zinc-500">
-      {name}
-    </span>
-  );
-}
-
-function DueLabel({ due }: { due: string | null }) {
-  if (!due)
-    return (
-      <span className="text-xs whitespace-nowrap text-zinc-500">No due date</span>
-    );
-  // Local-midnight comparison via daysUntil — bare `new Date("YYYY-MM-DD")`
-  // parses as UTC midnight and marks items due today as overdue all day in
-  // US timezones.
-  const overdue = daysUntil(due) < 0;
-  return (
-    <span
-      className={
-        "text-xs whitespace-nowrap " +
-        (overdue ? "text-red-600" : "text-zinc-600 dark:text-zinc-400")
-      }
-    >
-      Due {formatDateOnly(due)}
-    </span>
-  );
 }

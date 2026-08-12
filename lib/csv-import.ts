@@ -8,6 +8,7 @@
 // maintains by hand, for instance) imports the same way.
 
 import { mondayOf, toDateString } from "./dates";
+import { parseScorecardValue } from "./scorecard";
 
 // ---------------------------------------------------------------------------
 // CSV / TSV
@@ -319,28 +320,12 @@ function resolveWeek(
 // Numbers, goals, units
 // ---------------------------------------------------------------------------
 
-const BLANKS = new Set(["", "-", "–", "—", "n/a", "na", "null", "none", "tbd"]);
-
-// Scorecard cell → number. Handles "$1,234", "12.5%", "(400)" as -400,
-// "Yes"/"No" as 1/0, and "1:30" (h:mm) as 90 minutes.
+// Scorecard cell → number. Same rules as live entry (`parseScorecardValue`):
+// "$1,234", "12.5%", "(400)" as -400, "Yes"/"No" as 1/0, "1:30" as 90 minutes.
+// Invalid text is null here (import skips the cell) rather than an error.
 export function parseNumericValue(raw: string): number | null {
-  const s = (raw ?? "").trim();
-  if (BLANKS.has(s.toLowerCase())) return null;
-
-  const lower = s.toLowerCase();
-  if (lower === "yes" || lower === "true" || lower === "y") return 1;
-  if (lower === "no" || lower === "false" || lower === "n") return 0;
-
-  const time = s.match(/^(\d+):([0-5]\d)$/);
-  if (time) return Number(time[1]) * 60 + Number(time[2]);
-
-  const negativeParens = /^\(.*\)$/.test(s);
-  const cleaned = s.replace(/[()$,%\s]/g, "").replace(/,/g, "");
-  if (cleaned === "" || !/^[-+]?\d*\.?\d+$/.test(cleaned)) return null;
-
-  const n = Number(cleaned);
-  if (Number.isNaN(n)) return null;
-  return negativeParens ? -Math.abs(n) : n;
+  const parsed = parseScorecardValue(raw);
+  return parsed.ok ? parsed.value : null;
 }
 
 export type MetricUnit = "number" | "currency" | "percent" | "yesno" | "time";

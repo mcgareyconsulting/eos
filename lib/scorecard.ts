@@ -1,5 +1,135 @@
 export type GoalDirection = "gte" | "lte" | "eq";
 
+export const SCORECARD_UNITS = [
+  "number",
+  "currency",
+  "percent",
+  "yesno",
+  "time",
+] as const;
+export type ScorecardUnit = (typeof SCORECARD_UNITS)[number];
+
+export function isScorecardUnit(raw: string): raw is ScorecardUnit {
+  return (SCORECARD_UNITS as readonly string[]).includes(raw);
+}
+
+// Empty-cell tokens accepted by both live entry and CSV import.
+const SCORECARD_BLANKS = new Set([
+  "",
+  "-",
+  "–",
+  "—",
+  "n/a",
+  "na",
+  "null",
+  "none",
+  "tbd",
+]);
+
+export type ParsedScorecardValue =
+  | { ok: true; value: number | null }
+  | { ok: false; error: string };
+
+function parseYesNoToken(s: string): number | null {
+  const lower = s.toLowerCase();
+  if (lower === "yes" || lower === "true" || lower === "y" || lower === "1") {
+    return 1;
+  }
+  if (lower === "no" || lower === "false" || lower === "n" || lower === "0") {
+    return 0;
+  }
+  return null;
+}
+
+function parseClockToMinutes(s: string): number | null {
+  const time = s.match(/^(\d+):([0-5]\d)$/);
+  if (!time) return null;
+  return Number(time[1]) * 60 + Number(time[2]);
+}
+
+/** "$1,234", "12.5%", "(400)" → number. Not yes/no or h:mm. */
+function parseDecoratedNumber(s: string): number | null {
+  const negativeParens = /^\(.*\)$/.test(s);
+  const cleaned = s.replace(/[()$,%\s]/g, "").replace(/,/g, "");
+  if (cleaned === "" || !/^[-+]?\d*\.?\d+$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return negativeParens ? -Math.abs(n) : n;
+}
+
+/**
+ * Parse a typed scorecard cell.
+ *
+ * With a `unit`, only that unit's inputs are accepted (yes/no metrics take
+ * Yes/No, currency takes $10.00, …). With no unit (CSV import), every
+ * decoration is accepted so mixed exports still load.
+ */
+export function parseScorecardValue(
+  raw: string,
+  unit?: string,
+): ParsedScorecardValue {
+  const s = (raw ?? "").trim();
+  if (SCORECARD_BLANKS.has(s.toLowerCase())) return { ok: true, value: null };
+
+  if (unit === "yesno") {
+    const yn = parseYesNoToken(s);
+    if (yn == null) return { ok: false, error: "Enter Yes or No" };
+    return { ok: true, value: yn };
+  }
+
+  if (unit === "time") {
+    const clock = parseClockToMinutes(s);
+    if (clock != null) return { ok: true, value: clock };
+    const minutes = parseDecoratedNumber(s);
+    if (minutes != null && minutes >= 0) return { ok: true, value: minutes };
+    return { ok: false, error: "Enter time as h:mm" };
+  }
+
+  if (unit === "number" || unit === "currency" || unit === "percent") {
+    const n = parseDecoratedNumber(s);
+    if (n == null) {
+      return {
+        ok: false,
+        error:
+          unit === "currency"
+            ? "Enter a dollar amount"
+            : unit === "percent"
+              ? "Enter a percent"
+              : "Enter a number",
+      };
+    }
+    return { ok: true, value: n };
+  }
+
+  const yn = parseYesNoToken(s);
+  if (yn != null && !/^[01]$/.test(s)) return { ok: true, value: yn };
+  const clock = parseClockToMinutes(s);
+  if (clock != null) return { ok: true, value: clock };
+  const n = parseDecoratedNumber(s);
+  if (n != null) return { ok: true, value: n };
+  return { ok: false, error: "Enter a number" };
+}
+
+/** Draft text when opening a cell — Yes/No and h:mm, not 1 / 90. */
+export function formatScorecardDraft(
+  value: number | null,
+  unit: string,
+): string {
+  if (value == null) return "";
+  if (unit === "yesno") return value ? "Yes" : "No";
+  if (unit === "time") return formatMinutes(value);
+  return String(value);
+}
+
+function formatMinutes(total: number): string {
+  const n = Math.round(total);
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `${sign}${h}:${String(m).padStart(2, "0")}`;
+}
+
 export function formatGoal(
   goal: number | null,
   direction: string,
@@ -25,6 +155,11 @@ export function formatValue(value: number | null, unit: string): string {
       maximumFractionDigits: 1,
     })}%`;
   }
+  if (unit === "yesno") {
+    if (value !== 0 && value !== 1) return `${Math.round(value * 100)}%`;
+    return value ? "Yes" : "No";
+  }
+  if (unit === "time") return formatMinutes(value);
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 

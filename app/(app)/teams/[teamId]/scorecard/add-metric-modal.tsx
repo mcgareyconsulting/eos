@@ -8,7 +8,11 @@ import {
   SCORECARD_PERIODS,
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
+import { parseScorecardValue } from "@/lib/scorecard";
 import { addMetric } from "./actions";
+
+const inputClass =
+  "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
 
 type Member = { user_id: string; full_name: string };
 
@@ -69,17 +73,40 @@ export function AddMetricModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  function changeUnit(next: string) {
+    setUnit(next);
+    if (next === "yesno") {
+      setDirection("eq");
+      setGoal("");
+    } else if (unit === "yesno" || unit === "time" || next === "time") {
+      setGoal("");
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Name required");
       return;
     }
+    if (goal.trim()) {
+      const parsed = parseScorecardValue(goal, unit);
+      if (!parsed.ok) {
+        setError(
+          unit === "yesno"
+            ? "Goal must be Yes or No"
+            : unit === "time"
+              ? "Goal must be a time (h:mm)"
+              : "Goal must be a number",
+        );
+        return;
+      }
+    }
     const fd = new FormData();
     fd.set("name", name);
     fd.set("interval", interval);
     fd.set("unit", unit);
-    fd.set("direction", direction);
+    fd.set("direction", unit === "yesno" ? "eq" : direction);
     fd.set("goal", goal);
     fd.set("owner_id", ownerId);
     fd.set("group", group);
@@ -181,7 +208,7 @@ export function AddMetricModal({
                   <select
                     name="unit"
                     value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
+                    onChange={(e) => changeUnit(e.target.value)}
                     className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="number">Number</option>
@@ -193,38 +220,53 @@ export function AddMetricModal({
                 </label>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {unit === "yesno" ? (
                 <label className="block space-y-1">
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Goal comparison
+                    Goal{" "}
+                    <span className="font-normal text-zinc-400">(optional)</span>
                   </span>
                   <select
-                    name="direction"
-                    value={direction}
-                    onChange={(e) => setDirection(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  >
-                    <option value="gte">At least (&gt;=)</option>
-                    <option value="lte">At most (&lt;=)</option>
-                    <option value="eq">Exactly (=)</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Goal
-                  </span>
-                  <input
                     name="goal"
-                    type="number"
-                    step="any"
                     value={goal}
                     onChange={(e) => setGoal(e.target.value)}
-                    placeholder="Optional"
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  />
+                    className={inputClass}
+                  >
+                    <option value="">No goal</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
                 </label>
-              </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Goal comparison
+                    </span>
+                    <select
+                      name="direction"
+                      value={direction}
+                      onChange={(e) => setDirection(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="gte">At least (&gt;=)</option>
+                      <option value="lte">At most (&lt;=)</option>
+                      <option value="eq">Exactly (=)</option>
+                    </select>
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Goal
+                    </span>
+                    <GoalInput
+                      unit={unit}
+                      value={goal}
+                      onChange={setGoal}
+                    />
+                  </label>
+                </div>
+              )}
 
               <label className="block space-y-1">
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -289,5 +331,79 @@ export function AddMetricModal({
         </div>
       )}
     </>
+  );
+}
+
+function GoalInput({
+  unit,
+  value,
+  onChange,
+}: {
+  unit: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  if (unit === "currency") {
+    return (
+      <div className="relative">
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+          $
+        </span>
+        <input
+          name="goal"
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Optional"
+          className={`${inputClass} pl-6`}
+        />
+      </div>
+    );
+  }
+
+  if (unit === "percent") {
+    return (
+      <div className="relative">
+        <input
+          name="goal"
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Optional"
+          className={`${inputClass} pr-7`}
+        />
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+          %
+        </span>
+      </div>
+    );
+  }
+
+  if (unit === "time") {
+    return (
+      <input
+        name="goal"
+        type="text"
+        inputMode="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. 1:30"
+        className={inputClass}
+      />
+    );
+  }
+
+  return (
+    <input
+      name="goal"
+      type="text"
+      inputMode="decimal"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Optional"
+      className={inputClass}
+    />
   );
 }

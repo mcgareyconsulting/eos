@@ -385,6 +385,7 @@ export function ScorecardGrid({
                   metricId={m.id}
                   weekStartDate={periodStart}
                   initial={v}
+                  unit={m.unit}
                   onTrack={onTrack(v, m.goal, m.direction)}
                   isCurrentWeek={isCurrent}
                 />

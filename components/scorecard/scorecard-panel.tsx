@@ -243,7 +243,9 @@ export function ScorecardPanel({
         }
         emptyHint={
           intervalMetrics.length === 0
-            ? `No ${PERIOD_LABELS[period].toLowerCase()} measurables yet — use Add measurable (interval defaults to ${PERIOD_LABELS[period]}).`
+            ? compact
+              ? `No ${PERIOD_LABELS[period].toLowerCase()} measurables yet — add them on the Scorecard tab.`
+              : `No ${PERIOD_LABELS[period].toLowerCase()} measurables yet — use Add measurable (interval defaults to ${PERIOD_LABELS[period]}).`
             : "No measurables match these filters."
         }
       />

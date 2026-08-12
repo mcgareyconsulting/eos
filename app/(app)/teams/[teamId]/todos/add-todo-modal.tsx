@@ -97,7 +97,11 @@ export function AddTodoModal({
       <button
         type="button"
         onClick={openModal}
-        className={entityAddButtonClass}
+        className={
+          compact
+            ? "inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+            : entityAddButtonClass
+        }
       >
         <Plus className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
         {buttonLabel}

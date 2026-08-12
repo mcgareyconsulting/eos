@@ -10,17 +10,22 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { formatDateOnly, isDueWithinDays } from "@/lib/dates";
 import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
+import { EmptyState } from "@/components/empty-state";
 import {
   TodoListRow,
   type TodoListItem,
 } from "../../todos/todo-list-row";
+import {
+  MilestoneTodoRow,
+  type MilestoneTodoItem,
+} from "../../todos/milestone-todo-row";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -42,6 +47,13 @@ type TodoDoc = {
 
 type Member = { user_id: string; full_name: string };
 
+type RockDoc = {
+  id: string;
+  title?: string;
+  status?: string;
+  archived_at?: unknown;
+};
+
 type TodoGroup = {
   key: string;
   title: string;
@@ -49,6 +61,12 @@ type TodoGroup = {
   done: TodoDoc[];
   absent: boolean;
   isCurrentSpeaker: boolean;
+};
+
+type MilestoneGroup = {
+  key: string;
+  title: string;
+  items: MilestoneTodoItem[];
 };
 
 function toListItem(t: TodoDoc): TodoListItem {
@@ -63,11 +81,45 @@ function toListItem(t: TodoDoc): TodoListItem {
   };
 }
 
-function byDue(a: TodoDoc, b: TodoDoc): number {
+function byDue<T extends { due_date: string | null }>(a: T, b: T): number {
   if (!a.due_date && !b.due_date) return 0;
   if (!a.due_date) return 1;
   if (!b.due_date) return -1;
   return a.due_date.localeCompare(b.due_date);
+}
+
+/**
+ * Present speakers, then absentees, then alphabetical for anyone off the
+ * roster order — the ordering both to-do and milestone owner cards use so
+ * the sections stay in the same speaking order.
+ */
+function orderOwnerIds(
+  ownerIds: Iterable<string>,
+  speakingOrder: string[],
+  absent: Set<string>,
+  nameById: Map<string, string>,
+): string[] {
+  const idSet = new Set(ownerIds);
+  const sectionOrder = ownersPresentThenAbsent(speakingOrder, absent);
+  const placed = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const uid of sectionOrder) {
+    if (idSet.has(uid)) {
+      ordered.push(uid);
+      placed.add(uid);
+    }
+  }
+
+  const orphans = [...idSet].filter((id) => !placed.has(id));
+  orphans.sort((a, b) => {
+    const aAbs = absent.has(a) ? 1 : 0;
+    const bAbs = absent.has(b) ? 1 : 0;
+    if (aAbs !== bAbs) return aAbs - bAbs;
+    return (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—");
+  });
+
+  return [...ordered, ...orphans];
 }
 
 /**
@@ -95,14 +147,11 @@ function groupTodosForMeeting(
   }
 
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
-  const sectionOrder = ownersPresentThenAbsent(speakingOrder, absent);
-  const placed = new Set<string>();
   const groups: TodoGroup[] = [];
 
-  const pushOwner = (uid: string) => {
+  for (const uid of orderOwnerIds(byOwner.keys(), speakingOrder, absent, nameById)) {
     const list = byOwner.get(uid);
-    if (!list || list.length === 0) return;
-    placed.add(uid);
+    if (!list || list.length === 0) continue;
     groups.push({
       key: uid,
       title: nameById.get(uid) ?? "—",
@@ -111,19 +160,7 @@ function groupTodosForMeeting(
       absent: absent.has(uid),
       isCurrentSpeaker: uid === currentSpeaker,
     });
-  };
-
-  for (const uid of sectionOrder) pushOwner(uid);
-
-  // Owners with todos who aren't on the roster order (stale id).
-  const orphans = [...byOwner.keys()].filter((id) => !placed.has(id));
-  orphans.sort((a, b) => {
-    const aAbs = absent.has(a) ? 1 : 0;
-    const bAbs = absent.has(b) ? 1 : 0;
-    if (aAbs !== bAbs) return aAbs - bAbs;
-    return (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—");
-  });
-  for (const uid of orphans) pushOwner(uid);
+  }
 
   if (unassigned.length > 0) {
     groups.push({
@@ -134,6 +171,46 @@ function groupTodosForMeeting(
       absent: false,
       isCurrentSpeaker: false,
     });
+  }
+
+  return groups;
+}
+
+/**
+ * Open rock milestones, one owner card each — same speaking-order sequence
+ * as `groupTodosForMeeting` (standalone To-Dos groups its Milestones column
+ * the same way).
+ */
+function groupMilestonesForMeeting(
+  milestones: MilestoneTodoItem[],
+  members: Member[],
+  speakingOrder: string[],
+  absent: Set<string>,
+): MilestoneGroup[] {
+  const byOwner = new Map<string, MilestoneTodoItem[]>();
+  const unassigned: MilestoneTodoItem[] = [];
+
+  for (const m of milestones) {
+    if (!m.owner_id) {
+      unassigned.push(m);
+      continue;
+    }
+    const list = byOwner.get(m.owner_id) ?? [];
+    list.push(m);
+    byOwner.set(m.owner_id, list);
+  }
+
+  const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
+  const groups: MilestoneGroup[] = [];
+
+  for (const uid of orderOwnerIds(byOwner.keys(), speakingOrder, absent, nameById)) {
+    const list = byOwner.get(uid);
+    if (!list || list.length === 0) continue;
+    groups.push({ key: uid, title: nameById.get(uid) ?? "—", items: list });
+  }
+
+  if (unassigned.length > 0) {
+    groups.push({ key: "unassigned", title: "Unassigned", items: unassigned });
   }
 
   return groups;
@@ -190,14 +267,25 @@ export function SegmentTodos({
   const teamTodos = useCollection<TodoDoc>(teamQuery, initialTeam);
   const myTodos = useCollection<TodoDoc>(mineQuery, initialMine);
 
-  // Rock titles for due-soon milestone rows (same pattern as standalone To-Dos).
+  // Rock title + status/archived_at for milestone rows and the
+  // isMilestoneHiddenByRock check (same pattern as standalone To-Dos).
   const rocksQuery = useMemo(
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
   );
-  const rocks = useCollection<{ id: string; title?: string }>(rocksQuery, []);
-  const rockTitleById = useMemo(
-    () => new Map(rocks.map((r) => [r.id, String(r.title ?? "Rock")])),
+  const rocks = useCollection<RockDoc>(rocksQuery, []);
+  const rockById = useMemo(
+    () =>
+      new Map(
+        rocks.map((r) => [
+          r.id,
+          {
+            title: String(r.title ?? "Rock"),
+            status: r.status ?? null,
+            archived_at: r.archived_at ?? null,
+          },
+        ]),
+      ),
     [rocks],
   );
 
@@ -229,17 +317,27 @@ export function SegmentTodos({
   );
 
   const allTodos = [...teamTodos, ...myTodos].filter((t) => !t.archived_at);
-  // Pure to-dos only in owner cards. Due-soon open milestones surface above
-  // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under Rocks.
+  // Pure to-dos only in owner cards. All open milestones surface in their own
+  // section (P0-4 / P14-4) — same idea as standalone To-Dos; still editable
+  // under Rocks. Milestones whose parent rock is done/cancelled/archived are
+  // dropped, same as the standalone Milestones column.
   const pureTodos = allTodos.filter((t) => !t.source_rock_id);
-  const dueSoonMilestones = allTodos
+  const openMilestones: MilestoneTodoItem[] = allTodos
     .filter(
       (t) =>
         Boolean(t.source_rock_id) &&
         !t.completed_at &&
-        isDueWithinDays(t.due_date, 7),
+        !isMilestoneHiddenByRock(rockById.get(t.source_rock_id ?? "")),
     )
-    .sort(byDue);
+    .sort(byDue)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      owner_id: t.owner_id,
+      due_date: t.due_date,
+      completed: false,
+      rock_title: rockById.get(t.source_rock_id ?? "")?.title ?? "Rock",
+    }));
 
   const groups = groupTodosForMeeting(
     pureTodos,
@@ -248,11 +346,15 @@ export function SegmentTodos({
     absent,
     currentSpeaker,
   );
+  const milestoneGroups = groupMilestonesForMeeting(
+    openMilestones,
+    members,
+    speakingOrder,
+    absent,
+  );
 
   const openCount = groups.reduce((n, g) => n + g.open.length, 0);
   const doneCount = groups.reduce((n, g) => n + g.done.length, 0);
-  const ownerName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
   return (
     <div className="space-y-3">
@@ -271,55 +373,55 @@ export function SegmentTodos({
         />
       </div>
 
-      {dueSoonMilestones.length > 0 && (
-        <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <header className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-            <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              Due soon · milestones
-            </h3>
-            <span className="text-xs text-zinc-500">
-              {dueSoonMilestones.length}
-            </span>
-          </header>
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {dueSoonMilestones.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center gap-3 px-4 py-3 text-sm"
-              >
-                <Flag
-                  className="h-4 w-4 shrink-0 text-zinc-500"
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{m.title}</div>
-                  <div className="truncate text-xs text-zinc-500">
-                    Milestone ·{" "}
-                    {rockTitleById.get(m.source_rock_id ?? "") ?? "Rock"}
-                  </div>
+      <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+          <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
+          <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+            Milestones
+          </h3>
+          <span className="text-xs text-zinc-500">
+            {openMilestones.length}
+          </span>
+        </header>
+        {openMilestones.length === 0 ? (
+          <EmptyState icon={Flag} title="No open milestones" />
+        ) : (
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {milestoneGroups.map((g) => (
+              <div key={g.key}>
+                <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
+                    {initials(g.title) || "?"}
+                  </span>
+                  <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                    {g.title}
+                  </h4>
+                  <span className="text-xs text-zinc-500">
+                    {g.items.length}
+                  </span>
                 </div>
-                <span className="shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
-                  {ownerName(m.owner_id)}
-                </span>
-                <span className="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
-                  {m.due_date ? formatDateOnly(m.due_date) : "—"}
-                </span>
+                {g.items.map((m) => (
+                  <MilestoneTodoRow
+                    key={m.id}
+                    teamId={teamId}
+                    milestone={m}
+                    ownerName={g.title}
+                    hideOwner
+                  />
+                ))}
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
-      {groups.length === 0 && dueSoonMilestones.length === 0 && (
+      {groups.length === 0 && (
         <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
           No to-dos.
         </div>
       )}
 
-      {openCount === 0 &&
-        doneCount > 0 &&
-        dueSoonMilestones.length === 0 && (
+      {openCount === 0 && doneCount > 0 && (
         <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
           All to-dos done — nice week.
         </div>
@@ -342,7 +444,7 @@ export function SegmentTodos({
               "flex items-center gap-2 border-b px-4 py-2 " +
               (g.isCurrentSpeaker
                 ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
-                : "border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
+                : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
             }
           >
             <span
@@ -359,8 +461,12 @@ export function SegmentTodos({
               {g.title}
             </h3>
             <span className="text-xs text-zinc-500">
-              {g.open.length}
-              {g.done.length > 0 ? ` · ${g.done.length} done` : ""}
+              {[
+                g.open.length > 0 ? `${g.open.length} open` : null,
+                g.done.length > 0 ? `${g.done.length} done` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "none"}
             </span>
             {g.isCurrentSpeaker && (
               <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
@@ -374,7 +480,7 @@ export function SegmentTodos({
               </span>
             )}
           </header>
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {g.open.length === 0 && g.done.length === 0 && (
               <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
             )}
@@ -385,6 +491,7 @@ export function SegmentTodos({
                 todo={toListItem(t)}
                 ownerName={g.title}
                 members={members}
+                hideOwner
               />
             ))}
             {g.done.length > 0 && (
@@ -399,6 +506,7 @@ export function SegmentTodos({
                     todo={toListItem(t)}
                     ownerName={g.title}
                     members={members}
+                    hideOwner
                   />
                 ))}
               </>

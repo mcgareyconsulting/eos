@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { useMemo } from "react";
+import { Megaphone, Trash2 } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -10,8 +10,12 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
+import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
-import { addHeadline, deleteHeadline } from "../../headlines/actions";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
+import { EmptyState } from "@/components/empty-state";
+import { deleteHeadline } from "../../headlines/actions";
+import { AddHeadlineModal } from "../../headlines/add-headline-modal";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
 import { LocalTime } from "@/components/local-time";
@@ -111,13 +115,16 @@ export function SegmentHeadlines({
   function renderRow(h: HeadlineDoc) {
     const kindLabel = KIND_LABEL[h.kind] ?? KIND_LABEL.customer;
     const remove = deleteHeadline.bind(null, teamId, h.id);
+    const body = normalizeDescription(h.body);
     const readOnly = !!h.broadcast;
     const discussed = h.discussed === true;
     return (
       <div
         key={h.id}
         className={`group flex items-start gap-3 px-4 py-3 text-sm ${
-          discussed ? "bg-zinc-50/80 dark:bg-zinc-950/40" : ""
+          discussed
+            ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
+            : ""
         }`}
       >
         <HeadlineDiscussedCheckbox
@@ -129,13 +136,13 @@ export function SegmentHeadlines({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <div
-              className={`font-medium ${discussed ? "text-zinc-600 line-through dark:text-zinc-400" : ""}`}
+              className={`font-medium ${discussed ? "text-zinc-500 dark:text-zinc-400" : ""}`}
             >
               {h.title}
             </div>
             {discussed && (
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
-                Discussed
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+                Discussed · closes Monday
               </span>
             )}
             {readOnly && (
@@ -144,9 +151,9 @@ export function SegmentHeadlines({
               </span>
             )}
           </div>
-          {h.body && (
+          {body && (
             <RichText
-              value={h.body}
+              value={body}
               className="mt-0.5 text-zinc-600 dark:text-zinc-400"
             />
           )}
@@ -176,16 +183,9 @@ export function SegmentHeadlines({
                 kind: h.kind,
               }}
             />
-            <form
+            <ConfirmSubmitForm
               action={remove}
-              onSubmit={(e) => {
-                if (
-                  !window.confirm(
-                    "Delete this headline? This can't be undone.",
-                  )
-                )
-                  e.preventDefault();
-              }}
+              confirmMessage="Delete this headline? This can't be undone."
             >
               <button
                 type="submit"
@@ -194,7 +194,7 @@ export function SegmentHeadlines({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
-            </form>
+            </ConfirmSubmitForm>
           </div>
         )}
       </div>
@@ -203,7 +203,8 @@ export function SegmentHeadlines({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <AddHeadlineModal teamId={teamId} compact />
         <QuickAddIssue
           teamId={teamId}
           prefill="From headline: "
@@ -211,13 +212,13 @@ export function SegmentHeadlines({
         />
       </div>
 
-      <QuickAddHeadline teamId={teamId} />
-
       {active.length === 0 ? (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            No headlines yet.
-          </div>
+          <EmptyState
+            icon={Megaphone}
+            title="No headlines yet"
+            hint="Share customer wins, employee news, and cascading messages."
+          />
         </div>
       ) : (
         <div className="space-y-3">
@@ -248,67 +249,6 @@ export function SegmentHeadlines({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function QuickAddHeadline({ teamId }: { teamId: string }) {
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<HeadlineDoc["kind"]>("customer");
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function submit() {
-    const t = title.trim();
-    if (!t) return;
-    const fd = new FormData();
-    fd.set("title", t);
-    fd.set("kind", kind);
-    start(async () => {
-      try {
-        setError(null);
-        await addHeadline(teamId, fd);
-        setTitle("");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    });
-  }
-
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
-      <select
-        value={kind}
-        onChange={(e) => setKind(e.target.value as HeadlineDoc["kind"])}
-        className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-xs"
-      >
-        <option value="customer">Customer</option>
-        <option value="employee">Employee</option>
-        <option value="cascading">Cascading</option>
-        <option value="general">General / FYI</option>
-      </select>
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        placeholder="Headline (one line)"
-        className="flex-1 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={pending || !title.trim()}
-        className="rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1 text-xs font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50"
-      >
-        {pending ? "Adding…" : "Add"}
-      </button>
-      {error && <span className="text-[10px] text-red-600">{error}</span>}
     </div>
   );
 }

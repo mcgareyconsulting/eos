@@ -30,6 +30,10 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  // Teams this rock is shared with. Must flow through to RockRow — the edit
+  // modal seeds its share picker from it, and saving without it wipes the
+  // field on the rock doc.
+  shared_team_ids?: string[] | null;
   // Timestamp from onSnapshot, absent from the server prefetch (which
   // filters archived rocks out entirely). Only ever read as truthy.
   archived_at?: unknown;
@@ -74,6 +78,8 @@ export function SegmentRocks({
   initialAbsentUserIds,
   initialSpeakingOrder,
   initialSpeakerIndex,
+  teamName,
+  shareTeams,
 }: {
   teamId: string;
   meetingId: string;
@@ -85,6 +91,8 @@ export function SegmentRocks({
   initialAbsentUserIds: string[];
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
+  teamName: string;
+  shareTeams: { id: string; name: string }[];
 }) {
   const db = getClientDb();
 
@@ -294,18 +302,15 @@ export function SegmentRocks({
                 userId={userId}
                 rock={r}
                 ownerName={
-                  r.owner_id
-                    ? members.find((m) => m.user_id === r.owner_id)
-                        ?.full_name ?? "—"
-                    : g.isDepartmentSection
-                      ? DEPARTMENT_SECTION_TITLE
-                      : g.title
+                  r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
                 }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={defaultDue}
                 statusHistory={statusByRock.get(r.id) ?? []}
                 currentUserId={userId}
+                teamName={teamName}
+                shareTeams={shareTeams}
               />
             ))}
           </div>

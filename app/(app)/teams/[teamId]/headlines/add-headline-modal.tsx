@@ -19,9 +19,12 @@ type Kind = (typeof KIND_OPTIONS)[number]["value"];
 export function AddHeadlineModal({
   teamId,
   buttonLabel = "Add headline",
+  compact = false,
 }: {
   teamId: string;
   buttonLabel?: string;
+  /** Smaller trigger for the L10 toolbar row. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -81,9 +84,13 @@ export function AddHeadlineModal({
       <button
         type="button"
         onClick={openModal}
-        className={entityAddButtonClass}
+        className={
+          compact
+            ? "inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+            : entityAddButtonClass
+        }
       >
-        <Plus className="h-4 w-4" />
+        <Plus className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
         {buttonLabel}
       </button>
 

@@ -43,6 +43,14 @@ describe("trendStatus", () => {
     assert.equal(trendStatus([null, 10, null, 10, 10], 5, "gte"), "ok");
     assert.equal(trendStatus([null, null], 5, "gte"), "empty");
   });
+
+  it("does not claim on-track when there is no goal", () => {
+    // A goalless metric can't be judged: it used to report "ok" while
+    // hitRate reported 0 hits, which read as a contradiction in the UI.
+    assert.equal(trendStatus([10, 10, 10], null, "gte"), "nogoal");
+    // No scores at all still outranks no goal — "No data" is the bigger gap.
+    assert.equal(trendStatus([null, null], null, "gte"), "empty");
+  });
 });
 
 describe("formatGoal", () => {
@@ -75,38 +83,44 @@ describe("formatWeekRange", () => {
 describe("hitRate", () => {
   it("handles empty values array", () => {
     const result = hitRate([], 5, "gte");
-    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0 });
+    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0, applicable: true });
   });
 
   it("handles all-null values", () => {
     const result = hitRate([null, null, null], 5, "gte");
-    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0 });
+    assert.deepEqual(result, { hit: 0, recorded: 0, pct: 0, applicable: true });
   });
 
   it("counts hits and records correctly with mixed nulls (gte)", () => {
     const result = hitRate([10, null, 5, null, 3], 5, "gte");
     // recorded: [10, 5, 3] → 3 values
     // hits: [10, 5] → 2 values >= 5
-    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67 });
+    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67, applicable: true });
   });
 
   it("rounds pct correctly", () => {
     // 1 hit out of 3 → 33.333... → rounds to 33
     const result = hitRate([10, 3, 3], 5, "gte");
-    assert.deepEqual(result, { hit: 1, recorded: 3, pct: 33 });
+    assert.deepEqual(result, { hit: 1, recorded: 3, pct: 33, applicable: true });
   });
 
   it("supports lte direction", () => {
     const result = hitRate([2, null, 5, null, 8], 5, "lte");
     // recorded: [2, 5, 8] → 3 values
     // hits: [2, 5] → 2 values <= 5
-    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67 });
+    assert.deepEqual(result, { hit: 2, recorded: 3, pct: 67, applicable: true });
   });
 
-  it("does not count as hit when goal is null", () => {
+  it("reports not-applicable rather than 0 hits when goal is null", () => {
     const result = hitRate([10, 5, 3], null, "gte");
-    // recorded: 3, but onTrack returns null for each → hit: 0
-    assert.deepEqual(result, { hit: 0, recorded: 3, pct: 0 });
+    // Every period misses vacuously without a goal, so `hit: 0` is not a
+    // finding — `applicable: false` is what callers must render on.
+    assert.deepEqual(result, {
+      hit: 0,
+      recorded: 3,
+      pct: 0,
+      applicable: false,
+    });
   });
 });
 

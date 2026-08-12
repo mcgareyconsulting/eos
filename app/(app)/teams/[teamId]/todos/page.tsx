@@ -12,7 +12,6 @@ import {
   getTasksStatus,
   pullCompletionsForOwner,
 } from "@/lib/google/tasks";
-import { cn } from "@/lib/utils";
 import { AddTodoModal } from "./add-todo-modal";
 import {
   MilestoneTodoRow,
@@ -58,6 +57,12 @@ function formatClosedOn(
 
 
 
+type OwnerBucket<T> = {
+  key: string;
+  title: string;
+  items: T[];
+};
+
 type OwnerGroup = {
   key: string;
   title: string;
@@ -72,16 +77,21 @@ function byDue<T extends { due_date: string | null }>(a: T, b: T) {
   return a.due_date.localeCompare(b.due_date);
 }
 
-/** One card per owner (same idea as L10). Order = team speaking order. */
-function groupTodosByOwner(
-  todos: TodoListItem[],
+/**
+ * One card per owner (same idea as L10). Order = team speaking order, then
+ * alphabetical for anyone off the order, then Unassigned. Both board columns
+ * group this way so the two sides line up owner-for-owner.
+ * Input order is preserved inside each bucket — sort before calling.
+ */
+function groupByOwner<T extends { owner_id: string | null }>(
+  items: T[],
   members: { user_id: string; full_name: string }[],
   speakingOrder: string[],
-): OwnerGroup[] {
-  const byOwner = new Map<string, TodoListItem[]>();
-  const unassigned: TodoListItem[] = [];
+): OwnerBucket<T>[] {
+  const byOwner = new Map<string, T[]>();
+  const unassigned: T[] = [];
 
-  for (const t of todos) {
+  for (const t of items) {
     if (!t.owner_id) {
       unassigned.push(t);
       continue;
@@ -93,18 +103,13 @@ function groupTodosByOwner(
 
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
   const placed = new Set<string>();
-  const groups: OwnerGroup[] = [];
+  const buckets: OwnerBucket<T>[] = [];
 
   const pushOwner = (uid: string) => {
     const list = byOwner.get(uid);
     if (!list || list.length === 0) return;
     placed.add(uid);
-    groups.push({
-      key: uid,
-      title: nameById.get(uid) ?? "—",
-      open: list.filter((t) => !t.completed).sort(byDue),
-      done: list.filter((t) => t.completed).sort(byDue),
-    });
+    buckets.push({ key: uid, title: nameById.get(uid) ?? "—", items: list });
   };
 
   for (const uid of speakingOrder) pushOwner(uid);
@@ -116,15 +121,24 @@ function groupTodosByOwner(
   for (const uid of orphans) pushOwner(uid);
 
   if (unassigned.length > 0) {
-    groups.push({
-      key: "unassigned",
-      title: "Unassigned",
-      open: unassigned.filter((t) => !t.completed).sort(byDue),
-      done: unassigned.filter((t) => t.completed).sort(byDue),
-    });
+    buckets.push({ key: "unassigned", title: "Unassigned", items: unassigned });
   }
 
-  return groups;
+  return buckets;
+}
+
+/** Owner cards for the To-Dos column, each split into open / done-this-week. */
+function groupTodosByOwner(
+  todos: TodoListItem[],
+  members: { user_id: string; full_name: string }[],
+  speakingOrder: string[],
+): OwnerGroup[] {
+  return groupByOwner(todos, members, speakingOrder).map((b) => ({
+    key: b.key,
+    title: b.title,
+    open: b.items.filter((t) => !t.completed).sort(byDue),
+    done: b.items.filter((t) => t.completed).sort(byDue),
+  }));
 }
 
 export default async function TodosPage({
@@ -245,6 +259,12 @@ export default async function TodosPage({
     ? []
     : groupTodosByOwner(todos, members, speakingOrder);
   const openCount = groups.reduce((n, g) => n + g.open.length, 0);
+  // visibleMilestones is already due-sorted; groupByOwner keeps that order.
+  const milestoneGroups = groupByOwner(
+    visibleMilestones,
+    members,
+    speakingOrder,
+  );
   const archivedFlat = showArchived
     ? [...todos].sort((a, b) => {
         const byOwner = ownerName(a.owner_id).localeCompare(
@@ -306,8 +326,16 @@ export default async function TodosPage({
           )}
         </BoardColumn>
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1.15fr)] lg:items-start">
-          <BoardColumn title="To-Dos" count={openCount}>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
+          <BoardColumn
+            title="To-Dos"
+            count={todos.length}
+            meta={
+              openCount > 0 && openCount !== todos.length
+                ? `${openCount} open`
+                : undefined
+            }
+          >
             {groups.length === 0 && (
               <EmptyState
                 icon={CheckSquare}
@@ -322,18 +350,18 @@ export default async function TodosPage({
             )}
             {groups.map((g) => (
               <div key={g.key}>
-                <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-                    {initials(g.title) || "?"}
-                  </span>
-                  <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                    {g.title}
-                  </h3>
-                  <span className="text-xs text-zinc-500">
-                    {g.open.length}
-                    {g.done.length > 0 ? ` · ${g.done.length} done` : ""}
-                  </span>
-                </div>
+                <GroupHeader
+                  chip={initials(g.title) || "?"}
+                  title={g.title}
+                  count={
+                    [
+                      g.open.length > 0 ? `${g.open.length} open` : null,
+                      g.done.length > 0 ? `${g.done.length} done` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "none"
+                  }
+                />
                 {g.open.map((t) => (
                   <TodoListRow
                     key={t.id}
@@ -341,6 +369,7 @@ export default async function TodosPage({
                     todo={t}
                     ownerName={g.title}
                     members={members}
+                    hideOwner
                   />
                 ))}
                 {g.done.length > 0 && (
@@ -355,6 +384,7 @@ export default async function TodosPage({
                         todo={t}
                         ownerName={g.title}
                         members={members}
+                        hideOwner
                       />
                     ))}
                   </>
@@ -371,13 +401,23 @@ export default async function TodosPage({
                 hint="Rock milestones show here while their parent rock is still active."
               />
             ) : (
-              visibleMilestones.map((m) => (
-                <MilestoneTodoRow
-                  key={m.id}
-                  teamId={tid}
-                  milestone={m}
-                  ownerName={ownerName(m.owner_id)}
-                />
+              milestoneGroups.map((g) => (
+                <div key={g.key}>
+                  <GroupHeader
+                    chip={initials(g.title) || "?"}
+                    title={g.title}
+                    count={`${g.items.length}`}
+                  />
+                  {g.items.map((m) => (
+                    <MilestoneTodoRow
+                      key={m.id}
+                      teamId={tid}
+                      milestone={m}
+                      ownerName={g.title}
+                      hideOwner
+                    />
+                  ))}
+                </div>
               ))
             )}
           </BoardColumn>
@@ -387,26 +427,61 @@ export default async function TodosPage({
   );
 }
 
+/**
+ * Section header shared by both board columns: a square chip, the group name,
+ * and a muted count. Owner cards pass initials, rock sections pass a glyph.
+ */
+function GroupHeader({
+  chip,
+  title,
+  count,
+}: {
+  chip: React.ReactNode;
+  title: string;
+  count: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
+        {chip}
+      </span>
+      <h3
+        className="min-w-0 truncate text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200"
+        title={title}
+      >
+        {title}
+      </h3>
+      <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+    </div>
+  );
+}
+
 function BoardColumn({
   title,
   count,
+  meta,
   children,
 }: {
   title: string;
   count: number;
+  /** Optional breakdown (e.g. "5 open") when `count` alone under-explains. */
+  meta?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex min-h-0 min-w-0 flex-col">
+    <section className="flex min-w-0 flex-col">
       <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
         {title}{" "}
         <span className="font-bold text-zinc-400">({count})</span>
-      </h2>
-      <div
-        className={cn(
-          "max-h-[min(70vh,40rem)] overflow-y-auto rounded-xl border border-zinc-300 bg-white divide-y divide-zinc-100 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900",
+        {meta && (
+          <span className="ml-1.5 font-medium normal-case tracking-normal text-zinc-400">
+            · {meta}
+          </span>
         )}
-      >
+      </h2>
+      {/* No inner scroller — the page scrolls as one so the two columns
+          can't drift out of sync under the reader. */}
+      <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {children}
       </div>
     </section>

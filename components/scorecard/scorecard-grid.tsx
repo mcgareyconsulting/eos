@@ -221,7 +221,11 @@ export function ScorecardGrid({
     const status = trendStatus(values, m.goal, m.direction);
     const tone = STATUS_TONE[status];
     const open = openIds.has(m.id);
-    const { hit, recorded, pct } = hitRate(values, m.goal, m.direction);
+    const { hit, recorded, pct, applicable: hitApplies } = hitRate(
+      values,
+      m.goal,
+      m.direction,
+    );
     const owner = ownerName(m.owner_id);
 
     const avgTone =
@@ -305,7 +309,7 @@ export function ScorecardGrid({
               >
                 {tone.label}
               </span>
-              {recorded > 0 && (
+              {hitApplies && recorded > 0 && (
                 <>
                   <span className="relative block h-1 w-11 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                     <span

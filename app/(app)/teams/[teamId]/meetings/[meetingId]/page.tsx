@@ -569,20 +569,23 @@ async function SegmentContent({
         .where("visibility", "==", "team")
         .get(),
     ]);
-    const initialRocks = rocksSnap.docs.map((d) => {
-      const x = d.data();
-      return {
-        id: d.id,
-        team_id: x.team_id,
-        title: x.title,
-        owner_id: x.owner_id ?? null,
-        quarter: x.quarter,
-        due_date: x.due_date ?? null,
-        status: x.status,
-        description: x.description ?? null,
-        rock_type: x.rock_type ?? null,
-      };
-    });
+    const initialRocks = rocksSnap.docs
+      // Archived rocks stay off the L10 (mirrors the client-side filter).
+      .filter((d) => d.data().archived_at == null)
+      .map((d) => {
+        const x = d.data();
+        return {
+          id: d.id,
+          team_id: x.team_id,
+          title: x.title,
+          owner_id: x.owner_id ?? null,
+          quarter: x.quarter,
+          due_date: x.due_date ?? null,
+          status: x.status,
+          description: x.description ?? null,
+          rock_type: x.rock_type ?? null,
+        };
+      });
     const initialTodos = todosSnap.docs.map((d) => {
       const x = d.data();
       return {

@@ -1,7 +1,7 @@
 ---
 project: HPB
 updated: 2026-08-12
-verified: main @ 98bb30b  # prod runs 90ec7cb — see Deployment truth
+verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [N23, F5, QW1, N18, F3, N3, N2, N4, N24]
+  next: [N23, QW1, N18, F3, N3, N2, N4, N24]
   awaiting: [N1, P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -27,18 +27,16 @@ The merged client-feedback priority list is agent-local on the consultant
 machine (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`) and
 is a working aid, never an authority.
 
-**Deployment truth as of 2026-08-12:** **prod ≠ main.** Cloud Run (service
-`eos`, `hpb-eos-prod`, us-east1) runs `90ec7cb` — the F1 ship (PR #22
-quick wins + PR #24 team management), confirmed by the operator; prior rev
-`eos-00042-pvp` superseded and the new revision id was never captured.
-`main` has since moved to `98bb30b`, **five** merge PRs ahead of prod:
-**#25 + #26** (settings/profile — Google Tasks completion pull, Sync button,
-`reassign-user` script, sidebar collapse), **#27** (custom agendas), **#28**
-(`feature/multi-team` — My-Home board, shared-rock read path, HPB restyle of
-Home/rocks/status) and **#29** (P3-2 rich text across every description
-field). Everything those PRs deliver is sandbox-proven and **invisible to the
-client until F5 ships**. Earlier revisions of this file cited only #26 for the
-settings/profile work; it landed across **#25 and #26**. F1 `done`; F5 opened.
+**Deployment truth as of 2026-08-12 (F5 shipped):** **prod = main code.**
+Cloud Run (service `eos`, `hpb-eos-prod`, us-east1) runs revision
+**`eos-00046-nxv`**, image tag **`98bb30b`** — current `main` code
+(commits after `98bb30b` are roadmap-only). The F5 ship delivered PRs
+#25–#29 (settings/profile + Google Tasks completion, custom agendas,
+My-Home board + multi-team, rich text) and the `firestore.rules` deploy
+(#27 agenda rules). F1 and F5 `done`. **Known-broken on prod:** the Rocks
+Archived tab (**N23**) — the fix did not exist when F5 shipped, and the
+Monday sweep (2026-08-17) will create the first archived rocks that
+trigger it. N23 now needs its own small ship before the sweep.
 
 ## Queue — the single ordering
 
@@ -55,15 +53,14 @@ by cost-to-close, then by size:
 | # | Item | Effort | Why here |
 |---|---|---|---|
 | now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5, now live on `main` and prod). Must land on `main` before F5 so the ship carries the fix — and before F4's sweep populates archives |
-| 2 | **F5** | S | Prod lags `main` by **five** merge PRs; five tracker items are built but invisible to the client |
-| 3 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
-| 4 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 5 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 6 | **N3** | M | No deps; migration integrity before broader rollout |
-| 7 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 8 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
-| 9 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
+| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5) — **live on prod**, which F5 shipped without the fix. Fix + mini-ship must land before the 2026-08-17 sweep creates the first archived rocks |
+| 2 | **QW1** | S | Prod spot-check + Open question 6 — now covers the F5 payload too (U1, P1-7, P2-1, P3-2 → `verified`), plus the F5 sign-in/OAuth check |
+| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
+| 5 | **N3** | M | No deps; migration integrity before broader rollout |
+| 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
+| 7 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
+| 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
@@ -151,7 +148,7 @@ logged.
 - 2026-08-10 · done · src operator — prod confirmed: current teams infra live; F1 closed; queue.now → N1
 
 ### F5 · Ship main (#25–#29) to Cloud Run prod
-*W0 · not-started · due — · deps — · owner daniel · src pr#25,pr#26,pr#27,pr#28,pr#29 · upd 2026-08-12*
+*W0 · done · due — · deps — · owner daniel · src pr#25,pr#26,pr#27,pr#28,pr#29 · upd 2026-08-12*
 
 Effort S. Prod is `90ec7cb` (the F1 ship). `main` is `98bb30b` and has since
 taken **#25 + #26** (settings/profile + Google Tasks completion pull),
@@ -176,13 +173,14 @@ sign-in-test first (including the negative test: a non-HPB, non-allowlisted
 account must be **rejected**), or ship F5 *after* the meeting. Rollback per the
 cutover plan is to run the session on the trial URL.
 
-Gates U1, P1-7, P2-1 and P3-2 reaching `verified`. Capture the revision id this
-time.
+Gates U1, P1-7, P2-1 and P3-2 reaching `verified` — F5 is now done, so those
+four move to QW1's prod spot-check. Revision id captured: **`eos-00046-nxv`**.
 
 **Trail**
 - 2026-08-11 · note · src pr#26,pr#27 — merged to origin/main; prod still on the F1 revision
 - 2026-08-12 · note · src pr#28,pr#29 — #28 and #29 also merged; prod still on the F1 revision, now five merge PRs behind. No rules/index deploy needed for #28 or #29 (checked); #27's agenda rules still are.
 - 2026-08-12 · risk · src cutover-plan#open-items — the OAuth-client collision that broke all trial sign-in was recorded only in docs/CUTOVER_PLAN.md and P1-7, never on F5 — the item that would trigger it. Folded in above.
+- 2026-08-12 · ship · src session-2026-08-12 — daniel: F5 cleared on prod, `firestore.rules` deployed. Confirmed via gcloud: rev `eos-00046-nxv`, image `98bb30b`, 100% traffic. Shipped **without** the N23 archive-tab fix (item opened the same day); N23 needs its own mini-ship before the 08-17 sweep. Sign-in/OAuth landmine above not yet explicitly re-tested — fold the sign-in check (incl. the negative test) into QW1's prod spot-check.
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -552,12 +550,14 @@ admin-SDK `Timestamp` instance — into the `"use client"` `RockRow`; class
 instances aren't RSC-serializable, so Active renders (all `null`) and
 Archived crashes. Every other tab already serializes defensively server-side
 (todos/issues/headlines format `archived_at` via `toDate`/`toMillis` before
-the boundary); Rocks is the one surface passing the raw object. Prod
-(`90ec7cb`) has the same code, so its tab breaks the moment the Monday sweep
-archives its first rock — which F4's backfill (due before 2026-08-17) is
-about to make happen. Fix is small: serialize at the projection (millis or a
-boolean — `rock-row.tsx` only ever checks `!= null`). Land on `main` before
-F5 so the ship carries it; the due date is the Sunday before the sweep. Do
+the boundary); Rocks is the one surface passing the raw object. Prod now runs the
+same code (`98bb30b` via the F5 ship, which predated this fix), so its tab
+breaks the moment the Monday sweep archives its first rock — which F4's
+backfill (due before 2026-08-17) is about to make happen. Fix is small:
+serialize at the projection (millis or a boolean — `rock-row.tsx` only ever
+checks `!= null`). F5 shipped without it, so this now needs its **own
+mini-ship to prod** (same F5 mechanics, no rules deploy); the due date is
+the Sunday before the sweep. Do
 the audit's **L1** companions in the same pass if capacity allows (L10 rocks
 segment and due-soon milestone surfaces never filter `archived_at` — the
 first archived rock reappears in every L10 and its milestones keep nagging).

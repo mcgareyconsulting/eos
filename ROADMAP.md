@@ -149,16 +149,29 @@ HPB restyle) and **#29** (rich text across descriptions) — five client-tracker
 items the client cannot see. Same shape as F1. Extra steps this
 time: deploy `firestore.rules` (PR #27 added agenda rules), and each user must
 **Connect Google Tasks once on the live URL** because sandbox tokens do not
-carry to `hpb-eos-prod-db`. **PR #28 needs no rules or index deploy** —
-verified 2026-08-12: it changed neither `firestore.rules` nor
-`firestore.indexes.json`, and its one new query
-(`rocks where shared_team_ids array-contains`) is equality-only, so Firestore
-serves it by merging single-field indexes. Gates U1, P1-7, P2-1 and P3-2 reaching
-`verified`. Capture the revision id this time.
+carry to `hpb-eos-prod-db`. **#28 and #29 need no rules or index deploy** — verified
+2026-08-12: neither changed `firestore.rules` or `firestore.indexes.json`, and
+#28's one new query (`rocks where shared_team_ids array-contains`) is
+equality-only, so Firestore serves it from merged single-field indexes.
+
+⚠ **Sign-in landmine — read before shipping.** F5 puts the Google Tasks
+connector (#25/#26) on prod for the first time. `docs/CUTOVER_PLAN.md` is
+explicit: Tasks needs **its own** OAuth client in the client's project, and
+*"reusing Firebase's is what broke all trial sign-in previously"*
+(cutover-checklist §9; P1-7 carries the same warning). This failure mode takes
+out **sign-in for everyone**, not just Tasks, so shipping F5 shortly before a
+live L10 risks the meeting itself. Either provision the prod OAuth client and
+sign-in-test first (including the negative test: a non-HPB, non-allowlisted
+account must be **rejected**), or ship F5 *after* the meeting. Rollback per the
+cutover plan is to run the session on the trial URL.
+
+Gates U1, P1-7, P2-1 and P3-2 reaching `verified`. Capture the revision id this
+time.
 
 **Trail**
 - 2026-08-11 · note · src pr#26,pr#27 — merged to origin/main; prod still on the F1 revision
 - 2026-08-12 · note · src pr#28,pr#29 — #28 and #29 also merged; prod still on the F1 revision, now five merge PRs behind. No rules/index deploy needed for #28 or #29 (checked); #27's agenda rules still are.
+- 2026-08-12 · risk · src cutover-plan#open-items — the OAuth-client collision that broke all trial sign-in was recorded only in docs/CUTOVER_PLAN.md and P1-7, never on F5 — the item that would trigger it. Folded in above.
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -326,14 +339,26 @@ Owner/Implementer roles (see N6 and Resolved-log context).
 Effort S. Grant `role: "admin"` to Steph (`pnpm admin:set-role`, sign
 out/in after claim); walk create team → invite leader → Done → leader
 invites members. Confirm directory soft-read + hard data isolation from a
-real client account. This is `queue.now` — the validation gate for P2-7
-reaching `verified`. Ops notes: `docs/TEAM_MGMT_OPS.md`. F1 is live; needs
-Steph's time (client side).
+real client account. The validation gate for P2-7 reaching `verified`. Ops
+notes: `docs/TEAM_MGMT_OPS.md`. F1 is live; needs Steph's time (client side),
+which is why this sits in `awaiting` rather than `next` — an earlier revision
+of this body claimed it was `queue.now`, which the front matter has not agreed
+with since 2026-08-11.
+
+**Runnable on prod today.** The team-management flow this tests shipped in
+**PR #24** and is live on `90ec7cb`, so it does **not** wait on F5 — Steph can
+walk create-team → invite → members against prod as it stands. Two operational
+notes before doing it: `pnpm accounts:create` is **not** sandboxed (Firebase
+Auth is project-level, so it affects prod and sandbox alike), and deleting an
+Auth user re-keys the uid, which orphans memberships (P1-2). The cutover
+checklist also still lists **email addresses for Steph, Cora and Jessica** as
+owed by the client — needed before inviting them.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#13 — Steph: wants admin testing when ready
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 1
 - 2026-08-10 · note · src F1 — prod unblocked; promoted to queue.now
+- 2026-08-12 · note · src session-2026-08-12 — flagged as the item behind today's L10 new-team/new-member test; confirmed runnable on prod (PR #24 is live) and therefore not gated on F5
 
 ### N2 · Multi-team stress-testing setup
 *W2 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -462,6 +487,47 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — N13 folded into this item; design precedes build
 - 2026-08-12 · build · src pr#28 — My-Home board + multi-team Home + shared-rock read path shipped to main; found by reconciliation, not recorded when merged
 - 2026-08-12 · note · src pr#28 — remaining scope re-derived from the merged code: no share writer, Rocks tab excluded, rules gap (N20), milestone-assignee case unverified
+
+### N21 · Headlines add-form → button (match the other tabs)
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S. The Headlines tab carries a permanently-open add form at the top
+(title + category + detail + Add button) while every other tab uses a single
+button that opens a modal — Rocks "+ New Rock", Issues "+ Add issue", To-Dos
+"+ Add to-do". Collapse Headlines to the same pattern so the list is the page
+and adding is an action, not a standing block of fields.
+
+Note the interaction with **P3-2**: that inline form now holds a
+`RichTextEditor` (grown to 7 rows on 2026-08-12 at the client's request,
+because people write a lot there). Moving it into a modal should reuse the
+sizing already proven in `headline-edit-modal.tsx` — `max-w-4xl`, 16 rows,
+footer pinned outside the scroll area — rather than re-deriving it. The edit
+modal is effectively the target design; this item is mostly "use it for
+create too".
+
+**Trail**
+- 2026-08-12 · request · src session-2026-08-12 — daniel: collapse the floating add fields to a button like all the other add types
+
+### N22 · To-Dos tab restyled to the Home board
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S–M. Restyle the To-Dos tab to the two-column Home board that shipped
+in **PR #28**, with **rock-milestone to-dos and ordinary to-dos on the left**.
+Pull over whatever the Home work already solved rather than re-deriving it:
+`lib/home-board.ts` owns the selection rules (including
+`isMilestoneHiddenByRock`, which is exactly the milestone-vs-todo overlap this
+tab has to get right), and `app/(app)/home/home-rocks-list.tsx` plus the
+restyled row/badge components carry the visual language. Scope is presentation
++ grouping, not new data.
+
+Open sub-question for the build: the To-Dos tab is team-scoped while Home is
+person-scoped, so "two columns" has to be re-read for a team surface — decide
+whether the right split is milestones/to-dos (as asked) or mine/team's, and
+confirm against the tab's actual job in the L10 To-Dos segment before
+committing to the layout.
+
+**Trail**
+- 2026-08-12 · request · src session-2026-08-12 — daniel: to-do needs restyled like home page, two column, rock milestone to-dos and normal to-dos on the left; style relative to the pieces that can be pulled over
 
 ### N6 · Better import functionality
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*

@@ -189,14 +189,13 @@ function milestoneDoc(
   };
 }
 
-// Cap guest shares so Firestore rules can check membership on a fixed
-// prefix of shared_team_ids (see firestore.rules sharedRockAccess).
+// Cap guest shares so Firestore rules can check a fixed prefix of
+// shared_team_ids (see firestore.rules sharedRockAccess when deployed).
 const MAX_SHARED_TEAMS = 8;
 
 /**
- * Rock fields from the modal FormData.
- * Steph model: owner is always a person; type is separate (individual /
- * department / company); optional shared_team_ids for other teams.
+ * Rock fields from the modal. Owner is always a person; type is separate
+ * (individual / department / company); optional shared_team_ids.
  */
 function parseRockFields(formData: FormData, uid: string) {
   const title = String(formData.get("title") ?? "").trim();
@@ -205,11 +204,12 @@ function parseRockFields(formData: FormData, uid: string) {
   if (!title || !quarter) throw new Error("Title and quarter required");
 
   const ownerRaw = String(formData.get("owner_id") ?? "").trim();
-  // Reject legacy "team" sentinel — department rocks still need a person.
+  // Reject legacy "team" / Department sentinel — team rocks still need a person.
   if (!ownerRaw || ownerRaw === "team") {
-    throw new Error("Owner is required — pick a person accountable for this rock.");
+    throw new Error(
+      "Owner is required — pick a person accountable for this rock.",
+    );
   }
-  const owner_id = ownerRaw || uid;
 
   const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
   const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
@@ -221,7 +221,7 @@ function parseRockFields(formData: FormData, uid: string) {
     // end-of-quarter as a suggestion; it must never be re-forced here.
     due_date: String(formData.get("due_date") ?? "").trim() || null,
     description: String(formData.get("description") ?? "").trim() || null,
-    owner_id,
+    owner_id: ownerRaw || uid,
     rock_type,
   };
 }

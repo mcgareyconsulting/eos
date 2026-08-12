@@ -12,7 +12,10 @@ import {
 import { normalizeRockType, type RockType } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 
-/** Create/edit chooser — plain language for Steph’s team vs individual model. */
+type Member = { user_id: string; full_name: string };
+type ShareTeam = { id: string; name: string };
+
+/** Create/edit chooser — team vs individual (person owner is separate). */
 const ROCK_KIND_OPTIONS: {
   value: RockType;
   label: string;
@@ -34,9 +37,6 @@ const ROCK_KIND_OPTIONS: {
     hint: "Company-wide priority — with Department section rocks",
   },
 ];
-
-type Member = { user_id: string; full_name: string };
-type ShareTeam = { id: string; name: string };
 
 type DraftMilestone = {
   /** React key; also the todo doc id when this row already exists. */
@@ -88,7 +88,6 @@ export function NewRockButton({
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
-  /** Other teams the user may share this rock into (excludes home team). */
   shareTeams?: ShareTeam[];
 }) {
   const [open, setOpen] = useState(false);
@@ -173,8 +172,8 @@ export function EditRockButton({
 }
 
 /**
- * One modal for create and edit: home team (context), type, person owner,
- * optional share-to-teams, plus milestones — saved together.
+ * Create/edit: home team (context), rock kind, person owner, optional share,
+ * rich description, milestones.
  */
 export function RockModal({
   teamId,
@@ -196,7 +195,6 @@ export function RockModal({
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
-  /** Teams available for share (excludes this home team). */
   shareTeams?: ShareTeam[];
   /** Present = edit mode. */
   rock?: RockForEdit;
@@ -226,7 +224,6 @@ export function RockModal({
   // cleared due date stays empty — never re-seed end-of-quarter on edit.
   const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 
-  // Milestone owner inherits the rock's person owner.
   const inheritOwner = ownerId || currentUserId;
 
   const [rows, setRows] = useState<DraftMilestone[]>(() => {
@@ -243,11 +240,8 @@ export function RockModal({
           blankRow(currentUserId),
           blankRow(currentUserId),
         ];
-    // "Add milestone" entry point: start on a fresh row, not the rock fields.
     return focusMilestones ? [...base, blankRow(inheritOwner)] : base;
   });
-  // The milestone input to focus on mount — the appended fresh row, then any
-  // row added with the button below.
   const [focusKey, setFocusKey] = useState<string | null>(() =>
     focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
   );
@@ -365,7 +359,6 @@ export function RockModal({
               />
             </Field>
 
-            {/* Kind first and obvious: individual vs team rock (person owner is separate). */}
             <div>
               <div className="mb-1.5 text-[11.5px] font-semibold text-zinc-600 dark:text-zinc-400">
                 Rock kind <span className="text-red-600">*</span>
@@ -419,7 +412,6 @@ export function RockModal({
               />
             </Field>
 
-            {/* Owner is always a person — separate from rock kind. */}
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               <Field label="Owner" required>
                 <select
@@ -444,6 +436,9 @@ export function RockModal({
                   placeholder="e.g. 2026-Q3"
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Free text — calendar Q, fiscal period, or custom label.
+                </p>
               </Field>
               <Field label="Due date">
                 <input
@@ -453,7 +448,7 @@ export function RockModal({
                   className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
                 />
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  Optional — clear if no date yet.
+                  Optional — clear it if there is no date yet.
                 </p>
               </Field>
             </div>
@@ -485,8 +480,8 @@ export function RockModal({
                   })}
                 </div>
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  Home team stays {teamName ?? "this team"}. Sharing is team-to-team,
-                  not person-to-person.
+                  Home team stays {teamName ?? "this team"}. Sharing is
+                  team-to-team, not person-to-person.
                 </p>
               </Field>
             )}

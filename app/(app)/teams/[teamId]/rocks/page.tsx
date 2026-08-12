@@ -25,8 +25,6 @@ type RockDoc = {
   rock_type: string | null;
   shared_team_ids?: string[] | null;
   archived_at?: unknown;
-  /** Present when this row is a guest rock shared *into* the current team. */
-  shared_from_team_name?: string | null;
 };
 
 type TodoDoc = {
@@ -43,6 +41,15 @@ type TodoDoc = {
 };
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
+
+// Timestamp | millis | null → millis | null. Unknown-but-set still counts
+// as archived (0), matching the != null checks downstream.
+function archivedAtMillis(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  const t = v as { toMillis?: () => number };
+  return typeof t.toMillis === "function" ? t.toMillis() : 0;
+}
 
 // Within a section: status, then quarter (so Q3 / Q4 sit together), then due.
 // No quarter filter — the list shows every rock on the team.
@@ -89,16 +96,11 @@ export default async function RocksPage({
   const quarter = currentQuarter();
   const eoq = toDateString(endOfQuarter());
 
-  // Fetch home-team rocks, rocks shared *into* this team, todos (milestones),
-  // and status history in parallel.
+  // Fetch rocks, todos (milestones), and status history in parallel.
   // Status comments live in rock_status_updates (append-only); they were
   // written on save but never rendered — P0-5 / Jenna P14-3.
-  const [rocksSnap, sharedIntoSnap, todosSnap, statusSnap] = await Promise.all([
+  const [rocksSnap, todosSnap, statusSnap] = await Promise.all([
     db.collection("rocks").where("team_id", "==", teamId).get(),
-    db
-      .collection("rocks")
-      .where("shared_team_ids", "array-contains", teamId)
-      .get(),
     db.collection("todos").where("team_id", "==", teamId).get(),
     db
       .collection("rock_status_updates")
@@ -106,61 +108,26 @@ export default async function RocksPage({
       .get(),
   ]);
 
-  // Resolve names for parent teams of shared-in rocks.
-  const parentTeamIds = [
-    ...new Set(
-      sharedIntoSnap.docs
-        .map((d) => d.data().team_id as string)
-        .filter((id) => id && id !== teamId),
-    ),
-  ];
-  const parentTeamName = new Map<string, string>();
-  if (parentTeamIds.length > 0) {
-    const parentDocs = await db.getAll(
-      ...parentTeamIds.map((id) => db.collection("teams").doc(id)),
-    );
-    for (const d of parentDocs) {
-      if (d.exists) {
-        parentTeamName.set(d.id, (d.data()?.name as string) ?? "Team");
-      }
-    }
-  }
-
-  function projectRock(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    d: { id: string; data: () => any },
-    opts?: { sharedFrom?: string | null },
-  ) {
-    const x = d.data() ?? {};
+  // Project plain fields only — spreading d.data() would pull created_at
+  // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
+  const allRocksRaw = rocksSnap.docs.map((d) => {
+    const x = d.data();
     return {
       id: d.id,
       team_id: x.team_id as string,
       title: x.title as string,
       owner_id: (x.owner_id as string | null) ?? null,
-      quarter: (x.quarter as string) ?? "",
+      quarter: x.quarter as string,
       due_date: (x.due_date as string | null) ?? null,
       status: x.status as string,
       description: (x.description as string | null) ?? null,
       rock_type: (x.rock_type as string | null) ?? null,
       shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
-      archived_at: x.archived_at ?? null,
-      shared_from_team_name: opts?.sharedFrom ?? null,
+      // archived_at is a Firestore Timestamp — pass millis, the raw class
+      // instance can't cross into the client RockRow (audit M5 / N23).
+      archived_at: archivedAtMillis(x.archived_at),
     };
-  }
-
-  // Project plain fields only — spreading d.data() would pull created_at
-  // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
-  const homeRocks = rocksSnap.docs.map((d) => projectRock(d));
-  const seenIds = new Set(homeRocks.map((r) => r.id));
-  const sharedIn = sharedIntoSnap.docs
-    .filter((d) => !seenIds.has(d.id))
-    .map((d) => {
-      const parentId = d.data().team_id as string;
-      return projectRock(d, {
-        sharedFrom: parentTeamName.get(parentId) ?? "Other team",
-      });
-    });
-  const allRocksRaw = [...homeRocks, ...sharedIn];
+  });
   // Active/Archived tabs; Monday CF moves Done rocks (completed_at before
   // this week's Monday) onto Archived.
   const activeRockCount = allRocksRaw.filter((r) => r.archived_at == null)
@@ -171,41 +138,12 @@ export default async function RocksPage({
     showArchived ? r.archived_at != null : r.archived_at == null,
   );
 
-  // Guest rock milestones live on the parent team_id — fetch by source_rock_id.
-  const guestRockIds = sharedIn.map((r) => r.id);
-  const guestMilestoneSnaps =
-    guestRockIds.length === 0
-      ? []
-      : await Promise.all(
-          // Firestore `in` max 30.
-          chunk(guestRockIds, 30).map((ids) =>
-            db
-              .collection("todos")
-              .where("source_rock_id", "in", ids)
-              .get(),
-          ),
-        );
-  const guestStatusSnaps =
-    guestRockIds.length === 0
-      ? []
-      : await Promise.all(
-          chunk(guestRockIds, 30).map((ids) =>
-            db
-              .collection("rock_status_updates")
-              .where("rock_id", "in", ids)
-              .get(),
-          ),
-        );
-
   // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
   // which can't cross the Server → Client component boundary.
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
-  for (const d of [...todosSnap.docs, ...guestMilestoneSnaps.flatMap((s) => s.docs)]) {
-    const t = d.data() as TodoDoc & { source_rock_id?: string | null };
+  for (const d of todosSnap.docs) {
+    const t = d.data() as TodoDoc;
     if (!t.source_rock_id) continue;
-    if (milestonesByRock.get(t.source_rock_id)?.some((m) => m.id === d.id)) {
-      continue;
-    }
     const m: MilestoneSerialized = {
       id: d.id,
       title: t.title,
@@ -219,11 +157,10 @@ export default async function RocksPage({
     milestonesByRock.set(t.source_rock_id, list);
   }
   const statusByRock = new Map<string, StatusUpdateSerialized[]>();
-  for (const d of [...statusSnap.docs, ...guestStatusSnaps.flatMap((s) => s.docs)]) {
+  for (const d of statusSnap.docs) {
     const x = d.data();
     const rockId = x.rock_id as string | undefined;
     if (!rockId) continue;
-    if (statusByRock.get(rockId)?.some((e) => e.id === d.id)) continue;
     const created = x.created_at as { toMillis?: () => number } | null;
     const entry: StatusUpdateSerialized = {
       id: d.id,
@@ -267,44 +204,12 @@ export default async function RocksPage({
   const rosterIds = new Set(members.map((m) => m.user_id));
   const filter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
 
-  // Owner labels: roster first; shared-in rocks may name owners off-roster.
-  const extraOwnerIds = [
-    ...new Set(
-      allRocksRaw
-        .map((r) => r.owner_id)
-        .filter((id): id is string => !!id && !rosterIds.has(id)),
-    ),
-  ];
-  const extraOwnerNames = new Map<string, string>();
-  if (extraOwnerIds.length > 0) {
-    const userDocs = await db.getAll(
-      ...extraOwnerIds.map((id) => db.collection("users").doc(id)),
-    );
-    for (const d of userDocs) {
-      if (!d.exists) continue;
-      const data = d.data() ?? {};
-      const name =
-        (data.display_name as string) ||
-        [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
-        (data.email as string) ||
-        "—";
-      extraOwnerNames.set(d.id, name);
-    }
-  }
+  const ownerName = (id: string | null) =>
+    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
 
-  const ownerName = (id: string | null) => {
-    if (!id) return "—";
-    return (
-      members.find((m) => m.user_id === id)?.full_name ??
-      extraOwnerNames.get(id) ??
-      "—"
-    );
-  };
-
-  // All view: Department section first (type department/company, or legacy
-  // null owner), then members A–Z, then owners no longer on the roster.
-  // Shared-in rocks sit in those sections with a "from {team}" cue on the row.
-  // L10 matches (see segment-rocks.tsx).
+  // All view: Department section first (shared ownership + Level=Department
+  // rocks, even when a person is accountable), then members A–Z, then owners
+  // no longer on the roster. L10 matches (see segment-rocks.tsx).
   type RockWithId = { id: string } & RockDoc;
   type RockGroup = {
     key: string;
@@ -314,7 +219,8 @@ export default async function RocksPage({
 
   function buildSections(rocks: RockWithId[]): RockGroup[] {
     if (filter !== "all") {
-      // Person filter: every rock they own (department + individual).
+      // Person filter: their individual/company rocks + any they own that
+      // aren't in the shared department bucket for this view.
       const list = rocks.filter((r) => r.owner_id === filter);
       if (list.length === 0) return [];
       return [
@@ -329,7 +235,7 @@ export default async function RocksPage({
         deptRocks.push(r);
         continue;
       }
-      const id = r.owner_id ?? "_unknown";
+      const id = r.owner_id as string;
       const list = byOwner.get(id) ?? [];
       list.push(r);
       byOwner.set(id, list);
@@ -357,10 +263,8 @@ export default async function RocksPage({
       });
     }
 
-    // Owners not on the current roster (left the team, shared-in owner, stale).
-    const orphanIds = [...byOwner.keys()].filter(
-      (id) => id !== "_unknown" && !rosterIds.has(id),
-    );
+    // Owners not on the current roster (left the team, stale id).
+    const orphanIds = [...byOwner.keys()].filter((id) => !rosterIds.has(id));
     orphanIds.sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
     for (const id of orphanIds) {
       groups.push({
@@ -459,27 +363,22 @@ export default async function RocksPage({
       ) : (
         sections.map((g) => (
           <RockSection key={g.key} title={g.title} count={g.rocks.length}>
-            {g.rocks.map((r) => {
-              const isGuest = r.team_id !== teamId;
-              return (
-                <RockRow
-                  key={r.id}
-                  teamId={isGuest ? r.team_id : teamId}
-                  userId={uid}
-                  rock={r}
-                  ownerName={ownerName(r.owner_id)}
-                  members={members}
-                  milestones={milestonesByRock.get(r.id) ?? []}
-                  defaultDue={eoq}
-                  statusHistory={statusByRock.get(r.id) ?? []}
-                  currentUserId={uid}
-                  teamName={team.name}
-                  shareTeams={shareTeams}
-                  sharedFromLabel={r.shared_from_team_name ?? null}
-                  readOnly={isGuest}
-                />
-              );
-            })}
+            {g.rocks.map((r) => (
+              <RockRow
+                key={r.id}
+                teamId={teamId}
+                userId={uid}
+                rock={r}
+                ownerName={ownerName(r.owner_id)}
+                members={members}
+                milestones={milestonesByRock.get(r.id) ?? []}
+                defaultDue={eoq}
+                statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={uid}
+                teamName={team.name}
+                shareTeams={shareTeams}
+              />
+            ))}
           </RockSection>
         ))
       )}
@@ -513,10 +412,4 @@ function RockSection({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <EmptyState icon={Target} title={children} />;
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }

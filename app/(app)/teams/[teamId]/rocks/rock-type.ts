@@ -5,15 +5,15 @@
 //
 // Department section rocks (top of Rocks list / L10):
 //   - rock_type === "department" or "company", OR
-//   - legacy: owner_id null (pre-Steph model; treat as department until migrated)
-// A department rock still has a **person** owner_id (Steph 2026-08-12).
+//   - legacy: owner_id null (pre person-always model)
+// A department/team rock still has a **person** owner_id.
 
 export const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
 
 export const ROCK_TYPE_LABELS: Record<RockType, string> = {
   company: "Company",
-  /** Stored as department; UI says Team (Steph: team rock with a person owner). */
+  /** Stored as department; UI says Team. */
   department: "Team",
   individual: "Individual",
 };
@@ -36,7 +36,7 @@ export const ROCK_TYPE_ORDER: readonly RockType[] = [
 
 /**
  * @deprecated Legacy form sentinel when owner_id was null for "team" rocks.
- * New creates always use a person owner_id. Kept for reading old form posts.
+ * New creates always use a person owner_id.
  */
 export const DEPARTMENT_OWNER_VALUE = "team";
 /** @deprecated Use DEPARTMENT_OWNER_VALUE */
@@ -51,7 +51,7 @@ export function normalizeRockType(v: string | null | undefined): RockType {
   return v && isRockType(v) ? v : "individual";
 }
 
-/** Legacy docs only: no person owner_id (pre person-always model). */
+/** Legacy docs only: no person owner_id. */
 export function isSharedDepartmentOwner(
   ownerId: string | null | undefined,
 ): boolean {
@@ -65,8 +65,7 @@ export function isTeamRock(ownerId: string | null | undefined): boolean {
 
 /**
  * Rocks that belong in the Department section at the top of the list / L10.
- * Department/company-typed rocks land here even when a person is the owner.
- * Null owner_id (legacy) still counts as department until data is fixed.
+ * Department/company-typed rocks land here even with a person owner.
  */
 export function isDepartmentRock(r: {
   owner_id?: string | null;
@@ -77,5 +76,5 @@ export function isDepartmentRock(r: {
   return t === "department" || t === "company";
 }
 
-/** Display label for the shared department section header. */
+/** Display label for the shared department owner chip. */
 export const DEPARTMENT_SECTION_TITLE = "Department";

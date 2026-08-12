@@ -30,6 +30,9 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  // Timestamp from onSnapshot, absent from the server prefetch (which
+  // filters archived rocks out entirely). Only ever read as truthy.
+  archived_at?: unknown;
 };
 
 // completed_at is a Firestore Timestamp from onSnapshot but a plain boolean
@@ -89,15 +92,6 @@ export function SegmentRocks({
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
   );
-  // Rocks shared *into* this team (parent lives elsewhere).
-  const sharedRocksQuery = useMemo(
-    () =>
-      fsQuery(
-        collection(db, "rocks"),
-        where("shared_team_ids", "array-contains", teamId),
-      ),
-    [db, teamId],
-  );
   // Milestones are todos with source_rock_id set and visibility="team".
   // We must filter by visibility to satisfy the per-doc rule (otherwise
   // Firestore rejects the whole subscription if any private todo matches).
@@ -124,18 +118,14 @@ export function SegmentRocks({
   );
 
   const homeRocks = useCollection<RockDoc>(rocksQuery, initialRocks);
-  const sharedRocks = useCollection<RockDoc>(sharedRocksQuery, []);
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
 
-  const rocks = useMemo(() => {
-    const byId = new Map<string, RockDoc>();
-    for (const r of homeRocks) byId.set(r.id, r);
-    for (const r of sharedRocks) {
-      if (!byId.has(r.id)) byId.set(r.id, r);
-    }
-    return [...byId.values()];
-  }, [homeRocks, sharedRocks]);
+  // Archived rocks belong to the Rocks tab's Archived view, not the L10.
+  const rocks = useMemo(
+    () => homeRocks.filter((r) => r.archived_at == null),
+    [homeRocks],
+  );
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -297,32 +287,27 @@ export function SegmentRocks({
             )}
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {g.rocks.map((r) => {
-              const isGuest = r.team_id !== teamId;
-              return (
-                <RockRow
-                  key={r.id}
-                  teamId={isGuest ? r.team_id : teamId}
-                  userId={userId}
-                  rock={r}
-                  ownerName={
-                    r.owner_id
-                      ? members.find((m) => m.user_id === r.owner_id)
-                          ?.full_name ?? "—"
-                      : g.isDepartmentSection
-                        ? DEPARTMENT_SECTION_TITLE
-                        : g.title
-                  }
-                  members={members}
-                  milestones={milestonesByRock.get(r.id) ?? []}
-                  defaultDue={defaultDue}
-                  statusHistory={statusByRock.get(r.id) ?? []}
-                  currentUserId={userId}
-                  readOnly={isGuest}
-                  sharedFromLabel={isGuest ? "another team" : null}
-                />
-              );
-            })}
+            {g.rocks.map((r) => (
+              <RockRow
+                key={r.id}
+                teamId={teamId}
+                userId={userId}
+                rock={r}
+                ownerName={
+                  r.owner_id
+                    ? members.find((m) => m.user_id === r.owner_id)
+                        ?.full_name ?? "—"
+                    : g.isDepartmentSection
+                      ? DEPARTMENT_SECTION_TITLE
+                      : g.title
+                }
+                members={members}
+                milestones={milestonesByRock.get(r.id) ?? []}
+                defaultDue={defaultDue}
+                statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={userId}
+              />
+            ))}
           </div>
         </section>
       ))}

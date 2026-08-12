@@ -470,18 +470,32 @@ path (`rocks where shared_team_ids array-contains <my team>`, status filtered
 in memory to avoid needing a composite index); and an HPB-brand restyle of
 Home, rocks rows/detail, status badges and the comment composer.
 
-**Remaining — effort M, and the queue row is no longer "design first":**
-- **No write path.** Nothing can set `shared_team_ids`: no UI, no server
-  action. The code says so itself — *"field optional; empty until share
-  ships"*. So the read path is live but inert until a sharer exists.
-- **Rocks tab ignores shared-in rocks.** Only Home queries
-  `shared_team_ids`; `rocks/page.tsx` does not, so a shared rock appears on a
-  guest member's Home but not on that team's Rocks tab.
-- **The grant is ungoverned in rules** — see **N20**. Decide the sharing
-  model before building the writer, because the writer is what makes the gap
-  reachable.
+**Steph model refine (2026-08-12):**
+1. Rocks are **always owned by a person**. A department/team rock is still
+   person-owned — e.g. **Joe owns the EOS deployment rock for ESD** (team
+   priority, Joe accountable). Individual vs department is type/scope, not
+   “unowned.”
+2. **Share rocks with teams**, not with individuals. People see a rock via
+   team membership (parent or `shared_team_ids`), not person-level rock share.
+3. **Milestones may cross teams** (person assignees elsewhere). That is
+   milestone assignment, separate from rock↔team sharing.
+
+**Build (PR #30, `feature/multi-team`, in review):** modal separates **Type**
+(individual/department/company) from **Owner** (person required); optional
+**Share with teams** → `shared_team_ids`; guest Rocks list + L10 show shared-in
+rocks (read-only, “from {team}” badge). Legacy `owner_id: null` still sorts
+into Department. Firestore rules: guest teams may **read** shared rocks.
+This closes the two biggest post-#28 gaps — the missing `shared_team_ids`
+**write path** and the Rocks tab ignoring shared-in rocks.
+
+**Remaining — effort S–M once PR #30 lands:**
+- **The grant is ungoverned in rules** — see **N20**, now urgent rather than
+  latent: PR #30 builds the writer that makes the gap reachable. Decide the
+  sharing model alongside the PR #30 review.
 - Milestone assignees on another team's rock (Cora / leadership "My 90"
   pattern) — not verified as covered.
+- Migrate legacy `owner_id: null` rocks; guest **edit** policy if needed
+  (shared-in is read-only today).
 - The original tab question beyond Home (per-team sections vs unified feed vs
   sticky filter) is still open for the non-Home surfaces.
 
@@ -496,6 +510,8 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — N13 folded into this item; design precedes build
 - 2026-08-12 · build · src pr#28 — My-Home board + multi-team Home + shared-rock read path shipped to main; found by reconciliation, not recorded when merged
 - 2026-08-12 · note · src pr#28 — remaining scope re-derived from the merged code: no share writer, Rocks tab excluded, rules gap (N20), milestone-assignee case unverified
+- 2026-08-12 · client · src session-2026-08-12 — Steph: always person-accountable; share rock→teams not people; milestones can span teams
+- 2026-08-12 · build · src pr#30 — share writer + type/owner split + guest read surfaces (Rocks tab + L10) on `feature/multi-team`; answers the two pr#28 gaps above
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*

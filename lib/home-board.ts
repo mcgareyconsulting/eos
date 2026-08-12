@@ -8,8 +8,9 @@ function isDepartmentRock(r: {
   owner_id?: string | null;
   rock_type?: string | null;
 }): boolean {
+  // Legacy null owner = department; type department/company with person owner too.
   if (r.owner_id == null || r.owner_id === "") return true;
-  return r.rock_type === "department";
+  return r.rock_type === "department" || r.rock_type === "company";
 }
 
 export type HomeTodoLike = {

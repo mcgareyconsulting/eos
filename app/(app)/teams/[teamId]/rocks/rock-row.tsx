@@ -14,8 +14,6 @@ import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
-  DEPARTMENT_SECTION_TITLE,
-  isSharedDepartmentOwner,
   toFormRockType,
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
@@ -37,10 +35,12 @@ type Rock = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  shared_team_ids?: string[] | null;
   archived_at?: unknown | null;
 };
 
 type Member = { user_id: string; full_name: string };
+type ShareTeam = { id: string; name: string };
 
 /**
  * Collapsed row: status rail + pill, owner · quarter · milestone progress,
@@ -57,6 +57,7 @@ export function RockRow({
   statusHistory = [],
   currentUserId,
   teamName,
+  shareTeams = [],
 }: {
   teamId: string;
   userId: string;
@@ -68,14 +69,14 @@ export function RockRow({
   statusHistory?: StatusUpdateSerialized[];
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   const type = toFormRockType(rock.rock_type);
-  const displayOwner = isSharedDepartmentOwner(rock.owner_id)
-    ? DEPARTMENT_SECTION_TITLE
-    : ownerName;
+  // Always prefer person name; legacy null owner shows as em dash.
+  const displayOwner = ownerName || "—";
   const doneCount = milestones.filter((m) => m.completed).length;
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
@@ -185,6 +186,7 @@ export function RockRow({
               defaultDue={defaultDue}
               currentUserId={currentUserId}
               teamName={teamName}
+              shareTeams={shareTeams}
               className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
             />
             <form action={toggleArchive}>
@@ -287,6 +289,7 @@ export function RockRow({
                   defaultDue={defaultDue}
                   currentUserId={currentUserId}
                   teamName={teamName}
+                  shareTeams={shareTeams}
                 />
                 <RockDetailTrigger
                   teamId={teamId}
@@ -318,6 +321,7 @@ function AddMilestoneLink(props: {
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
 }) {
   const [open, setOpen] = useState(false);
   return (

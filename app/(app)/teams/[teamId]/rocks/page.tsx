@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { NewRockButton } from "./rock-modal";
@@ -10,7 +11,6 @@ import { RockRow } from "./rock-row";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
-  isSharedDepartmentOwner,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
@@ -24,6 +24,7 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  shared_team_ids?: string[] | null;
   archived_at?: unknown;
 };
 
@@ -41,6 +42,15 @@ type TodoDoc = {
 };
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
+
+// Timestamp | millis | null → millis | null. Unknown-but-set still counts
+// as archived (0), matching the != null checks downstream.
+function archivedAtMillis(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  const t = v as { toMillis?: () => number };
+  return typeof t.toMillis === "function" ? t.toMillis() : 0;
+}
 
 // Within a section: status, then quarter (so Q3 / Q4 sit together), then due.
 // No quarter filter — the list shows every rock on the team.
@@ -76,7 +86,13 @@ export default async function RocksPage({
   const { owner: ownerParam, archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(teamId);
-  const members = await getTeamMembers(teamId);
+  const [{ teams: userTeams }, members] = await Promise.all([
+    getUserTeamsFirebase(),
+    getTeamMembers(teamId),
+  ]);
+  const shareTeams = userTeams
+    .filter((t) => t.id !== teamId)
+    .map((t) => ({ id: t.id, name: t.name }));
 
   const quarter = currentQuarter();
   const eoq = toDateString(endOfQuarter());
@@ -107,7 +123,10 @@ export default async function RocksPage({
       status: x.status as string,
       description: (x.description as string | null) ?? null,
       rock_type: (x.rock_type as string | null) ?? null,
-      archived_at: x.archived_at ?? null,
+      shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
+      // archived_at is a Firestore Timestamp — pass millis, the raw class
+      // instance can't cross into the client RockRow (audit M5 / N23).
+      archived_at: archivedAtMillis(x.archived_at),
     };
   });
   // Active/Archived tabs; Monday CF moves Done rocks (completed_at before
@@ -267,7 +286,8 @@ export default async function RocksPage({
       ? "No rocks yet."
       : `No rocks for ${ownerName(filter)}.`;
 
-  const ownerFilter = filter !== "all" && filter !== "team" ? filter : undefined;
+  const ownerFilter =
+    filter !== "all" && filter !== "team" ? filter : undefined;
 
   return (
     <div className="space-y-6">
@@ -291,6 +311,7 @@ export default async function RocksPage({
             defaultDue={eoq}
             currentUserId={uid}
             teamName={team.name}
+            shareTeams={shareTeams}
           />
         }
       />
@@ -316,17 +337,14 @@ export default async function RocksPage({
                 teamId={teamId}
                 userId={uid}
                 rock={r}
-                ownerName={
-                  isSharedDepartmentOwner(r.owner_id)
-                    ? DEPARTMENT_SECTION_TITLE
-                    : ownerName(r.owner_id)
-                }
+                ownerName={ownerName(r.owner_id)}
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={eoq}
                 statusHistory={statusByRock.get(r.id) ?? []}
                 currentUserId={uid}
                 teamName={team.name}
+                shareTeams={shareTeams}
               />
             ))}
           </RockSection>

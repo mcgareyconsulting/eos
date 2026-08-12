@@ -14,7 +14,6 @@ import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
-  isSharedDepartmentOwner,
 } from "../../rocks/rock-type";
 import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
@@ -31,6 +30,9 @@ type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  // Timestamp from onSnapshot, absent from the server prefetch (which
+  // filters archived rocks out entirely). Only ever read as truthy.
+  archived_at?: unknown;
 };
 
 // completed_at is a Firestore Timestamp from onSnapshot but a plain boolean
@@ -115,9 +117,15 @@ export function SegmentRocks({
     [db, teamId],
   );
 
-  const rocks = useCollection<RockDoc>(rocksQuery, initialRocks);
+  const homeRocks = useCollection<RockDoc>(rocksQuery, initialRocks);
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
+
+  // Archived rocks belong to the Rocks tab's Archived view, not the L10.
+  const rocks = useMemo(
+    () => homeRocks.filter((r) => r.archived_at == null),
+    [homeRocks],
+  );
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -286,11 +294,11 @@ export function SegmentRocks({
                 userId={userId}
                 rock={r}
                 ownerName={
-                  isSharedDepartmentOwner(r.owner_id)
-                    ? DEPARTMENT_SECTION_TITLE
+                  r.owner_id
+                    ? members.find((m) => m.user_id === r.owner_id)
+                        ?.full_name ?? "—"
                     : g.isDepartmentSection
-                      ? members.find((m) => m.user_id === r.owner_id)
-                          ?.full_name ?? DEPARTMENT_SECTION_TITLE
+                      ? DEPARTMENT_SECTION_TITLE
                       : g.title
                 }
                 members={members}

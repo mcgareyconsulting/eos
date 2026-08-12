@@ -90,10 +90,26 @@ describe("shouldShowHomeRock", () => {
     );
   });
 
-  test("shows department rock on my team", () => {
+  test("shows department rock on my team (legacy null owner)", () => {
     assert.equal(
       shouldShowHomeRock(
         rock({ id: "r2", owner_id: null, rock_type: "department" }),
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+      ),
+      true,
+    );
+  });
+
+  test("shows department rock owned by a person (Steph model)", () => {
+    // Team/department priority with Joe accountable — still a department rock
+    // for the home board when I'm on that team.
+    assert.equal(
+      shouldShowHomeRock(
+        rock({
+          id: "r2b",
+          owner_id: other,
+          rock_type: "department",
+        }),
         { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
       ),
       true,

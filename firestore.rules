@@ -104,9 +104,26 @@ service cloud.firestore {
     }
 
     // ---------- rocks ----------
+    // Parent team members always have full access. Guest teams listed in
+    // shared_team_ids may read (up to 8 shares; index checks below). Writes
+    // stay on the home team only — edit status/share from the parent team.
+    function rockSharedToMe() {
+      let ids = resource.data.get('shared_team_ids', []);
+      return ids is list && (
+        (ids.size() > 0 && isMember(ids[0])) ||
+        (ids.size() > 1 && isMember(ids[1])) ||
+        (ids.size() > 2 && isMember(ids[2])) ||
+        (ids.size() > 3 && isMember(ids[3])) ||
+        (ids.size() > 4 && isMember(ids[4])) ||
+        (ids.size() > 5 && isMember(ids[5])) ||
+        (ids.size() > 6 && isMember(ids[6])) ||
+        (ids.size() > 7 && isMember(ids[7]))
+      );
+    }
     match /rocks/{id} {
-      allow read, update, delete: if admin() || isMember(resource.data.team_id);
-      allow create:               if admin() || isMember(request.resource.data.team_id);
+      allow read:   if admin() || isMember(resource.data.team_id) || rockSharedToMe();
+      allow update, delete: if admin() || isMember(resource.data.team_id);
+      allow create: if admin() || isMember(request.resource.data.team_id);
     }
 
     // ---------- rock status updates (immutable history) ----------

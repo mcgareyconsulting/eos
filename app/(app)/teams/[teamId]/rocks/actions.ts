@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
@@ -189,7 +189,14 @@ function milestoneDoc(
   };
 }
 
-// Owner is always a person; type (individual / team) is a separate field.
+// Cap guest shares so Firestore rules can check a fixed prefix of
+// shared_team_ids (see firestore.rules sharedRockAccess when deployed).
+const MAX_SHARED_TEAMS = 8;
+
+/**
+ * Rock fields from the modal. Owner is always a person; type is separate
+ * (individual / department / company); optional shared_team_ids.
+ */
 function parseRockFields(formData: FormData, uid: string) {
   const title = String(formData.get("title") ?? "").trim();
   // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
@@ -219,14 +226,73 @@ function parseRockFields(formData: FormData, uid: string) {
   };
 }
 
+function parseSharedTeamIds(
+  formData: FormData,
+  homeTeamId: string,
+  allowedTeamIds: Set<string>,
+): string[] {
+  const raw = formData.get("shared_team_ids");
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Malformed shared teams payload");
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of parsed) {
+    const id = String(item ?? "").trim();
+    if (!id || id === homeTeamId || seen.has(id)) continue;
+    if (!allowedTeamIds.has(id)) {
+      throw new Error("Can only share with teams you belong to.");
+    }
+    seen.add(id);
+    out.push(id);
+    if (out.length >= MAX_SHARED_TEAMS) break;
+  }
+  return out;
+}
+
+async function allowedShareTeamIds(
+  db: Firestore,
+  uid: string,
+  isAdmin: boolean,
+): Promise<Set<string>> {
+  if (isAdmin) {
+    const snap = await db.collection("teams").get();
+    return new Set(snap.docs.map((d) => d.id));
+  }
+  const snap = await db
+    .collection("team_members")
+    .where("user_id", "==", uid)
+    .get();
+  return new Set(snap.docs.map((d) => d.data().team_id as string));
+}
+
+function revalidateRockSurfaces(teamId: string, sharedTeamIds: string[]) {
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/todos`);
+  revalidatePath(`/teams/${teamId}/meetings`);
+  for (const id of sharedTeamIds) {
+    revalidatePath(pathFor(id));
+    revalidatePath(`/teams/${id}/meetings`);
+  }
+  revalidatePath("/home");
+}
+
 export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
+
+  const allowed = await allowedShareTeamIds(db, uid, !!isAdmin);
+  const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
 
   const milestones = parseMilestones(formData.get("milestones"));
 
@@ -240,6 +306,7 @@ export async function createRockWithMilestones(
     owner_id,
     description,
     rock_type,
+    shared_team_ids,
     status: "on_track",
     completed_at: null,
     // Explicit null so the Monday sweep's `archived_at == null` equality
@@ -255,9 +322,7 @@ export async function createRockWithMilestones(
   }
   await batch.commit();
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/home");
+  revalidateRockSurfaces(teamId, shared_team_ids);
 }
 
 export async function updateRockWithMilestones(
@@ -265,10 +330,13 @@ export async function updateRockWithMilestones(
   rockId: string,
   formData: FormData,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
+
+  const allowed = await allowedShareTeamIds(db, uid, !!isAdmin);
+  const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
 
   const milestones = parseMilestones(formData.get("milestones"));
   const keptIds = new Set(
@@ -294,6 +362,7 @@ export async function updateRockWithMilestones(
     description,
     owner_id,
     rock_type,
+    shared_team_ids,
   });
 
   // Rows the user removed in the modal.
@@ -319,7 +388,5 @@ export async function updateRockWithMilestones(
   }
   await batch.commit();
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/home");
+  revalidateRockSurfaces(teamId, shared_team_ids);
 }

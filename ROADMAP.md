@@ -10,8 +10,8 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [N23, QW1, N18, F3, N3, N2, N4, N24]
-  awaiting: [N1, P3-1, N10, F2, B1, P3-5]
+  next: [N23, QW1, N18, F3, N3, N2, N24]
+  awaiting: [N1, P3-1, N10, F2, B1, P3-5, N4]
 ---
 
 # HPB · ROADMAP
@@ -59,14 +59,14 @@ by cost-to-close, then by size:
 | 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
 | 5 | **N3** | M | No deps; migration integrity before broader rollout |
 | 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 7 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
-| 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
+| 7 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
 question 3) · **N10** (Cloud Storage bucket — rides with F2) · **F2**
 (security-tier selection + IAM resolution) · **B1**, **P3-5** (client
-BigQuery conventions).
+BigQuery conventions) · **N4** (a second team existing — sharing surfaces
+deferred 2026-08-12, N20 rides with it).
 
 **Reconciled 2026-08-11** against `origin/main`: **U1**, **P1-7** (PR #26)
 and **P2-1** (PR #27) left the queue as `shipped` — all three now wait on
@@ -96,6 +96,16 @@ per the same session and queued at the tail. Git housekeeping: this file's
 08-12 reconciliation had been living only on `chore/roadmap-reconcile-0812`
 while `main` still held the stale 08-11 copy — merged to `main` this session;
 the roadmap authority is only an authority when it's on `main`.
+
+**Session 2026-08-12 (consolidation):** daniel: *"stable, clean version —
+too many things in flight."* PR #30 conflict resolved and merged; then a
+parallel uncommitted variant of the same rocks work was found in the main
+checkout — it kept the owner+type model but removed the sharing read
+surfaces. Decision: that variant wins (`feat/rocks-owner-type-simplify`),
+because no second team exists. The N23 archive fix and the L10 archived-rock
+filter ride the same branch. **N4 → `awaiting` a second team; N20 rides
+with it.** Rock model going forward: `owner_id` person always required +
+`rock_type` (individual / team / company) — two data points.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -424,6 +434,7 @@ so the client path matches Home.
 
 **Trail**
 - 2026-08-12 · note · src pr#28 — read path merged with no rules coverage; recorded as backlog, not queued, since the writer that makes it reachable is unbuilt
+- 2026-08-12 · decision · src session-2026-08-12 — daniel: N20 valid, but no second team exists, so sharing is deferred; the PR #30 writer stays (inert with one team), the read surfaces come out. Fix these rules before any sharing surface returns — see N4 consolidation.
 
 ## Workstream 3 — Product (client feedback, Passes 13–18)
 
@@ -470,18 +481,38 @@ path (`rocks where shared_team_ids array-contains <my team>`, status filtered
 in memory to avoid needing a composite index); and an HPB-brand restyle of
 Home, rocks rows/detail, status badges and the comment composer.
 
-**Remaining — effort M, and the queue row is no longer "design first":**
-- **No write path.** Nothing can set `shared_team_ids`: no UI, no server
-  action. The code says so itself — *"field optional; empty until share
-  ships"*. So the read path is live but inert until a sharer exists.
-- **Rocks tab ignores shared-in rocks.** Only Home queries
-  `shared_team_ids`; `rocks/page.tsx` does not, so a shared rock appears on a
-  guest member's Home but not on that team's Rocks tab.
-- **The grant is ungoverned in rules** — see **N20**. Decide the sharing
-  model before building the writer, because the writer is what makes the gap
-  reachable.
+**Steph model refine (2026-08-12):**
+1. Rocks are **always owned by a person**. A department/team rock is still
+   person-owned — e.g. **Joe owns the EOS deployment rock for ESD** (team
+   priority, Joe accountable). Individual vs department is type/scope, not
+   “unowned.”
+2. **Share rocks with teams**, not with individuals. People see a rock via
+   team membership (parent or `shared_team_ids`), not person-level rock share.
+3. **Milestones may cross teams** (person assignees elsewhere). That is
+   milestone assignment, separate from rock↔team sharing.
+
+**Build (PR #30, merged 2026-08-12):** modal separates **Type**
+(individual/department/company) from **Owner** (person required); optional
+**Share with teams** → `shared_team_ids`; guest Rocks list + L10 show shared-in
+rocks (read-only, “from {team}” badge). Legacy `owner_id: null` still sorts
+into Department. Firestore rules: guest teams may **read** shared rocks.
+
+**Consolidation (2026-08-12, `feat/rocks-owner-type-simplify`):** daniel:
+*no second team exists yet, so we are not sharing across teams* — the durable
+model is **two data points on every rock: a person `owner_id` (required) and
+a `rock_type` flag (individual vs team/company)**. That model stays. The
+shared-in **read surfaces** (guest Rocks list, L10 shared-in rocks) were
+removed again on this branch; the modal's share picker remains but is inert
+with one team. **N4 moves to `awaiting` — gated on a second team existing.**
+N20 rides with it and stays unreachable until then.
+
+**Remaining — when a second team exists:**
+- Reinstate the shared-in read surfaces (the removed code is in PR #30's
+  history — `git log feature/multi-team`).
+- **N20** rules governance *before* reinstating (the writer already exists).
 - Milestone assignees on another team's rock (Cora / leadership "My 90"
   pattern) — not verified as covered.
+- Migrate legacy `owner_id: null` rocks; guest **edit** policy if needed.
 - The original tab question beyond Home (per-team sections vs unified feed vs
   sticky filter) is still open for the non-Home surfaces.
 
@@ -496,6 +527,8 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — N13 folded into this item; design precedes build
 - 2026-08-12 · build · src pr#28 — My-Home board + multi-team Home + shared-rock read path shipped to main; found by reconciliation, not recorded when merged
 - 2026-08-12 · note · src pr#28 — remaining scope re-derived from the merged code: no share writer, Rocks tab excluded, rules gap (N20), milestone-assignee case unverified
+- 2026-08-12 · client · src session-2026-08-12 — Steph: always person-accountable; share rock→teams not people; milestones can span teams
+- 2026-08-12 · build · src pr#30 — share writer + type/owner split + guest read surfaces (Rocks tab + L10) on `feature/multi-team`; answers the two pr#28 gaps above
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
@@ -539,7 +572,7 @@ committing to the layout.
 - 2026-08-12 · request · src session-2026-08-12 — daniel: to-do needs restyled like home page, two column, rock milestone to-dos and normal to-dos on the left; style relative to the pieces that can be pulled over
 
 ### N23 · Rocks Archived tab crashes — audit M5 confirmed live
-*W3 · not-started · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+*W3 · in-progress · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
 
 Effort S. The Rocks **Archived** tab throws as soon as any archived rock
 exists — reported broken on `main` 2026-08-12. Root cause is exactly audit
@@ -557,14 +590,19 @@ backfill (due before 2026-08-17) is about to make happen. Fix is small:
 serialize at the projection (millis or a boolean — `rock-row.tsx` only ever
 checks `!= null`). F5 shipped without it, so this now needs its **own
 mini-ship to prod** (same F5 mechanics, no rules deploy); the due date is
-the Sunday before the sweep. Do
-the audit's **L1** companions in the same pass if capacity allows (L10 rocks
-segment and due-soon milestone surfaces never filter `archived_at` — the
-first archived rock reappears in every L10 and its milestones keep nagging).
+the Sunday before the sweep. **Fix built** on
+`feat/rocks-owner-type-simplify` (with the rocks-simplification work):
+`archived_at` serialized to millis at the projection, plus the L1 rocks
+half — the L10 rocks segment now filters archived rocks (client
+subscription and server prefetch). Still open from L1: due-soon milestone
+surfaces (`todos/page.tsx`, `segment-todos.tsx`) don't check the parent
+rock's archive state, so an archived rock's milestones keep nagging — Home
+already handles this via `lib/home-board.ts`, the team surfaces don't.
 
 **Trail**
 - 2026-08-04 · note · src audit-2026-08-04#M5 — predicted: "Archived rocks tab will throw once any rock is archived"; latent only because the archive path didn't exist yet
 - 2026-08-12 · report · src session-2026-08-12 — daniel: Rocks archive tab broken on main; diagnosis matches M5 (raw Timestamp across the RSC boundary into RockRow); prod carries the same code
+- 2026-08-12 · build · src feat/rocks-owner-type-simplify — millis serialization + L10 archived-rock filter (L1 rocks half); 331 tests pass, tsc clean; awaits PR merge + prod mini-ship
 
 ### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*

@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   average,
   formatGoal,
+  formatScorecardDraft,
+  formatValue,
   hitRate,
   missingCount,
   onTrack,
+  parseScorecardValue,
   parseWeekRange,
   trendStatus,
 } from "./scorecard";
@@ -49,6 +52,80 @@ describe("formatGoal", () => {
   it("uses ascii comparators for familiarity", () => {
     assert.equal(formatGoal(5, "gte", "number"), ">= 5");
     assert.equal(formatGoal(63, "lte", "number"), "<= 63");
+  });
+
+  it("uses the unit for yes/no and time goals", () => {
+    assert.equal(formatGoal(1, "eq", "yesno"), "= Yes");
+    assert.equal(formatGoal(90, "lte", "time"), "<= 1:30");
+  });
+});
+
+describe("parseScorecardValue", () => {
+  it("accepts currency, percents, commas, and blanks", () => {
+    assert.deepEqual(parseScorecardValue("$10.00"), { ok: true, value: 10 });
+    assert.deepEqual(parseScorecardValue("1,234"), { ok: true, value: 1234 });
+    assert.deepEqual(parseScorecardValue("12.5%"), { ok: true, value: 12.5 });
+    assert.deepEqual(parseScorecardValue(""), { ok: true, value: null });
+    assert.deepEqual(parseScorecardValue("—"), { ok: true, value: null });
+  });
+
+  it("maps yes/no and h:mm when unit is omitted (import)", () => {
+    assert.deepEqual(parseScorecardValue("yes"), { ok: true, value: 1 });
+    assert.deepEqual(parseScorecardValue("No"), { ok: true, value: 0 });
+    assert.deepEqual(parseScorecardValue("1:30"), { ok: true, value: 90 });
+  });
+
+  it("rejects non-numeric text instead of collapsing to NaN", () => {
+    assert.deepEqual(parseScorecardValue("asdf"), {
+      ok: false,
+      error: "Enter a number",
+    });
+    assert.deepEqual(parseScorecardValue("10.0.0"), {
+      ok: false,
+      error: "Enter a number",
+    });
+  });
+
+  it("honors the metric unit", () => {
+    assert.deepEqual(parseScorecardValue("yes", "yesno"), {
+      ok: true,
+      value: 1,
+    });
+    assert.deepEqual(parseScorecardValue("false", "yesno"), {
+      ok: true,
+      value: 0,
+    });
+    assert.deepEqual(parseScorecardValue("yes", "number"), {
+      ok: false,
+      error: "Enter a number",
+    });
+    assert.deepEqual(parseScorecardValue("$10.00", "currency"), {
+      ok: true,
+      value: 10,
+    });
+    assert.deepEqual(parseScorecardValue("1:30", "time"), {
+      ok: true,
+      value: 90,
+    });
+    assert.deepEqual(parseScorecardValue("yes", "time"), {
+      ok: false,
+      error: "Enter time as h:mm",
+    });
+    assert.deepEqual(parseScorecardValue("$10.00", "yesno"), {
+      ok: false,
+      error: "Enter Yes or No",
+    });
+  });
+});
+
+describe("formatValue / formatScorecardDraft", () => {
+  it("renders yes/no and time in the unit's language", () => {
+    assert.equal(formatValue(1, "yesno"), "Yes");
+    assert.equal(formatValue(0, "yesno"), "No");
+    assert.equal(formatValue(0.67, "yesno"), "67%");
+    assert.equal(formatValue(90, "time"), "1:30");
+    assert.equal(formatScorecardDraft(1, "yesno"), "Yes");
+    assert.equal(formatScorecardDraft(90, "time"), "1:30");
   });
 });
 

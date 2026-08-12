@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import {
+  isScorecardUnit,
+  parseScorecardValue,
+  type ScorecardUnit,
+} from "@/lib/scorecard";
+import {
   SCORECARD_PERIODS,
   type MetricInterval,
 } from "@/lib/scorecard-periods";
-
-const UNITS = ["number", "currency", "percent", "yesno", "time"] as const;
-type Unit = (typeof UNITS)[number];
 
 const DIRECTIONS = ["gte", "lte", "eq"] as const;
 type Direction = (typeof DIRECTIONS)[number];
@@ -37,15 +39,25 @@ export async function addMetric(teamId: string, formData: FormData) {
 
   if (!name) throw new Error("Name required");
 
-  const unit: Unit = UNITS.includes(unitRaw as Unit)
-    ? (unitRaw as Unit)
-    : "number";
-  const direction: Direction = DIRECTIONS.includes(directionRaw as Direction)
-    ? (directionRaw as Direction)
-    : "gte";
-  const goal = goalRaw === "" ? null : Number(goalRaw);
-  if (goal !== null && Number.isNaN(goal))
-    throw new Error("Goal must be a number");
+  const unit: ScorecardUnit = isScorecardUnit(unitRaw) ? unitRaw : "number";
+  const direction: Direction =
+    unit === "yesno"
+      ? "eq"
+      : DIRECTIONS.includes(directionRaw as Direction)
+        ? (directionRaw as Direction)
+        : "gte";
+  const parsedGoal =
+    goalRaw === "" ? { ok: true as const, value: null } : parseScorecardValue(goalRaw, unit);
+  if (!parsedGoal.ok) {
+    throw new Error(
+      unit === "yesno"
+        ? "Goal must be Yes or No"
+        : unit === "time"
+          ? "Goal must be a time (h:mm)"
+          : "Goal must be a number",
+    );
+  }
+  const goal = parsedGoal.value;
 
   await db.collection("scorecard_metrics").add({
     team_id: teamId,
@@ -89,13 +101,14 @@ export async function setEntry(
   metricId: string,
   weekStartDate: string,
   valueRaw: string,
-) {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
-  const trimmed = valueRaw.trim();
-  const value = trimmed === "" ? null : Number(trimmed);
-  if (value !== null && Number.isNaN(value))
-    throw new Error("Value must be a number");
+  const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
+  const unitRaw = String(snap.data()?.unit ?? "number");
+  const unit = isScorecardUnit(unitRaw) ? unitRaw : "number";
+  const parsed = parseScorecardValue(valueRaw, unit);
+  if (!parsed.ok) return parsed;
+  const value = parsed.value;
 
   const id = `${metricId}__${weekStartDate}`;
   await db
@@ -113,6 +126,7 @@ export async function setEntry(
     );
 
   revalidatePath(pathFor(teamId));
+  return { ok: true };
 }
 
 export async function deleteMetric(teamId: string, metricId: string) {

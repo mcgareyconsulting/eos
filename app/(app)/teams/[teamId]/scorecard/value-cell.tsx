@@ -1,8 +1,18 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { setEntry } from "./actions";
+import {
+  formatScorecardDraft,
+  formatValue,
+  parseScorecardValue,
+} from "@/lib/scorecard";
 import { cn } from "@/lib/utils";
+
+const ERROR_CLEAR_MS = 4000;
+
+const fieldClass =
+  "w-full min-w-[4.5rem] text-right rounded-md bg-white dark:bg-zinc-900 px-2 py-1.5 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-hpb-blue dark:focus:ring-hpb-gold";
 
 export function ValueCell({
   teamId,
@@ -10,6 +20,7 @@ export function ValueCell({
   weekStartDate,
   initial,
   onTrack,
+  unit = "number",
   isCurrentWeek = false,
 }: {
   teamId: string;
@@ -17,18 +28,25 @@ export function ValueCell({
   weekStartDate: string;
   initial: number | null;
   onTrack: boolean | null;
+  unit?: string;
   isCurrentWeek?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(initial == null ? "" : String(initial));
+  const [draft, setDraft] = useState(() => formatScorecardDraft(initial, unit));
+  const [error, setError] = useState<string | null>(null);
   const [, start] = useTransition();
   const [optimisticValue, setOptimisticValue] = useOptimistic(
     initial,
     (_state, next: number | null) => next,
   );
 
-  const display =
-    optimisticValue == null ? "—" : optimisticValue.toLocaleString();
+  useEffect(() => {
+    if (!error) return;
+    const t = window.setTimeout(() => setError(null), ERROR_CLEAR_MS);
+    return () => window.clearTimeout(t);
+  }, [error]);
+
+  const display = formatValue(optimisticValue, unit);
 
   // Soft cell tints match the client's existing mental model (green = hit
   // goal, red = missed) without the harsh solid fills of the legacy tool.
@@ -44,56 +62,115 @@ export function ValueCell({
           "bg-emerald-50/50 text-emerald-800 dark:bg-emerald-950/25 dark:text-emerald-300"
         : "bg-red-50/50 text-red-800 dark:bg-red-950/25 dark:text-red-300";
 
+  const beginEdit = () => {
+    setError(null);
+    setDraft(formatScorecardDraft(optimisticValue, unit));
+    setEditing(true);
+  };
+
+  const commit = (raw = draft) => {
+    const previous = formatScorecardDraft(optimisticValue, unit);
+    if (raw === previous) {
+      setError(null);
+      setEditing(false);
+      return;
+    }
+    const parsed = parseScorecardValue(raw, unit);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      setDraft(previous);
+      setEditing(false);
+      return;
+    }
+    setError(null);
+    setEditing(false);
+    start(async () => {
+      setOptimisticValue(parsed.value);
+      const result = await setEntry(teamId, metricId, weekStartDate, raw);
+      if (result && !result.ok) setError(result.error);
+    });
+  };
+
   if (!editing) {
     return (
       <button
         type="button"
-        onClick={() => {
-          setDraft(optimisticValue == null ? "" : String(optimisticValue));
-          setEditing(true);
-        }}
+        onClick={beginEdit}
+        title={error ?? undefined}
+        aria-invalid={error ? true : undefined}
+        aria-label={error ? `${display}. ${error}` : undefined}
         className={cn(
           "w-full min-w-[4.5rem] rounded-md px-2 py-1.5 text-right tabular-nums hover:ring-1 hover:ring-inset hover:ring-zinc-300 dark:hover:ring-zinc-600",
           tone,
+          error &&
+            "ring-1 ring-inset ring-red-400 hover:ring-red-400 dark:ring-red-500",
         )}
       >
-        {display}
+        <span className="block">{display}</span>
+        {error ? (
+          <span
+            role="status"
+            className="block text-[10px] font-medium leading-tight text-red-600 dark:text-red-400"
+          >
+            {error}
+          </span>
+        ) : null}
       </button>
     );
   }
 
-  const commit = () => {
-    if (draft === (optimisticValue == null ? "" : String(optimisticValue))) {
-      setEditing(false);
-      return;
-    }
-    const parsed = draft.trim() === "" ? null : Number(draft);
-    const next = parsed != null && Number.isFinite(parsed) ? parsed : null;
-    setEditing(false);
-    start(async () => {
-      setOptimisticValue(next);
-      await setEntry(teamId, metricId, weekStartDate, draft);
-    });
-  };
+  if (unit === "yesno") {
+    return (
+      <select
+        autoFocus
+        value={draft}
+        aria-label="Yes or No"
+        onChange={(e) => {
+          const next = e.target.value;
+          setDraft(next);
+          commit(next);
+        }}
+        onBlur={() => commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setError(null);
+            setEditing(false);
+          }
+        }}
+        className={fieldClass}
+      >
+        <option value="">—</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    );
+  }
 
   return (
     <input
       autoFocus
       type="text"
-      inputMode="decimal"
+      inputMode={unit === "time" ? "text" : "decimal"}
+      autoComplete="off"
       size={1}
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      placeholder={unit === "time" ? "h:mm" : undefined}
+      aria-invalid={error ? true : undefined}
+      onChange={(e) => {
+        setError(null);
+        setDraft(e.target.value);
+      }}
+      onBlur={() => commit()}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
           (e.target as HTMLElement).blur();
         } else if (e.key === "Escape") {
+          setError(null);
           setEditing(false);
         }
       }}
-      className="w-full min-w-[4.5rem] text-right rounded-md bg-white dark:bg-zinc-900 px-2 py-1.5 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-hpb-blue dark:focus:ring-hpb-gold"
+      className={fieldClass}
     />
   );
 }

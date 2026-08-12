@@ -14,8 +14,6 @@ import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
-  DEPARTMENT_SECTION_TITLE,
-  isSharedDepartmentOwner,
   normalizeRockType,
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
@@ -37,10 +35,12 @@ type Rock = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  shared_team_ids?: string[] | null;
   archived_at?: unknown | null;
 };
 
 type Member = { user_id: string; full_name: string };
+type ShareTeam = { id: string; name: string };
 
 /**
  * Collapsed row: status rail + pill, owner · quarter · milestone progress,
@@ -57,6 +57,9 @@ export function RockRow({
   statusHistory = [],
   currentUserId,
   teamName,
+  shareTeams = [],
+  sharedFromLabel = null,
+  readOnly = false,
 }: {
   teamId: string;
   userId: string;
@@ -68,14 +71,18 @@ export function RockRow({
   statusHistory?: StatusUpdateSerialized[];
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
+  /** Guest rock shared into this list — e.g. "IT Systems". */
+  sharedFromLabel?: string | null;
+  /** Shared-in guest: view milestones/status, no edit/delete from guest team. */
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   const type = normalizeRockType(rock.rock_type);
-  const displayOwner = isSharedDepartmentOwner(rock.owner_id)
-    ? DEPARTMENT_SECTION_TITLE
-    : ownerName;
+  // Always prefer the person name; legacy null owner shows as em dash.
+  const displayOwner = ownerName || "—";
   const doneCount = milestones.filter((m) => m.completed).length;
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
@@ -112,7 +119,7 @@ export function RockRow({
           </button>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <RockDetailTrigger
                 teamId={teamId}
                 userId={userId}
@@ -133,6 +140,14 @@ export function RockRow({
               >
                 {ROCK_TYPE_LABELS[type]}
               </span>
+              {sharedFromLabel && (
+                <span
+                  className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
+                  title={`Shared from ${sharedFromLabel}`}
+                >
+                  from {sharedFromLabel}
+                </span>
+              )}
             </div>
 
             <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
@@ -173,43 +188,55 @@ export function RockRow({
           </div>
 
           <div className="flex w-28 shrink-0 justify-end">
-            <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
+            {!readOnly && (
+              <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
+            )}
+            {readOnly && (
+              <span className="text-[11px] font-medium capitalize text-zinc-500">
+                {status.replace("_", " ")}
+              </span>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-0.5">
-            <EditRockButton
-              teamId={teamId}
-              rock={rock}
-              members={members}
-              milestones={milestones}
-              defaultDue={defaultDue}
-              currentUserId={currentUserId}
-              teamName={teamName}
-              className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
-            />
-            <form action={toggleArchive}>
-              <button
-                type="submit"
-                aria-label={archivedRow ? "Restore rock" : "Archive rock"}
-                title={archivedRow ? "Restore" : "Archive now"}
-                className="rounded p-1 text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
-              >
-                <Archive className="h-[15px] w-[15px]" />
-              </button>
-            </form>
-            {!archivedRow && (
-              <ConfirmSubmitForm
-                action={remove}
-                confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
-              >
-                <button
-                  type="submit"
-                  aria-label="Delete rock"
-                  className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                >
-                  <Trash2 className="h-[15px] w-[15px]" />
-                </button>
-              </ConfirmSubmitForm>
+            {!readOnly && (
+              <>
+                <EditRockButton
+                  teamId={teamId}
+                  rock={rock}
+                  members={members}
+                  milestones={milestones}
+                  defaultDue={defaultDue}
+                  currentUserId={currentUserId}
+                  teamName={teamName}
+                  shareTeams={shareTeams}
+                  className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
+                />
+                <form action={toggleArchive}>
+                  <button
+                    type="submit"
+                    aria-label={archivedRow ? "Restore rock" : "Archive rock"}
+                    title={archivedRow ? "Restore" : "Archive now"}
+                    className="rounded p-1 text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
+                  >
+                    <Archive className="h-[15px] w-[15px]" />
+                  </button>
+                </form>
+                {!archivedRow && (
+                  <ConfirmSubmitForm
+                    action={remove}
+                    confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
+                  >
+                    <button
+                      type="submit"
+                      aria-label="Delete rock"
+                      className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                    >
+                      <Trash2 className="h-[15px] w-[15px]" />
+                    </button>
+                  </ConfirmSubmitForm>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -244,6 +271,13 @@ export function RockRow({
             </dl>
 
             <div className="space-y-2.5 px-3.5 py-3">
+              {sharedFromLabel && (
+                <p className="text-[12px] text-zinc-500">
+                  Shared from <span className="font-semibold">{sharedFromLabel}</span>
+                  {readOnly ? " · edit on the home team" : ""}
+                </p>
+              )}
+
               {hasDescription &&
                 (hasRichMarkup(rock.description) ? (
                   <div className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
@@ -272,35 +306,56 @@ export function RockRow({
                 </div>
               )}
 
-              <MilestoneChecklist
-                teamId={teamId}
-                members={members}
-                milestones={milestones}
-              />
+              {milestones.length > 0 &&
+                (readOnly ? (
+                  <ul className="space-y-1 text-[13px] text-zinc-600 dark:text-zinc-400">
+                    {milestones.map((m) => (
+                      <li key={m.id} className="flex gap-2">
+                        <span className="tabular-nums text-zinc-400">
+                          {m.completed ? "✓" : "○"}
+                        </span>
+                        <span
+                          className={m.completed ? "line-through opacity-60" : ""}
+                        >
+                          {m.title}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <MilestoneChecklist
+                    teamId={teamId}
+                    members={members}
+                    milestones={milestones}
+                  />
+                ))}
 
-              <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
-                <AddMilestoneLink
-                  teamId={teamId}
-                  rock={rock}
-                  members={members}
-                  milestones={milestones}
-                  defaultDue={defaultDue}
-                  currentUserId={currentUserId}
-                  teamName={teamName}
-                />
-                <RockDetailTrigger
-                  teamId={teamId}
-                  userId={userId}
-                  members={members}
-                  rock={rock}
-                  ownerName={displayOwner}
-                  milestones={detailMilestones}
-                  statusHistory={statusHistory}
-                  className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                >
-                  Full detail &amp; status history →
-                </RockDetailTrigger>
-              </div>
+              {!readOnly && (
+                <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+                  <AddMilestoneLink
+                    teamId={teamId}
+                    rock={rock}
+                    members={members}
+                    milestones={milestones}
+                    defaultDue={defaultDue}
+                    currentUserId={currentUserId}
+                    teamName={teamName}
+                    shareTeams={shareTeams}
+                  />
+                  <RockDetailTrigger
+                    teamId={teamId}
+                    userId={userId}
+                    members={members}
+                    rock={rock}
+                    ownerName={displayOwner}
+                    milestones={detailMilestones}
+                    statusHistory={statusHistory}
+                    className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  >
+                    Full detail &amp; status history →
+                  </RockDetailTrigger>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -318,6 +373,7 @@ function AddMilestoneLink(props: {
   defaultDue: string;
   currentUserId: string;
   teamName?: string;
+  shareTeams?: ShareTeam[];
 }) {
   const [open, setOpen] = useState(false);
   return (

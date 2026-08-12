@@ -14,7 +14,6 @@ import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
-  isSharedDepartmentOwner,
 } from "../../rocks/rock-type";
 import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
@@ -90,6 +89,15 @@ export function SegmentRocks({
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
   );
+  // Rocks shared *into* this team (parent lives elsewhere).
+  const sharedRocksQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "rocks"),
+        where("shared_team_ids", "array-contains", teamId),
+      ),
+    [db, teamId],
+  );
   // Milestones are todos with source_rock_id set and visibility="team".
   // We must filter by visibility to satisfy the per-doc rule (otherwise
   // Firestore rejects the whole subscription if any private todo matches).
@@ -115,9 +123,19 @@ export function SegmentRocks({
     [db, teamId],
   );
 
-  const rocks = useCollection<RockDoc>(rocksQuery, initialRocks);
+  const homeRocks = useCollection<RockDoc>(rocksQuery, initialRocks);
+  const sharedRocks = useCollection<RockDoc>(sharedRocksQuery, []);
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
+
+  const rocks = useMemo(() => {
+    const byId = new Map<string, RockDoc>();
+    for (const r of homeRocks) byId.set(r.id, r);
+    for (const r of sharedRocks) {
+      if (!byId.has(r.id)) byId.set(r.id, r);
+    }
+    return [...byId.values()];
+  }, [homeRocks, sharedRocks]);
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -279,27 +297,32 @@ export function SegmentRocks({
             )}
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {g.rocks.map((r) => (
-              <RockRow
-                key={r.id}
-                teamId={teamId}
-                userId={userId}
-                rock={r}
-                ownerName={
-                  isSharedDepartmentOwner(r.owner_id)
-                    ? DEPARTMENT_SECTION_TITLE
-                    : g.isDepartmentSection
+            {g.rocks.map((r) => {
+              const isGuest = r.team_id !== teamId;
+              return (
+                <RockRow
+                  key={r.id}
+                  teamId={isGuest ? r.team_id : teamId}
+                  userId={userId}
+                  rock={r}
+                  ownerName={
+                    r.owner_id
                       ? members.find((m) => m.user_id === r.owner_id)
-                          ?.full_name ?? DEPARTMENT_SECTION_TITLE
-                      : g.title
-                }
-                members={members}
-                milestones={milestonesByRock.get(r.id) ?? []}
-                defaultDue={defaultDue}
-                statusHistory={statusByRock.get(r.id) ?? []}
-                currentUserId={userId}
-              />
-            ))}
+                          ?.full_name ?? "—"
+                      : g.isDepartmentSection
+                        ? DEPARTMENT_SECTION_TITLE
+                        : g.title
+                  }
+                  members={members}
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={defaultDue}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={userId}
+                  readOnly={isGuest}
+                  sharedFromLabel={isGuest ? "another team" : null}
+                />
+              );
+            })}
           </div>
         </section>
       ))}

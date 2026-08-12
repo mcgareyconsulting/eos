@@ -67,9 +67,8 @@ describe("groupRocksForL10", () => {
   });
 
   test("department-typed rocks land in Department even with a personal owner", () => {
-    // rock_type === "department" pulls a rock into the shared section even
-    // when a person is accountable for it — Feature 5a's rule, mirrored
-    // from the Rocks tab.
+    // rock_type === "department" pulls a rock into the Department section even
+    // when a person is accountable (Steph: team rock still has a person owner).
     const rocks = [
       rock("r-dept-owned", { owner_id: "u-marcus", rock_type: "department" }),
       rock("r-personal", { owner_id: "u-marcus" }),

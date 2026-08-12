@@ -4,16 +4,17 @@
 // "individual" — never write undefined, always normalize on read.
 //
 // Department section rocks (top of Rocks list / L10):
-//   - owner_id null (shared department ownership), OR
-//   - rock_type === "department" even when a person is accountable.
-// See isDepartmentRock / DEPARTMENT_OWNER_VALUE.
+//   - rock_type === "department" or "company", OR
+//   - legacy: owner_id null (pre-Steph model; treat as department until migrated)
+// A department rock still has a **person** owner_id (Steph 2026-08-12).
 
 export const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
 
 export const ROCK_TYPE_LABELS: Record<RockType, string> = {
   company: "Company",
-  department: "Department",
+  /** Stored as department; UI says Team (Steph: team rock with a person owner). */
+  department: "Team",
   individual: "Individual",
 };
 
@@ -34,8 +35,8 @@ export const ROCK_TYPE_ORDER: readonly RockType[] = [
 ];
 
 /**
- * Form/owner-select sentinel: shared department ownership (owner_id null).
- * Value stays `"team"` so existing form posts / drafts keep working.
+ * @deprecated Legacy form sentinel when owner_id was null for "team" rocks.
+ * New creates always use a person owner_id. Kept for reading old form posts.
  */
 export const DEPARTMENT_OWNER_VALUE = "team";
 /** @deprecated Use DEPARTMENT_OWNER_VALUE */
@@ -50,7 +51,7 @@ export function normalizeRockType(v: string | null | undefined): RockType {
   return v && isRockType(v) ? v : "individual";
 }
 
-/** Shared department ownership: no person owner_id. */
+/** Legacy docs only: no person owner_id (pre person-always model). */
 export function isSharedDepartmentOwner(
   ownerId: string | null | undefined,
 ): boolean {
@@ -64,15 +65,17 @@ export function isTeamRock(ownerId: string | null | undefined): boolean {
 
 /**
  * Rocks that belong in the Department section at the top of the list / L10.
- * Department-typed rocks land here even when a person is the accountable owner.
+ * Department/company-typed rocks land here even when a person is the owner.
+ * Null owner_id (legacy) still counts as department until data is fixed.
  */
 export function isDepartmentRock(r: {
   owner_id?: string | null;
   rock_type?: string | null;
 }): boolean {
   if (isSharedDepartmentOwner(r.owner_id)) return true;
-  return normalizeRockType(r.rock_type) === "department";
+  const t = normalizeRockType(r.rock_type);
+  return t === "department" || t === "company";
 }
 
-/** Display label for the shared department owner chip. */
+/** Display label for the shared department section header. */
 export const DEPARTMENT_SECTION_TITLE = "Department";

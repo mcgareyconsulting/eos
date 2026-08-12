@@ -369,23 +369,42 @@ effort S: spot-verify on prod, then promote to `verified`.
 - 2026-08-10 · note · src F1 — prod ship confirmed; batch is live; `verified` still wants a spot-check
 
 ### N4 · Multi-team surface + shared rocks (design first)
-*W3 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W3 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-12*
 
 Effort L (design M, then build). How a user on several teams sees Home +
 tabs (per-team sections vs unified feed vs sticky filter). **Shared rocks
 are in product scope** (decided 2026-08-10): a rock has a parent team
-(canonical home) and can be shared/visible on other teams the owner belongs
-to — Steph's example: rock originated on IT Systems & Security, shared into
-ESD. Also milestone assignees on another team's rock (Cora / leadership
-"My 90" pattern). Privacy stays hard on non-shared team data (P2-7).
-Absorbs N13 (personal Home): Home should prioritize **my**
-todos/rocks/milestones, not a dump of everyone's items. Design before
-build.
+(canonical home) and can be shared/visible on other teams — Steph's example:
+rock originated on IT Systems & Security, shared into ESD. Also milestone
+assignees on another team's rock (Cora / leadership "My 90" pattern).
+Privacy stays hard on non-shared team data (P2-7). Absorbs N13 (personal
+Home): Home should prioritize **my** todos/rocks/milestones, not a dump of
+everyone's items. Design before build.
+
+**Steph model refine (2026-08-12):**
+1. Rocks are **always owned by a person**. A department/team rock is still
+   person-owned — e.g. **Joe owns the EOS deployment rock for ESD** (team
+   priority, Joe accountable). Individual vs department is type/scope, not
+   “unowned.”
+2. **Share rocks with teams**, not with individuals. People see a rock via
+   team membership (parent or `shared_team_ids`), not person-level rock share.
+3. **Milestones may cross teams** (person assignees elsewhere). That is
+   milestone assignment, separate from rock↔team sharing.
+
+**Build (2026-08-12 on `feature/multi-team`):** modal separates **Type**
+(individual/department/company) from **Owner** (person required); optional
+**Share with teams** → `shared_team_ids`; guest Rocks list + L10 show shared-in
+rocks (read-only, “from {team}” badge). Legacy `owner_id: null` still sorts
+into Department. Firestore rules: guest teams may **read** shared rocks.
+Remaining: cross-team milestone assignees, migrate null owners, guest edit
+policy if needed.
 
 **Trail**
 - 2026-08-05 · transcript · src roadmap-prior#pass-18 — Cora: Home is a dump of everyone's items; wants My-90-like personal priority
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — shared rocks in scope: parent team + share/visibility on other teams; milestone assignees cross-team
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — N13 folded into this item; design precedes build
+- 2026-08-12 · client · Steph — always person-accountable; share rock→teams not people; milestones can span teams
+- 2026-08-12 · build · feature/multi-team — person owner + type + share UI; guest read surfaces
 
 ### N13 · Personal Home (My 90–like)
 *W3 · dissolved · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*

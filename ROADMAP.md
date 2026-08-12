@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [F5, QW1, N18, F3, N3, N2, N4]
+  next: [N23, F5, QW1, N18, F3, N3, N2, N4, N24]
   awaiting: [N1, P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -55,13 +55,15 @@ by cost-to-close, then by size:
 | # | Item | Effort | Why here |
 |---|---|---|---|
 | now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **F5** | S | Prod lags `main` by **five** merge PRs; five tracker items are built but invisible to the client |
-| 2 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
-| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 5 | **N3** | M | No deps; migration integrity before broader rollout |
-| 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 7 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
+| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5, now live on `main` and prod). Must land on `main` before F5 so the ship carries the fix — and before F4's sweep populates archives |
+| 2 | **F5** | S | Prod lags `main` by **five** merge PRs; five tracker items are built but invisible to the client |
+| 3 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
+| 4 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 5 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
+| 6 | **N3** | M | No deps; migration integrity before broader rollout |
+| 7 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
+| 8 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
+| 9 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
@@ -88,6 +90,15 @@ had also never recorded **#25**, citing only #26 for settings/profile.
 is a session decision. One new item (**N20**) is recorded as backlog rather
 than queued for the same reason. Lesson worth keeping: verify against
 `origin/main` **before** starting work, not only when publishing it.
+
+**Session 2026-08-12 (later):** daniel reported the Rocks **Archived** tab
+broken on `main` — recorded as **N23** (audit M5 confirmed live, no longer
+latent) and queued ahead of F5 so the fix rides the prod ship. **N24**
+(add-{item} + Active | Archived coherence across all entity tabs) recorded
+per the same session and queued at the tail. Git housekeeping: this file's
+08-12 reconciliation had been living only on `chore/roadmap-reconcile-0812`
+while `main` still held the stale 08-11 copy — merged to `main` this session;
+the roadmap authority is only an authority when it's on `main`.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -226,9 +237,9 @@ confirm the tightened `firestore.rules` are deployed to prod (folded into
 F1 — **F1 done 2026-08-10**; treat rules as live unless an ops re-check
 disagrees); (c) `L10_GAPS` red item still open — rules allow direct client
 update/delete of meeting docs, so the server-side meeting guards are
-advisory against a devtools user; (d) audit M3/M5–M8/M14 + L-tail remain
-unfixed (M5's archived-rocks Timestamp serialization may have been mooted by
-PR #22's rock-archive work — verify, don't assume).
+advisory against a devtools user; (d) audit M3/M6–M8/M14 + L-tail remain
+unfixed. M5 verified 2026-08-12 as **not** mooted by PR #22 — the Archived
+tab crash is live and now tracked as **N23**, queued ahead of F5.
 
 **Trail**
 - 2026-07-29 · note · src l10-gaps#data-infra-hygiene — red flag: Firestore rules allow direct client update/delete of meeting docs; tighten to read-only for clients
@@ -528,6 +539,52 @@ committing to the layout.
 
 **Trail**
 - 2026-08-12 · request · src session-2026-08-12 — daniel: to-do needs restyled like home page, two column, rock milestone to-dos and normal to-dos on the left; style relative to the pieces that can be pulled over
+
+### N23 · Rocks Archived tab crashes — audit M5 confirmed live
+*W3 · not-started · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S. The Rocks **Archived** tab throws as soon as any archived rock
+exists — reported broken on `main` 2026-08-12. Root cause is exactly audit
+**M5** (`docs/AUDIT_2026-08-04_PR11-18.md`), which F4 had carried as "may
+have been mooted by PR #22 — verify, don't assume": not mooted.
+`rocks/page.tsx` projects `archived_at: x.archived_at ?? null` — a raw
+admin-SDK `Timestamp` instance — into the `"use client"` `RockRow`; class
+instances aren't RSC-serializable, so Active renders (all `null`) and
+Archived crashes. Every other tab already serializes defensively server-side
+(todos/issues/headlines format `archived_at` via `toDate`/`toMillis` before
+the boundary); Rocks is the one surface passing the raw object. Prod
+(`90ec7cb`) has the same code, so its tab breaks the moment the Monday sweep
+archives its first rock — which F4's backfill (due before 2026-08-17) is
+about to make happen. Fix is small: serialize at the projection (millis or a
+boolean — `rock-row.tsx` only ever checks `!= null`). Land on `main` before
+F5 so the ship carries it; the due date is the Sunday before the sweep. Do
+the audit's **L1** companions in the same pass if capacity allows (L10 rocks
+segment and due-soon milestone surfaces never filter `archived_at` — the
+first archived rock reappears in every L10 and its milestones keep nagging).
+
+**Trail**
+- 2026-08-04 · note · src audit-2026-08-04#M5 — predicted: "Archived rocks tab will throw once any rock is archived"; latent only because the archive path didn't exist yet
+- 2026-08-12 · report · src session-2026-08-12 — daniel: Rocks archive tab broken on main; diagnosis matches M5 (raw Timestamp across the RSC boundary into RockRow); prod carries the same code
+
+### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S–M. App-wide coherence pass: every entity tab (Rocks, To-Dos,
+Issues, Headlines) presents the same two affordances the same way — one
+**"+ Add {item}"** button opening a modal, and one **Active | Archived**
+segmented toggle. The data layer is already uniform (all four tabs filter on
+`?archived=` and `archived_at`); the presentation isn't — Headlines still
+carries a permanently-open add form (**N21** is the Headlines slice of this
+item), and toggle placement/labels/counts differ tab to tab. Rocks' toggle
+(pill pair with counts + Archive icon) is the most complete; treat it as the
+reference once **N23** fixes its crash. **N22** (To-Dos restyle) must
+conform to this pattern rather than invent another — this item frames
+N21/N22, it does not duplicate them. Extend to any future entity surface,
+and honor the standing design note that tabs render the same in-meeting and
+standalone (docs/ROADMAP.md cross-cutting notes).
+
+**Trail**
+- 2026-08-12 · request · src session-2026-08-12 — daniel: global app coherence on add {item} and active | archive view
 
 ### N6 · Better import functionality
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*

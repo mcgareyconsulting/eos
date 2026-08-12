@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X } from "lucide-react";
 import { normalizeDescription } from "@/lib/csv-import";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { updateTodoMeta } from "./actions";
 
 type Member = { user_id: string; full_name: string };
@@ -133,12 +134,11 @@ export function EditTodoDrawer({
                 </Field>
 
                 <Field label="Description">
-                  <textarea
+                  <RichTextEditor
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={setDescription}
                     placeholder="Notes or context"
                     rows={4}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                 </Field>
 

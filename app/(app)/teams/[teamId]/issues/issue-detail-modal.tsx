@@ -5,6 +5,7 @@ import { ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
 import { EntityComments } from "@/components/entity-comments";
+import { RichText } from "@/components/rich-text";
 import { initials } from "@/lib/initials";
 import {
   PRIORITY_BADGE,
@@ -161,9 +162,10 @@ export function IssueDetailModal({
           </h3>
           {hasDescription ? (
             <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                {issue.description}
-              </p>
+              <RichText
+                value={issue.description}
+                className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
+              />
             </div>
           ) : (
             <p className="text-sm text-zinc-500">No description.</p>

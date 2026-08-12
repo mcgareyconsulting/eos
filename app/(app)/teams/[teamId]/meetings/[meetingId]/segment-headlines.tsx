@@ -10,6 +10,7 @@ import {
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
+import { RichText } from "@/components/rich-text";
 import { addHeadline, deleteHeadline } from "../../headlines/actions";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
@@ -173,9 +174,10 @@ export function SegmentHeadlines({
             )}
           </div>
           {h.body && (
-            <div className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
-              {h.body}
-            </div>
+            <RichText
+              value={h.body}
+              className="mt-0.5 text-zinc-600 dark:text-zinc-400"
+            />
           )}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
             {meta.label}

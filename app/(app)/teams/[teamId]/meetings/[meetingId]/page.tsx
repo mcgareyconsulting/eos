@@ -11,6 +11,7 @@ import {
 } from "@/lib/l10/segments";
 import {
   clampSegmentToAgenda,
+  type AgendaToolType,
   isOnAgenda,
   resolveMeetingAgenda,
 } from "@/lib/l10/agenda";
@@ -130,7 +131,7 @@ export default async function MeetingDetailPage({
   // empty header, and "done" on a meeting that never got ended_at (legacy
   // stuck state — the server no longer writes that combination) renders as
   // the last agenda stage so the room can actually finish.
-  const storedSegment: Segment = (() => {
+  const storedSegment: AgendaToolType = (() => {
     const n = normalizeSegment(m.current_segment);
     if (n === "done" && live) {
       return (
@@ -161,7 +162,7 @@ export default async function MeetingDetailPage({
     isOnAgenda(agenda.agenda_items, view)
       ? view
       : null;
-  const viewSegment: Segment = viewParam ?? storedSegment;
+  const viewSegment: AgendaToolType = viewParam ?? storedSegment;
   const following = viewParam === null;
   const showConclude = (live && viewSegment === "conclude") || !live;
 
@@ -347,7 +348,7 @@ export default async function MeetingDetailPage({
             team L10 is context. Everything static (start time, back link)
             lives in the rail, so content starts ~150px higher than when this
             page stacked breadcrumb + h1 + started-at + stage + hint. */}
-        {live && viewSegment !== "done" && (
+        {live && (
           <header className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-2">
@@ -412,7 +413,7 @@ export default async function MeetingDetailPage({
         )}
 
         {/* Segment content follows the locally-viewed stage (peek-aware). */}
-        {live && viewSegment !== "done" && (
+        {live && (
           <section>
             <SegmentContent
               teamId={tid}
@@ -488,7 +489,7 @@ async function SegmentContent({
   teamId: string;
   userId: string;
   meetingId: string;
-  segment: Segment;
+  segment: AgendaToolType;
   currentIssueId: string | null;
   members: { user_id: string; full_name: string }[];
   absentUserIds: string[];

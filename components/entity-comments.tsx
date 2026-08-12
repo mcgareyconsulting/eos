@@ -14,6 +14,8 @@ import {
   deleteEntityComment,
   type CommentEntityType,
 } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
+import { RichText } from "@/components/rich-text";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { cn } from "@/lib/utils";
 
 type MaybeTimestamp =
@@ -38,35 +40,6 @@ function tsMs(t: MaybeTimestamp): number | null {
   if (t == null) return null;
   if (typeof t === "number") return t;
   return typeof t.toMillis === "function" ? t.toMillis() : null;
-}
-
-/** Turn bare URLs into links (Workspace docs, etc.). No full rich text yet. */
-function linkify(text: string): React.ReactNode[] {
-  const re = /(https?:\/\/[^\s<]+[^\s<.,;:!?"')\]])/g;
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let i = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) {
-      parts.push(text.slice(last, m.index));
-    }
-    const href = m[1];
-    parts.push(
-      <a
-        key={`l-${i++}`}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="break-all text-hpb-blue underline decoration-hpb-blue/30 underline-offset-2 hover:decoration-hpb-blue dark:text-hpb-gold dark:decoration-hpb-gold/40"
-      >
-        {href}
-      </a>,
-    );
-    last = m.index + href.length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts.length > 0 ? parts : [text];
 }
 
 export function EntityComments({
@@ -195,9 +168,10 @@ export function EntityComments({
                     </button>
                   )}
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                  {linkify(c.body)}
-                </p>
+                <RichText
+                  value={c.body}
+                  className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
+                />
               </li>
             );
           })}
@@ -205,19 +179,19 @@ export function EntityComments({
       )}
 
       <div className="space-y-1.5">
-        <div className="flex items-start gap-2">
-          <textarea
+        <div className="flex items-end gap-2">
+          <RichTextEditor
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            onChange={setBody}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 submit();
               }
             }}
-            rows={1}
+            rows={2}
             placeholder="Add a comment…"
-            className="min-h-10 w-full flex-1 resize-y rounded-[10px] border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-hpb-blue focus:outline-none focus:shadow-[0_0_0_3px_rgba(0,51,160,.10)] dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-hpb-blue"
+            className="w-full flex-1 rounded-[10px] focus-within:border-hpb-blue focus-within:shadow-[0_0_0_3px_rgba(0,51,160,.10)] focus-within:ring-0 dark:focus-within:border-hpb-blue"
           />
           <button
             type="button"
@@ -232,7 +206,7 @@ export function EntityComments({
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
         ) : (
           <p className="text-[11px] text-zinc-400">
-            Links open in a new tab · ⌘/Ctrl+Enter
+            Formatting supported · links open in a new tab · ⌘/Ctrl+Enter
           </p>
         )}
       </div>

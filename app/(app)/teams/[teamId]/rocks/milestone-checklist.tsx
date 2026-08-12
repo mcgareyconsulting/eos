@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { richTextToPlain } from "@/lib/rich-text";
 import { formatDateShort, relativeDueLabel } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
@@ -82,7 +83,7 @@ export function MilestoneChecklist({
                   ? "text-zinc-400 dark:text-zinc-500"
                   : "font-medium text-zinc-800 dark:text-zinc-200",
               )}
-              title={m.description ?? undefined}
+              title={richTextToPlain(m.description) || undefined}
             >
               {m.title}
             </span>
@@ -132,7 +133,7 @@ function ModalMilestoneList({
           />
           <span
             className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-zinc-900 dark:text-zinc-100"
-            title={m.description ?? undefined}
+            title={richTextToPlain(m.description) || undefined}
           >
             {m.title}
           </span>
@@ -175,7 +176,7 @@ function ModalMilestoneList({
                     />
                     <span
                       className="min-w-0 flex-1 truncate text-[13px] text-zinc-400"
-                      title={m.description ?? undefined}
+                      title={richTextToPlain(m.description) || undefined}
                     >
                       {m.title}
                     </span>

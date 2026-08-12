@@ -1,7 +1,7 @@
 ---
 project: HPB
-updated: 2026-08-11
-verified: main @ 902b37f  # prod runs 90ec7cb — see Deployment truth
+updated: 2026-08-12
+verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [F5, QW1, N18, F3, N3, N2, P3-2, N4]
+  next: [N23, QW1, N18, F3, N3, N2, N4, N24]
   awaiting: [N1, P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -27,14 +27,16 @@ The merged client-feedback priority list is agent-local on the consultant
 machine (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`) and
 is a working aid, never an authority.
 
-**Deployment truth as of 2026-08-11:** **prod ≠ main.** Cloud Run (service
-`eos`, `hpb-eos-prod`, us-east1) runs `90ec7cb` — the F1 ship (PR #22
-quick wins + PR #24 team management), confirmed by the operator; prior rev
-`eos-00042-pvp` superseded and the new revision id was never captured.
-`main` has since moved to `902b37f`, adding **PR #26** (settings/profile +
-Google Tasks completion) and **PR #27** (custom agendas). Those three
-tracker items are sandbox-proven and **invisible to the client until F5
-ships**. F1 `done`; F5 opened.
+**Deployment truth as of 2026-08-12 (F5 shipped):** **prod = main code.**
+Cloud Run (service `eos`, `hpb-eos-prod`, us-east1) runs revision
+**`eos-00046-nxv`**, image tag **`98bb30b`** — current `main` code
+(commits after `98bb30b` are roadmap-only). The F5 ship delivered PRs
+#25–#29 (settings/profile + Google Tasks completion, custom agendas,
+My-Home board + multi-team, rich text) and the `firestore.rules` deploy
+(#27 agenda rules). F1 and F5 `done`. **Known-broken on prod:** the Rocks
+Archived tab (**N23**) — the fix did not exist when F5 shipped, and the
+Monday sweep (2026-08-17) will create the first archived rocks that
+trigger it. N23 now needs its own small ship before the sweep.
 
 ## Queue — the single ordering
 
@@ -51,14 +53,14 @@ by cost-to-close, then by size:
 | # | Item | Effort | Why here |
 |---|---|---|---|
 | now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **F5** | S | Prod lags `main` by two feature PRs; three tracker items are built but invisible to the client |
-| 2 | **QW1** | S | Prod spot-check + Open question 6 promotes nine shipped items to `verified` |
+| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5) — **live on prod**, which F5 shipped without the fix. Fix + mini-ship must land before the 2026-08-17 sweep creates the first archived rocks |
+| 2 | **QW1** | S | Prod spot-check + Open question 6 — now covers the F5 payload too (U1, P1-7, P2-1, P3-2 → `verified`), plus the F5 sign-in/OAuth check |
 | 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
 | 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
 | 5 | **N3** | M | No deps; migration integrity before broader rollout |
 | 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 7 | **P3-2** | M | Largest tracker row with no external gate |
-| 8 | **N4** | L | Design precedes build; absorbs N13 |
+| 7 | **N4** | L→M | Core shipped in PR #28; remaining is the share write path + the rules gap it left |
+| 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
@@ -71,6 +73,29 @@ and **P2-1** (PR #27) left the queue as `shipped` — all three now wait on
 **F5** to reach `verified`. The queue built earlier that day was authored
 against `90ec7cb` while the remote was five commits ahead; re-verify
 `queue` against `origin/main`, not local `main`, whenever the two differ.
+
+**Reconciled 2026-08-12** against `origin/main` @ `98bb30b`. The 08-11 warning
+above went unheeded and the file drifted again: **PR #28**
+(`feature/multi-team`) had merged and appeared nowhere here, so the single most
+expensive queue row (**N4**, effort L, `not-started`, "design precedes build")
+was in fact largely built. Corrected: N4 → `in-progress` with the shipped /
+remaining split stated; **N13** → Resolved (its personal-Home ask shipped
+inside #28); **P3-2** → `shipped` (PR #29 merged mid-reconciliation, so it left the queue
+the same way U1/P1-7/P2-1 did); F5 re-scoped to **five** merge PRs — the file
+had also never recorded **#25**, citing only #26 for settings/profile.
+**Ordering is deliberately unchanged** — statuses are reconciliation, priority
+is a session decision. One new item (**N20**) is recorded as backlog rather
+than queued for the same reason. Lesson worth keeping: verify against
+`origin/main` **before** starting work, not only when publishing it.
+
+**Session 2026-08-12 (later):** daniel reported the Rocks **Archived** tab
+broken on `main` — recorded as **N23** (audit M5 confirmed live, no longer
+latent) and queued ahead of F5 so the fix rides the prod ship. **N24**
+(add-{item} + Active | Archived coherence across all entity tabs) recorded
+per the same session and queued at the tail. Git housekeeping: this file's
+08-12 reconciliation had been living only on `chore/roadmap-reconcile-0812`
+while `main` still held the stale 08-11 copy — merged to `main` this session;
+the roadmap authority is only an authority when it's on `main`.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -122,19 +147,40 @@ logged.
 - 2026-08-10 · note · src roadmap-prior#resume-here — live rev recorded as `eos-00042-pvp`, built before the PR #22 / #24 merges
 - 2026-08-10 · done · src operator — prod confirmed: current teams infra live; F1 closed; queue.now → N1
 
-### F5 · Ship PR #26 + #27 to Cloud Run prod
-*W0 · not-started · due — · deps — · owner daniel · src pr#26,pr#27 · upd 2026-08-11*
+### F5 · Ship main (#25–#29) to Cloud Run prod
+*W0 · done · due — · deps — · owner daniel · src pr#25,pr#26,pr#27,pr#28,pr#29 · upd 2026-08-12*
 
-Effort S. Prod is `90ec7cb` (the F1 ship). `main` has since taken **PR #26**
-(settings/profile + Google Tasks completion pull) and **PR #27** (custom
-agendas) — three client-tracker items the client cannot see. Same shape as
-F1. Extra steps this time: deploy `firestore.rules` (PR #27 added agenda
-rules), and each user must **Connect Google Tasks once on the live URL**
-because sandbox tokens do not carry to `hpb-eos-prod-db`. Gates U1, P1-7,
-P2-1 reaching `verified`. Capture the revision id this time.
+Effort S. Prod is `90ec7cb` (the F1 ship). `main` is `98bb30b` and has since
+taken **#25 + #26** (settings/profile + Google Tasks completion pull),
+**#27** (custom agendas), **#28** (My-Home board + shared-rock read path +
+HPB restyle) and **#29** (rich text across descriptions) — five client-tracker
+items the client cannot see. Same shape as F1. Extra steps this
+time: deploy `firestore.rules` (PR #27 added agenda rules), and each user must
+**Connect Google Tasks once on the live URL** because sandbox tokens do not
+carry to `hpb-eos-prod-db`. **#28 and #29 need no rules or index deploy** — verified
+2026-08-12: neither changed `firestore.rules` or `firestore.indexes.json`, and
+#28's one new query (`rocks where shared_team_ids array-contains`) is
+equality-only, so Firestore serves it from merged single-field indexes.
+
+⚠ **Sign-in landmine — read before shipping.** F5 puts the Google Tasks
+connector (#25/#26) on prod for the first time. `docs/CUTOVER_PLAN.md` is
+explicit: Tasks needs **its own** OAuth client in the client's project, and
+*"reusing Firebase's is what broke all trial sign-in previously"*
+(cutover-checklist §9; P1-7 carries the same warning). This failure mode takes
+out **sign-in for everyone**, not just Tasks, so shipping F5 shortly before a
+live L10 risks the meeting itself. Either provision the prod OAuth client and
+sign-in-test first (including the negative test: a non-HPB, non-allowlisted
+account must be **rejected**), or ship F5 *after* the meeting. Rollback per the
+cutover plan is to run the session on the trial URL.
+
+Gates U1, P1-7, P2-1 and P3-2 reaching `verified` — F5 is now done, so those
+four move to QW1's prod spot-check. Revision id captured: **`eos-00046-nxv`**.
 
 **Trail**
 - 2026-08-11 · note · src pr#26,pr#27 — merged to origin/main; prod still on the F1 revision
+- 2026-08-12 · note · src pr#28,pr#29 — #28 and #29 also merged; prod still on the F1 revision, now five merge PRs behind. No rules/index deploy needed for #28 or #29 (checked); #27's agenda rules still are.
+- 2026-08-12 · risk · src cutover-plan#open-items — the OAuth-client collision that broke all trial sign-in was recorded only in docs/CUTOVER_PLAN.md and P1-7, never on F5 — the item that would trigger it. Folded in above.
+- 2026-08-12 · ship · src session-2026-08-12 — daniel: F5 cleared on prod, `firestore.rules` deployed. Confirmed via gcloud: rev `eos-00046-nxv`, image `98bb30b`, 100% traffic. Shipped **without** the N23 archive-tab fix (item opened the same day); N23 needs its own mini-ship before the 08-17 sweep. Sign-in/OAuth landmine above not yet explicitly re-tested — fold the sign-in check (incl. the negative test) into QW1's prod spot-check.
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -189,9 +235,9 @@ confirm the tightened `firestore.rules` are deployed to prod (folded into
 F1 — **F1 done 2026-08-10**; treat rules as live unless an ops re-check
 disagrees); (c) `L10_GAPS` red item still open — rules allow direct client
 update/delete of meeting docs, so the server-side meeting guards are
-advisory against a devtools user; (d) audit M3/M5–M8/M14 + L-tail remain
-unfixed (M5's archived-rocks Timestamp serialization may have been mooted by
-PR #22's rock-archive work — verify, don't assume).
+advisory against a devtools user; (d) audit M3/M6–M8/M14 + L-tail remain
+unfixed. M5 verified 2026-08-12 as **not** mooted by PR #22 — the Archived
+tab crash is live and now tracked as **N23**, queued ahead of F5.
 
 **Trail**
 - 2026-07-29 · note · src l10-gaps#data-infra-hygiene — red flag: Firestore rules allow direct client update/delete of meeting docs; tighten to read-only for clients
@@ -302,14 +348,26 @@ Owner/Implementer roles (see N6 and Resolved-log context).
 Effort S. Grant `role: "admin"` to Steph (`pnpm admin:set-role`, sign
 out/in after claim); walk create team → invite leader → Done → leader
 invites members. Confirm directory soft-read + hard data isolation from a
-real client account. This is `queue.now` — the validation gate for P2-7
-reaching `verified`. Ops notes: `docs/TEAM_MGMT_OPS.md`. F1 is live; needs
-Steph's time (client side).
+real client account. The validation gate for P2-7 reaching `verified`. Ops
+notes: `docs/TEAM_MGMT_OPS.md`. F1 is live; needs Steph's time (client side),
+which is why this sits in `awaiting` rather than `next` — an earlier revision
+of this body claimed it was `queue.now`, which the front matter has not agreed
+with since 2026-08-11.
+
+**Runnable on prod today.** The team-management flow this tests shipped in
+**PR #24** and is live on `90ec7cb`, so it does **not** wait on F5 — Steph can
+walk create-team → invite → members against prod as it stands. Two operational
+notes before doing it: `pnpm accounts:create` is **not** sandboxed (Firebase
+Auth is project-level, so it affects prod and sandbox alike), and deleting an
+Auth user re-keys the uid, which orphans memberships (P1-2). The cutover
+checklist also still lists **email addresses for Steph, Cora and Jessica** as
+owed by the client — needed before inviting them.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#13 — Steph: wants admin testing when ready
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 1
 - 2026-08-10 · note · src F1 — prod unblocked; promoted to queue.now
+- 2026-08-12 · note · src session-2026-08-12 — flagged as the item behind today's L10 new-team/new-member test; confirmed runnable on prod (PR #24 is live) and therefore not gated on F5
 
 ### N2 · Multi-team stress-testing setup
 *W2 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -335,6 +393,37 @@ is forward-only).
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 3; attachments excluded from migration scope
 
 ---
+
+### N20 · Shared-rock grant is ungoverned in rules
+*W2 · not-started · due — · deps N4 · owner daniel · src pr#28 · upd 2026-08-12*
+
+Effort S. Found while reconciling PR #28 (2026-08-12). The shared-rock read
+path ships, but `shared_team_ids` is absent from `firestore.rules`, and the
+rocks block is broad:
+`allow read, update, delete: if admin() || isMember(resource.data.team_id)`.
+Two consequences, neither yet reachable because the share **writer** does not
+exist (N4) — which is the window to fix it:
+
+1. **The grant is unvalidated.** Any member of a rock's parent team could set
+   `shared_team_ids` to *any* team id, including teams they do not belong to,
+   exposing that rock on those members' Home. P2-7's promise is "privacy
+   stays hard on non-shared team data" — but nothing constrains who may move
+   a rock across that line.
+2. **Rules and server disagree.** Home reads via the Admin SDK
+   (`getUserTeamsFirebase` → `getAdminDb`), which bypasses rules, so a guest
+   member sees a shared-in rock that the client SDK would refuse them
+   (`read: isMember(resource.data.team_id)` covers only the parent team). Any
+   future client-side/live view of shared rocks will silently disagree with
+   Home until rules model the share.
+
+Fix shape (decide with N4): rules validate the writer is a member of both the
+parent team and each team being shared into, freeze `shared_team_ids` against
+non-owner edits the way `todos` freezes its stamps (M4 precedent), and extend
+the rocks read rule to `isMember(team_id) || isMemberOfAny(shared_team_ids)`
+so the client path matches Home.
+
+**Trail**
+- 2026-08-12 · note · src pr#28 — read path merged with no rules coverage; recorded as backlog, not queued, since the writer that makes it reachable is unbuilt
 
 ## Workstream 3 — Product (client feedback, Passes 13–18)
 
@@ -368,18 +457,18 @@ effort S: spot-verify on prod, then promote to `verified`.
 - 2026-08-10 · note · src roadmap-prior#last-updated — live Cloud Run revision predates the merge; client has not seen these
 - 2026-08-10 · note · src F1 — prod ship confirmed; batch is live; `verified` still wants a spot-check
 
-### N4 · Multi-team surface + shared rocks (design first)
-*W3 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-12*
+### N4 · Multi-team surface + shared rocks
+*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-12*
 
-Effort L (design M, then build). How a user on several teams sees Home +
-tabs (per-team sections vs unified feed vs sticky filter). **Shared rocks
-are in product scope** (decided 2026-08-10): a rock has a parent team
-(canonical home) and can be shared/visible on other teams — Steph's example:
-rock originated on IT Systems & Security, shared into ESD. Also milestone
-assignees on another team's rock (Cora / leadership "My 90" pattern).
-Privacy stays hard on non-shared team data (P2-7). Absorbs N13 (personal
-Home): Home should prioritize **my** todos/rocks/milestones, not a dump of
-everyone's items. Design before build.
+**Core shipped PR #28** (`feature/multi-team`), discovered by reconciliation
+2026-08-12 — this item was still marked `not-started` while its build sat on
+`main`. Shipped: `lib/home-board.ts` ("My Home board selection rules", +232
+lines of tests) filtering to the **viewer's own** to-dos / rocks /
+milestones, which is N13's ask and Cora's complaint answered; Home reading
+across all membership teams with per-team labels; the shared-rock **read**
+path (`rocks where shared_team_ids array-contains <my team>`, status filtered
+in memory to avoid needing a composite index); and an HPB-brand restyle of
+Home, rocks rows/detail, status badges and the comment composer.
 
 **Steph model refine (2026-08-12):**
 1. Rocks are **always owned by a person**. A department/team rock is still
@@ -391,31 +480,127 @@ everyone's items. Design before build.
 3. **Milestones may cross teams** (person assignees elsewhere). That is
    milestone assignment, separate from rock↔team sharing.
 
-**Build (2026-08-12 on `feature/multi-team`):** modal separates **Type**
+**Build (PR #30, `feature/multi-team`, in review):** modal separates **Type**
 (individual/department/company) from **Owner** (person required); optional
 **Share with teams** → `shared_team_ids`; guest Rocks list + L10 show shared-in
 rocks (read-only, “from {team}” badge). Legacy `owner_id: null` still sorts
 into Department. Firestore rules: guest teams may **read** shared rocks.
-Remaining: cross-team milestone assignees, migrate null owners, guest edit
-policy if needed.
+This closes the two biggest post-#28 gaps — the missing `shared_team_ids`
+**write path** and the Rocks tab ignoring shared-in rocks.
+
+**Remaining — effort S–M once PR #30 lands:**
+- **The grant is ungoverned in rules** — see **N20**, now urgent rather than
+  latent: PR #30 builds the writer that makes the gap reachable. Decide the
+  sharing model alongside the PR #30 review.
+- Milestone assignees on another team's rock (Cora / leadership "My 90"
+  pattern) — not verified as covered.
+- Migrate legacy `owner_id: null` rocks; guest **edit** policy if needed
+  (shared-in is read-only today).
+- The original tab question beyond Home (per-team sections vs unified feed vs
+  sticky filter) is still open for the non-Home surfaces.
+
+**Shared rocks are in product scope** (decided 2026-08-10): a rock has a
+parent team (canonical home) and can be shared/visible on other teams the
+owner belongs to — Steph's example: rock originated on IT Systems & Security,
+shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 
 **Trail**
 - 2026-08-05 · transcript · src roadmap-prior#pass-18 — Cora: Home is a dump of everyone's items; wants My-90-like personal priority
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — shared rocks in scope: parent team + share/visibility on other teams; milestone assignees cross-team
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — N13 folded into this item; design precedes build
-- 2026-08-12 · client · Steph — always person-accountable; share rock→teams not people; milestones can span teams
-- 2026-08-12 · build · feature/multi-team — person owner + type + share UI; guest read surfaces
+- 2026-08-12 · build · src pr#28 — My-Home board + multi-team Home + shared-rock read path shipped to main; found by reconciliation, not recorded when merged
+- 2026-08-12 · note · src pr#28 — remaining scope re-derived from the merged code: no share writer, Rocks tab excluded, rules gap (N20), milestone-assignee case unverified
+- 2026-08-12 · client · src session-2026-08-12 — Steph: always person-accountable; share rock→teams not people; milestones can span teams
+- 2026-08-12 · build · src pr#30 — share writer + type/owner split + guest read surfaces (Rocks tab + L10) on `feature/multi-team`; answers the two pr#28 gaps above
 
-### N13 · Personal Home (My 90–like)
-*W3 · dissolved · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+### N21 · Headlines add-form → button (match the other tabs)
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
 
-Dissolved into **N4** (2026-08-10): the personal-Home ask is one lens of
-the multi-team Home design and will be decided there, not separately.
-Block retained one cycle per protocol, then moves to the Resolved log.
+Effort S. The Headlines tab carries a permanently-open add form at the top
+(title + category + detail + Add button) while every other tab uses a single
+button that opens a modal — Rocks "+ New Rock", Issues "+ Add issue", To-Dos
+"+ Add to-do". Collapse Headlines to the same pattern so the list is the page
+and adding is an action, not a standing block of fields.
+
+Note the interaction with **P3-2**: that inline form now holds a
+`RichTextEditor` (grown to 7 rows on 2026-08-12 at the client's request,
+because people write a lot there). Moving it into a modal should reuse the
+sizing already proven in `headline-edit-modal.tsx` — `max-w-4xl`, 16 rows,
+footer pinned outside the scroll area — rather than re-deriving it. The edit
+modal is effectively the target design; this item is mostly "use it for
+create too".
 
 **Trail**
-- 2026-08-05 · transcript · src roadmap-prior#pass-18 — Cora: Home should prioritize my items, not everyone's on the team
-- 2026-08-10 · decision · src roadmap-prior#pass-18 — fold into multi-team Home story (N4)
+- 2026-08-12 · request · src session-2026-08-12 — daniel: collapse the floating add fields to a button like all the other add types
+
+### N22 · To-Dos tab restyled to the Home board
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S–M. Restyle the To-Dos tab to the two-column Home board that shipped
+in **PR #28**, with **rock-milestone to-dos and ordinary to-dos on the left**.
+Pull over whatever the Home work already solved rather than re-deriving it:
+`lib/home-board.ts` owns the selection rules (including
+`isMilestoneHiddenByRock`, which is exactly the milestone-vs-todo overlap this
+tab has to get right), and `app/(app)/home/home-rocks-list.tsx` plus the
+restyled row/badge components carry the visual language. Scope is presentation
++ grouping, not new data.
+
+Open sub-question for the build: the To-Dos tab is team-scoped while Home is
+person-scoped, so "two columns" has to be re-read for a team surface — decide
+whether the right split is milestones/to-dos (as asked) or mine/team's, and
+confirm against the tab's actual job in the L10 To-Dos segment before
+committing to the layout.
+
+**Trail**
+- 2026-08-12 · request · src session-2026-08-12 — daniel: to-do needs restyled like home page, two column, rock milestone to-dos and normal to-dos on the left; style relative to the pieces that can be pulled over
+
+### N23 · Rocks Archived tab crashes — audit M5 confirmed live
+*W3 · not-started · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S. The Rocks **Archived** tab throws as soon as any archived rock
+exists — reported broken on `main` 2026-08-12. Root cause is exactly audit
+**M5** (`docs/AUDIT_2026-08-04_PR11-18.md`), which F4 had carried as "may
+have been mooted by PR #22 — verify, don't assume": not mooted.
+`rocks/page.tsx` projects `archived_at: x.archived_at ?? null` — a raw
+admin-SDK `Timestamp` instance — into the `"use client"` `RockRow`; class
+instances aren't RSC-serializable, so Active renders (all `null`) and
+Archived crashes. Every other tab already serializes defensively server-side
+(todos/issues/headlines format `archived_at` via `toDate`/`toMillis` before
+the boundary); Rocks is the one surface passing the raw object. Prod now runs the
+same code (`98bb30b` via the F5 ship, which predated this fix), so its tab
+breaks the moment the Monday sweep archives its first rock — which F4's
+backfill (due before 2026-08-17) is about to make happen. Fix is small:
+serialize at the projection (millis or a boolean — `rock-row.tsx` only ever
+checks `!= null`). F5 shipped without it, so this now needs its **own
+mini-ship to prod** (same F5 mechanics, no rules deploy); the due date is
+the Sunday before the sweep. Do
+the audit's **L1** companions in the same pass if capacity allows (L10 rocks
+segment and due-soon milestone surfaces never filter `archived_at` — the
+first archived rock reappears in every L10 and its milestones keep nagging).
+
+**Trail**
+- 2026-08-04 · note · src audit-2026-08-04#M5 — predicted: "Archived rocks tab will throw once any rock is archived"; latent only because the archive path didn't exist yet
+- 2026-08-12 · report · src session-2026-08-12 — daniel: Rocks archive tab broken on main; diagnosis matches M5 (raw Timestamp across the RSC boundary into RockRow); prod carries the same code
+
+### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+
+Effort S–M. App-wide coherence pass: every entity tab (Rocks, To-Dos,
+Issues, Headlines) presents the same two affordances the same way — one
+**"+ Add {item}"** button opening a modal, and one **Active | Archived**
+segmented toggle. The data layer is already uniform (all four tabs filter on
+`?archived=` and `archived_at`); the presentation isn't — Headlines still
+carries a permanently-open add form (**N21** is the Headlines slice of this
+item), and toggle placement/labels/counts differ tab to tab. Rocks' toggle
+(pill pair with counts + Archive icon) is the most complete; treat it as the
+reference once **N23** fixes its crash. **N22** (To-Dos restyle) must
+conform to this pattern rather than invent another — this item frames
+N21/N22, it does not duplicate them. Extend to any future entity surface,
+and honor the standing design note that tabs render the same in-meeting and
+standalone (docs/ROADMAP.md cross-cutting notes).
+
+**Trail**
+- 2026-08-12 · request · src session-2026-08-12 — daniel: global app coherence on add {item} and active | archive view
 
 ### N6 · Better import functionality
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -507,10 +692,26 @@ editor (rename/reorder/durations/custom + tool sections, push-to-all-teams),
 scheduled/recurring meetings, archive-on-close semantics. Joe is surveying
 1-on-1 tool demand org-wide — if real, it feeds the template list.
 
+**Post-ship fix (2026-08-12):** the shipped code left three `TS2367`
+always-true comparisons against `"done"` in `meeting-rail.tsx` /
+`meetings/[meetingId]/page.tsx`. `AGENDA_TOOL_TYPES` deliberately excludes
+`"done"`, and both `activeSegment` / `viewSegment` route it away in their
+IIFEs, so assignment narrowing made every downstream `!== "done"` guard dead
+code. Behaviour was correct but **`next build` could not type-check**, so the
+branch was unbuildable. Fixed by encoding the invariant in the types —
+`activeSegment`, `viewSegment`, `storedSegment`, the `MeetingRail`
+`viewSegment` / `initialSegment` props and the `SegmentContent` `segment`
+prop are now `AgendaToolType` rather than `Segment` — and dropping the three
+dead guards plus one now-redundant `as` cast. The legacy stuck-meeting
+handling (stored `"done"` with no `ended_at`) is untouched: it still lives in
+the IIFEs, which is the only place it ever did the work. Live meeting,
+concluded meeting and `?view=` peek all re-verified in the sandbox.
+
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — full scope captured from the ninety.io config doc; flagged biggest single build item
 - 2026-07-29 · transcript · src roadmap-prior#pass-13 — Stephanie re-confirmed flexible templates in live use
 - 2026-07-30 · transcript · src tracker-2026-08-03#8 — Jenna: ≥4 agenda formats now, select agenda at meeting start
+- 2026-08-12 · fix · src session — 3 dead `!== "done"` comparisons broke `next build` type-check; segments retyped to `AgendaToolType` so the "done is never a viewable stage" invariant is compiler-enforced
 
 ### P3-1 · Calculated measurables + cross-team share-up
 *W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#11 · upd 2026-08-10*
@@ -531,17 +732,76 @@ uses share-up — confirm with Joe (Open question 3).
 - 2026-08-10 · note · src tracker-2026-08-03#11 — Brian's detail: sum-of-branches → leadership, editable formula, history preserved — the only new content in the 08-10 tracker re-read
 
 ### P3-2 · Rich text / links across descriptions
-*W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#15 · upd 2026-08-10*
+*W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#15 · upd 2026-08-12*
 
-Effort M. Hyperlinks + rich text (bullets, bold) in headlines, issue
-descriptions, rock descriptions, comments (Steph #15/#22, Jenna #6 echo).
-Comments already linkify URLs (Pass 16 P2-5, React-element rendering,
-`https?://` only — audit-verified no XSS); this item is the full editor.
-Related to N10 (links on entities) — keep the two write paths coherent.
+**Shipped PR #29** (`feature/rich-text`), merged 2026-08-12. Sandbox-proven;
+**not on prod** — gated on F5. Chosen shape: a **constrained markdown
+subset stored in the existing plain-string field** — bold, italic, bullets,
+numbered lists, `[label](url)` and bare URLs — not an HTML editor. That
+choice is the point: descriptions stay one plain string, so there is **no
+migration, no second format to read, and nothing downstream (BigQuery batch,
+Google Tasks notes, CSV export) has to learn HTML**, and the renderer keeps
+the React-element property the 2026-08-04 audit relied on — no
+`dangerouslySetInnerHTML` anywhere, so no HTML sink to sanitize.
+
+Files: `lib/rich-text.ts` (parser + `safeHref` + `richTextToPlain`, 47
+tests), `lib/rich-text-toolbar.ts` (caret transforms, 19 tests),
+`components/rich-text.tsx` (renderer, server- and client-safe),
+`components/rich-text-editor.tsx` (toolbar + ⌘B/⌘I/⌘K + Preview; works
+controlled for modals and uncontrolled for the server-action form).
+
+Wired on all four entity families — **headlines** (tab + edit modal + inline
+add form + L10 segment), **issue** descriptions (form + detail modal),
+**rock** descriptions (modal + card row + detail modal), **to-do**
+descriptions (add modal + edit drawer + list row). L10 segments inherit it
+by delegating to the same row/modal components. `href` is allowlisted to
+`https?://` / `mailto:` — a `javascript:` or quote-break-out target renders
+as literal text (verified by server-render). Google Tasks notes are
+flattened via `richTextToPlain` so `**bold**` never reaches an owner's task
+list. Marker-free text renders byte-identical markup to before.
+
+**Verified in the running app 2026-08-12** (sandbox DB, real Google sign-in):
+created + persisted + re-rendered a headline, an issue and a rock; the
+uncontrolled add-form clears both fields on submit; clicking a field label
+focuses the box instead of firing Bold; `javascript:` targets render as
+literal text in a real browser; the L10 Headlines segment and the `?view=`
+peek path both render markup. **Bonus found:** Stephanie's existing
+"Weekly Leadership updates" headline already contained `- ` bullets and a
+bare Sheets URL, so pre-existing client content renders as real lists and
+live links with no migration.
+
+Running it caught three defects unit tests could not: the bullet/number
+button was a **no-op on an empty line** (a blank line counted as
+"already marked", so the toggle stripped instead of inserted); a **no-op
+transform never returned focus** to the textarea (the effect keyed on
+`[text]`, so an unchanged value meant no re-render, no effect, and the next
+keystrokes went nowhere); and the **headline modal was far too small** for
+the volume the client writes (`max-w-lg` + 4 rows → `max-w-4xl` + 16 rows,
+with the footer pinned so Save can't scroll out of reach). All three fixed,
+first two with regression tests.
+
+**Comments unified 2026-08-12.** The links-only `linkify` in
+`entity-comments.tsx` (Pass 16 P2-5) is **deleted** — comments now use the
+same `RichText` renderer and `RichTextEditor` composer as every description
+field, so there is one markup path in the app rather than two. The editor
+gained an `onKeyDown` passthrough so the composer keeps ⌘/Ctrl+Enter-to-post
+alongside ⌘B/I/K. Verified in the app: a comment with bold, bullets and a
+link posted via ⌘Enter, rendered correctly, and a `javascript:` target stayed
+literal text.
+
+Still plain text by choice: rock status notes (`comment`), meeting notes and
+L10 rating notes. These never had a second renderer, so they are scope, not
+drift — say the word and they are a small follow-up.
+No prod exposure until F5. Related to N10 (links on entities) — one write
+path now, so keep it that way.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#15 — Steph: hyperlinks + rich text in headlines
 - 2026-08-04 · note · src audit-2026-08-04#verified-sound — existing linkify verified safe (React elements, https-only)
+- 2026-08-11 · decision · src session — markdown subset in the existing string field over a Tiptap/HTML editor: no migration, no sanitizer, no dual-format read path, and downstream consumers keep plain text
+- 2026-08-11 · build · src session — parser + toolbar + renderer + editor built and wired across headlines/issues/rocks/todos; 66 new unit tests
+- 2026-08-12 · verify · src session — driven in the running app against the sandbox DB; 3 defects found and fixed (empty-line list button, focus lost on no-op toolbar click, undersized headline modal); 68 new unit tests, 317 total green; full `next build` now passes
+- 2026-08-12 · cleanup · src session — comments folded onto the shared renderer; P2-5 `linkify` deleted, so one markup path remains; stored bodies arrive CRLF from the browser, now covered by a parser test
 
 ### U1 · Integrations nav → Settings
 *W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#17 · upd 2026-08-11*
@@ -747,6 +1007,9 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-11 · U1 · closed — Integrations → Settings/profile shipped (PR #26); `/integrations` redirects; awaits F5 for prod
 - 2026-08-11 · P1-7 · closed — Google Tasks two-way **completion** shipped (PR #26): pull on Settings/To-Dos load + Sync button, no Scheduler for pilot; milestones still unmirrored (Open question 2 stays open)
 - 2026-08-11 · P2-1 · closed — custom agendas core shipped (PR #27): 2 built-in presets, per-team editor, pick-at-start, agenda snapshot on meeting; scheduled/recurring + push-to-all-teams not built
+- 2026-08-12 · N13 · closed — personal Home shipped inside PR #28 (`lib/home-board.ts` filters to the viewer's own to-dos/rocks/milestones), answering Cora's "Home is a dump of everyone's items"; was folded into N4 on 08-10 and is now delivered rather than pending
+- 2026-08-12 · P3-2 · closed — rich text + links shipped (PR #29) across headlines / issues / rocks / to-dos **and** comments; the P2-5 links-only `linkify` deleted so one markup path remains; stored in the existing plain-string field, so no migration and nothing downstream learns HTML; awaits F5 for `verified`
+- 2026-08-12 · Q-index · answered — PR #28's `shared_team_ids array-contains` query needs no composite index (equality-only, served by merged single-field indexes) and PR #28 changed neither `firestore.rules` nor `firestore.indexes.json`; F5 carries no extra deploy step for it
 - 2026-08-11 · Q-queues · answered — three parallel queues (root front matter W2-only, agent-local P0–P3 aid, docs/ROADMAP.md numbered lists) consolidated into one cross-workstream `queue.next`; docs/ROADMAP.md banner-superseded; `queue.now` N1 → F4 because N1 is gated on Steph's calendar and a client-gated `now` stalls the queue
 
 ## Sources

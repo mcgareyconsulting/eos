@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   createRockWithMilestones,
   updateRockWithMilestones,
@@ -410,12 +411,11 @@ export function RockModal({
             </div>
 
             <Field label="Description" hint="(optional)">
-              <textarea
+              <RichTextEditor
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
                 placeholder="A short success criterion."
-                rows={2}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
+                rows={3}
               />
             </Field>
 

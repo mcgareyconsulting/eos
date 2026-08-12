@@ -26,6 +26,7 @@
 
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { richTextToPlain } from "@/lib/rich-text";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const TASKS_BASE = "https://tasks.googleapis.com/tasks/v1";
@@ -357,7 +358,10 @@ export async function upsertTaskForTodo(
       title: todo.title,
       status: todo.completed ? "completed" : "needsAction",
     };
-    if (todo.notes) body.notes = todo.notes;
+    // Descriptions may carry the markdown subset from lib/rich-text.ts.
+    // Google Tasks notes are plain text, so flatten markers rather than
+    // shipping "**bold**" into the owner's task list.
+    if (todo.notes) body.notes = richTextToPlain(todo.notes) || todo.notes;
     // Tasks API stores only the date portion of `due` (RFC 3339).
     if (todo.dueDate) body.due = `${todo.dueDate}T00:00:00.000Z`;
 

@@ -760,9 +760,9 @@ information**. New scope:
   milestones due within two weeks — and in a **two-column view like the
   normal (standalone) To-Dos page**.
 
-This supersedes the "all open milestones" scope that PR #34 just put in the
-L10 (and narrows the standalone column shipped in the Aug-12 restyle) —
-fold this into or rebase onto #34 rather than merging then reverting. The
+This supersedes the "all open milestones" scope that PR #34 (merged
+2026-08-12, pre-meeting) put in the L10, and narrows the standalone column
+shipped in the Aug-12 restyle — so this is a follow-up change to both. The
 `isMilestoneHiddenByRock` filter and `MilestoneTodoRow` component stay;
 what changes is the window (≤14 days), the owner scoping per surface, and
 the L10 adopting the two-column layout (which also revisits N22's layout

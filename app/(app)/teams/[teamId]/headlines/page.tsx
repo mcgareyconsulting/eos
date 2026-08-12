@@ -208,7 +208,7 @@ export default async function HeadlinesPage({
               >
                 <button
                   type="submit"
-                  className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
+                  className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
                   aria-label="Delete headline"
                 >
                   <Trash2 className="h-4 w-4" />

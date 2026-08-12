@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, Video } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Timestamp } from "firebase-admin/firestore";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import {
   type Segment,
@@ -514,7 +515,7 @@ async function SegmentContent({
     );
   }
 
-  const { db } = await requireTeamAccess(teamId);
+  const { db, team } = await requireTeamAccess(teamId);
 
   if (segment === "scorecard") {
     const metricsSnap = await db
@@ -561,14 +562,20 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [rocksSnap, todosSnap] = await Promise.all([
+    const [rocksSnap, todosSnap, { teams: userTeams }] = await Promise.all([
       db.collection("rocks").where("team_id", "==", teamId).get(),
       db
         .collection("todos")
         .where("team_id", "==", teamId)
         .where("visibility", "==", "team")
         .get(),
+      getUserTeamsFirebase(),
     ]);
+    // Teams the viewer can share a rock with — same semantics as the Rocks
+    // tab (rocks/page.tsx): every team the user belongs to, minus this one.
+    const shareTeams = userTeams
+      .filter((t) => t.id !== teamId)
+      .map((t) => ({ id: t.id, name: t.name }));
     const initialRocks = rocksSnap.docs
       // Archived rocks stay off the L10 (mirrors the client-side filter).
       .filter((d) => d.data().archived_at == null)
@@ -584,6 +591,9 @@ async function SegmentContent({
           status: x.status,
           description: x.description ?? null,
           rock_type: x.rock_type ?? null,
+          // Must ride along — the edit modal seeds its share picker from
+          // this, and saving without it wipes the field (see rock-modal).
+          shared_team_ids: x.shared_team_ids ?? [],
         };
       });
     const initialTodos = todosSnap.docs.map((d) => {
@@ -611,6 +621,8 @@ async function SegmentContent({
         initialAbsentUserIds={absentUserIds}
         initialSpeakingOrder={speakingOrder}
         initialSpeakerIndex={speakerIndex}
+        teamName={team.name}
+        shareTeams={shareTeams}
       />
     );
   }

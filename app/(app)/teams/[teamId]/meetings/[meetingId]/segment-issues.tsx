@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Trash2, Megaphone } from "lucide-react";
+import { Trash2, Megaphone, Pencil, User, AlertCircle } from "lucide-react";
 import {
   collection,
   doc,
@@ -10,6 +10,8 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
+import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
+import { EmptyState } from "@/components/empty-state";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -27,6 +29,7 @@ import { VoteButton } from "../../issues/vote-button";
 import { VoteCreditsBadge } from "../../issues/vote-credits-badge";
 import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
+import { IssueFormModal } from "../../issues/issue-form-modal";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
@@ -42,8 +45,13 @@ type IssueDoc = {
   votes: number;
   type: IssueType;
   status: IssueStatus;
+  archived?: boolean;
   archived_at?: unknown;
 };
+
+function isArchivedIssue(i: IssueDoc): boolean {
+  return i.archived === true || i.archived_at != null;
+}
 
 type VoteDoc = {
   id: string;
@@ -75,6 +83,7 @@ export function SegmentIssues({
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
+  const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
 
   const issuesQuery = useMemo(
     () => fsQuery(collection(db, "issues"), where("team_id", "==", teamId)),
@@ -107,7 +116,7 @@ export function SegmentIssues({
     voteCredits(votes);
 
   // Active only — archived issues leave the L10 list.
-  const issues = issuesLive.filter((i) => i.archived_at == null);
+  const issues = issuesLive.filter((i) => !isArchivedIssue(i));
 
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
   const { short, long } = splitIssuesByTerm(issues);
@@ -156,11 +165,17 @@ export function SegmentIssues({
 
       <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
         {list.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            {tab === "short"
-              ? "No short-term issues. Drop one from any segment or move from long-term."
-              : "No long-term issues. Move one from short-term to park it."}
-          </div>
+          <EmptyState
+            icon={AlertCircle}
+            title={
+              tab === "short" ? "No short-term issues" : "No long-term issues"
+            }
+            hint={
+              tab === "short"
+                ? "Drop one from any segment or move from long-term."
+                : "Move one from short-term to park it."
+            }
+          />
         )}
         {list.map((i) => {
           const remove = deleteIssue.bind(null, teamId, i.id);
@@ -214,6 +229,11 @@ export function SegmentIssues({
                   >
                     {STATUS_LABEL[i.status]}
                   </span>
+                  {closedPending && (
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+                      Closes Monday
+                    </span>
+                  )}
                 </div>
                 <IssueDetailTrigger
                   issue={i}
@@ -221,11 +241,15 @@ export function SegmentIssues({
                   teamId={teamId}
                   userId={userId}
                   members={members}
-                  className="mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold"
+                  className={
+                    "mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold " +
+                    (closedPending ? "text-zinc-500 dark:text-zinc-400" : "")
+                  }
                 >
                   {i.title}
                 </IssueDetailTrigger>
-                <div className="mt-1 text-xs text-zinc-600">
+                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                  <User className="h-3 w-3" />
                   {ownerName(i.owner_id)}
                 </div>
               </div>
@@ -257,21 +281,23 @@ export function SegmentIssues({
                   issueId={i.id}
                   type={i.type}
                 />
+                <button
+                  type="button"
+                  onClick={() => setEditingIssue(i)}
+                  title="Edit issue"
+                  aria-label="Edit issue"
+                  className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
                 <StatusActions
                   teamId={teamId}
                   issueId={i.id}
                   status={i.status}
                 />
-                <form
+                <ConfirmSubmitForm
                   action={remove}
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        "Delete this issue? This will also delete its votes and comments. This can't be undone.",
-                      )
-                    )
-                      e.preventDefault();
-                  }}
+                  confirmMessage="Delete this issue? This will also delete its votes and comments. This can't be undone."
                 >
                   <button
                     type="submit"
@@ -280,12 +306,27 @@ export function SegmentIssues({
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                </form>
+                </ConfirmSubmitForm>
               </div>
             </div>
           );
         })}
       </div>
+
+      {editingIssue && (
+        <IssueFormModal
+          teamId={teamId}
+          members={members}
+          defaultOwnerId={userId}
+          defaultType={editingIssue.type === "long" ? "long" : "short"}
+          issue={editingIssue}
+          open={!!editingIssue}
+          onOpenChange={(next) => {
+            if (!next) setEditingIssue(null);
+          }}
+          showTrigger={false}
+        />
+      )}
     </div>
   );
 }

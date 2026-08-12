@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-11
+updated: 2026-08-12
 verified: main @ 902b37f  # prod runs 90ec7cb — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -488,10 +488,26 @@ editor (rename/reorder/durations/custom + tool sections, push-to-all-teams),
 scheduled/recurring meetings, archive-on-close semantics. Joe is surveying
 1-on-1 tool demand org-wide — if real, it feeds the template list.
 
+**Post-ship fix (2026-08-12):** the shipped code left three `TS2367`
+always-true comparisons against `"done"` in `meeting-rail.tsx` /
+`meetings/[meetingId]/page.tsx`. `AGENDA_TOOL_TYPES` deliberately excludes
+`"done"`, and both `activeSegment` / `viewSegment` route it away in their
+IIFEs, so assignment narrowing made every downstream `!== "done"` guard dead
+code. Behaviour was correct but **`next build` could not type-check**, so the
+branch was unbuildable. Fixed by encoding the invariant in the types —
+`activeSegment`, `viewSegment`, `storedSegment`, the `MeetingRail`
+`viewSegment` / `initialSegment` props and the `SegmentContent` `segment`
+prop are now `AgendaToolType` rather than `Segment` — and dropping the three
+dead guards plus one now-redundant `as` cast. The legacy stuck-meeting
+handling (stored `"done"` with no `ended_at`) is untouched: it still lives in
+the IIFEs, which is the only place it ever did the work. Live meeting,
+concluded meeting and `?view=` peek all re-verified in the sandbox.
+
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — full scope captured from the ninety.io config doc; flagged biggest single build item
 - 2026-07-29 · transcript · src roadmap-prior#pass-13 — Stephanie re-confirmed flexible templates in live use
 - 2026-07-30 · transcript · src tracker-2026-08-03#8 — Jenna: ≥4 agenda formats now, select agenda at meeting start
+- 2026-08-12 · fix · src session — 3 dead `!== "done"` comparisons broke `next build` type-check; segments retyped to `AgendaToolType` so the "done is never a viewable stage" invariant is compiler-enforced
 
 ### P3-1 · Calculated measurables + cross-team share-up
 *W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#11 · upd 2026-08-10*

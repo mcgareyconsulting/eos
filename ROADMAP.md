@@ -576,10 +576,20 @@ the volume the client writes (`max-w-lg` + 4 rows → `max-w-4xl` + 16 rows,
 with the footer pinned so Save can't scroll out of reach). All three fixed,
 first two with regression tests.
 
-Not done: **comments** still use their own links-only `linkify` (P2-5) rather
-than this renderer — the two want unifying; rock status notes, meeting notes
-and L10 rating notes were scoped out. No prod exposure until F5.
-Related to N10 (links on entities) — keep the two write paths coherent.
+**Comments unified 2026-08-12.** The links-only `linkify` in
+`entity-comments.tsx` (Pass 16 P2-5) is **deleted** — comments now use the
+same `RichText` renderer and `RichTextEditor` composer as every description
+field, so there is one markup path in the app rather than two. The editor
+gained an `onKeyDown` passthrough so the composer keeps ⌘/Ctrl+Enter-to-post
+alongside ⌘B/I/K. Verified in the app: a comment with bold, bullets and a
+link posted via ⌘Enter, rendered correctly, and a `javascript:` target stayed
+literal text.
+
+Still plain text by choice: rock status notes (`comment`), meeting notes and
+L10 rating notes. These never had a second renderer, so they are scope, not
+drift — say the word and they are a small follow-up.
+No prod exposure until F5. Related to N10 (links on entities) — one write
+path now, so keep it that way.
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#15 — Steph: hyperlinks + rich text in headlines
@@ -587,6 +597,7 @@ Related to N10 (links on entities) — keep the two write paths coherent.
 - 2026-08-11 · decision · src session — markdown subset in the existing string field over a Tiptap/HTML editor: no migration, no sanitizer, no dual-format read path, and downstream consumers keep plain text
 - 2026-08-11 · build · src session — parser + toolbar + renderer + editor built and wired across headlines/issues/rocks/todos; 66 new unit tests
 - 2026-08-12 · verify · src session — driven in the running app against the sandbox DB; 3 defects found and fixed (empty-line list button, focus lost on no-op toolbar click, undersized headline modal); 68 new unit tests, 317 total green; full `next build` now passes
+- 2026-08-12 · cleanup · src session — comments folded onto the shared renderer; P2-5 `linkify` deleted, so one markup path remains; stored bodies arrive CRLF from the browser, now covered by a parser test
 
 ### U1 · Integrations nav → Settings
 *W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#17 · upd 2026-08-11*

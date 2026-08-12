@@ -29,6 +29,7 @@ export function RichTextEditor({
   value,
   defaultValue,
   onChange,
+  onKeyDown: onKeyDownProp,
   placeholder,
   rows = 3,
   className,
@@ -42,6 +43,12 @@ export function RichTextEditor({
   value?: string;
   defaultValue?: string;
   onChange?: (next: string) => void;
+  /**
+   * Runs before the built-in shortcuts, so a caller can claim a key first
+   * (the comment composer posts on Cmd/Ctrl+Enter). Call preventDefault to
+   * stop Cmd-B/I/K from also firing.
+   */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   rows?: number;
   className?: string;
@@ -118,6 +125,8 @@ export function RichTextEditor({
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    onKeyDownProp?.(e);
+    if (e.defaultPrevented) return;
     if (!(e.metaKey || e.ctrlKey)) return;
     const key = e.key.toLowerCase();
     if (key === "b") {

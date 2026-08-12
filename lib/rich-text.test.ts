@@ -72,6 +72,25 @@ describe("backward compatibility with existing plain text", () => {
     }
   });
 
+  test("CRLF and lone CR are normalized before parsing", () => {
+    // Confirmed against stored data: a body posted from a browser textarea
+    // comes back from Firestore with \r\n, so bullets and paragraph splits
+    // have to survive it. (Found while verifying the comment composer.)
+    assert.equal(
+      blockShape(parseRichText("Blockers:\r\n- vendor\r\n- staffing")),
+      "p[Blockers:] ul[vendor|staffing]",
+    );
+    assert.equal(
+      blockShape(parseRichText("One.\r\n\r\nTwo.")),
+      "p[One.] p[Two.]",
+    );
+    assert.equal(blockShape(parseRichText("a\rb")), "p[a\nb]");
+    assert.equal(
+      richTextToPlain("**x**\r\n- y"),
+      "x\n\n• y",
+    );
+  });
+
   test("prose punctuation is never mistaken for markup", () => {
     const prose =
       "Cost is 2 * 3 * 4 and the file is snake_case_name.ts (see p_1).";

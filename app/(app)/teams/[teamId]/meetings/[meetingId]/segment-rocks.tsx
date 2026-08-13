@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
-import { Users } from "lucide-react";
+import { Archive, Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import { initials } from "@/lib/initials";
@@ -10,7 +10,10 @@ import {
   currentSpeakerUid,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { groupRocksForL10 } from "@/lib/l10/rock-order";
+import {
+  groupRocksForL10,
+  sortRocksForSection,
+} from "@/lib/l10/rock-order";
 import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
@@ -19,6 +22,8 @@ import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { EmptyState } from "@/components/empty-state";
+import { EntityViewToggle } from "@/components/entity-view-toggle";
 
 type RockDoc = {
   id: string;
@@ -34,8 +39,9 @@ type RockDoc = {
   // modal seeds its share picker from it, and saving without it wipes the
   // field on the rock doc.
   shared_team_ids?: string[] | null;
-  // Timestamp from onSnapshot, absent from the server prefetch (which
-  // filters archived rocks out entirely). Only ever read as truthy.
+  // Timestamp from onSnapshot, millis from the server prefetch (raw
+  // Timestamps can't cross the RSC boundary). Only ever read as truthy —
+  // it splits the Active | Archived views.
   archived_at?: unknown;
 };
 
@@ -96,6 +102,10 @@ export function SegmentRocks({
 }) {
   const db = getClientDb();
 
+  // Active | Archived view — local state (no navigation mid-meeting),
+  // mirroring the standalone Rocks tab's tabs.
+  const [showArchived, setShowArchived] = useState(false);
+
   const rocksQuery = useMemo(
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
@@ -129,9 +139,15 @@ export function SegmentRocks({
   const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
 
-  // Archived rocks belong to the Rocks tab's Archived view, not the L10.
+  // The Active view keeps archived rocks out of the walk; the Archived
+  // view is exactly that remainder (with restore via the row's archive
+  // toggle, same as the Rocks tab).
   const rocks = useMemo(
     () => homeRocks.filter((r) => r.archived_at == null),
+    [homeRocks],
+  );
+  const archivedRocks = useMemo(
+    () => homeRocks.filter((r) => r.archived_at != null),
     [homeRocks],
   );
 
@@ -223,12 +239,68 @@ export function SegmentRocks({
     DEPARTMENT_SECTION_TITLE,
   );
 
+  // Archived view mirrors the standalone Rocks tab's Archived tab
+  // (rocks/page.tsx buildSections): Department section first, then members
+  // A–Z, then owners no longer on the roster. No speaking rail — nobody
+  // presents archived rocks.
+  const rosterIds = new Set(members.map((m) => m.user_id));
+  const archivedGroups: { key: string; title: string; rocks: RockDoc[] }[] =
+    [];
+  if (showArchived) {
+    const deptRocks: RockDoc[] = [];
+    const byOwner = new Map<string, RockDoc[]>();
+    for (const r of archivedRocks) {
+      if (isDepartmentRock(r)) {
+        deptRocks.push(r);
+        continue;
+      }
+      const id = r.owner_id as string;
+      const list = byOwner.get(id) ?? [];
+      list.push(r);
+      byOwner.set(id, list);
+    }
+    if (deptRocks.length > 0) {
+      archivedGroups.push({
+        key: "department",
+        title: DEPARTMENT_SECTION_TITLE,
+        rocks: sortRocksForSection(deptRocks),
+      });
+    }
+    const named = [...members].sort((a, b) =>
+      a.full_name.localeCompare(b.full_name),
+    );
+    for (const m of named) {
+      const list = byOwner.get(m.user_id);
+      if (!list || list.length === 0) continue;
+      archivedGroups.push({
+        key: m.user_id,
+        title: m.full_name,
+        rocks: sortRocksForSection(list),
+      });
+    }
+    // Owners not on the current roster (left the team, stale id).
+    const orphanIds = [...byOwner.keys()].filter((id) => !rosterIds.has(id));
+    orphanIds.sort((a, b) =>
+      (nameById.get(a) ?? "—").localeCompare(nameById.get(b) ?? "—"),
+    );
+    for (const id of orphanIds) {
+      archivedGroups.push({
+        key: id,
+        title: nameById.get(id) ?? "—",
+        rocks: sortRocksForSection(byOwner.get(id)!),
+      });
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          {visible.length} rock{visible.length === 1 ? "" : "s"}
-        </div>
+        <EntityViewToggle
+          showArchived={showArchived}
+          onChange={setShowArchived}
+          activeCount={visible.length}
+          archivedCount={archivedRocks.length}
+        />
         <QuickAddIssue
           teamId={teamId}
           prefill="Off-track rock: "
@@ -236,7 +308,53 @@ export function SegmentRocks({
         />
       </div>
 
-      {groups.length === 0 && (
+      {showArchived && archivedGroups.length === 0 && (
+        <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <EmptyState
+            icon={Archive}
+            title="No archived rocks"
+            hint="Nothing archived yet. Rocks marked Done before this week’s Monday land here after the overnight sweep."
+          />
+        </div>
+      )}
+
+      {/* Same section layout as the Rocks tab's Archived view — uppercase
+          owner label above a divided card of rows; restore works from the
+          row's archive toggle. */}
+      {showArchived &&
+        archivedGroups.map((g) => (
+          <section key={g.key}>
+            <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+              {g.title}
+              <span className="font-bold text-zinc-400">
+                {" "}
+                ({g.rocks.length})
+              </span>
+            </h2>
+            <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+              {g.rocks.map((r) => (
+                <RockRow
+                  key={r.id}
+                  teamId={teamId}
+                  userId={userId}
+                  rock={r}
+                  ownerName={
+                    r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+                  }
+                  members={members}
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={defaultDue}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={userId}
+                  teamName={teamName}
+                  shareTeams={shareTeams}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+
+      {!showArchived && groups.length === 0 && (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
           No rocks yet — add them on the Rocks tab.
         </div>
@@ -245,77 +363,78 @@ export function SegmentRocks({
       {/* One card per section, owner in the card header — the header row
           carries the speaker state (green header + chip) instead of ringing
           the whole card, which shouted over the content. */}
-      {groups.map((g) => (
-        <section
-          key={g.key}
-          className={
-            "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
-            (g.isCurrentSpeaker
-              ? "border-hpb-green/50"
-              : "border-zinc-300 dark:border-zinc-800") +
-            (g.absent ? " opacity-60" : "")
-          }
-        >
-          <header
+      {!showArchived &&
+        groups.map((g) => (
+          <section
+            key={g.key}
             className={
-              "flex items-center gap-2 border-b px-4 py-2 " +
+              "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
               (g.isCurrentSpeaker
-                ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
-                : "border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
+                ? "border-hpb-green/50"
+                : "border-zinc-300 dark:border-zinc-800") +
+              (g.absent ? " opacity-60" : "")
             }
           >
-            <span
+            <header
               className={
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                "flex items-center gap-2 border-b px-4 py-2 " +
                 (g.isCurrentSpeaker
-                  ? "bg-hpb-green text-white"
-                  : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
+                  ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
+                  : "border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
               }
             >
-              {g.isDepartmentSection ? (
-                <Users className="h-3.5 w-3.5" />
-              ) : (
-                initials(g.title) || "?"
-              )}
-            </span>
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              {g.title}
-            </h3>
-            <span className="text-xs text-zinc-500">{g.rocks.length}</span>
-            {g.isCurrentSpeaker && (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
-                Now speaking
-              </span>
-            )}
-            {g.absent && !g.isCurrentSpeaker && (
-              <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Absent
-              </span>
-            )}
-          </header>
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {g.rocks.map((r) => (
-              <RockRow
-                key={r.id}
-                teamId={teamId}
-                userId={userId}
-                rock={r}
-                ownerName={
-                  r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+              <span
+                className={
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                  (g.isCurrentSpeaker
+                    ? "bg-hpb-green text-white"
+                    : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
                 }
-                members={members}
-                milestones={milestonesByRock.get(r.id) ?? []}
-                defaultDue={defaultDue}
-                statusHistory={statusByRock.get(r.id) ?? []}
-                currentUserId={userId}
-                teamName={teamName}
-                shareTeams={shareTeams}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+              >
+                {g.isDepartmentSection ? (
+                  <Users className="h-3.5 w-3.5" />
+                ) : (
+                  initials(g.title) || "?"
+                )}
+              </span>
+              <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                {g.title}
+              </h3>
+              <span className="text-xs text-zinc-500">{g.rocks.length}</span>
+              {g.isCurrentSpeaker && (
+                <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
+                  <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
+                  Now speaking
+                </span>
+              )}
+              {g.absent && !g.isCurrentSpeaker && (
+                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Absent
+                </span>
+              )}
+            </header>
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {g.rocks.map((r) => (
+                <RockRow
+                  key={r.id}
+                  teamId={teamId}
+                  userId={userId}
+                  rock={r}
+                  ownerName={
+                    r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+                  }
+                  members={members}
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={defaultDue}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={userId}
+                  teamName={teamName}
+                  shareTeams={shareTeams}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
     </div>
   );
 }

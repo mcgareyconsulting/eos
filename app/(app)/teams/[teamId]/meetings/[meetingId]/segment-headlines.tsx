@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Megaphone, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Archive, Megaphone, Trash2 } from "lucide-react";
 import {
   collection,
   query as fsQuery,
@@ -14,7 +14,8 @@ import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
-import { deleteHeadline } from "../../headlines/actions";
+import { EntityViewToggle } from "@/components/entity-view-toggle";
+import { deleteHeadline, setHeadlineArchived } from "../../headlines/actions";
 import { AddHeadlineModal } from "../../headlines/add-headline-modal";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
@@ -84,9 +85,11 @@ export function SegmentHeadlines({
     [db, teamId],
   );
   const headlines = useCollection<HeadlineDoc>(q, initialHeadlines);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Active only — archived drop out of the live L10 list (selective archive).
   const active = headlines.filter((h) => !isArchived(h));
+  const archived = headlines.filter((h) => isArchived(h));
   // Undiscussed first (still need airtime), then discussed, then by recency.
   const byDiscussedThenRecency = (a: HeadlineDoc, b: HeadlineDoc) => {
     const ad = a.discussed === true ? 1 : 0;
@@ -118,29 +121,52 @@ export function SegmentHeadlines({
     const body = normalizeDescription(h.body);
     const readOnly = !!h.broadcast;
     const discussed = h.discussed === true;
+    const archivedRow = isArchived(h);
+    const toggleArchive = setHeadlineArchived.bind(
+      null,
+      teamId,
+      h.id,
+      !archivedRow,
+    );
+
+    const closedOnMs = archivedRow ? tsMs(h.archived_at ?? null) : null;
+    const closedOn =
+      closedOnMs != null
+        ? (() => {
+            const d = new Date(closedOnMs);
+            return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+          })()
+        : null;
+
     return (
       <div
         key={h.id}
         className={`group flex items-start gap-3 px-4 py-3 text-sm ${
-          discussed
+          discussed && !archivedRow
             ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
             : ""
         }`}
       >
-        <HeadlineDiscussedCheckbox
-          teamId={teamId}
-          headlineId={h.id}
-          discussed={discussed}
-          disabled={readOnly}
-        />
+        {!archivedRow && (
+          <HeadlineDiscussedCheckbox
+            teamId={teamId}
+            headlineId={h.id}
+            discussed={discussed}
+            disabled={readOnly}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <div
-              className={`font-medium ${discussed ? "text-zinc-500 dark:text-zinc-400" : ""}`}
+              className={`font-medium ${
+                discussed && !archivedRow
+                  ? "text-zinc-500 dark:text-zinc-400"
+                  : ""
+              }`}
             >
               {h.title}
             </div>
-            {discussed && (
+            {discussed && !archivedRow && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
                 Discussed · closes Monday
               </span>
@@ -151,6 +177,11 @@ export function SegmentHeadlines({
               </span>
             )}
           </div>
+          {archivedRow && closedOn && (
+            <div className="mt-0.5 text-xs tabular-nums text-zinc-500">
+              Closed On: {closedOn}
+            </div>
+          )}
           {body && (
             <RichText
               value={body}
@@ -183,18 +214,30 @@ export function SegmentHeadlines({
                 kind: h.kind,
               }}
             />
-            <ConfirmSubmitForm
-              action={remove}
-              confirmMessage="Delete this headline? This can't be undone."
-            >
+            <form action={toggleArchive}>
               <button
                 type="submit"
-                className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
-                aria-label="Delete headline"
+                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                aria-label={archivedRow ? "Restore headline" : "Archive headline"}
+                title={archivedRow ? "Restore" : "Archive now"}
               >
-                <Trash2 className="h-4 w-4" />
+                <Archive className="h-4 w-4" />
               </button>
-            </ConfirmSubmitForm>
+            </form>
+            {!archivedRow && (
+              <ConfirmSubmitForm
+                action={remove}
+                confirmMessage="Delete this headline? This can't be undone."
+              >
+                <button
+                  type="submit"
+                  className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
+                  aria-label="Delete headline"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </ConfirmSubmitForm>
+            )}
           </div>
         )}
       </div>
@@ -203,16 +246,35 @@ export function SegmentHeadlines({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <AddHeadlineModal teamId={teamId} compact />
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="From headline: "
-          meetingId={meetingId}
+      <div className="flex items-center justify-between gap-2">
+        <EntityViewToggle
+          showArchived={showArchived}
+          onChange={setShowArchived}
+          activeCount={active.length}
+          archivedCount={archived.length}
         />
+        <div className="flex items-center gap-2">
+          <AddHeadlineModal teamId={teamId} compact />
+          <QuickAddIssue
+            teamId={teamId}
+            prefill="From headline: "
+            meetingId={meetingId}
+          />
+        </div>
       </div>
 
-      {active.length === 0 ? (
+      {showArchived ? (
+        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+          {archived.length === 0 && (
+            <EmptyState
+              icon={Megaphone}
+              title="No archived headlines"
+              hint="Headlines marked discussed are archived when an L10 ends."
+            />
+          )}
+          {archived.map(renderRow)}
+        </div>
+      ) : active.length === 0 ? (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <EmptyState
             icon={Megaphone}

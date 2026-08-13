@@ -41,6 +41,16 @@ import {
   type RecapStats,
 } from "./recap-modal";
 
+// Timestamp | millis | null → millis | null. Unknown-but-set still counts
+// as archived (0), matching the != null checks downstream. Mirrors
+// archivedAtMillis in ../../rocks/page.tsx.
+function archivedAtMillis(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  const t = v as { toMillis?: () => number };
+  return typeof t.toMillis === "function" ? t.toMillis() : 0;
+}
+
 type MeetingDoc = {
   team_id: string;
   started_at: Timestamp | null;
@@ -576,26 +586,28 @@ async function SegmentContent({
     const shareTeams = userTeams
       .filter((t) => t.id !== teamId)
       .map((t) => ({ id: t.id, name: t.name }));
-    const initialRocks = rocksSnap.docs
-      // Archived rocks stay off the L10 (mirrors the client-side filter).
-      .filter((d) => d.data().archived_at == null)
-      .map((d) => {
-        const x = d.data();
-        return {
-          id: d.id,
-          team_id: x.team_id,
-          title: x.title,
-          owner_id: x.owner_id ?? null,
-          quarter: x.quarter,
-          due_date: x.due_date ?? null,
-          status: x.status,
-          description: x.description ?? null,
-          rock_type: x.rock_type ?? null,
-          // Must ride along — the edit modal seeds its share picker from
-          // this, and saving without it wipes the field (see rock-modal).
-          shared_team_ids: x.shared_team_ids ?? [],
-        };
-      });
+    // Archived rocks ride along too — the segment's Active | Archived
+    // toggle splits them client-side, matching the Rocks tab.
+    const initialRocks = rocksSnap.docs.map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        team_id: x.team_id,
+        title: x.title,
+        owner_id: x.owner_id ?? null,
+        quarter: x.quarter,
+        due_date: x.due_date ?? null,
+        status: x.status,
+        description: x.description ?? null,
+        rock_type: x.rock_type ?? null,
+        // Must ride along — the edit modal seeds its share picker from
+        // this, and saving without it wipes the field (see rock-modal).
+        shared_team_ids: x.shared_team_ids ?? [],
+        // archived_at is a Firestore Timestamp — pass millis, the raw
+        // class instance can't cross the RSC boundary (audit M5 / N23).
+        archived_at: archivedAtMillis(x.archived_at),
+      };
+    });
     const initialTodos = todosSnap.docs.map((d) => {
       const x = d.data();
       return {

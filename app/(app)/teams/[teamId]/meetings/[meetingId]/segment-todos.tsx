@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Flag } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Archive, Flag } from "lucide-react";
 import {
   collection,
   doc,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/l10/speaking-order";
 import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
 import { EmptyState } from "@/components/empty-state";
+import { EntityViewToggle } from "@/components/entity-view-toggle";
 import {
   TodoListRow,
   type TodoListItem,
@@ -69,6 +70,17 @@ type MilestoneGroup = {
   items: MilestoneTodoItem[];
 };
 
+/** Firestore Timestamp (or legacy boolean) → local mm/dd/yyyy for "Closed On". */
+function formatClosedOn(archived_at: TodoDoc["archived_at"]): string | null {
+  if (archived_at == null || typeof archived_at === "boolean") return null;
+  const d = archived_at.toDate();
+  if (Number.isNaN(d.getTime())) return null;
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const y = d.getFullYear();
+  return `${m}/${day}/${y}`;
+}
+
 function toListItem(t: TodoDoc): TodoListItem {
   return {
     id: t.id,
@@ -78,6 +90,8 @@ function toListItem(t: TodoDoc): TodoListItem {
     due_date: t.due_date,
     completed: !!t.completed_at,
     visibility: t.visibility === "private" ? "private" : "team",
+    archived: !!t.archived_at,
+    closed_on: formatClosedOn(t.archived_at),
   };
 }
 
@@ -236,6 +250,7 @@ export function SegmentTodos({
   initialSpeakerIndex?: number;
 }) {
   const db = getClientDb();
+  const [showArchived, setShowArchived] = useState(false);
 
   // The Firestore rule for todos rejects a list query unless the rule can
   // prove every result is readable: that means we must constrain visibility
@@ -316,12 +331,33 @@ export function SegmentTodos({
     absentUserIds,
   );
 
+  // teamQuery (visibility=="team") and mineQuery (visibility=="private" AND
+  // owner_id==userId) are mutually exclusive on visibility, so a doc can
+  // never satisfy both — no dedup needed merging the two lists.
   const allTodos = [...teamTodos, ...myTodos].filter((t) => !t.archived_at);
   // Pure to-dos only in owner cards. All open milestones surface in their own
   // section (P0-4 / P14-4) — same idea as standalone To-Dos; still editable
   // under Rocks. Milestones whose parent rock is done/cancelled/archived are
   // dropped, same as the standalone Milestones column.
   const pureTodos = allTodos.filter((t) => !t.source_rock_id);
+
+  const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
+  const ownerName = (id: string | null) =>
+    id ? nameById.get(id) ?? "—" : "—";
+
+  // Archived: pure to-dos only — milestones can't be archived here (see
+  // setTodoArchived) and are dropped from both views once archived, same as
+  // the standalone Milestones column.
+  const archivedTodos = [...teamTodos, ...myTodos].filter(
+    (t) => !!t.archived_at && !t.source_rock_id,
+  );
+  // Flat list, owner then due date — same as the standalone archived view
+  // (owner cards with "0 open" are noise once everything is already closed).
+  const archivedList = archivedTodos.map(toListItem).sort((a, b) => {
+    const byOwner = ownerName(a.owner_id).localeCompare(ownerName(b.owner_id));
+    if (byOwner !== 0) return byOwner;
+    return byDue(a, b);
+  });
   const openMilestones: MilestoneTodoItem[] = allTodos
     .filter(
       (t) =>
@@ -358,148 +394,172 @@ export function SegmentTodos({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <AddTodoModal
-          teamId={teamId}
-          members={members}
-          defaultOwnerId={userId}
-          meetingId={meetingId}
-          compact
+      <div className="flex items-center justify-between gap-2">
+        <EntityViewToggle
+          showArchived={showArchived}
+          onChange={setShowArchived}
+          activeCount={pureTodos.length}
+          archivedCount={archivedTodos.length}
         />
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="Stale to-do: "
-          meetingId={meetingId}
-        />
+        <div className="flex items-center gap-2">
+          <AddTodoModal
+            teamId={teamId}
+            members={members}
+            defaultOwnerId={userId}
+            meetingId={meetingId}
+            compact
+          />
+          <QuickAddIssue
+            teamId={teamId}
+            prefill="Stale to-do: "
+            meetingId={meetingId}
+          />
+        </div>
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-          <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
-          <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-            Milestones
-          </h3>
-          <span className="text-xs text-zinc-500">
-            {openMilestones.length}
-          </span>
-        </header>
-        {openMilestones.length === 0 ? (
-          <EmptyState icon={Flag} title="No open milestones" />
-        ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {milestoneGroups.map((g) => (
-              <div key={g.key}>
-                <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-                    {initials(g.title) || "?"}
-                  </span>
-                  <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                    {g.title}
-                  </h4>
-                  <span className="text-xs text-zinc-500">
-                    {g.items.length}
-                  </span>
-                </div>
-                {g.items.map((m) => (
-                  <MilestoneTodoRow
-                    key={m.id}
-                    teamId={teamId}
-                    milestone={m}
-                    ownerName={g.title}
-                    hideOwner
-                  />
+      {showArchived ? (
+        <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <Archive className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
+            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+              Archived To-Dos
+            </h3>
+            <span className="text-xs text-zinc-500">{archivedList.length}</span>
+          </header>
+          {archivedList.length === 0 ? (
+            <EmptyState
+              icon={Archive}
+              title="No archived to-dos"
+              hint="Completed to-dos archive when an L10 ends, or archive them manually."
+            />
+          ) : (
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {archivedList.map((t) => (
+                <TodoListRow
+                  key={t.id}
+                  teamId={teamId}
+                  todo={t}
+                  ownerName={ownerName(t.owner_id)}
+                  members={members}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+              <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
+              <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                Milestones
+              </h3>
+              <span className="text-xs text-zinc-500">
+                {openMilestones.length}
+              </span>
+            </header>
+            {openMilestones.length === 0 ? (
+              <EmptyState icon={Flag} title="No open milestones" />
+            ) : (
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {milestoneGroups.map((g) => (
+                  <div key={g.key}>
+                    <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
+                        {initials(g.title) || "?"}
+                      </span>
+                      <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                        {g.title}
+                      </h4>
+                      <span className="text-xs text-zinc-500">
+                        {g.items.length}
+                      </span>
+                    </div>
+                    {g.items.map((m) => (
+                      <MilestoneTodoRow
+                        key={m.id}
+                        teamId={teamId}
+                        milestone={m}
+                        ownerName={g.title}
+                        hideOwner
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
 
-      {groups.length === 0 && (
-        <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-          No to-dos.
-        </div>
-      )}
+          {groups.length === 0 && (
+            <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              No to-dos.
+            </div>
+          )}
 
-      {openCount === 0 && doneCount > 0 && (
-        <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
-          All to-dos done — nice week.
-        </div>
-      )}
+          {openCount === 0 && doneCount > 0 && (
+            <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
+              All to-dos done — nice week.
+            </div>
+          )}
 
-      {/* One card per owner — same chrome as L10 Rocks. */}
-      {groups.map((g) => (
-        <section
-          key={g.key}
-          className={
-            "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
-            (g.isCurrentSpeaker
-              ? "border-hpb-green/50"
-              : "border-zinc-300 dark:border-zinc-800") +
-            (g.absent ? " opacity-60" : "")
-          }
-        >
-          <header
-            className={
-              "flex items-center gap-2 border-b px-4 py-2 " +
-              (g.isCurrentSpeaker
-                ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
-                : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
-            }
-          >
-            <span
+          {/* One card per owner — same chrome as L10 Rocks. */}
+          {groups.map((g) => (
+            <section
+              key={g.key}
               className={
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
                 (g.isCurrentSpeaker
-                  ? "bg-hpb-green text-white"
-                  : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
+                  ? "border-hpb-green/50"
+                  : "border-zinc-300 dark:border-zinc-800") +
+                (g.absent ? " opacity-60" : "")
               }
             >
-              {initials(g.title) || "?"}
-            </span>
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              {g.title}
-            </h3>
-            <span className="text-xs text-zinc-500">
-              {[
-                g.open.length > 0 ? `${g.open.length} open` : null,
-                g.done.length > 0 ? `${g.done.length} done` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "none"}
-            </span>
-            {g.isCurrentSpeaker && (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
-                Now speaking
-              </span>
-            )}
-            {g.absent && !g.isCurrentSpeaker && (
-              <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Absent
-              </span>
-            )}
-          </header>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {g.open.length === 0 && g.done.length === 0 && (
-              <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
-            )}
-            {g.open.map((t) => (
-              <TodoListRow
-                key={t.id}
-                teamId={teamId}
-                todo={toListItem(t)}
-                ownerName={g.title}
-                members={members}
-                hideOwner
-              />
-            ))}
-            {g.done.length > 0 && (
-              <>
-                <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                  Done
-                </div>
-                {g.done.map((t) => (
+              <header
+                className={
+                  "flex items-center gap-2 border-b px-4 py-2 " +
+                  (g.isCurrentSpeaker
+                    ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
+                    : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
+                }
+              >
+                <span
+                  className={
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                    (g.isCurrentSpeaker
+                      ? "bg-hpb-green text-white"
+                      : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
+                  }
+                >
+                  {initials(g.title) || "?"}
+                </span>
+                <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                  {g.title}
+                </h3>
+                <span className="text-xs text-zinc-500">
+                  {[
+                    g.open.length > 0 ? `${g.open.length} open` : null,
+                    g.done.length > 0 ? `${g.done.length} done` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "none"}
+                </span>
+                {g.isCurrentSpeaker && (
+                  <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
+                    Now speaking
+                  </span>
+                )}
+                {g.absent && !g.isCurrentSpeaker && (
+                  <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    Absent
+                  </span>
+                )}
+              </header>
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {g.open.length === 0 && g.done.length === 0 && (
+                  <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
+                )}
+                {g.open.map((t) => (
                   <TodoListRow
                     key={t.id}
                     teamId={teamId}
@@ -509,11 +569,28 @@ export function SegmentTodos({
                     hideOwner
                   />
                 ))}
-              </>
-            )}
-          </div>
-        </section>
-      ))}
+                {g.done.length > 0 && (
+                  <>
+                    <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
+                      Done
+                    </div>
+                    {g.done.map((t) => (
+                      <TodoListRow
+                        key={t.id}
+                        teamId={teamId}
+                        todo={toListItem(t)}
+                        ownerName={g.title}
+                        members={members}
+                        hideOwner
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
+            </section>
+          ))}
+        </>
+      )}
     </div>
   );
 }

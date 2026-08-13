@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Trash2, Megaphone, Pencil, User, AlertCircle } from "lucide-react";
+import { Archive, Trash2, Megaphone, Pencil, User, AlertCircle } from "lucide-react";
 import {
   collection,
   doc,
@@ -12,6 +12,7 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
+import { EntityViewToggle } from "@/components/entity-view-toggle";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -31,7 +32,7 @@ import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { IssueFormModal } from "../../issues/issue-form-modal";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
-import { deleteIssue } from "../../issues/actions";
+import { deleteIssue, setIssueArchived } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -51,6 +52,21 @@ type IssueDoc = {
 
 function isArchivedIssue(i: IssueDoc): boolean {
   return i.archived === true || i.archived_at != null;
+}
+
+// Same M/D/YYYY the standalone tab shows; live docs carry a client
+// Timestamp, legacy `archived: true` docs may have no archived_at at all.
+function formatClosedOn(archived_at: unknown): string | null {
+  const t = archived_at as
+    | { toDate?: () => Date; toMillis?: () => number }
+    | null
+    | undefined;
+  if (t == null) return null;
+  let d: Date | null = null;
+  if (typeof t.toDate === "function") d = t.toDate();
+  else if (typeof t.toMillis === "function") d = new Date(t.toMillis());
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 }
 
 type VoteDoc = {
@@ -83,6 +99,7 @@ export function SegmentIssues({
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
+  const [showArchived, setShowArchived] = useState(false);
   const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
 
   const issuesQuery = useMemo(
@@ -115,12 +132,14 @@ export function SegmentIssues({
   const { byIssue: myVoteByIssue, used: myVotesUsed, remaining: myVotesRemaining } =
     voteCredits(votes);
 
-  // Active only — archived issues leave the L10 list.
-  const issues = issuesLive.filter((i) => !isArchivedIssue(i));
+  // Active vs archived split — counts span both terms, matching the standalone.
+  const activeIssues = issuesLive.filter((i) => !isArchivedIssue(i));
+  const archivedIssues = issuesLive.filter(isArchivedIssue);
+  const viewIssues = showArchived ? archivedIssues : activeIssues;
 
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
-  const { short, long } = splitIssuesByTerm(issues);
-  const rankedShort = rankShortTerm(short, discussingId);
+  const { short, long } = splitIssuesByTerm(viewIssues);
+  const rankedShort = rankShortTerm(short, showArchived ? null : discussingId);
   const rankedLong = rankLongTerm(long);
   const list = tab === "short" ? rankedShort : rankedLong;
 
@@ -153,8 +172,16 @@ export function SegmentIssues({
           Long-term ({rankedLong.length})
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {tab === "short" && <VoteCreditsBadge used={myVotesUsed} />}
-          {tab === "long" && (
+          <EntityViewToggle
+            showArchived={showArchived}
+            onChange={setShowArchived}
+            activeCount={activeIssues.length}
+            archivedCount={archivedIssues.length}
+          />
+          {!showArchived && tab === "short" && (
+            <VoteCreditsBadge used={myVotesUsed} />
+          )}
+          {!showArchived && tab === "long" && (
             <span className="text-xs text-zinc-500">
               Not votable · move to short-term to work this meeting
             </span>
@@ -164,7 +191,18 @@ export function SegmentIssues({
       </div>
 
       <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-        {list.length === 0 && (
+        {list.length === 0 && showArchived && (
+          <EmptyState
+            icon={Archive}
+            title={
+              tab === "short"
+                ? "No archived short-term issues"
+                : "No archived long-term issues"
+            }
+            hint="Restore one to bring it back to Active."
+          />
+        )}
+        {list.length === 0 && !showArchived && (
           <EmptyState
             icon={AlertCircle}
             title={
@@ -177,46 +215,14 @@ export function SegmentIssues({
             }
           />
         )}
-        {list.map((i) => {
-          const remove = deleteIssue.bind(null, teamId, i.id);
-          const isDiscussing = tab === "short" && i.id === discussingId;
-          const toggleDiscuss = setDiscussingIssue.bind(
-            null,
-            teamId,
-            meetingId,
-            isDiscussing ? null : i.id,
-          );
-          const closedPending =
-            i.status === "solved" || i.status === "dropped";
-          return (
+        {showArchived &&
+          list.map((i) => (
             <div
               key={i.id}
-              className={
-                "group flex items-center gap-3 px-4 py-3 text-sm " +
-                (isDiscussing
-                  ? "bg-hpb-blue/5 dark:bg-hpb-blue/10 ring-1 ring-inset ring-hpb-blue/30"
-                  : closedPending
-                    ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
-                    : "")
-              }
+              className="group flex items-center gap-3 px-4 py-3 text-sm"
             >
-              {tab === "short" && (
-                <VoteButton
-                  teamId={teamId}
-                  issueId={i.id}
-                  count={i.votes ?? 0}
-                  myCount={myVoteByIssue.get(i.id) ?? 0}
-                  myRemaining={myVotesRemaining}
-                />
-              )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  {isDiscussing && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-hpb-blue px-2 py-0.5 text-xs font-medium text-white">
-                      <Megaphone className="h-3 w-3" />
-                      Discussing
-                    </span>
-                  )}
                   {i.priority && (
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
@@ -229,11 +235,6 @@ export function SegmentIssues({
                   >
                     {STATUS_LABEL[i.status]}
                   </span>
-                  {closedPending && (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-                      Closes Monday
-                    </span>
-                  )}
                 </div>
                 <IssueDetailTrigger
                   issue={i}
@@ -241,76 +242,167 @@ export function SegmentIssues({
                   teamId={teamId}
                   userId={userId}
                   members={members}
-                  className={
-                    "mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold " +
-                    (closedPending ? "text-zinc-500 dark:text-zinc-400" : "")
-                  }
+                  className="mt-1 block max-w-full truncate text-left font-normal text-zinc-700 hover:text-hpb-blue dark:text-zinc-300 dark:hover:text-hpb-gold"
                 >
                   {i.title}
                 </IssueDetailTrigger>
+                <div className="mt-0.5 text-xs tabular-nums text-zinc-500">
+                  Closed On: {formatClosedOn(i.archived_at) ?? "—"}
+                </div>
                 <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
                   <User className="h-3 w-3" />
                   {ownerName(i.owner_id)}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {tab === "short" && (
-                  <form action={toggleDiscuss}>
-                    <button
-                      type="submit"
-                      title={
-                        isDiscussing
-                          ? "Stop discussing"
-                          : "Mark as discussing now"
-                      }
-                      aria-pressed={isDiscussing}
-                      className={
-                        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition " +
-                        (isDiscussing
-                          ? "bg-hpb-blue/10 text-hpb-blue ring-1 ring-inset ring-hpb-blue/30"
-                          : "text-zinc-500 opacity-0 hover:text-hpb-blue group-hover:opacity-100")
-                      }
-                    >
-                      <Megaphone className="h-3.5 w-3.5" />
-                      {isDiscussing ? "Stop" : "Discuss"}
-                    </button>
-                  </form>
-                )}
-                <MoveIssueTermButton
-                  teamId={teamId}
-                  issueId={i.id}
-                  type={i.type}
-                />
-                <button
-                  type="button"
-                  onClick={() => setEditingIssue(i)}
-                  title="Edit issue"
-                  aria-label="Edit issue"
-                  className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <StatusActions
-                  teamId={teamId}
-                  issueId={i.id}
-                  status={i.status}
-                />
-                <ConfirmSubmitForm
-                  action={remove}
-                  confirmMessage="Delete this issue? This will also delete its votes and comments. This can't be undone."
-                >
+                <form action={setIssueArchived.bind(null, teamId, i.id, false)}>
                   <button
                     type="submit"
-                    className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                    aria-label="Delete issue"
+                    className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800"
+                    aria-label="Restore issue"
+                    title="Restore to Active"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Archive className="h-4 w-4" />
                   </button>
-                </ConfirmSubmitForm>
+                </form>
               </div>
             </div>
-          );
-        })}
+          ))}
+        {!showArchived &&
+          list.map((i) => {
+            const remove = deleteIssue.bind(null, teamId, i.id);
+            const isDiscussing = tab === "short" && i.id === discussingId;
+            const toggleDiscuss = setDiscussingIssue.bind(
+              null,
+              teamId,
+              meetingId,
+              isDiscussing ? null : i.id,
+            );
+            const closedPending =
+              i.status === "solved" || i.status === "dropped";
+            return (
+              <div
+                key={i.id}
+                className={
+                  "group flex items-center gap-3 px-4 py-3 text-sm " +
+                  (isDiscussing
+                    ? "bg-hpb-blue/5 dark:bg-hpb-blue/10 ring-1 ring-inset ring-hpb-blue/30"
+                    : closedPending
+                      ? "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400"
+                      : "")
+                }
+              >
+                {tab === "short" && (
+                  <VoteButton
+                    teamId={teamId}
+                    issueId={i.id}
+                    count={i.votes ?? 0}
+                    myCount={myVoteByIssue.get(i.id) ?? 0}
+                    myRemaining={myVotesRemaining}
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isDiscussing && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-hpb-blue px-2 py-0.5 text-xs font-medium text-white">
+                        <Megaphone className="h-3 w-3" />
+                        Discussing
+                      </span>
+                    )}
+                    {i.priority && (
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${PRIORITY_BADGE[i.priority]}`}
+                      >
+                        {PRIORITY_LABEL[i.priority]}
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[i.status]}`}
+                    >
+                      {STATUS_LABEL[i.status]}
+                    </span>
+                    {closedPending && (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
+                        Closes Monday
+                      </span>
+                    )}
+                  </div>
+                  <IssueDetailTrigger
+                    issue={i}
+                    ownerName={ownerName(i.owner_id)}
+                    teamId={teamId}
+                    userId={userId}
+                    members={members}
+                    className={
+                      "mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold " +
+                      (closedPending ? "text-zinc-500 dark:text-zinc-400" : "")
+                    }
+                  >
+                    {i.title}
+                  </IssueDetailTrigger>
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    <User className="h-3 w-3" />
+                    {ownerName(i.owner_id)}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {tab === "short" && (
+                    <form action={toggleDiscuss}>
+                      <button
+                        type="submit"
+                        title={
+                          isDiscussing
+                            ? "Stop discussing"
+                            : "Mark as discussing now"
+                        }
+                        aria-pressed={isDiscussing}
+                        className={
+                          "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition " +
+                          (isDiscussing
+                            ? "bg-hpb-blue/10 text-hpb-blue ring-1 ring-inset ring-hpb-blue/30"
+                            : "text-zinc-500 opacity-0 hover:text-hpb-blue group-hover:opacity-100")
+                        }
+                      >
+                        <Megaphone className="h-3.5 w-3.5" />
+                        {isDiscussing ? "Stop" : "Discuss"}
+                      </button>
+                    </form>
+                  )}
+                  <MoveIssueTermButton
+                    teamId={teamId}
+                    issueId={i.id}
+                    type={i.type}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditingIssue(i)}
+                    title="Edit issue"
+                    aria-label="Edit issue"
+                    className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <StatusActions
+                    teamId={teamId}
+                    issueId={i.id}
+                    status={i.status}
+                  />
+                  <ConfirmSubmitForm
+                    action={remove}
+                    confirmMessage="Delete this issue? This will also delete its votes and comments. This can't be undone."
+                  >
+                    <button
+                      type="submit"
+                      className="text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                      aria-label="Delete issue"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </ConfirmSubmitForm>
+                </div>
+              </div>
+            );
+          })}
       </div>
 
       {editingIssue && (

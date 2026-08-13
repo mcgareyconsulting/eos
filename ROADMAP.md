@@ -684,6 +684,7 @@ choice; that choice is overruled by this ask).
 **Trail**
 - 2026-08-12 · request · src session-2026-08-12 — daniel: global app coherence on add {item} and active | archive view
 - 2026-08-12 · client · src l10-2026-08-12 — bug per client: Active/Archived views absent in the L10, present in normal mode; wanted in both
+- 2026-08-12 · build · src pr#35 — L10 slice built same day: `EntityViewToggle` (client-state twin of EntityViewTabs) + archived views in all four segments, restore working in-meeting; PR open awaiting review. Standalone-tab placement/label coherence (the rest of this item) still open
 
 ### N25 · Meeting presence confirmation
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*

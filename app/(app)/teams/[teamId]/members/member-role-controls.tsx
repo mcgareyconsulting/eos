@@ -3,22 +3,25 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { setMemberRole } from "./actions";
+import { removeTeamMember, setMemberRole } from "./actions";
 
 /**
- * Leader-only promote / demote for one roster row.
- * Demoting the last leader is blocked server-side; we still hide the demote
- * button when `canDemote` is false so the UI doesn't tease a failing click.
+ * Leader-only promote / demote / remove for one roster row.
+ * Demoting or removing the last leader is blocked server-side; we still
+ * disable those buttons when `canDemote` is false so the UI doesn't tease a
+ * failing click.
  */
 export function MemberRoleControls({
   teamId,
   userId,
+  memberName,
   role,
   isSelf,
   canDemote,
 }: {
   teamId: string;
   userId: string;
+  memberName: string;
   role: string;
   isSelf: boolean;
   /** False when this is the only leader on the team. */
@@ -42,11 +45,29 @@ export function MemberRoleControls({
     });
   }
 
+  function runRemove() {
+    setError(null);
+    start(async () => {
+      try {
+        await removeTeamMember(teamId, userId);
+        // Removing yourself drops your access to this page — go Home
+        // instead of refreshing into a 404.
+        if (isSelf) {
+          router.push("/home");
+        } else {
+          router.refresh();
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
+  }
+
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+          className={`inline-flex w-[4.5rem] justify-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
             isLeader
               ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
               : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
@@ -78,7 +99,7 @@ export function MemberRoleControls({
               }
               run("member");
             }}
-            className="inline-flex min-w-[5.5rem] items-center justify-center rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="inline-flex w-[6.5rem] items-center justify-center rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             {pending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -100,7 +121,7 @@ export function MemberRoleControls({
               }
               run("leader");
             }}
-            className="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-hpb-blue px-2 py-1 text-xs font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-[6.5rem] items-center justify-center rounded-md bg-hpb-blue px-2 py-1 text-xs font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -109,6 +130,39 @@ export function MemberRoleControls({
             )}
           </button>
         )}
+
+        <button
+          type="button"
+          disabled={pending || (isLeader && !canDemote)}
+          title={
+            isLeader && !canDemote
+              ? "Promote another leader before removing the last one"
+              : isSelf
+                ? "Leave this team"
+                : `Remove ${memberName} from the team`
+          }
+          onClick={() => {
+            if (
+              !window.confirm(
+                isSelf
+                  ? "Leave this team? You will lose access to its data. Your rocks, to-dos, and issues stay on the team."
+                  : `Remove ${memberName} from this team? They will lose access to its data. Their rocks, to-dos, and issues stay on the team.`,
+              )
+            ) {
+              return;
+            }
+            runRemove();
+          }}
+          className="inline-flex w-[5.75rem] items-center justify-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          {pending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : isSelf ? (
+            "Leave"
+          ) : (
+            "Remove"
+          )}
+        </button>
       </div>
       {error && (
         <p className="max-w-[16rem] text-right text-[11px] text-red-600 dark:text-red-400">

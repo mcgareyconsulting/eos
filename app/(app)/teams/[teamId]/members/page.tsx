@@ -260,17 +260,9 @@ export default async function MembersPage({
       )}
 
       <section className="space-y-2">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-            Team members
-          </h2>
-          {canManage && (
-            <p className="text-xs text-zinc-500">
-              Leaders can manage members and meeting settings. A team always
-              needs at least one leader.
-            </p>
-          )}
-        </div>
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+          Team members
+        </h2>
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
           {roster.map((m) => (
             <div
@@ -284,24 +276,29 @@ export default async function MembersPage({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {adminUids.has(m.user_id) && <AdminBadge />}
                 {driver?.user_id === m.user_id && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
                     <Compass className="h-3 w-3" />
                     Driver
                   </span>
                 )}
+                {/* Fixed-width slot so the Admin chip (and everything right
+                    of it) lines up as columns across rows. */}
+                <span className="flex w-[4.5rem] justify-end">
+                  {adminUids.has(m.user_id) && <AdminBadge />}
+                </span>
                 {canManage ? (
                   <MemberRoleControls
                     teamId={tid}
                     userId={m.user_id}
+                    memberName={m.full_name}
                     role={m.role}
                     isSelf={m.user_id === uid}
                     canDemote={!(m.role === "leader" && leaderCount <= 1)}
                   />
                 ) : (
                   <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                    className={`inline-flex w-[4.5rem] justify-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                       m.role === "leader"
                         ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
                         : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"

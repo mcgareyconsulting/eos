@@ -127,6 +127,56 @@ export async function approveJoinRequest(teamId: string, userId: string) {
   revalidatePath(pathFor(teamId));
 }
 
+// Remove someone from the roster. Their rocks, to-dos, and issues stay on
+// the team (their name keeps rendering via /users — never deleted here);
+// they just lose access. Leaders only (or org admin). The last leader can't
+// be removed — promote a replacement first. Also drops the uid from the
+// team's speaking order and clears meeting driver if it pointed at them.
+export async function removeTeamMember(teamId: string, userId: string) {
+  const { db, team } = await requireTeamLeader(teamId);
+
+  const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
+  const memberSnap = await memberRef.get();
+  if (!memberSnap.exists) throw new Error("That person is not on this team");
+
+  if (memberSnap.data()?.role === "leader") {
+    // Count leaders in code rather than a two-equality query (no composite
+    // index needed; rosters are small).
+    const roster = await db
+      .collection("team_members")
+      .where("team_id", "==", teamId)
+      .get();
+    const leaderCount = roster.docs.filter(
+      (d) => d.data().role === "leader",
+    ).length;
+    if (leaderCount <= 1) {
+      throw new Error(
+        "Promote another leader before removing the last one",
+      );
+    }
+  }
+
+  const batch = db.batch();
+  batch.delete(memberRef);
+
+  const teamUpdate: Record<string, unknown> = {};
+  if (team.speakingOrder.includes(userId)) {
+    teamUpdate.speaking_order = team.speakingOrder.filter(
+      (id) => id !== userId,
+    );
+  }
+  if (team.meetingDriverId === userId) teamUpdate.meeting_driver_id = null;
+  if (Object.keys(teamUpdate).length > 0) {
+    batch.update(db.collection("teams").doc(teamId), teamUpdate);
+  }
+
+  await batch.commit();
+
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`${pathFor(teamId)}?tab=directory`);
+  revalidatePath("/directory");
+}
+
 // Designate (or clear) the member who drives the live L10. Label-only — this
 // does not restrict who can advance the stage; it just marks the facilitator.
 // An empty/"none" value clears the designation. Leaders only. We verify the

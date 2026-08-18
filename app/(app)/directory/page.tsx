@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
-import { getOrgDirectory } from "@/lib/firebase/teams";
+import { getOrgAdmins, getOrgDirectory } from "@/lib/firebase/teams";
 import { OrgDirectoryPanel } from "@/app/(app)/teams/[teamId]/members/org-directory-panel";
 
 /**
@@ -16,7 +16,10 @@ export default async function DirectoryPage() {
   }
 
   // No team yet (common for brand-new admins before first create).
-  const directory = await getOrgDirectory();
+  const [directory, orgAdmins] = await Promise.all([
+    getOrgDirectory(),
+    getOrgAdmins(),
+  ]);
   return (
     <div className="space-y-6">
       <header>
@@ -30,6 +33,7 @@ export default async function DirectoryPage() {
         membershipTeamIds={membershipTeamIds}
         currentUserId={user.id}
         isAdmin={isAdmin}
+        orgAdmins={orgAdmins}
       />
     </div>
   );

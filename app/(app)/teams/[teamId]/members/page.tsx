@@ -4,6 +4,7 @@ import {
   requireTeamAccess,
   getTeamMembers,
   getOrgDirectory,
+  getOrgAdmins,
 } from "@/lib/firebase/teams";
 import {
   approveJoinRequest,
@@ -12,6 +13,7 @@ import {
   setMeetLink,
 } from "./actions";
 import { AddMemberDrawer } from "./add-member-drawer";
+import { AdminBadge } from "./admin-badge";
 import { MemberRoleControls } from "./member-role-controls";
 import { SpeakingOrderEditor } from "./speaking-order-editor";
 import { MembersTabs, type MembersTab } from "./members-tabs";
@@ -39,7 +41,10 @@ export default async function MembersPage({
 
   if (tab === "directory") {
     const { membershipTeamIds, user } = await getUserTeamsFirebase();
-    const directory = await getOrgDirectory();
+    const [directory, orgAdmins] = await Promise.all([
+      getOrgDirectory(),
+      getOrgAdmins(),
+    ]);
     return (
       <div className="space-y-6">
         <header>
@@ -55,12 +60,17 @@ export default async function MembersPage({
           currentUserId={user.id}
           isAdmin={isAdmin}
           contextTeamId={tid}
+          orgAdmins={orgAdmins}
         />
       </div>
     );
   }
 
-  const members = await getTeamMembers(tid);
+  const [members, orgAdmins] = await Promise.all([
+    getTeamMembers(tid),
+    getOrgAdmins(),
+  ]);
+  const adminUids = new Set(orgAdmins.map((a) => a.uid));
 
   const isLeader = membershipRole === "leader";
   const canManage = isLeader || isAdmin;
@@ -274,6 +284,7 @@ export default async function MembersPage({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {adminUids.has(m.user_id) && <AdminBadge />}
                 {driver?.user_id === m.user_id && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
                     <Compass className="h-3 w-3" />

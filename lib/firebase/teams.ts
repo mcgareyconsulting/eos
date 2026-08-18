@@ -2,6 +2,7 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "./auth";
+import { getAdminAuth } from "./admin";
 
 // Mirror of lib/teams.ts `requireTeamAccess()` for Firebase. Verifies the
 // current user is a member of the requested team, or an org admin (god mode).
@@ -169,6 +170,38 @@ export type DirectoryTeam = {
  * Org-wide directory: every team + roster. Readable by any signed-in user.
  * Does not grant access to team *data* (rocks, issues, …) — only names/roles.
  */
+export type OrgAdmin = { uid: string; name: string; email: string | null };
+
+/**
+ * Everyone holding the org-admin custom claim (`role: "admin"`), rostered or
+ * not — the operator account typically sits on no roster at all. Claims live
+ * on Identity Platform, not Firestore, so this is an Auth listing pass;
+ * per-request cached so both Members tabs share one lookup.
+ */
+export const getOrgAdmins = cache(async (): Promise<OrgAdmin[]> => {
+  await requireFirebaseUser();
+
+  const auth = getAdminAuth();
+  const admins: OrgAdmin[] = [];
+  let page = await auth.listUsers(1000);
+  for (;;) {
+    for (const u of page.users) {
+      if (u.customClaims?.role === "admin") {
+        admins.push({
+          uid: u.uid,
+          name: u.displayName || u.email || u.uid,
+          email: u.email ?? null,
+        });
+      }
+    }
+    if (!page.pageToken) break;
+    page = await auth.listUsers(1000, page.pageToken);
+  }
+  return admins.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+});
+
 export const getOrgDirectory = cache(async (): Promise<DirectoryTeam[]> => {
   const { db } = await requireFirebaseUser();
 

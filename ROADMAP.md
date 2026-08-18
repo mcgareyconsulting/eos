@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-12
+updated: 2026-08-15
 verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
-  next: [N23, QW1, N18, F3, N3, N2, N24, N4]
+  next: [N23, N32, QW1, N18, F3, N3, N2, N24, N4]
   awaiting: [N1, P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -53,20 +53,22 @@ by cost-to-close, then by size:
 | # | Item | Effort | Why here |
 |---|---|---|---|
 | now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5) — **live on prod**, which F5 shipped without the fix. Fix + mini-ship must land before the 2026-08-17 sweep creates the first archived rocks |
-| 2 | **QW1** | S | Prod spot-check + Open question 6 — now covers the F5 payload too (U1, P1-7, P2-1, P3-2 → `verified`), plus the F5 sign-in/OAuth check |
-| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 5 | **N3** | M | No deps; migration integrity before broader rollout |
-| 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 7 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
+| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5) — **live on prod**, which F5 shipped without the fix. Fix + mini-ship must land before the 2026-08-17 sweep creates the first archived rocks. **Ships with N32** |
+| 2 | **N32** | S | **Urgent (set 2026-08-15).** Meeting ratings stay editable after the meeting concludes — live on prod, client-reported twice, and a data-integrity hole, not a cosmetic one: any participant can rewrite their score once the room clears. Rides N23's mini-ship rather than waiting for the next full ship |
+| 3 | **QW1** | S | Prod spot-check + Open question 6 — now covers the F5 payload too (U1, P1-7, P2-1, P3-2 → `verified`), plus the F5 sign-in/OAuth check |
+| 4 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 5 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
+| 6 | **N3** | M | No deps; migration integrity before broader rollout |
+| 7 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
+| 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
 question 3) · **N10** (Cloud Storage bucket — rides with F2) · **F2**
 (security-tier selection + IAM resolution) · **B1**, **P3-5** (client
-BigQuery conventions) · **N4** (a second team existing — sharing surfaces
-deferred 2026-08-12, N20 rides with it).
+BigQuery conventions). **N4 left `awaiting` in Pass 19** when the client
+green-lit sharing — it now sits at the tail of `next`; **N20** still rides
+with it.
 
 **Reconciled 2026-08-11** against `origin/main`: **U1**, **P1-7** (PR #26)
 and **P2-1** (PR #27) left the queue as `shipped` — all three now wait on
@@ -111,7 +113,7 @@ with it.** Rock model going forward: `owner_id` person always required +
 team and returned feedback (transcript backup to follow — re-verify the
 garbled fragments against it; trails cite `l10-2026-08-12`). Recorded:
 **N25** (meeting presence confirmation) · **N26** (headlines collapse by
-default + dismissible org-level headlines) · **N27** (leader-driven meeting
+default + check-off after sharing) · **N27** (leader-driven meeting
 sync with off-sync opt-out) · **N28** (scorecard metric-expand
 styling/scroll) · **N29** (milestones become a two-week reminder — own-only
 on To-Dos, team-wide two-column in the L10) · **N30** (demark comments made
@@ -128,6 +130,35 @@ follow-ups: Steph onboarding meeting (rides N1), Jessica API/data-upload
 documentation (rides N6). New items land as backlog; ordering above is
 otherwise unchanged.
 
+**Session 2026-08-15 (Pass 20) — transcript backup reconciled.** The Gemini
+notes + full transcript for the 2026-08-12 L10 arrived and every Pass 19
+entry was checked against them. **Pass 19's source was also recovered** —
+daniel's dictated post-meeting notes, thought lost to a machine shutdown,
+survive verbatim in the 2026-08-12 session log (22:20Z, ~4k chars) and are
+preserved at `docs/feedback/l10-2026-08-12-notes.md`. Checked line by line,
+**Pass 19 is a faithful transcription of that dictation** — nothing was
+invented and nothing was dropped. What Pass 20 adds is the corroborating
+half: which asks the room actually voiced, in whose words, and what the
+meeting contains that daniel's dictation did not reach. His handwritten
+notes are still off-machine and land 2026-08-17; a third reconciliation is
+owed but is now expected to be small. **Corrections:** N4's garbled
+fragment probably resolved (dictation garble, not a lost ask) and its "only
+way" clause reconciled against its own green-light clause — rock→team
+sharing and milestone-assignee pull-in are **both** in play; N26's
+check-off applies to **all** headlines, not just org-level ones; N28
+re-attributed from the client to daniel's own observation; N29 carries a
+live tension with what Jessica said on the transcript.
+**New from the record:** **N32** (post-meeting rating still editable —
+client-reported bug with an integrity angle), **N33** (agenda side panel →
+modal), **N34** (departmental vs individual marker on rocks/milestones).
+Smaller asks folded into existing items: per-team toggle for
+milestones-on-To-Dos (N29), default agendas on every new team (P2-1),
+dedicated discussion-notes field vs comments (N30), Steph's email-fan-out
+research (N31). Owed follow-ups added: Joe checks dark mode, Brian moves
+off the ESD team, Steph's Meetings-tab privileges (QW1). **Queue changed by
+agreement:** N32 enters at position 2 as an urgent fix and ships with N23 —
+the only Pass 19/20 item to be queued rather than land as backlog.
+
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
 scheme): `P3-1`, `P2-1`, `P1-7` are the same items in both. Divergent:
@@ -142,7 +173,7 @@ this file wins.
 | W0 | Foundation & perimeter — GCP infra, deploy path, security lockdown; a bank security review sits on these |
 | W1 | Data warehouse — BigQuery pipeline + audit log; gated on client conventions |
 | W2 | Team management & tenancy — live on prod; N1 client validation before broad rollout |
-| W3 | Product — client-feedback features (Passes 13–19) |
+| W3 | Product — client-feedback features (Passes 13–20) |
 | W4 | Integrations & platform ops |
 
 **Redaction:** HPB staff first names already in the record (Joe, Steph /
@@ -370,6 +401,7 @@ Owner/Implementer roles (see N6 and Resolved-log context).
 **Trail**
 - 2026-07-30 · transcript · src tracker-2026-08-03#9 — Jenna: multi-team org; needs admin testing; "employee issues must not leak across individuals/teams"
 - 2026-08-10 · decision · src roadmap-prior#resume-here — soft directory / hard data model; admin claim + leader/member; invite-only, /join retired
+- 2026-08-15 · client · src l10-2026-08-12-transcript — daniel walked the built model live (All Teams visible to everyone as a directory with rosters; leaders add/remove their own members; only global admin creates teams) and it drew no objection — the model holds against client review
 - 2026-08-10 · pr · src pr#24 — team management merged to main; sandbox-exercised; prod deploy pending
 - 2026-08-10 · done · src F1 — prod ship confirmed; teams infra live; N1 still gates `verified`
 
@@ -402,7 +434,7 @@ owed by the client — needed before inviting them.
 - 2026-08-12 · followup · src l10-2026-08-12 — daniel to schedule a separate onboarding meeting with Steph; the walkthrough this item waits on now has a concrete vehicle
 
 ### N2 · Multi-team stress-testing setup
-*W2 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W2 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
 
 Effort M. Multi-team multi-user scenario covering admin/leader/member;
 concurrent L10 + standalone edits; the allowlist + membership matrix.
@@ -411,6 +443,7 @@ Deliverable includes documenting how to spin the scenario up (sandbox seed
 
 **Trail**
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 2
+- 2026-08-15 · followup · src l10-2026-08-12-transcript — daniel owes Brian's move off the ESD team ("we'll get Brian on a different team here soon"); his no-goal scorecard rows surfaced in the ESD L10 and confused the room. A one-off, but it is also the first real membership move — use it as the N2 scenario's first step rather than doing it by hand and learning nothing
 
 ### N3 · Verify ESD team migration data
 *W2 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -458,10 +491,10 @@ so the client path matches Home.
 - 2026-08-12 · note · src pr#28 — read path merged with no rules coverage; recorded as backlog, not queued, since the writer that makes it reachable is unbuilt
 - 2026-08-12 · decision · src session-2026-08-12 — daniel: N20 valid, but no second team exists, so sharing is deferred; the PR #30 writer stays (inert with one team), the read surfaces come out. Fix these rules before any sharing surface returns — see N4 consolidation.
 
-## Workstream 3 — Product (client feedback, Passes 13–19)
+## Workstream 3 — Product (client feedback, Passes 13–20)
 
 ### QW1 · Pass 18 quick-win batch (PR #22)
-*W3 · shipped · due — · deps F1 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W3 · shipped · due — · deps F1 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
 
 Merged to main 2026-08-10; **on the live revision** (F1 done). Nine
 Pass 18 list items in one batch: **#5** sidebar collapse/expand (icon rail,
@@ -496,9 +529,10 @@ double-checks, not observed bugs.
 - 2026-08-10 · note · src roadmap-prior#last-updated — live Cloud Run revision predates the merge; client has not seen these
 - 2026-08-10 · note · src F1 — prod ship confirmed; batch is live; `verified` still wants a spot-check
 - 2026-08-12 · request · src l10-2026-08-12 — daniel: double-check agendas are team-assigned (not individual) and staff can see agendas in the Meetings tab
+- 2026-08-15 · client · src l10-2026-08-12-transcript — the concrete symptom: Steph's Meetings tab shows "join live meeting" but not the agenda surface Joe reached ("I don't think I got to where Joe was able to get to"); daniel: "I'll double check that". Check against her actual role, not the leader role
 
 ### N4 · Multi-team surface + shared rocks
-*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-12*
+*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
 
 **Core shipped PR #28** (`feature/multi-team`), discovered by reconciliation
 2026-08-12 — this item was still marked `not-started` while its build sat on
@@ -538,31 +572,61 @@ N20 rides with it and stays unreachable until then.
 **Green-lit + spec clarified (2026-08-12 live L10).** The client wants the
 share function on rocks turned on, and resolved the surface design:
 
-1. **Milestone assignment is the cross-team mechanism.** The only way a rock
-   reaches a user on another team is by assigning them a specific milestone.
-   That pulls the rock along as a headliner — rock title + date — plus
-   **only that milestone**, never the rock's other milestones.
+1. **Two mechanisms, not one.** Pass 19 read daniel's "the only way to
+   assign a rock or milestone to a user across a different team is to
+   assign that specific milestone" as the whole model, but the same
+   dictation also says "we want to green light the share function on
+   rocks" — two clauses, two gestures. The transcript settles which is
+   which:
+   **(a) explicit rock→team share** — at creation or via rock edit, assign
+   the rock to another team as a whole and it lands at the bottom of that
+   team's Rocks page. Steph confirmed this is how 90 works today and how she
+   uses it ("you can share the rock with other teams and you can share with
+   multiple teams"), so the `shared_team_ids` picker is *validated*, not
+   superseded. **(b) milestone-assignee pull-in** — assigning someone a
+   milestone pulls the parent rock along as a headliner plus **only that
+   milestone**, never the rock's other milestones. Build both; (b) is the
+   default that makes (a) safe to leave narrow.
 2. **"Shared with you" section** at the bottom of the Rocks page shows
    rocks shared in from other teams this way, **team-specific only**.
-3. Worked example (client's): IT-team member owns "Migrate to Apple" with
-   ten milestones; one milestone ("confirm Apple licensing sign-off") is
-   assigned to the CFO on the leadership team. The CFO's Rocks view shows
-   the rock's name + that one milestone. In the leadership L10, the whole
-   team sees the high-level rock and only that assigned milestone.
-4. Note this *changes* the PR #30 model's emphasis: sharing rides milestone
-   assignees, not a rock-level `shared_team_ids` picker as the primary
-   gesture — reconcile the two before reinstating surfaces (the field can
-   stay as the derived/underlying grant).
+3. Worked example — and note it is **live 90 behavior, demonstrated in the
+   meeting, not a hypothetical**: Cora was assigned one milestone ("work
+   with Jessica and Kora") on Carissa's "Moody's reporting" rock. Cora sees
+   that milestone and can click through to the rock's description, but
+   cannot see the rock's other three milestones — she did not even know
+   they existed. Steph confirmed four milestones total. Both daniel and
+   Steph endorsed this as the right **default**: "a better starting place
+   than everybody can kind of see everything."
+4. **The restriction to actually design around** (Steph, 00:57–00:58 — not
+   captured in Pass 19): she can only share *up or across*, never *down*.
+   To get a rock in front of both ESD and leadership she must create it on
+   the lower team and share it up; she **cannot create a rock on the
+   leadership team and share it down**, because the other members have no
+   access to the leadership team. She reads it as a permissions
+   restriction. This is the concrete failure the share model has to fix —
+   design it before reinstating surfaces.
+5. Steph also separated two things the word "sharing" was covering:
+   **visibility** ("just understanding what other teams' rocks are") vs
+   **participation** ("rocks that other people are a part of"). The
+   milestone-assignee path serves the second; the first may want a lighter
+   read-only surface. Open.
 
-Also asked (wording garbled — confirm against the transcript backup):
-touch-ups on the sharing block, "personal plus business best, some nice
-header, or something like that."
+**Garbled fragment — probably resolved (Pass 20).** The Pass 19 flag —
+"personal plus business best, some nice header" — is garble in *daniel's
+dictation*, not in the meeting record, so the transcript can only offer a
+candidate rather than a decode. The strong candidate is Steph naming the
+*label*, which would make it a wording note rather than a separate ask: "as long as we had a distinction, it's like there's Steph's
+rocks and then here's ... shared with you, or like shared rocks, or
+something like that ... some kind of distinction would be helpful." The
+"Shared with you" section in point 2 already carries it. Flag cleared.
 
 **Remaining:**
 - Reinstate the shared-in read surfaces per the spec above (removed code is
   in PR #30's history — `git log feature/multi-team`) with the
   milestone-scoped filtering (only the assigned milestone shows).
 - **N20** rules governance *before* reinstating (the writer already exists).
+- Resolve the share-*down* case (point 4) — a leadership-team rock reaching
+  members who cannot read the leadership team. Rules work, not UI work.
 - Migrate legacy `owner_id: null` rocks; guest **edit** policy if needed.
 - The original tab question beyond Home (per-team sections vs unified feed vs
   sticky filter) is still open for the non-Home surfaces.
@@ -582,6 +646,10 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-12 · build · src pr#30 — share writer + type/owner split + guest read surfaces (Rocks tab + L10) on `feature/multi-team`; answers the two pr#28 gaps above
 - 2026-08-12 · decision · src l10-2026-08-12 — share function green-lit; milestone assignment is the cross-team mechanism; "Shared with you" section, rock headline + only the assigned milestone, in both Rocks tab and L10
 - 2026-08-12 · request · src l10-2026-08-12 — sharing-block touch-ups, wording garbled ("personal plus business best, some nice header") — confirm against transcript backup
+- 2026-08-15 · correction · src l10-2026-08-12-transcript — garbled fragment probably resolved: dictation garble, best match is Steph naming the "shared with you / shared rocks" label; treat as a wording note unless daniel's written notes say otherwise
+- 2026-08-15 · correction · src l10-2026-08-12-notes — mechanism is dual, not milestone-only; daniel's own notes green-light the share function alongside the milestone rule, and Steph confirms rock→multi-team share is 90's behavior and hers, so `shared_team_ids` stays primary alongside the milestone pull-in
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Steph: cannot create a rock on leadership and share it *down*; only up/across works, reads as a permissions restriction — the real gap, missed in Pass 19
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Cora's live demo (Moody's reporting, 4 milestones, sees only hers) is existing 90 behavior endorsed as the default, not a new spec
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
@@ -658,7 +726,7 @@ already handles this via `lib/home-board.ts`, the team surfaces don't.
 - 2026-08-12 · build · src feat/rocks-owner-type-simplify — millis serialization + L10 archived-rock filter (L1 rocks half); 331 tests pass, tsc clean; awaits PR merge + prod mini-ship
 
 ### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
-*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-15*
 
 Effort S–M. App-wide coherence pass: every entity tab (Rocks, To-Dos,
 Issues, Headlines) presents the same two affordances the same way — one
@@ -684,10 +752,11 @@ choice; that choice is overruled by this ask).
 **Trail**
 - 2026-08-12 · request · src session-2026-08-12 — daniel: global app coherence on add {item} and active | archive view
 - 2026-08-12 · client · src l10-2026-08-12 — bug per client: Active/Archived views absent in the L10, present in normal mode; wanted in both
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Steph endorses manual (not quarter-end automatic) rock archiving: planning timing varies per team, "it's helpful to just archive it once we've discussed it and it creates a clean slate" — validates the F4/N23 model; she archived Cora's rocks live during the meeting
 - 2026-08-12 · build · src pr#35 — L10 slice built same day: `EntityViewToggle` (client-state twin of EntityViewTabs) + archived views in all four segments, restore working in-meeting; PR open awaiting review. Standalone-tab placement/label coherence (the rest of this item) still open
 
 ### N25 · Meeting presence confirmation
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort S–M. Better visibility into who is actually **in** the meeting: when
 a user joins the L10, surface a confirmation that they're present, and give
@@ -698,28 +767,43 @@ docs from capture), and the L10 already tracks absent users + speaking
 order. This is surfacing, not new infrastructure — likely a joined/roster
 indicator on the meeting rail fed by the existing presence docs.
 
+**Concrete target (Pass 20).** Steph screen-shared 90's version and it is
+small: a **"3 of 7 are here"** count at the top, **checkmarks** on the
+roster for who has joined, and the joined members queued into the sharing
+order below. She was working around its absence live — asking out loud
+"Jessica, are you in the meeting?" Match that shape; it is the pattern the
+team already reads.
+
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — need a better way to see who is present; confirmation when a user joins
+- 2026-08-15 · client · src l10-2026-08-12-transcript — 90's shape: "3 of 7 of us are here" + per-member checkmarks + joined members queued for sharing order
 
-### N26 · Headlines — collapse long bodies + dismissible org headlines
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+### N26 · Headlines — collapse long bodies + check off after sharing
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort S–M. Two asks from live use, both born of P3-2 rich text making
 headline bodies long:
 1. **Expand/collapse on headline descriptions, collapsed by default** — the
    list should be scannable titles, with the long body one click away.
    Applies to both the Headlines tab and the L10 segment (N24 coherence).
-2. **Org-level (broadcast) headlines can be closed out** — they stay
-   read-only, but a user/team should be able to dismiss one so it no longer
-   shows once handled. Needs a dismissed state (per-team or per-user —
-   decide) that does not touch the broadcast source doc.
+2. **Headlines can be checked off after they are shared** — broader than
+   Pass 19 recorded. Steph's framing is the normal EOS cycle: "you put a
+   headline on there, you share the headline, and then you check it off."
+   Today none of them can be checked off, so last week's headlines are
+   still standing this week. This applies to **ordinary team headlines
+   first**; the cascading org-wide ones are the same ask and the harder
+   case, since they stay read-only — those need a dismissed state
+   (per-team or per-user — decide) that does not touch the broadcast
+   source doc.
 
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — descriptions are quite long; collapse by default, expand on demand
 - 2026-08-12 · request · src l10-2026-08-12 — want to close out organizational headlines even though read-only
+- 2026-08-15 · correction · src l10-2026-08-12-transcript — check-off is wanted for *all* headlines ("share it, then check it off"), not only org-level; Pass 19 scoped it too narrowly
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Steph on collapse: leadership can have ~20 headlines; click to read rather than display all bodies continuously
 
 ### N27 · Leader-driven meeting sync (follow the leader, off-sync opt-out)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort M. Whoever hits **Start meeting** becomes the default driver: their
 transport actions (segment advance, jump) propagate to everyone in the
@@ -732,34 +816,80 @@ clients tracking the meeting doc's current segment by default plus an
 off-sync toggle, and the action notifications. Pairs naturally with N25
 (presence) — same rail, same realtime channel.
 
+**Confirmed on the transcript (Pass 20).** The group-position indicator
+already exists and works — Cora talked Joe through it live ("that little
+tiny blue dot next to scorecard, that's where the meeting is"), and Joe,
+who had started the meeting, expected the group to have *moved* with him.
+So the missing half is exactly the follow behavior, not the state. Joe
+came down in favor of keeping the driver model — "in some ways it kind of
+holds you accountable, it makes you go through the entire cycle of the
+meeting" — after daniel offered to drop group-vs-individual tracking
+entirely. Keep it; add the follow.
+
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — starter drives; actions notified to all; others pulled along; users can go off-sync
+- 2026-08-15 · client · src l10-2026-08-12-transcript — blue-dot group indicator already ships and reads correctly; Joe expected followers to be pulled along; Joe endorses the driver model on accountability grounds
 
 ### N28 · Scorecard metric-expand styling + scroll behavior
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
-Effort S–M. Client verdict on the metric expansion feature: "cool," but the
-overall styling is a little off and "you kind of have to scroll the metric
-oddly." Improve the expansion behavior — likely the expand panel's height /
-inner scrolling inside the grid (the L10 wraps the grid in a
-`max-h-[min(60vh,28rem)]` scroller, which compounds any inner scroll
-oddness). Get a concrete repro from daniel or the transcript before
-styling blind: which surface (tab vs L10), which unit/interval, what
-scroll gesture felt wrong.
+Effort S–M. Verbatim from daniel's recovered notes: "the scorecard
+expansion feature and the metrics are cool. However, the overall styling is
+a little bit off, and you kind of have to scroll the metric oddly. So we're
+gonna wanna improve the scorecard expansion behavior." Likely the expand
+panel's height / inner scrolling inside the grid — the L10 wraps the grid
+in a `max-h-[min(60vh,28rem)]` scroller, which compounds any inner scroll
+oddness.
+
+**Re-attributed (Pass 20): this is daniel's own observation from driving
+the screen, not client feedback.** Pass 19 logged it as `client`; the
+recovered notes and the transcript both say otherwise. Nobody in the room
+raised it, and the scorecard segment (00:24–00:28) drew only praise — Joe
+on the no-goal treatment ("I kind of like the gray theme for the no-goal
+one, the red and green are indicating good or bad, I think that's pretty
+good"), Steph on inline entry recalculating in real time ("which is nice"),
+and "we feel good about the scorecard." That does not make the gripe wrong
+— daniel was the one operating the expansion — but it means there is no
+client pressure behind it and no second witness to the repro. Get the
+specifics from daniel before styling blind: which surface (tab vs L10),
+which unit/interval, what scroll gesture felt wrong.
 
 **Trail**
 - 2026-08-12 · client · src l10-2026-08-12 — expansion + metrics are cool; styling a bit off; odd scrolling on the expanded metric
+- 2026-08-15 · correction · src l10-2026-08-12-notes — re-attributed from `client` to daniel's own observation: the ask is verbatim his, and the room's scorecard feedback was uniformly positive. Real item, no client pressure, repro still owed
 
 ### N29 · Milestones as a two-week reminder (To-Dos tab + L10)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort S–M. Live verdict on the milestone surfaces: effective but **too much
-information**. New scope:
+information**. daniel, driving the page live: "this is a little bit of a
+broken page ... they're just vomit at the top of the to-dos page currently,
+so you got to scroll to the bottom" — the milestone block pushes the actual
+to-dos below the fold. Joe: "a little overwhelming," and wants the headline
+treatment — "just a drop down that showed upcoming milestones in the next
+two weeks." New scope:
 - **To-Dos tab:** show only milestones **assigned to the viewing user, due
-  within the next two weeks** — a reminder, not an inventory.
+  within the next two weeks** — a reminder, not an inventory. daniel's
+  decision, verbatim and unambiguous in the recovered notes, so it stands.
+  **Flagged (Pass 20):** Jessica, answering daniel's question in the
+  meeting, went further than he did — the personal surface may not need a
+  milestone section at all, "on the home screen you already can see the
+  milestones under the rocks, so I don't know that they really need to be
+  separated on that page." She was speaking about Home, and the two-week
+  window may already be the compromise that answers her. Worth one look
+  before building, not a blocker.
 - **L10 To-Dos segment:** same rule widened to the team — members'
   milestones due within two weeks — and in a **two-column view like the
-  normal (standalone) To-Dos page**.
+  normal (standalone) To-Dos page**. Jessica backs the team-wide scope on
+  the meeting surface specifically: "in this view I would say it's better
+  to see everyone's milestone, so if you know something's coming up for
+  someone else you can push them on it if you think they're not ready."
+- **Per-team on/off toggle** (Steph, new in Pass 20): in 90, ESD liked
+  milestones surfacing as to-dos and leadership disliked it enough to turn
+  the feature off, so she asked whether it can be toggled per team. She
+  flagged the cost herself — "I don't know if that creates a more
+  complicated view." Cheapest form is a team setting defaulting to on, with
+  the two-week window making the off case rarer. Decide with daniel.
 
 This supersedes the "all open milestones" scope that PR #34 (merged
 2026-08-12, pre-meeting) put in the L10, and narrows the standalone column
@@ -771,9 +901,12 @@ question for the in-meeting surface).
 
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — To-Dos: own milestones due in 2 weeks as reminder; L10: replicated for the team, two-column like normal view
+- 2026-08-15 · client · src l10-2026-08-12-transcript — daniel live: milestone block buries to-dos below the fold ("broken page"); Joe: overwhelming, wants a two-week dropdown like headlines
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Jessica: Home already shows milestones under rocks, may not need a separate personal section; but team view should show everyone's
+- 2026-08-15 · request · src l10-2026-08-12-transcript — Steph: leadership turned this off in 90, ESD liked it — asks for a per-team toggle
 
 ### N30 · Demark comments made during live discussion
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort S–M. When a comment is added to an issue **while that issue is being
 discussed in a meeting**, highlight or demark it in the comments section as
@@ -782,11 +915,28 @@ discussed (`setDiscussingIssue`), so the write path can stamp the comment
 with the meeting id when it matches — the same `source_meeting_id`
 attribution pattern G1 wants for recap items; build them on the same field.
 
+**Where this came from, and the design question under it (Pass 20).** The
+ask started as Steph describing a workaround: in a real L10 there is a
+moderator and a scribe, and the scribe's discussion notes currently go into
+the issue **description** — which she dislikes, because the description is
+the creator's framing ("here's the description of the issue, here's some
+links"), not a running log. She floated "a separate discussion notes field
+or something like that." Jessica answered from live use: the comments box
+already does this, and it preserves the distinction Steph wants — "that way
+you can kind of keep track of what was said before versus what's said now."
+Steph confirmed leadership already threads comments pre-discussion. So the
+comment stream is the right home and **N30's demarcation is what makes it
+usable** — a during-the-meeting comment reads visually as the scribe's
+note. Build the stamp first; only add a dedicated field if the demarcation
+proves insufficient. Steph is fine either way ("it's fine to put it in the
+description, but we do do that a lot").
+
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — highlight/demark comments added during live discussion of an issue
+- 2026-08-15 · client · src l10-2026-08-12-transcript — origin: Steph wants a discussion-notes home other than the description; Jessica points at comments; demarcation resolves it without a new field
 
 ### N31 · Issue-discussion notification — internal, not email
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-12*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
 
 Effort M. Steph wants to know when there's discussion on a particular issue
 — her current system distributes that as an **email**. We have freedom to
@@ -799,9 +949,90 @@ grow into the general notifications platform the client already said is
 NOT phase 1 (Pass 11). Design question to settle first: subscribe
 (watch-this-issue) vs broadcast-to-owner.
 
+**Owed before design (Pass 20):** Steph took an action item to find out
+whether 90's issue-comment emails go to **all participants or only the
+issue owner** — that answer settles the subscribe-vs-broadcast question
+above, so wait for it. Her stated need is the wider one: "for me it would
+be cool to know if there's been discussion on an issue **even if it's not
+my issue**." Her stated constraint is equally clear — "we're getting
+notified all over the place, there's a lot of noise" — so the bar is that
+this replaces email volume rather than adding to it.
+
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — Steph: wants to know about discussion on an issue; current system emails it
 - 2026-08-12 · decision · src l10-2026-08-12 — daniel: lean internal notification, not email distribution, short term
+- 2026-08-15 · followup · src l10-2026-08-12-transcript — Steph to check whether 90 emails issue comments to all participants or the owner only; her answer decides subscribe vs broadcast
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
+
+### N32 · Meeting rating stays editable after the meeting ends
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
+
+Effort S. **Urgent — queued at position 2 (2026-08-15) and ships with N23's
+mini-ship.** Two live-on-prod bugs of the same size, and neither should wait
+for the next full ship.
+
+**Client-reported bug, raised twice** — Steph flagged it in the
+2026-08-12 L10 and noted "I think this happened last time" too. After the
+meeting has concluded and the rating panel has been dismissed, a
+participant can still open it and change their vote. Steph: "the meeting
+has concluded and I closed the right sidebar, but now I'm still seeing that
+I'm in there and now I can change my vote." Joe named the integrity angle
+that makes this more than cosmetic: "you get this popup at the end, you
+click done, but then you can still change your vote — if Steph was running
+the meeting I could say it was a 10, and then once she logs off I could
+move it to a one." daniel on the call: "yeah, that's confusing."
+
+Fix is a close boundary, not a UI tweak: once the meeting is concluded the
+rating write should be rejected server-side (rules + the write path), not
+merely hidden — and the panel should read as final rather than as an open
+form. Also settle whether a concluded meeting's ratings stay *visible*
+read-only, which is what Steph expected. Check the same boundary for the
+other end-of-meeting writes (recap, segment state) while in there.
+
+**Trail**
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Steph + Joe: votes remain editable after the meeting concludes and the panel is closed; recurring, not first sighting; tampering scenario named by Joe; daniel acknowledged as a bug
+- 2026-08-15 · decision · src session-2026-08-15 — daniel: urgent. Enters `next` at 2, ahead of QW1, and rides N23's mini-ship. Integrity bug on prod, small fix, no reason to hold it
+
+### N33 · Agenda side panel → modal
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
+
+Effort S. daniel's own proposal, put to the room at the end of the meeting:
+replace the in-meeting right-sidebar agenda / meeting-breakdown with a
+standard modal, "like everything else sort of is in the new system." A
+consistency argument, and it is the same sidebar N32's rating panel lives
+in — sequence them together if both are taken.
+
+Client signal is deliberately weak and should not be read as approval.
+Steph: "I feel like I don't pay much attention to that right now" — but
+with the caveat that matters, "as we roll it out across the organization
+maybe there will be more visibility into that ... IT has been the early
+adopters, we've been doing it longer than other people have." So today's
+low engagement is an early-adopter artifact, not a verdict on the
+surface. Decide on the consistency argument alone; do not cite client
+demand for it.
+
+**Trail**
+- 2026-08-15 · request · src l10-2026-08-12-transcript — daniel: dislikes the right sidebar, proposes a normal modal; Steph neutral-to-low signal now, expects visibility to rise as the org adopts
+
+### N34 · Mark departmental vs individual rocks and milestones on sight
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
+
+Effort S. Joe, screen-sharing 90's milestone list, named it as a standing
+complaint about **90**, not about our app — but it lands as a gap we can
+close cheaply: looking at the list, "this is departmental and this is
+departmental, so that's not specified — which, that's a critique I have for
+90. I'd like to know what's departmental and what's not."
+
+We already carry the data. The Pass 18/19 rock model settled on `owner_id`
+(a person, always) plus `rock_type` (individual / team / company), so this
+is display work only: a badge or grouping on rock rows and on milestone
+rows surfaced elsewhere (To-Dos, Home, the L10 segments) that says which
+kind it is. Related but distinct from N4's "Shared with you" label —
+that one answers *whose team it came from*, this one answers *what kind of
+rock it is*. Both can ride the same row treatment.
+
+**Trail**
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Joe: cannot tell departmental from individual rocks in the list; a 90 critique, cheap for us because `rock_type` already exists
 
 ### N6 · Better import functionality
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -869,7 +1100,7 @@ M14).
 - 2026-08-10 · note · src roadmap-prior#pass-18 — rules table written against lib/scorecard.ts + tests; delivery pending
 
 ### P2-1 · Custom meeting agendas
-*W3 · shipped · due — · deps F5 · owner daniel · src roadmap-prior#pass-11 · upd 2026-08-11*
+*W3 · shipped · due — · deps F5 · owner daniel · src roadmap-prior#pass-11 · upd 2026-08-15*
 
 **Core shipped PR #27** (`feature/agenda`): `lib/l10/agenda.ts` (+190 lines
 of tests) with two built-in presets (**Level 10**, **L10 Condensed**),
@@ -879,7 +1110,17 @@ per-team custom agendas in Firestore with an editor
 `MeetingAgendaSnapshot` stamped onto the meeting so a later agenda edit
 cannot rewrite history. Rules updated. This closes the client's stated ask
 (≥4 formats via the editor + pick-at-start, Jenna #8 / Stephanie Pass 13
-#8). **Verified not built** — reopen as P2-1b only if asked: scheduled /
+#8). **Added 2026-08-15 (transcript backup):** Steph, on where templates should
+live, asked for **default agendas that ship with every new team** — "maybe
+there's some default agendas that come with every basic team, like an L10,
+and then they can create other ones that are associated with the team." The
+two built-in presets satisfy the first half; what is unbuilt is attaching
+them to a team at creation so a new team is usable before anyone opens the
+editor. Small, and it lands with N1's new-team flow. Her reason for
+team-scoping is worth keeping: "I wouldn't want to associate it with a
+person, because if that person leaves."
+
+**Verified not built** — reopen as P2-1b only if asked: scheduled /
 recurring meetings, push-an-agenda-to-all-teams, and shipped presets beyond
 the two L10 variants (Quarterly / Annual / 1-on-1 / Focus Day / Vision
 Building are user-creatable, not preset). Sandbox state; **not on prod** —
@@ -1056,6 +1297,8 @@ work — that instruction predates this file and stands.
 **Trail**
 - 2026-07-29 · note · src l10-gaps#deferred — gaps catalogued the night before the demo; too big or too product-shaped to fix then
 - 2026-08-10 · decision · src — — bundled and parked; individual items promote out when picked up
+- 2026-08-15 · followup · src l10-2026-08-12-transcript — Joe owns a dark-mode sweep ("if you see anything super wrong with dark mode"); he is the team's dark-mode user, Jessica uses it personally but not for work. No defect reported yet — this is a request for one
+- 2026-08-15 · client · src l10-2026-08-12-transcript — Joe wants the issue owner's photo or initials on the issue row; daniel: profile photos are in flight but not on prod. Steph: "that's low priority"
 
 ---
 

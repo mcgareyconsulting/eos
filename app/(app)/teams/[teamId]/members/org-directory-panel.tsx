@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Building2, Plus, Shield } from "lucide-react";
+import { Building2, Plus, Shield, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import type { DirectoryTeam } from "@/lib/firebase/teams";
+import type { DirectoryTeam, OrgAdmin } from "@/lib/firebase/teams";
+import { AdminBadge } from "./admin-badge";
 
 /**
  * Org-wide team directory (soft tenancy: names + roster only).
@@ -14,14 +15,18 @@ export function OrgDirectoryPanel({
   isAdmin,
   /** Team context for "New team" deep link (admin). */
   contextTeamId,
+  /** Org-admin claim holders (may include people on no roster). */
+  orgAdmins,
 }: {
   directory: DirectoryTeam[];
   membershipTeamIds: string[];
   currentUserId: string;
   isAdmin: boolean;
   contextTeamId?: string;
+  orgAdmins: OrgAdmin[];
 }) {
   const membershipSet = new Set(membershipTeamIds);
+  const adminUids = new Set(orgAdmins.map((a) => a.uid));
   const newTeamHref = contextTeamId
     ? `/teams/${contextTeamId}/members/new-team`
     : "/directory/new";
@@ -29,11 +34,25 @@ export function OrgDirectoryPanel({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
-          All teams and members across the organization. Opening a team&rsquo;s
-          scorecard, rocks, and other data requires membership
-          {isAdmin ? " (you have admin access to every team)" : ""}.
-        </p>
+        <div className="max-w-xl space-y-1.5">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            All teams and members across the organization. Opening a
+            team&rsquo;s scorecard, rocks, and other data requires membership
+            {isAdmin ? " (you have admin access to every team)" : ""}.
+          </p>
+          {orgAdmins.length > 0 && (
+            <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-hpb-gold" />
+              <span>
+                Org {orgAdmins.length === 1 ? "admin" : "admins"}:{" "}
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                  {orgAdmins.map((a) => a.name).join(", ")}
+                </span>{" "}
+                — can create teams and manage every roster.
+              </span>
+            </p>
+          )}
+        </div>
         {isAdmin && (
           <Link
             href={newTeamHref}
@@ -141,14 +160,17 @@ export function OrgDirectoryPanel({
                             </div>
                           )}
                         </div>
-                        <span
-                          className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                            m.role === "leader"
-                              ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
-                              : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
-                          }`}
-                        >
-                          {m.role === "leader" ? "Leader" : "Member"}
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {adminUids.has(m.user_id) && <AdminBadge />}
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                              m.role === "leader"
+                                ? "bg-hpb-blue/10 text-hpb-blue ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20"
+                                : "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700"
+                            }`}
+                          >
+                            {m.role === "leader" ? "Leader" : "Member"}
+                          </span>
                         </span>
                       </li>
                     ))

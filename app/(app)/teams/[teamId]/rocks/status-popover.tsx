@@ -65,6 +65,27 @@ function placePanel(trigger: DOMRect, panelH: number): PanelCoords {
   return { top, left };
 }
 
+/**
+ * Non-interactive twin of the StatusPopover trigger. Same pill geometry and
+ * tint so a read-only row (a rock shared in from another team) lines up with
+ * the editable rows around it — only the chevron and the hover/press
+ * affordances are dropped.
+ */
+export function StatusPill({ status }: { status: string }) {
+  const current: RockStatus = isRockStatus(status) ? status : "on_track";
+  return (
+    <span
+      className={cn(
+        STATUS_PILL_BASE,
+        "w-[6.75rem] justify-center",
+        STATUS_STYLES[current],
+      )}
+    >
+      <span className="truncate text-center">{STATUS_LABELS[current]}</span>
+    </span>
+  );
+}
+
 export function StatusPopover({
   teamId,
   rockId,

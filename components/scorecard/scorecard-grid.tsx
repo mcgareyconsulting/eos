@@ -19,6 +19,7 @@ import {
 import { type ScorecardColumn } from "@/lib/scorecard-periods";
 import { cn } from "@/lib/utils";
 import { MetricExpand } from "./metric-expand";
+import { ownerLabel } from "@/lib/user-name";
 
 export type ScorecardMetric = {
   id: string;
@@ -172,7 +173,7 @@ export function ScorecardGrid({
   }, [entryByMetricWeek]);
 
   const ownerName = (id: string | null) =>
-    id ? (members.find((m) => m.user_id === id)?.full_name ?? "—") : "—";
+    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
 
   const filtered = useMemo(() => {
     if (hideLocalSearch) return metrics;

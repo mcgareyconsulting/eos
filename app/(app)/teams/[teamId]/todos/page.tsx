@@ -18,6 +18,7 @@ import {
   type MilestoneTodoItem,
 } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
+import { ownerLabel } from "@/lib/user-name";
 
 type TodoDoc = {
   team_id: string;
@@ -250,7 +251,7 @@ export default async function TodosPage({
   ).sort(byDue);
 
   const ownerName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
 
   // Active: owner cards (open + done-this-week). Archived: flat list only —
   // owner cards with "0 · N done" + a DONE strip are noise when everything is

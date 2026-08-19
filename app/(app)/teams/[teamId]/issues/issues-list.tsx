@@ -31,6 +31,7 @@ import { IssueDetailTrigger } from "./issue-detail-modal";
 import { IssueFormModal } from "./issue-form-modal";
 import { MoveIssueTermButton } from "./move-term-button";
 import { deleteIssue, setIssueArchived } from "./actions";
+import { ownerLabel } from "@/lib/user-name";
 
 export type IssueDoc = {
   id: string;
@@ -98,7 +99,7 @@ export function IssuesList({
   const list = tab === "short" ? rankedShort : rankedLong;
 
   const ownerName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
 
   return (
     <div className="space-y-4">

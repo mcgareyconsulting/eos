@@ -26,3 +26,23 @@ export function userDisplayName(data: UserDocData | undefined | null): string {
     ""
   );
 }
+
+/** Shown where a row is deliberately unassigned rather than mis-resolved. */
+export const NO_OWNER_LABEL = "No Owner";
+
+/**
+ * Label for an entity's owner.
+ *
+ * A null owner_id is a real state, not missing data: an import can land a row
+ * with No Owner (a departed employee's work — see withUnmatchedOwnerNote in
+ * lib/team-import.ts), and department rocks carry shared ownership. Rendering
+ * that as a bare "—" read as a glitch. An id that no longer matches the roster
+ * stays "—", because that one *is* unresolved.
+ */
+export function ownerLabel(
+  id: string | null | undefined,
+  nameOf: (id: string) => string | null | undefined,
+): string {
+  if (!id) return NO_OWNER_LABEL;
+  return nameOf(id)?.trim() || "—";
+}

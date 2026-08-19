@@ -11,7 +11,7 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
 import { normalizeDescription } from "@/lib/csv-import";
-import { RichText } from "@/components/rich-text";
+import { HeadlineBody } from "@/app/(app)/teams/[teamId]/headlines/headline-body";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
@@ -151,12 +151,7 @@ export function SegmentHeadlines({
               </span>
             )}
           </div>
-          {body && (
-            <RichText
-              value={body}
-              className="mt-0.5 text-zinc-600 dark:text-zinc-400"
-            />
-          )}
+          {body && <HeadlineBody body={body} />}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
             {kindLabel}
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}

@@ -7,7 +7,7 @@ import { OwnerFilter } from "@/components/owner-filter";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
-import { RichText } from "@/components/rich-text";
+import { HeadlineBody } from "./headline-body";
 import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
 import { deleteHeadline, setHeadlineArchived } from "./actions";
 import { AddHeadlineModal } from "./add-headline-modal";
@@ -168,12 +168,7 @@ export default async function HeadlinesPage({
               Closed On: {closedOn}
             </div>
           )}
-          {body && (
-            <RichText
-              value={body}
-              className="mt-0.5 text-zinc-600 dark:text-zinc-400"
-            />
-          )}
+          {body && <HeadlineBody body={body} />}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
             {kindLabel}
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}

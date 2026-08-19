@@ -5,6 +5,7 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizePersonKey } from "@/lib/csv-import";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import {
+  headlineTablesFromBytes,
   issueTablesFromBytes,
   preferRegexForKind,
   rocksWorkbookFromBytes,
@@ -15,7 +16,7 @@ import {
 import { NO_OWNER, type ImportActionResult } from "./import-types";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_KINDS = ["rocks", "todos", "issues"] as const;
+const ALLOWED_KINDS = ["rocks", "todos", "issues", "headlines"] as const;
 
 function isKind(v: string): v is WebImportKind {
   return (ALLOWED_KINDS as readonly string[]).includes(v);
@@ -25,6 +26,7 @@ function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/rocks`);
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath(`/teams/${teamId}/issues`);
+  revalidatePath(`/teams/${teamId}/headlines`);
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath(`/teams/${teamId}/import`);
   revalidatePath("/home");
@@ -51,13 +53,16 @@ function buildInputs(
   buf: Buffer,
   filename: string,
 ): { inputs: TeamImportInputs; headers: string[]; rowCount: number; sheets: string[] } {
-  if (kind === "issues") {
-    const tables = issueTablesFromBytes(buf, filename);
+  if (kind === "issues" || kind === "headlines") {
+    const tables =
+      kind === "issues"
+        ? issueTablesFromBytes(buf, filename)
+        : headlineTablesFromBytes(buf, filename);
     const headers = tables[0]?.headers ?? [];
     const rowCount = tables.reduce((n, t) => n + t.rows.length, 0);
     const sheets = tables.map((t) => t.sheetName).filter((s): s is string => !!s);
     return {
-      inputs: { issues: { tables } },
+      inputs: kind === "issues" ? { issues: { tables } } : { headlines: { tables } },
       headers,
       rowCount,
       sheets,
@@ -89,9 +94,10 @@ function buildInputs(
 }
 
 /**
- * Preview (dry-run) or apply an import of Rocks, To-Dos, or Issues for a team.
+ * Preview (dry-run) or apply an import of Rocks, To-Dos, Issues, or Headlines
+ * for a team.
  * Form fields:
- *   - kind: rocks | todos | issues
+ *   - kind: rocks | todos | issues | headlines
  *   - file: File
  *   - dryRun: "1" | "0"
  *   - createOwners: "1" | "0"
@@ -112,7 +118,10 @@ export async function importTeamFile(
 
     const kindRaw = String(formData.get("kind") ?? "");
     if (!isKind(kindRaw)) {
-      return { ok: false, error: "Choose Rocks, To-Dos, or Issues." };
+      return {
+        ok: false,
+        error: "Choose Rocks, To-Dos, Issues, or Headlines.",
+      };
     }
     const kind = kindRaw;
 
@@ -195,7 +204,13 @@ export async function importTeamFile(
       [
         "title",
         "name",
-        kind === "rocks" ? "rock" : kind === "todos" ? "to-do" : "issue",
+        kind === "rocks"
+          ? "rock"
+          : kind === "todos"
+            ? "to-do"
+            : kind === "issues"
+              ? "issue"
+              : "headline",
         "todo",
         "task",
       ].includes(h),

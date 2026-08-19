@@ -1,7 +1,7 @@
 // Client-safe column docs for the in-app Import page.
 // Keep in sync with docs/CSV_IMPORT.md and lib/team-import parsers.
 
-export type WebImportKind = "rocks" | "todos" | "issues";
+export type WebImportKind = "rocks" | "todos" | "issues" | "headlines";
 
 export const EXPECTED_HEADERS: Record<
   WebImportKind,
@@ -55,5 +55,20 @@ export const EXPECTED_HEADERS: Record<
     ],
     notes:
       "Type: short / long (or sheet name Short-Term / Long-Term for .xlsx). Status: open / solving / solved / dropped. Multi-sheet workbooks import all issue sheets.",
+  },
+  headlines: {
+    required: ["Owner", "Title"],
+    optional: [
+      "Description",
+      "Type",
+      "Team",
+      "Department",
+      "Completed On",
+      "Link",
+      "Created Date",
+      "Archived Date",
+    ],
+    notes:
+      "Type: Cascading / Customer / Employee / General (or the sheet name for .xlsx — a Cascading Messages sheet lands as cascading). Unrecognized types fall back to Employee. Multi-sheet workbooks import every headline sheet.",
   },
 };

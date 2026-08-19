@@ -51,6 +51,12 @@ const KINDS: {
     label: "Issues",
     blurb: "Short- and long-term issues. Multi-sheet .xlsx imports both sheets.",
   },
+  {
+    id: "headlines",
+    label: "Headlines",
+    blurb:
+      "Cascading, customer, and employee headlines. Multi-sheet .xlsx imports every headline sheet.",
+  },
 ];
 
 function findStephanie(members: MemberOption[]): string {

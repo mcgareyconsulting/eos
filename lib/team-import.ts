@@ -386,7 +386,7 @@ export class OwnerResolver {
 export function withUnmatchedOwnerNote(
   description: string | null | undefined,
   name: string,
-): string | null {
+): string {
   const note = `Imported owner: ${name.trim()}`;
   const body = (description ?? "").trim();
   if (!note.endsWith(":") && body.includes(note)) return body; // re-import

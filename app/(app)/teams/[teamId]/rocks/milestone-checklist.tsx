@@ -7,6 +7,7 @@ import { richTextToPlain } from "@/lib/rich-text";
 import { formatDateShort, relativeDueLabel } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
+import { ownerLabel } from "@/lib/user-name";
 
 // Plain-data shape passed from the Server Component (unchanged from
 // milestones.tsx — Firestore Timestamps can't cross the RSC boundary, so the
@@ -53,8 +54,10 @@ export function MilestoneChecklist({
 
   const nameFor = (m: MilestoneSerialized) => {
     if (m.owner_label) return m.owner_label;
-    if (!m.owner_id) return "—";
-    return members?.find((x) => x.user_id === m.owner_id)?.full_name ?? "—";
+    return ownerLabel(
+      m.owner_id,
+      (id) => members?.find((x) => x.user_id === id)?.full_name,
+    );
   };
 
   if (variant === "modal") {

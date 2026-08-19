@@ -23,6 +23,7 @@ import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { ownerLabel } from "@/lib/user-name";
 
 type RockDoc = {
   id: string;
@@ -354,7 +355,7 @@ export function SegmentRocks({
                 userId={userId}
                 rock={r}
                 ownerName={
-                  r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+                  ownerLabel(r.owner_id, (id) => nameById.get(id))
                 }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
@@ -388,7 +389,7 @@ export function SegmentRocks({
                 userId={userId}
                 rock={r}
                 ownerName={
-                  r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+                  ownerLabel(r.owner_id, (id) => nameById.get(id))
                 }
                 members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}

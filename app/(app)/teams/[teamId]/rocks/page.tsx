@@ -10,7 +10,7 @@ import {
 } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { chunkForInQuery } from "@/lib/firestore-in";
-import { userDisplayName } from "@/lib/user-name";
+import { ownerLabel, userDisplayName } from "@/lib/user-name";
 import {
   groupSharedRocksByOwner,
   isSharedIntoTeam,
@@ -324,11 +324,11 @@ export default async function RocksPage({
   const filter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
 
   const ownerName = (id: string | null) =>
-    id
-      ? members.find((m) => m.user_id === id)?.full_name ??
-        extraNameById.get(id) ??
-        "—"
-      : "—";
+    ownerLabel(
+      id,
+      (x) =>
+        members.find((m) => m.user_id === x)?.full_name ?? extraNameById.get(x),
+    );
 
   for (const list of statusByRock.values()) {
     for (const e of list) {

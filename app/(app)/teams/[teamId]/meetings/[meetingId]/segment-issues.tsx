@@ -34,6 +34,7 @@ import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { ownerLabel } from "@/lib/user-name";
 
 type IssueDoc = {
   id: string;
@@ -125,7 +126,7 @@ export function SegmentIssues({
   const list = tab === "short" ? rankedShort : rankedLong;
 
   const ownerName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
 
   return (
     <div className="space-y-4">

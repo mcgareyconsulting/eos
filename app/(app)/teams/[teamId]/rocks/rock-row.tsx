@@ -127,6 +127,7 @@ export function RockRow({
                 milestones={detailMilestones}
                 statusHistory={statusHistory}
                 readOnly={readOnly}
+                sourceTeamName={readOnly ? teamName : undefined}
                 className="max-w-full truncate text-left text-sm font-semibold hover:text-hpb-blue dark:hover:text-hpb-gold"
               >
                 {rock.title}
@@ -195,6 +196,7 @@ export function RockRow({
 
           <div className="flex shrink-0 items-center gap-0.5">
             {readOnly ? null : (
+              <>
             <EditRockButton
               teamId={teamId}
               rock={rock}
@@ -230,6 +232,7 @@ export function RockRow({
                 </button>
               </ConfirmSubmitForm>
             )}
+              </>
             )}
           </div>
         </div>
@@ -321,6 +324,7 @@ export function RockRow({
                   milestones={detailMilestones}
                   statusHistory={statusHistory}
                   readOnly={readOnly}
+                  sourceTeamName={readOnly ? teamName : undefined}
                   className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
                   Full detail &amp; status history →

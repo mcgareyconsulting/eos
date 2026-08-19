@@ -66,3 +66,4 @@ describe("groupSharedRocksByOwner", () => {
     assert.equal(groups[1].rocks.length, 1);
   });
 });
+

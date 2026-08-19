@@ -11,6 +11,7 @@ import {
   getOrgTeams,
 } from "@/lib/firebase/teams";
 import { chunkForInQuery } from "@/lib/firestore-in";
+import { userDisplayName } from "@/lib/user-name";
 import { isSharedIntoTeam } from "@/lib/rocks-share";
 import {
   type Segment,
@@ -653,7 +654,7 @@ async function SegmentContent({
       );
       for (const d of docs) {
         if (!d.exists) continue;
-        const full_name = String(d.data()?.full_name ?? "").trim();
+        const full_name = userDisplayName(d.data());
         if (full_name) extraOwnerNames.push({ user_id: d.id, full_name });
       }
     }

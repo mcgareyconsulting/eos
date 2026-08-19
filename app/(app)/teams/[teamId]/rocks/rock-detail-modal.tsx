@@ -10,10 +10,6 @@ import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
-  ROCK_TYPE_LABELS,
-  toFormRockType,
-} from "./rock-type";
-import {
   STATUS_BANNER,
   STATUS_BAR,
   STATUS_LABELS,
@@ -61,6 +57,7 @@ export function RockDetailTrigger({
   className,
   children,
   readOnly = false,
+  sourceTeamName,
 }: {
   teamId: string;
   userId: string;
@@ -72,6 +69,8 @@ export function RockDetailTrigger({
   className?: string;
   children: React.ReactNode;
   readOnly?: boolean;
+  /** Parent team of a shared-in rock — shown as "shared from {team}". */
+  sourceTeamName?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -93,6 +92,8 @@ export function RockDetailTrigger({
           ownerName={ownerName}
           milestones={milestones}
           statusHistory={statusHistory}
+          readOnly={readOnly}
+          sourceTeamName={sourceTeamName}
           onClose={() => setOpen(false)}
         />
       )}
@@ -113,6 +114,8 @@ export function RockDetailModal({
   milestones,
   statusHistory = [],
   onClose,
+  readOnly = false,
+  sourceTeamName,
 }: {
   teamId: string;
   userId: string;
@@ -122,8 +125,11 @@ export function RockDetailModal({
   milestones: RockDetailMilestone[];
   statusHistory?: StatusUpdateSerialized[];
   onClose: () => void;
+  /** Guest-team view of a shared-in rock — read-only milestones. */
+  readOnly?: boolean;
+  /** Parent team of a shared-in rock — shown as "shared from {team}". */
+  sourceTeamName?: string;
 }) {
-  const type = toFormRockType(rock.rock_type);
   const status: RockStatus | null = isRockStatus(rock.status)
     ? rock.status
     : null;
@@ -146,8 +152,6 @@ export function RockDetailModal({
     description: null,
   }));
 
-  const typeLabel = ROCK_TYPE_LABELS[type];
-  const isIndividual = type === "individual";
 
   return (
     <DetailModal
@@ -198,21 +202,20 @@ export function RockDetailModal({
           {rock.title}
         </h2>
         <p className="mt-1.5 text-[12.5px] text-zinc-500">
-          {isIndividual ? (
+          Owner:{" "}
+          <span className="font-bold text-zinc-700 dark:text-zinc-300">
+            {ownerName}
+          </span>
+          {/* Team names only when the rock lives on another team — on your own
+              team it is the page you are already looking at. */}
+          {sourceTeamName ? (
             <>
-              Individual rock · owned by{" "}
+              {" · Team: "}
               <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                {ownerName}
+                {sourceTeamName}
               </span>
             </>
-          ) : (
-            <>
-              {typeLabel} · owned by{" "}
-              <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                {ownerName}
-              </span>
-            </>
-          )}
+          ) : null}
         </p>
 
         <dl className="mt-4 flex border-y border-zinc-100 dark:border-zinc-800">

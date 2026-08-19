@@ -10,6 +10,7 @@ import {
 } from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { chunkForInQuery } from "@/lib/firestore-in";
+import { userDisplayName } from "@/lib/user-name";
 import {
   groupSharedRocksByOwner,
   isSharedIntoTeam,
@@ -304,7 +305,7 @@ export default async function RocksPage({
     );
     for (const d of docs) {
       if (!d.exists) continue;
-      const name = String(d.data()?.full_name ?? "").trim();
+      const name = userDisplayName(d.data());
       if (name) extraNameById.set(d.id, name);
     }
   }

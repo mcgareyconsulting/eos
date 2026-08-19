@@ -458,8 +458,12 @@ export function ImportUploader({
               Include archived rows
             </span>
             <span className="mt-0.5 block text-xs text-zinc-500">
-              By default rows with an Archived Date (or archived status) are
-              skipped.
+              Off: rows with an Archived Date (or an archived status) are
+              skipped and counted as &ldquo;held back&rdquo;. On: they import
+              already archived, dated from their Archived Date — they land in
+              the Archived view, not your active lists. Either way a re-import
+              never changes the archive state of a row that is already here, so
+              anything you archived in the app stays archived.
             </span>
           </span>
         </label>

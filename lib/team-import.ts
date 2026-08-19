@@ -440,6 +440,27 @@ function createdAtFrom(row: Record<string, string>, headers: string[]) {
     : FieldValue.serverTimestamp();
 }
 
+/**
+ * archived_at for a NEW imported row. Archived rows previously landed with
+ * `archived_at: null` — i.e. "Include archived rows" resurrected finished work
+ * as live work, the opposite of what the checkbox says (N6 finding 6). An
+ * archived row now carries its Archived Date, falling back to import time when
+ * the export has the flag but no parseable date.
+ *
+ * Only ever written on create. An existing doc keeps whatever archive state it
+ * has, so a re-import can neither un-archive something filed in the app nor
+ * archive something the team has revived.
+ */
+function archivedAtFrom(row: Record<string, string>, headers: string[]) {
+  if (!isArchived(row, headers)) return null;
+  const on = parseDateOnly(
+    cell(row, headers, "Archived Date", "Archived On", "Archived"),
+  );
+  return on
+    ? Timestamp.fromDate(new Date(`${on}T00:00:00`))
+    : FieldValue.serverTimestamp();
+}
+
 function normalizeIssueType(raw: string, sheetName?: string): "short" | "long" {
   const s = (raw || sheetName || "").trim().toLowerCase();
   if (/^long/.test(s) || s.includes("long-term") || s.includes("long term")) {
@@ -603,6 +624,7 @@ async function importRocks(
     rockTeam?: string;
     existingRocks: "update" | "skip";
     unmatchedOwner: "skip" | "no-owner";
+    includeArchived: boolean;
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
@@ -611,6 +633,7 @@ async function importRocks(
   let skipped = 0;
   let unchanged = 0;
   let noOwner = 0;
+  let archived = 0;
   let attachments = 0;
   const warnings: string[] = [];
   const details: string[] = [];
@@ -634,6 +657,14 @@ async function importRocks(
     if (rowTeam) teamValues.add(rowTeam);
     if (ctx.rockTeam && normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)) {
       skipped++;
+      continue;
+    }
+
+    // Rocks had no archived filter at all, while the Import page told users
+    // archived rows are skipped by default — true for every other kind but
+    // not this one (N6 finding 6).
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
       continue;
     }
 
@@ -710,7 +741,7 @@ async function importRocks(
       import_source: "csv",
       ...(isNew
         ? {
-            archived_at: null,
+            archived_at: archivedAtFrom(row, table.headers),
             created_at: createdDate
               ? Timestamp.fromDate(new Date(`${createdDate}T00:00:00`))
               : FieldValue.serverTimestamp(),
@@ -730,6 +761,9 @@ async function importRocks(
   }
   if (noOwner) {
     details.push(`${noOwner} imported as No Owner`);
+  }
+  if (archived) {
+    details.push(`${archived} archived held back`);
   }
   if (!ctx.rockTeam && teamValues.size > 1) {
     warnings.push(
@@ -832,7 +866,9 @@ async function importMilestones(
       source_rock_id: rockId,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -937,7 +973,9 @@ async function importTodos(
       source_rock_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -1049,7 +1087,9 @@ async function importIssues(
       source_meeting_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -1162,7 +1202,9 @@ async function importHeadlines(
       broadcast: isBroadcast,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
     imported++;
@@ -1247,6 +1289,7 @@ export async function runTeamImport(
       rockTeam: options.rockTeam,
       existingRocks: options.existingRocks ?? "update",
       unmatchedOwner,
+      includeArchived,
     });
     rockIdByTitle = map;
     kinds.push(stats);

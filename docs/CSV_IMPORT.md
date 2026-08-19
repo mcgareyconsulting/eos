@@ -138,7 +138,7 @@ makes his eight rows resolve to his real login instead of a placeholder.
 | `--as-of <YYYY-MM-DD>` | Anchor for undated week headers. Defaults to today — set it when importing an export that's more than a few months stale. |
 | `--owner-fallback <email\|uid\|name>` | Park rows whose owner isn't on the team on this existing member. |
 | `--no-create-owners` | Don't create placeholder members; skip rows with an unresolvable owner instead. |
-| `--include-archived` | Also import rows the export marks archived — scorecard rows whose `Status` says archived/inactive, and to-dos/milestones carrying an `Archived Date` (all skipped by default). |
+| `--include-archived` | Also import rows the export marks archived — scorecard rows whose `Status` says archived/inactive, and rocks/to-dos/milestones/issues/headlines carrying an `Archived Date` (all skipped by default). They import **already archived**, dated from their `Archived Date`. |
 | `--completed-since <YYYY-MM-DD>` | Back-import cutoff: drop to-dos/milestones completed before this date. Open rows always import. |
 | `--rock-team <value>` | With a multi-team export, import only rows whose `Team` column matches. |
 
@@ -264,10 +264,17 @@ segment.
 - **Archived Date** — any value means the row is **skipped**. Archived to-dos
   carry no completion date, so importing them would park them in the *open*
   list permanently and bury the live items. Pass `--include-archived` to bring
-  them in anyway. The run reports how many were held back.
+  them in anyway; they land in the *Archived* view stamped with their
+  `Archived Date` (import time if the flag is set but the date won't parse),
+  not in the open list. The run reports how many were held back.
 - **Created Date** is used for `created_at` when the doc is new, so age and
   creation ordering survive the import instead of everything looking like it
   was created at import time. Blank falls back to the server clock.
+
+`archived_at` is only ever written when the doc is **new**. A re-import
+therefore cannot un-archive something the team archived in the app, and cannot
+archive something they have since revived — the archive state of an existing
+row is theirs, not the file's.
 - **`--completed-since <YYYY-MM-DD>`** is the back-import cutoff: rows completed
   before that date are dropped. Open rows always import, however old — an old
   open to-do is still live work. Both the To-Dos page and the live L10 To-Dos

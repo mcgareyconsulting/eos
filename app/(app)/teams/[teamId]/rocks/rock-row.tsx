@@ -207,7 +207,11 @@ export function RockRow({
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
+          {/* Fixed width so a read-only row (no edit / archive / delete) keeps
+              the same horizontal lineup as the editable rows around it —
+              otherwise the status pill slides right into this space. Three
+              23px icon buttons (a 15px icon + p-1) with gap-0.5 between. */}
+          <div className="flex w-[73px] shrink-0 items-center justify-end gap-0.5">
             {readOnly ? null : (
               <>
             <EditRockButton

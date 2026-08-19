@@ -53,3 +53,26 @@ export function groupSharedRocksByOwner<T extends ShareableRock>(
   groups.sort((a, b) => a.title.localeCompare(b.title));
   return groups;
 }
+
+/**
+ * May `uid` move this rock's status while viewing `teamId`?
+ *
+ * True on the rock's own team (normal case), and for the rock's person owner
+ * on a team it has been shared into — so Steph can update her rock from the
+ * guest team's list or L10 without switching teams. Everyone else on a guest
+ * team sees it read-only, and structural edits (title, archive, delete,
+ * milestones, re-share) always stay on the parent team.
+ *
+ * Shared by the row (which affordance to render) and the server action (the
+ * actual gate, since the Admin SDK bypasses firestore.rules) so the two
+ * cannot drift apart.
+ */
+export function canSetRockStatus(
+  rock: ShareableRock,
+  teamId: string,
+  uid: string | null,
+): boolean {
+  if (rock.team_id === teamId) return true;
+  if (!uid || rock.owner_id !== uid) return false;
+  return (rock.shared_team_ids ?? []).includes(teamId);
+}

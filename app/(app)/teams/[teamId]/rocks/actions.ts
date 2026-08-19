@@ -2,12 +2,54 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { notFound } from "next/navigation";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import { canSetRockStatus } from "@/lib/rocks-share";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
 
 function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
+}
+
+/**
+ * Fetch a rock for a status write made from `teamId`.
+ *
+ * Normally the rock must live on that team. The one exception is a rock shared
+ * into the team (N4): its **person owner** can move its status from the guest
+ * team's list or L10 without switching teams. Everyone else on the guest team
+ * sees it read-only, and every structural edit (title, archive, delete,
+ * milestones, re-share) still belongs to the parent team.
+ *
+ * firestore.rules keeps the client-side contract in step — guests may read a
+ * shared rock but not write it. This runs on the Admin SDK, which bypasses
+ * rules, so this function is the actual gate.
+ */
+async function requireStatusWritableRock(
+  db: Firestore,
+  rockId: string,
+  teamId: string,
+  uid: string,
+) {
+  const snap = await db.collection("rocks").doc(rockId).get();
+  if (!snap.exists) notFound();
+  const data = snap.data() ?? {};
+  if (data.team_id === teamId) return snap;
+
+  const writable = canSetRockStatus(
+    {
+      team_id: String(data.team_id ?? ""),
+      owner_id: (data.owner_id as string | null) ?? null,
+      shared_team_ids: Array.isArray(data.shared_team_ids)
+        ? (data.shared_team_ids as string[])
+        : [],
+    },
+    teamId,
+    uid,
+  );
+  if (writable) return snap;
+
+  notFound();
 }
 
 export async function setRockType(
@@ -40,8 +82,10 @@ export async function setRockStatus(
   }
 
   const { uid, db } = await requireTeamAccess(teamId);
-  const rockSnap = await requireTeamDoc(db, "rocks", rockId, teamId);
+  const rockSnap = await requireStatusWritableRock(db, rockId, teamId, uid);
   const prevStatus = String(rockSnap.data()?.status ?? "");
+  // A shared-in rock's history stays on its parent team, not the guest team.
+  const rockTeamId = String(rockSnap.data()?.team_id ?? teamId);
 
   // Monday worker archives status=done with completed_at before this week's
   // Monday 00:00. Stamp completed_at only on the transition into Done (don't
@@ -59,7 +103,10 @@ export async function setRockStatus(
   batch.update(db.collection("rocks").doc(rockId), rockPatch);
   batch.set(db.collection("rock_status_updates").doc(), {
     rock_id: rockId,
-    team_id: teamId,
+    // Parent team, not the viewing team — the Rocks tab and L10 both read
+    // history with `where team_id == <this team>`, so a note filed under the
+    // guest team would vanish from the rock's own history.
+    team_id: rockTeamId,
     status,
     comment: trimmed,
     user_id: uid,
@@ -71,6 +118,12 @@ export async function setRockStatus(
   // Live L10 rocks segment also shows StatusPopover; keep RSC payloads fresh
   // for anyone who lands mid-meeting without a client subscription yet.
   revalidatePath(`/teams/${teamId}/meetings`);
+  // Owner moved a shared-in rock from a guest team: the parent team's lists
+  // are the ones holding the authoritative row.
+  if (rockTeamId !== teamId) {
+    revalidatePath(pathFor(rockTeamId));
+    revalidatePath(`/teams/${rockTeamId}/meetings`);
+  }
   revalidatePath("/home");
 }
 

@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { RichText } from "@/components/rich-text";
 import { hasRichMarkup } from "@/lib/rich-text";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
-import { StatusPopover } from "./status-popover";
+import { StatusPill, StatusPopover } from "./status-popover";
+import { canSetRockStatus } from "@/lib/rocks-share";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock, setRockArchived } from "./actions";
@@ -76,6 +77,20 @@ export function RockRow({
   readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+
+  // A shared-in rock is read-only on the guest team — except for its own
+  // person owner, who can move the status from here without switching teams.
+  // Structural edits (title, archive, delete, milestones, re-share) stay on
+  // the parent team. Server-side gate: requireStatusWritableRock in actions.ts.
+  const canSetStatus = canSetRockStatus(
+    {
+      team_id: rock.team_id ?? teamId,
+      owner_id: rock.owner_id,
+      shared_team_ids: rock.shared_team_ids,
+    },
+    teamId,
+    currentUserId,
+  );
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   const type = toFormRockType(rock.rock_type);
@@ -185,16 +200,18 @@ export function RockRow({
           </div>
 
           <div className="flex w-28 shrink-0 justify-end">
-            {readOnly ? (
-              <span className="text-[11px] font-medium capitalize text-zinc-500">
-                {status.replace("_", " ")}
-              </span>
-            ) : (
+            {canSetStatus ? (
               <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
+            ) : (
+              <StatusPill status={rock.status} />
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
+          {/* Fixed width so a read-only row (no edit / archive / delete) keeps
+              the same horizontal lineup as the editable rows around it —
+              otherwise the status pill slides right into this space. Three
+              23px icon buttons (a 15px icon + p-1) with gap-0.5 between. */}
+          <div className="flex w-[73px] shrink-0 items-center justify-end gap-0.5">
             {readOnly ? null : (
               <>
             <EditRockButton

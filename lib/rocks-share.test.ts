@@ -4,6 +4,7 @@ import {
   groupSharedRocksByOwner,
   isSharedIntoTeam,
   sharedBySectionTitle,
+  canSetRockStatus,
 } from "./rocks-share";
 
 describe("isSharedIntoTeam", () => {
@@ -67,3 +68,55 @@ describe("groupSharedRocksByOwner", () => {
   });
 });
 
+
+describe("canSetRockStatus", () => {
+  const rock = {
+    team_id: "esd",
+    owner_id: "steph",
+    shared_team_ids: ["transformation"],
+  };
+
+  test("anyone on the rock's own team", () => {
+    assert.equal(canSetRockStatus(rock, "esd", "steph"), true);
+    assert.equal(canSetRockStatus(rock, "esd", "joe"), true);
+  });
+
+  test("the owner, from a team it is shared into", () => {
+    assert.equal(canSetRockStatus(rock, "transformation", "steph"), true);
+  });
+
+  test("not other members of the guest team", () => {
+    assert.equal(canSetRockStatus(rock, "transformation", "joe"), false);
+  });
+
+  test("not a signed-out / unknown viewer", () => {
+    assert.equal(canSetRockStatus(rock, "transformation", null), false);
+  });
+
+  test("not a team the rock was never shared into", () => {
+    assert.equal(canSetRockStatus(rock, "leadership", "steph"), false);
+  });
+
+  test("an ownerless rock is never writable from a guest team", () => {
+    assert.equal(
+      canSetRockStatus({ ...rock, owner_id: null }, "transformation", "steph"),
+      false,
+    );
+    // …but still writable from its own team (department rocks have no owner).
+    assert.equal(
+      canSetRockStatus({ ...rock, owner_id: null }, "esd", "steph"),
+      true,
+    );
+  });
+
+  test("tolerates a missing shared_team_ids field", () => {
+    assert.equal(
+      canSetRockStatus(
+        { team_id: "esd", owner_id: "steph" },
+        "transformation",
+        "steph",
+      ),
+      false,
+    );
+  });
+});

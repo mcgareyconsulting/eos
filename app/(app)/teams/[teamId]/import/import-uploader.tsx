@@ -69,6 +69,9 @@ export function ImportUploader({
   const [dragOver, setDragOver] = useState(false);
   const [createOwners, setCreateOwners] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  // Re-dropping the ninety workbook to pull milestones in shouldn't rewrite
+  // rocks the team has edited in the app since the first import (N6).
+  const [skipExistingRocks, setSkipExistingRocks] = useState(false);
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
   // Multi-department exports (ninety Team column) — ESD only by default.
   const [rockTeam, setRockTeam] = useState("Enterprise Systems & Data");
@@ -124,6 +127,9 @@ export function ImportUploader({
     fd.set("dryRun", dryRun ? "1" : "0");
     fd.set("createOwners", createOwners ? "1" : "0");
     fd.set("includeArchived", includeArchived ? "1" : "0");
+    if (kind === "rocks") {
+      fd.set("existingRocks", skipExistingRocks ? "skip" : "update");
+    }
     if (fallbackOwnerId) fd.set("fallbackOwnerId", fallbackOwnerId);
     if (rockTeam.trim()) fd.set("rockTeam", rockTeam.trim());
     for (const a of aliases) {
@@ -376,6 +382,26 @@ export function ImportUploader({
             </span>
           </span>
         </label>
+        {kind === "rocks" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={skipExistingRocks}
+              onChange={(e) => setSkipExistingRocks(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                Keep rocks already on the team
+              </span>
+              <span className="mt-0.5 block text-xs text-zinc-500">
+                Re-uploading a rocks + milestones workbook: leave existing rocks
+                exactly as they are and only fill in the milestones. Off means
+                matching rocks are rewritten from the file.
+              </span>
+            </span>
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
             Unmatched owner fallback
@@ -442,7 +468,11 @@ export function ImportUploader({
           onClick={() => {
             if (
               !window.confirm(
-                `Import ${kind} from “${file?.name}” into this team? Existing imported rows with the same title will be updated.`,
+                `Import ${kind} from “${file?.name}” into this team? ${
+                kind === "rocks" && skipExistingRocks
+                  ? "Rocks already on the team keep their current values."
+                  : "Existing imported rows with the same title will be updated."
+              }`,
               )
             ) {
               return;
@@ -497,6 +527,7 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         {report.kinds.map((k) => (
           <li key={k.label}>
             <span className="font-medium">{k.label}:</span> {k.imported} imported
+            {k.unchanged ? `, ${k.unchanged} kept as-is` : ""}
             {k.skipped ? `, ${k.skipped} skipped` : ""}
             {k.details.length > 0 ? ` (${k.details.join("; ")})` : ""}
           </li>

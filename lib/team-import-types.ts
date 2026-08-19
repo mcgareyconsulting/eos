@@ -14,6 +14,8 @@ export type KindStats = {
   label: string;
   imported: number;
   skipped: number;
+  /** Rows that matched an existing doc and were deliberately left alone. */
+  unchanged?: number;
   details: string[];
   warnings: string[];
 };

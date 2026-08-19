@@ -68,7 +68,6 @@ describe("groupSharedRocksByOwner", () => {
   });
 });
 
-
 describe("canSetRockStatus", () => {
   const rock = {
     team_id: "esd",

@@ -7,6 +7,7 @@ import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import {
   issueTablesFromBytes,
   preferRegexForKind,
+  rocksWorkbookFromBytes,
   runTeamImport,
   tableFromBytes,
   type TeamImportInputs,
@@ -63,12 +64,24 @@ function buildInputs(
     };
   }
 
+  if (kind === "rocks") {
+    // Ninety ships rocks + milestones as one workbook; take both (N6).
+    const { rocks, milestones, sheets } = rocksWorkbookFromBytes(buf, filename);
+    return {
+      inputs: {
+        rocks: { table: rocks },
+        ...(milestones ? { milestones: { table: milestones } } : {}),
+      },
+      headers: rocks.headers,
+      rowCount: rocks.rows.length + (milestones?.rows.length ?? 0),
+      sheets,
+    };
+  }
+
   const table = tableFromBytes(buf, filename, preferRegexForKind(kind));
-  const inputs: TeamImportInputs =
-    kind === "rocks" ? { rocks: { table } } : { todos: { table } };
 
   return {
-    inputs,
+    inputs: { todos: { table } },
     headers: table.headers,
     rowCount: table.rows.length,
     sheets: [],
@@ -85,6 +98,7 @@ function buildInputs(
  *   - includeArchived: "1" | "0"
  *   - fallbackOwnerId: optional team member uid (empty = skip unmatched)
  *   - rockTeam: optional Department/Team-column filter (e.g. "Enterprise Systems & Data")
+ *   - existingRocks: "update" | "skip" (rocks kind; skip leaves stored rocks alone)
  *   - ownerAlias: repeatable "CSV Name=memberUid" (or member display name)
  */
 export async function importTeamFile(
@@ -112,6 +126,10 @@ export async function importTeamFile(
     const includeArchived = formData.get("includeArchived") === "1";
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
     const rockTeam = String(formData.get("rockTeam") ?? "").trim() || undefined;
+    // Default "update" matches the CLI. "skip" is the re-drop case: pull the
+    // milestones in without rewriting rocks the team has since edited.
+    const existingRocks =
+      formData.get("existingRocks") === "skip" ? "skip" : "update";
 
     let fallbackOwnerId: string | null = null;
     if (fallbackRaw) {
@@ -191,6 +209,7 @@ export async function importTeamFile(
       fallbackOwnerId,
       includeArchived,
       rockTeam,
+      existingRocks,
       ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
     });
 

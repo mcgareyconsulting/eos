@@ -48,6 +48,17 @@ export type TeamImportOptions = {
    * (e.g. "Enterprise Systems & Data"). UI label: Department.
    */
   rockTeam?: string;
+  /**
+   * What to do with a rock that already exists (matched on the deterministic
+   * `imp-rock-*` id, i.e. same title on the same team).
+   *   "update" — rewrite it from the file (default; the CLI's behavior).
+   *   "skip"   — leave the stored rock untouched.
+   * "skip" exists for the common re-drop: the team imported rocks, edited
+   * status/owner in the app, and now uploads the same two-sheet workbook only
+   * to pull the milestones in. Skipped rocks are still title→id mapped, so
+   * milestones attach to them (N6).
+   */
+  existingRocks?: "update" | "skip";
   asOf?: Date;
 };
 
@@ -87,6 +98,67 @@ export function tableFromBytes(
   }
 
   return toTable(rows);
+}
+
+/**
+ * Ninety exports Rocks and their Milestones as one two-sheet .xlsx. The CLI
+ * has always taken both (`--rocks --milestones` on the same path); the Import
+ * page used to read only the rocks sheet, so the milestone half was silently
+ * dropped (N6). Read both in one pass.
+ *
+ * A CSV/TSV holds a single table, so it yields rocks only. The milestone sheet
+ * must be a *different* sheet than the one chosen for rocks — a lone
+ * "Rocks & Milestones" sheet is a rocks table, not two tables.
+ */
+export function rocksWorkbookFromBytes(
+  bytes: Uint8Array | Buffer,
+  filename: string,
+): { rocks: CsvTable; milestones?: CsvTable; sheets: string[] } {
+  if (!filename.toLowerCase().endsWith(".xlsx")) {
+    return {
+      rocks: tableFromBytes(bytes, filename, preferRegexForKind("rocks")),
+      sheets: [],
+    };
+  }
+
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const sheets = readXlsx(buf);
+  const { rocks, milestones } = pickRockWorkbookSheets(sheets);
+
+  return {
+    rocks: toTable(rocks.rows),
+    // A header-only milestone sheet is not worth reporting as an input.
+    ...(milestones && toTable(milestones.rows).rows.length > 0
+      ? { milestones: toTable(milestones.rows) }
+      : {}),
+    sheets: sheets.map((sh) => sh.name),
+  };
+}
+
+/**
+ * Split a rocks workbook's sheets into the rocks table and, when the export
+ * carries one, the milestones table. Pure so the sheet-matching rules are
+ * testable without building a zip.
+ */
+export function pickRockWorkbookSheets(sheets: XlsxSheet[]): {
+  rocks: XlsxSheet;
+  milestones?: XlsxSheet;
+} {
+  const isMilestones = (name: string) =>
+    preferRegexForKind("milestones").test(name);
+  // "Rock Milestones" matches /rock/i too, so keep milestone-named sheets out
+  // of the running for the rocks table before picking — otherwise a workbook
+  // that names it that way loses both halves.
+  const rockCandidates = sheets.filter((sh) => !isMilestones(sh.name));
+  const rocks = pickSheet(
+    rockCandidates.length > 0 ? rockCandidates : sheets,
+    undefined,
+    preferRegexForKind("rocks"),
+  );
+  const milestones = sheets.find(
+    (sh) => sh !== rocks && isMilestones(sh.name),
+  );
+  return milestones ? { rocks, milestones } : { rocks };
 }
 
 export function issueTablesFromBytes(
@@ -491,12 +563,14 @@ async function importRocks(
     owners: OwnerResolver;
     existingIds: Set<string>;
     rockTeam?: string;
+    existingRocks: "update" | "skip";
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
   const teamValues = new Set<string>();
   let imported = 0;
   let skipped = 0;
+  let unchanged = 0;
   let attachments = 0;
   const warnings: string[] = [];
   const details: string[] = [];
@@ -551,6 +625,14 @@ async function importRocks(
     const rockId = importDocId("rock", ctx.teamId, title);
     const isNew = !ctx.existingIds.has(rockId);
 
+    // Leave the stored rock alone, but still map it so this file's
+    // milestones can attach to it.
+    if (!isNew && ctx.existingRocks === "skip") {
+      rockIdByTitle.set(normalizeKey(title), rockId);
+      unchanged++;
+      continue;
+    }
+
     // Done without a Completed On still needs a clock for the Monday archive
     // sweep — use import time. Non-done rocks keep completed_at null.
     const completedAt =
@@ -590,6 +672,9 @@ async function importRocks(
   if (attachments) {
     details.push(`${attachments} rows had attachments (not imported)`);
   }
+  if (unchanged) {
+    details.push(`${unchanged} existing rock(s) left untouched`);
+  }
   if (!ctx.rockTeam && teamValues.size > 1) {
     warnings.push(
       `Rocks span ${teamValues.size} departments in the file (${[...teamValues].join(", ")}). All landed on this app team — set a Department filter to import only one.`,
@@ -602,6 +687,7 @@ async function importRocks(
       label: "rocks",
       imported,
       skipped,
+      unchanged,
       details,
       warnings,
     },
@@ -1074,6 +1160,7 @@ export async function runTeamImport(
       owners,
       existingIds,
       rockTeam: options.rockTeam,
+      existingRocks: options.existingRocks ?? "update",
     });
     rockIdByTitle = map;
     kinds.push(stats);

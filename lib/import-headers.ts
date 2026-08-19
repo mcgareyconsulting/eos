@@ -22,7 +22,7 @@ export const EXPECTED_HEADERS: Record<
       "Quarter",
     ],
     notes:
-      "Status: On Track / Off Track / Complete / Cancelled. Level: Company / Department / Individual. Level=Department rocks land in the Department section (even with a personal owner). Team/Department column filters multi-department exports. Re-import updates by title.",
+      "Status: On Track / Off Track / Complete / Cancelled. Level: Company / Department / Individual. Level=Department rocks land in the Department section (even with a personal owner). Team/Department column filters multi-department exports. A rock already on the team is matched by title and left as it is.",
   },
   todos: {
     required: ["Owner", "Title"],

@@ -59,23 +59,28 @@ export type TeamImportOptions = {
    */
   rockTeam?: string;
   /**
-   * What to do with a rock that already exists (matched on the deterministic
-   * `imp-rock-*` id, i.e. same title on the same team).
-   *   "update" — rewrite it from the file (default; the CLI's behavior).
-   *   "skip"   — leave the stored rock untouched.
-   * "skip" exists for the common re-drop: the team imported rocks, edited
-   * status/owner in the app, and now uploads the same two-sheet workbook only
-   * to pull the milestones in. Skipped rocks are still title→id mapped, so
-   * milestones attach to them (N6).
+   * What to do with a row that collides with something already on the team
+   * (matched on the deterministic `imp-*` id — same title, same team).
+   *   "keep"   — leave the stored doc exactly as it is (default).
+   *   "update" — rewrite it from the file.
+   *
+   * Collision protection is on by default rather than opt-in: the team edits
+   * this data in the app, and a re-drop of the same export would otherwise
+   * silently overwrite that work. The common case is re-uploading a
+   * rocks+milestones workbook only to pull the milestones in — the rocks are
+   * still title→id mapped when kept, so the milestones attach to them.
    */
-  existingRocks?: "update" | "skip";
+  existingRows?: "keep" | "update";
   /**
    * What to do with a row whose Owner name matches nobody on the team (and
    * that neither createOwners nor fallbackOwnerId caught).
-   *   "skip"     — drop the row (default; the CLI's behavior).
    *   "no-owner" — import it with `owner_id: null` and keep the name in the
-   *                description, so a departed employee's rows still land and
-   *                the history stays visible (N6).
+   *                description (default). A departed employee's rows still
+   *                land and the history stays visible.
+   *   "skip"     — drop the row.
+   *
+   * Defaults to "no-owner": losing rows silently is worse than importing them
+   * unassigned, and an unowned row is visible and fixable in the app (N6).
    */
   unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
@@ -666,7 +671,7 @@ async function importRocks(
     owners: OwnerResolver;
     existingIds: Set<string>;
     rockTeam?: string;
-    existingRocks: "update" | "skip";
+    existingRows: "keep" | "update";
     unmatchedOwner: "skip" | "no-owner";
     includeArchived: boolean;
     preview: PreviewCollector;
@@ -774,7 +779,7 @@ async function importRocks(
 
     // Leave the stored rock alone, but still map it so this file's
     // milestones can attach to it.
-    if (!isNew && ctx.existingRocks === "skip") {
+    if (!isNew && ctx.existingRows === "keep") {
       rockIdByTitle.set(normalizeKey(title), rockId);
       unchanged++;
       ctx.preview.add({
@@ -886,6 +891,7 @@ async function importMilestones(
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
@@ -893,6 +899,7 @@ async function importMilestones(
   let archived = 0;
   let stale = 0;
   let noOwner = 0;
+  let unchanged = 0;
   const missingRocks = new Set<string>();
   const details: string[] = [];
   const warnings: string[] = [];
@@ -978,6 +985,19 @@ async function importMilestones(
     const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [`rock: ${rockName || "—"}`],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
@@ -1017,6 +1037,7 @@ async function importMilestones(
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
   if (missingRocks.size > 0) {
     warnings.push(
       `${missingRocks.size} milestone(s) reference a rock that isn't on the team: ${[...missingRocks].slice(0, 8).join(", ")}${missingRocks.size > 8 ? "…" : ""}`,
@@ -1028,6 +1049,7 @@ async function importMilestones(
     label: "milestones",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -1044,6 +1066,7 @@ async function importTodos(
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
@@ -1051,6 +1074,7 @@ async function importTodos(
   let archived = 0;
   let stale = 0;
   let noOwner = 0;
+  let unchanged = 0;
   const recurring: string[] = [];
   const details: string[] = [];
   const warnings: string[] = [];
@@ -1120,6 +1144,19 @@ async function importTodos(
     const todoId = importDocId("todo", ctx.teamId, title);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "todos",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     let description =
       normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
     if (ownerId === null && unmatchedName) {
@@ -1166,6 +1203,7 @@ async function importTodos(
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
   if (recurring.length > 0) {
     warnings.push(
       `${recurring.length} to-do(s) repeat on a schedule, imported as one-offs: ${recurring.slice(0, 5).join("; ")}${recurring.length > 5 ? "…" : ""}`,
@@ -1177,6 +1215,7 @@ async function importTodos(
     label: "to-dos",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -1194,11 +1233,13 @@ async function importIssues(
     sheetName?: string;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
   let noOwner = 0;
+  let unchanged = 0;
   let archived = 0;
   let stale = 0;
   let shortCount = 0;
@@ -1271,6 +1312,19 @@ async function importIssues(
     const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
     const isNew = !ctx.existingIds.has(issueId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "issues",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     let description =
       normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
     if (ownerId === null && unmatchedName) {
@@ -1325,12 +1379,14 @@ async function importIssues(
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
 
   return {
     kind: "issues",
     label: ctx.sheetName ? `issues [${ctx.sheetName}]` : "issues",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -1346,9 +1402,11 @@ async function importHeadlines(
     includeArchived: boolean;
     rockTeam?: string;
     preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
+  let unchanged = 0;
   let skipped = 0;
   let archived = 0;
   let broadcast = 0;
@@ -1423,6 +1481,19 @@ async function importHeadlines(
     const headlineId = importDocId("headline", ctx.teamId, `${kind}|${title}`);
     const isNew = !ctx.existingIds.has(headlineId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "headlines",
+        action: "skip",
+        title,
+        owner: createdBy ? ctx.owners.nameFor(createdBy) : ownerRaw || "—",
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     await ctx.writer.set(["headlines", headlineId], {
       team_id: ctx.teamId,
       title,
@@ -1465,6 +1536,7 @@ async function importHeadlines(
     label: sheetName ? `headlines [${sheetName}]` : "headlines",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -1491,7 +1563,8 @@ export async function runTeamImport(
   const completedSince = options.completedSince ?? null;
   const asOf = options.asOf ?? new Date();
   const fallbackId = options.fallbackOwnerId ?? null;
-  const unmatchedOwner = options.unmatchedOwner ?? "skip";
+  const unmatchedOwner = options.unmatchedOwner ?? "no-owner";
+  const existingRows = options.existingRows ?? "keep";
 
   const writer = new Writer(db, dryRun);
   const preview = new PreviewCollector();
@@ -1534,7 +1607,7 @@ export async function runTeamImport(
       owners,
       existingIds,
       rockTeam: options.rockTeam,
-      existingRocks: options.existingRocks ?? "update",
+      existingRows,
       unmatchedOwner,
       includeArchived,
       preview,
@@ -1563,6 +1636,7 @@ export async function runTeamImport(
         completedSince,
         unmatchedOwner,
         preview,
+        existingRows,
       }),
     );
   }
@@ -1578,6 +1652,7 @@ export async function runTeamImport(
         completedSince,
         unmatchedOwner,
         preview,
+        existingRows,
       }),
     );
   }
@@ -1595,6 +1670,7 @@ export async function runTeamImport(
           sheetName: table.sheetName,
           unmatchedOwner,
           preview,
+          existingRows,
         }),
       );
     }
@@ -1611,6 +1687,7 @@ export async function runTeamImport(
           includeArchived,
           rockTeam: options.rockTeam,
           preview,
+          existingRows,
         }),
       );
     }

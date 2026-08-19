@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import { importTeamFile } from "./actions";
-import { NO_OWNER, type ImportActionResult } from "./import-types";
+import { SKIP_ROWS, type ImportActionResult } from "./import-types";
 import type { PreviewRow } from "@/lib/team-import-types";
 
 // Sentinel for the "Other…" option — a Department value the app has no team
@@ -40,12 +40,13 @@ const KINDS: {
   {
     id: "rocks",
     label: "Rocks",
-    blurb: "Quarterly rocks — re-import updates existing rocks matched by title.",
+    blurb:
+      "Quarterly rocks. A rocks + milestones workbook imports both sheets in one pass.",
   },
   {
     id: "todos",
     label: "To-Dos",
-    blurb: "Standalone to-dos (not milestones). Matched by title on re-import.",
+    blurb: "Standalone to-dos — milestones ride along with a rocks workbook.",
   },
   {
     id: "issues",
@@ -90,9 +91,6 @@ export function ImportUploader({
   const [dragOver, setDragOver] = useState(false);
   const [createOwners, setCreateOwners] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
-  // Re-dropping the ninety workbook to pull milestones in shouldn't rewrite
-  // rocks the team has edited in the app since the first import (N6).
-  const [skipExistingRocks, setSkipExistingRocks] = useState(false);
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
   // Multi-department exports carry a ninety Team/Department column. Default to
   // the team whose Import page this is — the old hardcoded "Enterprise Systems
@@ -153,9 +151,6 @@ export function ImportUploader({
     fd.set("dryRun", dryRun ? "1" : "0");
     fd.set("createOwners", createOwners ? "1" : "0");
     fd.set("includeArchived", includeArchived ? "1" : "0");
-    if (kind === "rocks") {
-      fd.set("existingRocks", skipExistingRocks ? "skip" : "update");
-    }
     if (fallbackOwnerId) fd.set("fallbackOwnerId", fallbackOwnerId);
     if (rockTeam.trim()) fd.set("rockTeam", rockTeam.trim());
     for (const a of aliases) {
@@ -476,26 +471,6 @@ export function ImportUploader({
             </span>
           </span>
         </label>
-        {kind === "rocks" && (
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={skipExistingRocks}
-              onChange={(e) => setSkipExistingRocks(e.target.checked)}
-            />
-            <span>
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                Keep rocks already on the team
-              </span>
-              <span className="mt-0.5 block text-xs text-zinc-500">
-                Re-uploading a rocks + milestones workbook: leave existing rocks
-                exactly as they are and only fill in the milestones. Off means
-                matching rocks are rewritten from the file.
-              </span>
-            </span>
-          </label>
-        )}
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
             Unmatched owner
@@ -505,17 +480,29 @@ export function ImportUploader({
             onChange={(e) => setFallbackOwnerId(e.target.value)}
             className="max-w-md rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
           >
-            <option value="">Skip rows with unknown owners</option>
-            <option value={NO_OWNER}>
-              Import with No Owner (keep the name in the description)
+            <option value="">
+              Import with No Owner (keeps the name in the description)
             </option>
+            <option value={SKIP_ROWS}>Skip rows with unknown owners</option>
             {members.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.full_name || m.user_id}
+                Park them on {m.full_name || m.user_id}
               </option>
             ))}
           </select>
+          <span className="text-xs text-zinc-500">
+            When an Owner name matches nobody on the team. The default keeps
+            the row and the name — a departed employee&rsquo;s work still lands,
+            unassigned, instead of disappearing from the import.
+          </span>
         </label>
+
+        <p className="text-xs text-zinc-500 sm:col-span-2">
+          Rows already on this team are always left as they are — an import
+          only adds what is new, so re-uploading the same export never
+          overwrites edits made in the app. The preview marks them
+          &ldquo;Skipped&rdquo;.
+        </p>
       </div>
 
       {/* Expected columns */}
@@ -565,11 +552,7 @@ export function ImportUploader({
           onClick={() => {
             if (
               !window.confirm(
-                `Import ${kind} from “${file?.name}” into this team? ${
-                kind === "rocks" && skipExistingRocks
-                  ? "Rocks already on the team keep their current values."
-                  : "Existing imported rows with the same title will be updated."
-              }`,
+                `Import ${kind} from “${file?.name}” into this team? Rows already on the team keep their current values — only new rows are added.`,
               )
             ) {
               return;

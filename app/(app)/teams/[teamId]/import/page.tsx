@@ -37,9 +37,11 @@ export default async function ImportPage({
           Import into {team.name}
         </h1>
         <p className="mt-1 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
-          Drop a CSV or Excel file to add or update <strong>Rocks</strong>,{" "}
-          <strong>To-Dos</strong>, or <strong>Issues</strong>. Re-importing the
-          same titles updates rows in place instead of duplicating them.
+          Drop a CSV or Excel file to add <strong>Rocks</strong>,{" "}
+          <strong>To-Dos</strong>, <strong>Issues</strong>, or{" "}
+          <strong>Headlines</strong>. Re-importing the
+          same file is safe: rows already on the team are matched by title and
+          left alone, so only what&rsquo;s new is added.
         </p>
       </header>
 

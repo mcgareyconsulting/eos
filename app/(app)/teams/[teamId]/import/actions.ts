@@ -13,7 +13,7 @@ import {
   tableFromBytes,
   type TeamImportInputs,
 } from "@/lib/team-import";
-import { NO_OWNER, type ImportActionResult } from "./import-types";
+import { SKIP_ROWS, type ImportActionResult } from "./import-types";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_KINDS = ["rocks", "todos", "issues", "headlines"] as const;
@@ -102,10 +102,9 @@ function buildInputs(
  *   - dryRun: "1" | "0"
  *   - createOwners: "1" | "0"
  *   - includeArchived: "1" | "0"
- *   - fallbackOwnerId: team member uid, "" (skip unmatched), or NO_OWNER
- *     (import with owner_id null + the unmatched name in the description)
+ *   - fallbackOwnerId: "" / absent = No Owner (owner_id null + the unmatched
+ *     name in the description), SKIP_ROWS = drop the row, or a team member uid
  *   - rockTeam: optional Department/Team-column filter (e.g. "Enterprise Systems & Data")
- *   - existingRocks: "update" | "skip" (rocks kind; skip leaves stored rocks alone)
  *   - ownerAlias: repeatable "CSV Name=memberUid" (or member display name)
  */
 export async function importTeamFile(
@@ -136,17 +135,14 @@ export async function importTeamFile(
     const includeArchived = formData.get("includeArchived") === "1";
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
     const rockTeam = String(formData.get("rockTeam") ?? "").trim() || undefined;
-    // Default "update" matches the CLI. "skip" is the re-drop case: pull the
-    // milestones in without rewriting rocks the team has since edited.
-    const existingRocks =
-      formData.get("existingRocks") === "skip" ? "skip" : "update";
 
-    // Sentinel from the fallback dropdown: import the row with No Owner and
-    // keep the unmatched name in the description (N6).
-    const unmatchedOwner = fallbackRaw === NO_OWNER ? "no-owner" : "skip";
+    // Unmatched owners import as No Owner by default — losing rows silently is
+    // worse than importing them unassigned. SKIP_ROWS opts back out; picking a
+    // member parks them on that member instead (N6).
+    const unmatchedOwner = fallbackRaw === SKIP_ROWS ? "skip" : "no-owner";
 
     let fallbackOwnerId: string | null = null;
-    if (fallbackRaw && fallbackRaw !== NO_OWNER) {
+    if (fallbackRaw && fallbackRaw !== SKIP_ROWS) {
       if (!members.some((m) => m.user_id === fallbackRaw)) {
         return { ok: false, error: "Owner fallback is not a member of this team." };
       }
@@ -229,7 +225,6 @@ export async function importTeamFile(
       fallbackOwnerId,
       includeArchived,
       rockTeam,
-      existingRocks,
       unmatchedOwner,
       ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
     });

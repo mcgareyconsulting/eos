@@ -18,10 +18,15 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import { importTeamFile } from "./actions";
 import type { ImportActionResult } from "./import-types";
+
+// Sentinel for the "Other…" option — a Department value the app has no team
+// for. Cannot collide with a real team name.
+const CUSTOM_DEPT = "\u0000custom";
 
 type MemberOption = { user_id: string; full_name: string };
 type OwnerAliasRow = { csvName: string; memberId: string };
@@ -57,11 +62,16 @@ function findStephanie(members: MemberOption[]): string {
 
 export function ImportUploader({
   teamId,
+  teamName,
+  orgTeams,
   members,
 }: {
   teamId: string;
+  teamName: string;
+  orgTeams: { id: string; name: string }[];
   members: MemberOption[];
 }) {
+  const router = useRouter();
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<WebImportKind>("rocks");
@@ -73,8 +83,13 @@ export function ImportUploader({
   // rocks the team has edited in the app since the first import (N6).
   const [skipExistingRocks, setSkipExistingRocks] = useState(false);
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
-  // Multi-department exports (ninety Team column) — ESD only by default.
-  const [rockTeam, setRockTeam] = useState("Enterprise Systems & Data");
+  // Multi-department exports carry a ninety Team/Department column. Default to
+  // the team whose Import page this is — the old hardcoded "Enterprise Systems
+  // & Data" silently filtered every other team's upload down to nothing (N6).
+  const [rockTeam, setRockTeam] = useState(teamName);
+  // Escape hatch: the file's Department values don't always match app team
+  // names, so "Other…" reveals a text box rather than trapping the user.
+  const [rockTeamCustom, setRockTeamCustom] = useState(false);
   const defaultStephId = useMemo(() => findStephanie(members), [members]);
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
     { csvName: "Steph Benes", memberId: findStephanie(members) },
@@ -252,25 +267,85 @@ export function ImportUploader({
       <div className="grid gap-4 rounded-xl border border-zinc-300 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            Filter by Department
+            Import into
           </span>
-          <input
-            type="text"
-            value={rockTeam}
-            onChange={(e) => {
-              setRockTeam(e.target.value);
-              setResult(null);
-            }}
-            placeholder="e.g. Enterprise Systems & Data"
+          <select
+            value={teamId}
+            onChange={(e) => router.push(`/teams/${e.target.value}/import`)}
             className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-          />
+          >
+            {orgTeams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
           <span className="text-xs text-zinc-500">
-            Only import rows whose{" "}
+            The team these rows land on. Switching opens that team&rsquo;s
+            Import page.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+            Only rows for
+          </span>
+          {rockTeamCustom ? (
+            <input
+              type="text"
+              value={rockTeam}
+              onChange={(e) => {
+                setRockTeam(e.target.value);
+                setResult(null);
+              }}
+              placeholder="Department value as it appears in the file"
+              className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          ) : (
+            <select
+              value={rockTeam}
+              onChange={(e) => {
+                if (e.target.value === CUSTOM_DEPT) {
+                  setRockTeamCustom(true);
+                  setRockTeam("");
+                } else {
+                  setRockTeam(e.target.value);
+                }
+                setResult(null);
+              }}
+              className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            >
+              <option value="">Every row in the file</option>
+              {orgTeams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+              <option value={CUSTOM_DEPT}>Other…</option>
+            </select>
+          )}
+          <span className="text-xs text-zinc-500">
+            Ninety exports every department in one file. Only rows whose{" "}
             <code className="text-[11px]">Team</code> /{" "}
-            <code className="text-[11px]">Department</code> column matches
-            (case-insensitive). Level=Department rocks still land in the
-            Department section even when owned by someone else. Leave blank to
-            import every row. Pre-filled for ESD.
+            <code className="text-[11px]">Department</code> column matches are
+            imported (case-insensitive). Level=Department rocks still land in
+            the Department section even when owned by someone else.
+            {rockTeamCustom ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRockTeamCustom(false);
+                    setRockTeam(teamName);
+                    setResult(null);
+                  }}
+                  className="font-semibold underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  Back to the team list
+                </button>
+              </>
+            ) : null}
           </span>
         </label>
 

@@ -1,5 +1,9 @@
 import { Upload } from "lucide-react";
-import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import {
+  requireTeamAccess,
+  getTeamMembers,
+  getOrgTeams,
+} from "@/lib/firebase/teams";
 import { ImportUploader } from "./import-uploader";
 
 export default async function ImportPage({
@@ -9,7 +13,10 @@ export default async function ImportPage({
 }) {
   const { teamId } = await params;
   const { team } = await requireTeamAccess(teamId);
-  const members = await getTeamMembers(teamId);
+  const [members, orgTeams] = await Promise.all([
+    getTeamMembers(teamId),
+    getOrgTeams(),
+  ]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -32,6 +39,8 @@ export default async function ImportPage({
 
       <ImportUploader
         teamId={teamId}
+        teamName={team.name}
+        orgTeams={orgTeams}
         members={members.map((m) => ({
           user_id: m.user_id,
           full_name: m.full_name,

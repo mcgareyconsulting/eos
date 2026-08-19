@@ -18,10 +18,16 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import { importTeamFile } from "./actions";
-import type { ImportActionResult } from "./import-types";
+import { SKIP_ROWS, type ImportActionResult } from "./import-types";
+import type { PreviewRow } from "@/lib/team-import-types";
+
+// Sentinel for the "Other…" option — a Department value the app has no team
+// for. Cannot collide with a real team name.
+const CUSTOM_DEPT = "\u0000custom";
 
 type MemberOption = { user_id: string; full_name: string };
 type OwnerAliasRow = { csvName: string; memberId: string };
@@ -34,17 +40,24 @@ const KINDS: {
   {
     id: "rocks",
     label: "Rocks",
-    blurb: "Quarterly rocks — re-import updates existing rocks matched by title.",
+    blurb:
+      "Quarterly rocks. A rocks + milestones workbook imports both sheets in one pass.",
   },
   {
     id: "todos",
     label: "To-Dos",
-    blurb: "Standalone to-dos (not milestones). Matched by title on re-import.",
+    blurb: "Standalone to-dos — milestones ride along with a rocks workbook.",
   },
   {
     id: "issues",
     label: "Issues",
     blurb: "Short- and long-term issues. Multi-sheet .xlsx imports both sheets.",
+  },
+  {
+    id: "headlines",
+    label: "Headlines",
+    blurb:
+      "Cascading, customer, and employee headlines. Multi-sheet .xlsx imports every headline sheet.",
   },
 ];
 
@@ -57,11 +70,20 @@ function findStephanie(members: MemberOption[]): string {
 
 export function ImportUploader({
   teamId,
+  teamName,
+  orgTeams,
+  importableTeams,
   members,
 }: {
   teamId: string;
+  teamName: string;
+  /** Every team name — used to match the file's Department column. */
+  orgTeams: { id: string; name: string }[];
+  /** Teams this user may import into: all for an admin, else teams they lead. */
+  importableTeams: { id: string; name: string }[];
   members: MemberOption[];
 }) {
+  const router = useRouter();
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<WebImportKind>("rocks");
@@ -70,8 +92,13 @@ export function ImportUploader({
   const [createOwners, setCreateOwners] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
-  // Multi-department exports (ninety Team column) — ESD only by default.
-  const [rockTeam, setRockTeam] = useState("Enterprise Systems & Data");
+  // Multi-department exports carry a ninety Team/Department column. Default to
+  // the team whose Import page this is — the old hardcoded "Enterprise Systems
+  // & Data" silently filtered every other team's upload down to nothing (N6).
+  const [rockTeam, setRockTeam] = useState(teamName);
+  // Escape hatch: the file's Department values don't always match app team
+  // names, so "Other…" reveals a text box rather than trapping the user.
+  const [rockTeamCustom, setRockTeamCustom] = useState(false);
   const defaultStephId = useMemo(() => findStephanie(members), [members]);
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
     { csvName: "Steph Benes", memberId: findStephanie(members) },
@@ -246,25 +273,89 @@ export function ImportUploader({
       <div className="grid gap-4 rounded-xl border border-zinc-300 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            Filter by Department
+            Import into
           </span>
-          <input
-            type="text"
-            value={rockTeam}
-            onChange={(e) => {
-              setRockTeam(e.target.value);
-              setResult(null);
-            }}
-            placeholder="e.g. Enterprise Systems & Data"
-            className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-          />
+          <select
+            value={teamId}
+            onChange={(e) => router.push(`/teams/${e.target.value}/import`)}
+            disabled={importableTeams.length < 2}
+            className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
+          >
+            {importableTeams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
           <span className="text-xs text-zinc-500">
-            Only import rows whose{" "}
+            The team these rows land on. Switching opens that team&rsquo;s
+            Import page.{" "}
+            {importableTeams.length < 2
+              ? "You can import into the teams you lead; an admin can import into any team."
+              : null}
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+            Only rows for
+          </span>
+          {rockTeamCustom ? (
+            <input
+              type="text"
+              value={rockTeam}
+              onChange={(e) => {
+                setRockTeam(e.target.value);
+                setResult(null);
+              }}
+              placeholder="Department value as it appears in the file"
+              className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            />
+          ) : (
+            <select
+              value={rockTeam}
+              onChange={(e) => {
+                if (e.target.value === CUSTOM_DEPT) {
+                  setRockTeamCustom(true);
+                  setRockTeam("");
+                } else {
+                  setRockTeam(e.target.value);
+                }
+                setResult(null);
+              }}
+              className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            >
+              <option value="">Every row in the file</option>
+              {orgTeams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+              <option value={CUSTOM_DEPT}>Other…</option>
+            </select>
+          )}
+          <span className="text-xs text-zinc-500">
+            Ninety exports every department in one file. Only rows whose{" "}
             <code className="text-[11px]">Team</code> /{" "}
-            <code className="text-[11px]">Department</code> column matches
-            (case-insensitive). Level=Department rocks still land in the
-            Department section even when owned by someone else. Leave blank to
-            import every row. Pre-filled for ESD.
+            <code className="text-[11px]">Department</code> column matches are
+            imported (case-insensitive). Level=Department rocks still land in
+            the Department section even when owned by someone else.
+            {rockTeamCustom ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRockTeamCustom(false);
+                    setRockTeam(teamName);
+                    setResult(null);
+                  }}
+                  className="font-semibold underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  Back to the team list
+                </button>
+              </>
+            ) : null}
           </span>
         </label>
 
@@ -371,28 +462,47 @@ export function ImportUploader({
               Include archived rows
             </span>
             <span className="mt-0.5 block text-xs text-zinc-500">
-              By default rows with an Archived Date (or archived status) are
-              skipped.
+              Off: rows with an Archived Date (or an archived status) are
+              skipped and counted as &ldquo;held back&rdquo;. On: they import
+              already archived, dated from their Archived Date — they land in
+              the Archived view, not your active lists. Either way a re-import
+              never changes the archive state of a row that is already here, so
+              anything you archived in the app stays archived.
             </span>
           </span>
         </label>
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            Unmatched owner fallback
+            Unmatched owner
           </span>
           <select
             value={fallbackOwnerId}
             onChange={(e) => setFallbackOwnerId(e.target.value)}
             className="max-w-md rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
           >
-            <option value="">Skip rows with unknown owners</option>
+            <option value="">
+              Import with No Owner (keeps the name in the description)
+            </option>
+            <option value={SKIP_ROWS}>Skip rows with unknown owners</option>
             {members.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.full_name || m.user_id}
+                Park them on {m.full_name || m.user_id}
               </option>
             ))}
           </select>
+          <span className="text-xs text-zinc-500">
+            When an Owner name matches nobody on the team. The default keeps
+            the row and the name — a departed employee&rsquo;s work still lands,
+            unassigned, instead of disappearing from the import.
+          </span>
         </label>
+
+        <p className="text-xs text-zinc-500 sm:col-span-2">
+          Rows already on this team are always left as they are — an import
+          only adds what is new, so re-uploading the same export never
+          overwrites edits made in the app. The preview marks them
+          &ldquo;Skipped&rdquo;.
+        </p>
       </div>
 
       {/* Expected columns */}
@@ -442,7 +552,7 @@ export function ImportUploader({
           onClick={() => {
             if (
               !window.confirm(
-                `Import ${kind} from “${file?.name}” into this team? Existing imported rows with the same title will be updated.`,
+                `Import ${kind} from “${file?.name}” into this team? Rows already on the team keep their current values — only new rows are added.`,
               )
             ) {
               return;
@@ -497,6 +607,7 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         {report.kinds.map((k) => (
           <li key={k.label}>
             <span className="font-medium">{k.label}:</span> {k.imported} imported
+            {k.unchanged ? `, ${k.unchanged} kept as-is` : ""}
             {k.skipped ? `, ${k.skipped} skipped` : ""}
             {k.details.length > 0 ? ` (${k.details.join("; ")})` : ""}
           </li>
@@ -527,6 +638,14 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         </p>
       )}
 
+      {report.rows.length > 0 && (
+        <PreviewTable
+          rows={report.rows}
+          truncated={report.previewTruncated}
+          dryRun={report.dryRun}
+        />
+      )}
+
       {preview.headers.length > 0 && (
         <details className="text-xs text-zinc-500">
           <summary className="cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300">
@@ -542,5 +661,107 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         </p>
       )}
     </div>
+  );
+}
+
+const ACTION_STYLES: Record<PreviewRow["action"], string> = {
+  create:
+    "bg-[rgba(44,179,74,.10)] text-[#177a3d] ring-[rgba(44,179,74,.35)] dark:bg-[rgba(44,179,74,.15)] dark:text-hpb-green",
+  update:
+    "bg-[rgba(0,51,160,.08)] text-hpb-blue ring-[rgba(0,51,160,.30)] dark:bg-[rgba(0,51,160,.20)] dark:text-white",
+  skip: "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+};
+
+const ACTION_LABELS: Record<PreviewRow["action"], string> = {
+  create: "New",
+  update: "Update",
+  skip: "Skipped",
+};
+
+/**
+ * Row-by-row view of what the importer read: the resolved owner, the fields
+ * that decide where the row lands, and what will happen to it. This is the
+ * point of a dry run — the old panel showed only a filename and a write
+ * count, which never answered "did it map my columns correctly?".
+ */
+function PreviewTable({
+  rows,
+  truncated,
+  dryRun,
+}: {
+  rows: PreviewRow[];
+  truncated: number;
+  dryRun: boolean;
+}) {
+  const skipped = rows.filter((r) => r.action === "skip").length;
+  return (
+    <details open className="text-sm">
+      <summary className="cursor-pointer font-medium text-zinc-900 hover:text-hpb-blue dark:text-zinc-100 dark:hover:text-hpb-gold">
+        {dryRun ? "What will land" : "What landed"} — {rows.length} row
+        {rows.length === 1 ? "" : "s"}
+        {skipped > 0 ? ` · ${skipped} skipped` : ""}
+      </summary>
+
+      {/* Wide content scrolls inside its own box, never the page. */}
+      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full border-collapse text-left text-[12.5px]">
+          <thead className="sticky top-0 bg-zinc-50 text-[10.5px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950">
+            <tr>
+              <th className="px-2.5 py-1.5 font-semibold">Title</th>
+              <th className="px-2.5 py-1.5 font-semibold">Owner</th>
+              <th className="px-2.5 py-1.5 font-semibold">Details</th>
+              <th className="px-2.5 py-1.5 font-semibold">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr
+                key={`${r.kind}-${i}`}
+                className="border-t border-zinc-100 align-top dark:border-zinc-800"
+              >
+                <td className="max-w-[22rem] px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200">
+                  <span className="line-clamp-2">{r.title || "—"}</span>
+                  {r.note ? (
+                    <span className="mt-0.5 block text-[11px] text-zinc-500">
+                      {r.note}
+                    </span>
+                  ) : null}
+                </td>
+                <td
+                  className={cn(
+                    "whitespace-nowrap px-2.5 py-1.5",
+                    r.owner === "No Owner"
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-zinc-700 dark:text-zinc-300",
+                  )}
+                >
+                  {r.owner}
+                </td>
+                <td className="px-2.5 py-1.5 text-zinc-500">
+                  {r.detail.join(" · ") || "—"}
+                </td>
+                <td className="px-2.5 py-1.5">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-px text-[10.5px] font-bold ring-1 ring-inset",
+                      ACTION_STYLES[r.action],
+                    )}
+                  >
+                    {ACTION_LABELS[r.action]}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {truncated > 0 && (
+        <p className="mt-1 text-xs text-zinc-500">
+          {truncated} more row{truncated === 1 ? "" : "s"} not listed. Counts
+          above cover every row.
+        </p>
+      )}
+    </details>
   );
 }

@@ -7,7 +7,7 @@ Team members can upload a **.csv / .tsv / .xlsx** from the sidebar:
 
 - Pick **Rocks**, **To-Dos**, or **Issues**, drop the file, **Preview (dry run)**
   then **Import**.
-- Same column rules as below; same deterministic ids (re-import updates by title).
+- Same column rules as below; same deterministic ids (a row already on the team is matched by title and kept).
 - Defaults are safer than the CLI: unknown owners are **skipped** unless you
   enable placeholder members or choose a fallback owner.
 - Scorecard, milestones, and headlines remain **CLI-only** for now
@@ -137,8 +137,8 @@ makes his eight rows resolve to his real login instead of a placeholder.
 | `--dry-run` | Parse, resolve owners, report what would happen. Writes nothing. |
 | `--as-of <YYYY-MM-DD>` | Anchor for undated week headers. Defaults to today — set it when importing an export that's more than a few months stale. |
 | `--owner-fallback <email\|uid\|name>` | Park rows whose owner isn't on the team on this existing member. |
-| `--no-create-owners` | Don't create placeholder members; skip rows with an unresolvable owner instead. |
-| `--include-archived` | Also import rows the export marks archived — scorecard rows whose `Status` says archived/inactive, and to-dos/milestones carrying an `Archived Date` (all skipped by default). |
+| `--no-create-owners` | Don't create placeholder members. An unresolvable owner then falls to the default below rather than creating an account. |
+| `--include-archived` | Also import rows the export marks archived — scorecard rows whose `Status` says archived/inactive, and rocks/to-dos/milestones/issues/headlines carrying an `Archived Date` (all skipped by default). They import **already archived**, dated from their `Archived Date`. |
 | `--completed-since <YYYY-MM-DD>` | Back-import cutoff: drop to-dos/milestones completed before this date. Open rows always import. |
 | `--rock-team <value>` | With a multi-team export, import only rows whose `Team` column matches. |
 
@@ -264,10 +264,17 @@ segment.
 - **Archived Date** — any value means the row is **skipped**. Archived to-dos
   carry no completion date, so importing them would park them in the *open*
   list permanently and bury the live items. Pass `--include-archived` to bring
-  them in anyway. The run reports how many were held back.
+  them in anyway; they land in the *Archived* view stamped with their
+  `Archived Date` (import time if the flag is set but the date won't parse),
+  not in the open list. The run reports how many were held back.
 - **Created Date** is used for `created_at` when the doc is new, so age and
   creation ordering survive the import instead of everything looking like it
   was created at import time. Blank falls back to the server clock.
+
+`archived_at` is only ever written when the doc is **new**. A re-import
+therefore cannot un-archive something the team archived in the app, and cannot
+archive something they have since revived — the archive state of an existing
+row is theirs, not the file's.
 - **`--completed-since <YYYY-MM-DD>`** is the back-import cutoff: rows completed
   before that date are dropped. Open rows always import, however old — an old
   open to-do is still live work. Both the To-Dos page and the live L10 To-Dos
@@ -305,16 +312,33 @@ reassign their rows once accounts exist — re-import with
 `--no-create-owners` on a client's production project if you'd rather not create
 anything, or `--owner-fallback` to park unmatched rows on one existing member.
 
+With neither, an Owner name that matches nobody imports the row as **No Owner**
+(`owner_id: null`) with the name appended to the row's description
+(`unmatchedOwner: "no-owner"`, the default). Losing rows silently is worse than
+importing them unassigned: a departed employee's work still lands, is visible
+in the app, and can be reassigned there. Pass `unmatchedOwner: "skip"` to drop
+those rows instead.
+
 Aliases take priority over name matching, so `--owner-alias` is also the fix for
 two people who share a first name, or an export that uses nicknames.
 
 ## Re-running
 
 Every imported doc gets a deterministic id derived from the team and the row's
-natural key (metric name, rock title, rock + milestone title). **Re-importing a
-corrected file updates those rows in place instead of duplicating them**, and
-their original `created_at` is preserved. Rows created in the app by hand are
-untouched — they have random ids and no `import_source` field.
+natural key (metric name, rock title, rock + milestone title), so a row can
+never be imported twice as two docs.
+
+**A row that already exists is left exactly as it is** — collision protection
+is on by default (`existingRows: "keep"`), because the team edits this data in
+the app and a re-drop of the same export would otherwise silently overwrite
+that work. Re-importing therefore *adds what is new* rather than restating the
+file over the top. The common case is re-uploading a rocks + milestones
+workbook only to pull the milestones in: the rocks are matched, kept, and still
+linked so their milestones attach. Callers that genuinely want the file to win
+pass `existingRows: "update"`.
+
+Rows created in the app by hand are untouched either way — they have random ids
+and no `import_source` field.
 
 Two consequences worth knowing:
 

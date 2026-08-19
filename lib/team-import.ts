@@ -28,9 +28,19 @@ import {
   type CsvTable,
 } from "./csv-import";
 import { pickSheet, readXlsx, type XlsxSheet } from "./xlsx";
-import type { ImportKind, ImportReport, KindStats } from "./team-import-types";
+import type {
+  ImportKind,
+  ImportReport,
+  KindStats,
+  PreviewRow,
+} from "./team-import-types";
 
-export type { ImportKind, ImportReport, KindStats } from "./team-import-types";
+export type {
+  ImportKind,
+  ImportReport,
+  KindStats,
+  PreviewRow,
+} from "./team-import-types";
 
 export type TeamImportOptions = {
   dryRun?: boolean;
@@ -48,6 +58,31 @@ export type TeamImportOptions = {
    * (e.g. "Enterprise Systems & Data"). UI label: Department.
    */
   rockTeam?: string;
+  /**
+   * What to do with a row that collides with something already on the team
+   * (matched on the deterministic `imp-*` id — same title, same team).
+   *   "keep"   — leave the stored doc exactly as it is (default).
+   *   "update" — rewrite it from the file.
+   *
+   * Collision protection is on by default rather than opt-in: the team edits
+   * this data in the app, and a re-drop of the same export would otherwise
+   * silently overwrite that work. The common case is re-uploading a
+   * rocks+milestones workbook only to pull the milestones in — the rocks are
+   * still title→id mapped when kept, so the milestones attach to them.
+   */
+  existingRows?: "keep" | "update";
+  /**
+   * What to do with a row whose Owner name matches nobody on the team (and
+   * that neither createOwners nor fallbackOwnerId caught).
+   *   "no-owner" — import it with `owner_id: null` and keep the name in the
+   *                description (default). A departed employee's rows still
+   *                land and the history stays visible.
+   *   "skip"     — drop the row.
+   *
+   * Defaults to "no-owner": losing rows silently is worse than importing them
+   * unassigned, and an unowned row is visible and fixable in the app (N6).
+   */
+  unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
 };
 
@@ -87,6 +122,67 @@ export function tableFromBytes(
   }
 
   return toTable(rows);
+}
+
+/**
+ * Ninety exports Rocks and their Milestones as one two-sheet .xlsx. The CLI
+ * has always taken both (`--rocks --milestones` on the same path); the Import
+ * page used to read only the rocks sheet, so the milestone half was silently
+ * dropped (N6). Read both in one pass.
+ *
+ * A CSV/TSV holds a single table, so it yields rocks only. The milestone sheet
+ * must be a *different* sheet than the one chosen for rocks — a lone
+ * "Rocks & Milestones" sheet is a rocks table, not two tables.
+ */
+export function rocksWorkbookFromBytes(
+  bytes: Uint8Array | Buffer,
+  filename: string,
+): { rocks: CsvTable; milestones?: CsvTable; sheets: string[] } {
+  if (!filename.toLowerCase().endsWith(".xlsx")) {
+    return {
+      rocks: tableFromBytes(bytes, filename, preferRegexForKind("rocks")),
+      sheets: [],
+    };
+  }
+
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const sheets = readXlsx(buf);
+  const { rocks, milestones } = pickRockWorkbookSheets(sheets);
+
+  return {
+    rocks: toTable(rocks.rows),
+    // A header-only milestone sheet is not worth reporting as an input.
+    ...(milestones && toTable(milestones.rows).rows.length > 0
+      ? { milestones: toTable(milestones.rows) }
+      : {}),
+    sheets: sheets.map((sh) => sh.name),
+  };
+}
+
+/**
+ * Split a rocks workbook's sheets into the rocks table and, when the export
+ * carries one, the milestones table. Pure so the sheet-matching rules are
+ * testable without building a zip.
+ */
+export function pickRockWorkbookSheets(sheets: XlsxSheet[]): {
+  rocks: XlsxSheet;
+  milestones?: XlsxSheet;
+} {
+  const isMilestones = (name: string) =>
+    preferRegexForKind("milestones").test(name);
+  // "Rock Milestones" matches /rock/i too, so keep milestone-named sheets out
+  // of the running for the rocks table before picking — otherwise a workbook
+  // that names it that way loses both halves.
+  const rockCandidates = sheets.filter((sh) => !isMilestones(sh.name));
+  const rocks = pickSheet(
+    rockCandidates.length > 0 ? rockCandidates : sheets,
+    undefined,
+    preferRegexForKind("rocks"),
+  );
+  const milestones = sheets.find(
+    (sh) => sh !== rocks && isMilestones(sh.name),
+  );
+  return milestones ? { rocks, milestones } : { rocks };
 }
 
 export function issueTablesFromBytes(
@@ -181,6 +277,23 @@ export class Writer {
 // Owner resolution
 // ---------------------------------------------------------------------------
 
+/**
+ * Collects the per-row preview. Capped so a 5k-row export can't turn the
+ * server-action response into a payload the browser has to swallow whole; the
+ * overflow is reported as a count.
+ */
+export class PreviewCollector {
+  readonly rows: PreviewRow[] = [];
+  truncated = 0;
+
+  constructor(private limit = 250) {}
+
+  add(row: PreviewRow): void {
+    if (this.rows.length < this.limit) this.rows.push(row);
+    else this.truncated++;
+  }
+}
+
 export type Member = { user_id: string; names: string[] };
 
 export async function loadMembers(db: Firestore, teamId: string): Promise<Member[]> {
@@ -210,6 +323,7 @@ export async function loadMembers(db: Firestore, teamId: string): Promise<Member
 
 export class OwnerResolver {
   private index = new Map<string, string>();
+  private nameByUid = new Map<string, string>();
   private cache = new Map<string, string | null>();
   created: { user_id: string; name: string }[] = [];
   unresolved = new Set<string>();
@@ -225,6 +339,8 @@ export class OwnerResolver {
     },
   ) {
     for (const m of members) {
+      const display = m.names.find((n) => n.trim());
+      if (display) this.nameByUid.set(m.user_id, display.trim());
       for (const n of m.names) {
         const key = normalizePersonKey(n);
         if (key && !this.index.has(key)) this.index.set(key, m.user_id);
@@ -232,9 +348,29 @@ export class OwnerResolver {
     }
   }
 
+  /** Display name for a resolved uid — for the preview, not for writes. */
+  nameFor(uid: string | null): string {
+    if (!uid) return "No Owner";
+    return this.nameByUid.get(uid) || uid;
+  }
+
   lookup(name: string): string | null {
     const key = normalizePersonKey(name);
     return this.opts.aliases?.get(key) ?? this.index.get(key) ?? null;
+  }
+
+  /**
+   * resolve() plus the name that failed to match, so an importer can put it in
+   * the row's description instead of dropping the row. A blank Owner cell is
+   * not "unmatched" — there was no name to match.
+   */
+  async resolveOwner(
+    rawName: string,
+  ): Promise<{ uid: string | null; unmatchedName: string | null }> {
+    const raw = (rawName ?? "").trim();
+    const uid = await this.resolve(rawName);
+    if (uid !== null || !raw) return { uid, unmatchedName: null };
+    return { uid: null, unmatchedName: raw };
   }
 
   async resolve(rawName: string): Promise<string | null> {
@@ -270,6 +406,7 @@ export class OwnerResolver {
         created_at: FieldValue.serverTimestamp(),
       });
       this.index.set(key, uid);
+      this.nameByUid.set(uid, raw);
       this.created.push({ user_id: uid, name: raw });
     }
 
@@ -281,6 +418,21 @@ export class OwnerResolver {
     this.cache.set(key, uid);
     return uid;
   }
+}
+
+/**
+ * Keep an unmatched Owner name with the row it came from. The client's case is
+ * a departed employee: the rows still have to import, but "who used to own
+ * this" must not silently vanish (N6).
+ */
+export function withUnmatchedOwnerNote(
+  description: string | null | undefined,
+  name: string,
+): string {
+  const note = `Imported owner: ${name.trim()}`;
+  const body = (description ?? "").trim();
+  if (!note.endsWith(":") && body.includes(note)) return body; // re-import
+  return body ? `${body}\n\n${note}` : note;
 }
 
 export async function loadExistingIds(
@@ -327,6 +479,34 @@ function createdAtFrom(row: Record<string, string>, headers: string[]) {
   const created = parseDateOnly(cell(row, headers, "Created Date", "Created On", "Created"));
   return created
     ? Timestamp.fromDate(new Date(`${created}T00:00:00`))
+    : FieldValue.serverTimestamp();
+}
+
+/**
+ * archived_at for a NEW imported row. Archived rows previously landed with
+ * `archived_at: null` — i.e. "Include archived rows" resurrected finished work
+ * as live work, the opposite of what the checkbox says (N6 finding 6). An
+ * archived row now carries its Archived Date, falling back to import time when
+ * the export has the flag but no parseable date.
+ *
+ * Only ever written on create. An existing doc keeps whatever archive state it
+ * has, so a re-import can neither un-archive something filed in the app nor
+ * archive something the team has revived.
+ */
+/** Human label for the preview's rock-type column. */
+function rockTypeLabel(t: string): string {
+  if (t === "individual") return "Individual rock";
+  if (t === "company") return "Company rock";
+  return "Team rock";
+}
+
+function archivedAtFrom(row: Record<string, string>, headers: string[]) {
+  if (!isArchived(row, headers)) return null;
+  const on = parseDateOnly(
+    cell(row, headers, "Archived Date", "Archived On", "Archived"),
+  );
+  return on
+    ? Timestamp.fromDate(new Date(`${on}T00:00:00`))
     : FieldValue.serverTimestamp();
 }
 
@@ -491,12 +671,19 @@ async function importRocks(
     owners: OwnerResolver;
     existingIds: Set<string>;
     rockTeam?: string;
+    existingRows: "keep" | "update";
+    unmatchedOwner: "skip" | "no-owner";
+    includeArchived: boolean;
+    preview: PreviewCollector;
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
   const teamValues = new Set<string>();
   let imported = 0;
   let skipped = 0;
+  let unchanged = 0;
+  let noOwner = 0;
+  let archived = 0;
   let attachments = 0;
   const warnings: string[] = [];
   const details: string[] = [];
@@ -523,6 +710,22 @@ async function importRocks(
       continue;
     }
 
+    // Rocks had no archived filter at all, while the Import page told users
+    // archived rows are skipped by default — true for every other kind but
+    // not this one (N6 finding 6).
+    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+      archived++;
+      ctx.preview.add({
+        kind: "rocks",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: "Archived in the file — tick Include archived rows to import it",
+      });
+      continue;
+    }
+
     const completedOn = parseDateOnly(
       cell(row, table.headers, "Completed On", "Completed", "Completed Date"),
     );
@@ -538,18 +741,57 @@ async function importRocks(
     // with a null owner (shared department) rather than skipping.
     // Department-typed rocks still import when the owner can't be resolved
     // (they land in the Department section as shared ownership).
-    let ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null && rockType !== "department") {
+    // A department rock always tolerates a null owner (shared ownership); any
+    // rock does when the Owner name simply matched nobody and the caller asked
+    // for No Owner rather than a dropped row.
+    const allowNullOwner =
+      rockType === "department" ||
+      (unmatchedName !== null && ctx.unmatchedOwner === "no-owner");
+    if (ownerId === null && !allowNullOwner) {
       skipped++;
+      ctx.preview.add({
+        kind: "rocks",
+        action: "skip",
+        title,
+        owner: unmatchedName ?? "—",
+        detail: [rockTypeLabel(rockType)],
+        note: unmatchedName
+          ? `No team member matches "${unmatchedName}"`
+          : "No Owner in the file",
+      });
       continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
     }
 
     if (cell(row, table.headers, "Attachment Names", "Attachments")) attachments++;
 
     const rockId = importDocId("rock", ctx.teamId, title);
     const isNew = !ctx.existingIds.has(rockId);
+
+    // Leave the stored rock alone, but still map it so this file's
+    // milestones can attach to it.
+    if (!isNew && ctx.existingRows === "keep") {
+      rockIdByTitle.set(normalizeKey(title), rockId);
+      unchanged++;
+      ctx.preview.add({
+        kind: "rocks",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [rockTypeLabel(rockType)],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
 
     // Done without a Completed On still needs a clock for the Monday archive
     // sweep — use import time. Non-done rocks keep completed_at null.
@@ -563,7 +805,7 @@ async function importRocks(
     await ctx.writer.set(["rocks", rockId], {
       team_id: ctx.teamId,
       title,
-      description: normalizeDescription(cell(row, table.headers, "Description")) || null,
+      description,
       status,
       rock_type: rockType,
       quarter:
@@ -575,7 +817,7 @@ async function importRocks(
       import_source: "csv",
       ...(isNew
         ? {
-            archived_at: null,
+            archived_at: archivedAtFrom(row, table.headers),
             created_at: createdDate
               ? Timestamp.fromDate(new Date(`${createdDate}T00:00:00`))
               : FieldValue.serverTimestamp(),
@@ -583,12 +825,38 @@ async function importRocks(
         : {}),
     });
 
+    ctx.preview.add({
+      kind: "rocks",
+      action: isNew ? "create" : "update",
+      title,
+      owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+      detail: [
+        rockTypeLabel(rockType),
+        normalizeQuarter(cell(row, table.headers, "Quarter"), dueDate) ??
+          currentQuarter(),
+        `due ${dueDate ?? toDateString(endOfQuarter())}`,
+        status,
+      ],
+      note:
+        ownerId === null && unmatchedName
+          ? `"${unmatchedName}" is not on the team — kept in the description`
+          : undefined,
+    });
     rockIdByTitle.set(normalizeKey(title), rockId);
     imported++;
   }
 
   if (attachments) {
     details.push(`${attachments} rows had attachments (not imported)`);
+  }
+  if (unchanged) {
+    details.push(`${unchanged} existing rock(s) left untouched`);
+  }
+  if (noOwner) {
+    details.push(`${noOwner} imported as No Owner`);
+  }
+  if (archived) {
+    details.push(`${archived} archived held back`);
   }
   if (!ctx.rockTeam && teamValues.size > 1) {
     warnings.push(
@@ -602,6 +870,7 @@ async function importRocks(
       label: "rocks",
       imported,
       skipped,
+      unchanged,
       details,
       warnings,
     },
@@ -620,12 +889,17 @@ async function importMilestones(
     rockTeam?: string;
     includeArchived: boolean;
     completedSince: string | null;
+    unmatchedOwner: "skip" | "no-owner";
+    preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
   let archived = 0;
   let stale = 0;
+  let noOwner = 0;
+  let unchanged = 0;
   const missingRocks = new Set<string>();
   const details: string[] = [];
   const warnings: string[] = [];
@@ -640,6 +914,14 @@ async function importMilestones(
 
     if (!ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [`rock: ${rockName || "—"}`],
+        note: "Archived in the file — tick Include archived rows to import it",
+      });
       continue;
     }
 
@@ -647,31 +929,79 @@ async function importMilestones(
     if (!rockId) {
       missingRocks.add(rockName || "(blank)");
       skipped++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [`rock: ${rockName || "—"}`],
+        note: rockName
+          ? `No rock named "${rockName}" on this team`
+          : "No Rock Name column value — nothing to attach it to",
+      });
       continue;
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: unmatchedName ?? "—",
+        detail: [`rock: ${rockName || "—"}`],
+        note: unmatchedName
+          ? `No team member matches "${unmatchedName}"`
+          : "No Owner in the file",
+      });
       continue;
     }
 
     const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
     if (isStaleCompletion(completedOn, ctx.completedSince)) {
       stale++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [`rock: ${rockName || "—"}`],
+        note: `Completed ${completedOn} — before the back-import cutoff`,
+      });
       continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
     }
 
     const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
     const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [`rock: ${rockName || "—"}`],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description: normalizeDescription(cell(row, table.headers, "Description")) || null,
+      description,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -681,14 +1011,33 @@ async function importMilestones(
       source_rock_id: rockId,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    ctx.preview.add({
+      kind: "milestones",
+      action: isNew ? "create" : "update",
+      title,
+      owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+      detail: [
+        `rock: ${rockName || "—"}`,
+        `due ${dueDate ?? toDateString(endOfQuarter())}`,
+        completedOn ? "done" : "open",
+      ],
+      note:
+        ownerId === null && unmatchedName
+          ? `"${unmatchedName}" is not on the team — kept in the description`
+          : undefined,
     });
     imported++;
   }
 
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
   if (missingRocks.size > 0) {
     warnings.push(
       `${missingRocks.size} milestone(s) reference a rock that isn't on the team: ${[...missingRocks].slice(0, 8).join(", ")}${missingRocks.size > 8 ? "…" : ""}`,
@@ -700,6 +1049,7 @@ async function importMilestones(
     label: "milestones",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -714,12 +1064,17 @@ async function importTodos(
     existingIds: Set<string>;
     includeArchived: boolean;
     completedSince: string | null;
+    unmatchedOwner: "skip" | "no-owner";
+    preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
   let archived = 0;
   let stale = 0;
+  let noOwner = 0;
+  let unchanged = 0;
   const recurring: string[] = [];
   const details: string[] = [];
   const warnings: string[] = [];
@@ -733,6 +1088,14 @@ async function importTodos(
 
     if (!ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
+      ctx.preview.add({
+        kind: "todos",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: "Archived in the file — tick Include archived rows to import it",
+      });
       continue;
     }
 
@@ -741,17 +1104,35 @@ async function importTodos(
       recurring.push(`${title} (${repeat})`);
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
+      ctx.preview.add({
+        kind: "todos",
+        action: "skip",
+        title,
+        owner: unmatchedName ?? "—",
+        detail: [],
+        note: unmatchedName
+          ? `No team member matches "${unmatchedName}"`
+          : "No Owner in the file",
+      });
       continue;
     }
 
     const completedOn = parseDateOnly(cell(row, table.headers, "Completed On", "Completed"));
     if (isStaleCompletion(completedOn, ctx.completedSince)) {
       stale++;
+      ctx.preview.add({
+        kind: "todos",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [],
+        note: `Completed ${completedOn} — before the back-import cutoff`,
+      });
       continue;
     }
 
@@ -763,11 +1144,30 @@ async function importTodos(
     const todoId = importDocId("todo", ctx.teamId, title);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "todos",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
+    }
+
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null,
+      description,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -777,14 +1177,33 @@ async function importTodos(
       source_rock_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    ctx.preview.add({
+      kind: "todos",
+      action: isNew ? "create" : "update",
+      title,
+      owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+      detail: [
+        `due ${dueDate ?? toDateString(endOfQuarter())}`,
+        completedOn ? "done" : "open",
+        visibility,
+      ],
+      note:
+        ownerId === null && unmatchedName
+          ? `"${unmatchedName}" is not on the team — kept in the description`
+          : undefined,
     });
     imported++;
   }
 
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
   if (recurring.length > 0) {
     warnings.push(
       `${recurring.length} to-do(s) repeat on a schedule, imported as one-offs: ${recurring.slice(0, 5).join("; ")}${recurring.length > 5 ? "…" : ""}`,
@@ -796,6 +1215,7 @@ async function importTodos(
     label: "to-dos",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -811,10 +1231,15 @@ async function importIssues(
     includeArchived: boolean;
     completedSince: string | null;
     sheetName?: string;
+    unmatchedOwner: "skip" | "no-owner";
+    preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
+  let noOwner = 0;
+  let unchanged = 0;
   let archived = 0;
   let stale = 0;
   let shortCount = 0;
@@ -831,6 +1256,14 @@ async function importIssues(
 
     if (!ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
+      ctx.preview.add({
+        kind: "issues",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: "Archived in the file — tick Include archived rows to import it",
+      });
       continue;
     }
 
@@ -839,14 +1272,32 @@ async function importIssues(
     );
     if (isStaleCompletion(completedOn, ctx.completedSince)) {
       stale++;
+      ctx.preview.add({
+        kind: "issues",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: `Completed ${completedOn} — before the back-import cutoff`,
+      });
       continue;
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
+      ctx.preview.add({
+        kind: "issues",
+        action: "skip",
+        title,
+        owner: unmatchedName ?? "—",
+        detail: [],
+        note: unmatchedName
+          ? `No team member matches "${unmatchedName}"`
+          : "No Owner in the file",
+      });
       continue;
     }
 
@@ -861,11 +1312,30 @@ async function importIssues(
     const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
     const isNew = !ctx.existingIds.has(issueId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "issues",
+        action: "skip",
+        title,
+        owner: ctx.owners.nameFor(ownerId),
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
+    }
+
     await ctx.writer.set(["issues", issueId], {
       team_id: ctx.teamId,
       title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null,
+      description,
       owner_id: ownerId,
       ...(isNew ? { votes: 0 } : {}),
       type,
@@ -880,8 +1350,25 @@ async function importIssues(
       source_meeting_id: null,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    ctx.preview.add({
+      kind: "issues",
+      action: isNew ? "create" : "update",
+      title,
+      owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+      detail: [
+        type === "long" ? "long-term" : "short-term",
+        status,
+        ...(priority ? [priority] : []),
+      ],
+      note:
+        ownerId === null && unmatchedName
+          ? `"${unmatchedName}" is not on the team — kept in the description`
+          : undefined,
     });
     imported++;
     if (type === "long") longCount++;
@@ -891,12 +1378,15 @@ async function importIssues(
   details.push(`${shortCount} short-term, ${longCount} long-term`);
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
+  if (unchanged) details.push(`${unchanged} already here, left as they are`);
 
   return {
     kind: "issues",
     label: ctx.sheetName ? `issues [${ctx.sheetName}]` : "issues",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -911,9 +1401,12 @@ async function importHeadlines(
     existingIds: Set<string>;
     includeArchived: boolean;
     rockTeam?: string;
+    preview: PreviewCollector;
+    existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
+  let unchanged = 0;
   let skipped = 0;
   let archived = 0;
   let broadcast = 0;
@@ -929,6 +1422,14 @@ async function importHeadlines(
     }
     if (!ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
+      ctx.preview.add({
+        kind: "headlines",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: "Archived in the file — tick Include archived rows to import it",
+      });
       continue;
     }
 
@@ -980,6 +1481,19 @@ async function importHeadlines(
     const headlineId = importDocId("headline", ctx.teamId, `${kind}|${title}`);
     const isNew = !ctx.existingIds.has(headlineId);
 
+    if (!isNew && ctx.existingRows === "keep") {
+      unchanged++;
+      ctx.preview.add({
+        kind: "headlines",
+        action: "skip",
+        title,
+        owner: createdBy ? ctx.owners.nameFor(createdBy) : ownerRaw || "—",
+        detail: [],
+        note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
     await ctx.writer.set(["headlines", headlineId], {
       team_id: ctx.teamId,
       title,
@@ -992,8 +1506,23 @@ async function importHeadlines(
       broadcast: isBroadcast,
       source_link: cell(row, table.headers, "Link", "URL") || null,
       import_source: "csv",
-      ...(isNew ? { archived_at: null } : {}),
+      ...(isNew
+        ? { archived_at: archivedAtFrom(row, table.headers) }
+        : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
+    });
+    ctx.preview.add({
+      kind: "headlines",
+      action: isNew ? "create" : "update",
+      title,
+      // Headlines resolve with lookup() and keep an unmatched name in
+      // source_owner_name rather than skipping the row.
+      owner: createdBy ? ctx.owners.nameFor(createdBy) : ownerRaw || "—",
+      detail: [kind, ...(isBroadcast ? ["broadcast"] : [])],
+      note:
+        !createdBy && ownerRaw
+          ? `"${ownerRaw}" is not on the team — kept as the From label`
+          : undefined,
     });
     imported++;
     if (isBroadcast) broadcast++;
@@ -1007,6 +1536,7 @@ async function importHeadlines(
     label: sheetName ? `headlines [${sheetName}]` : "headlines",
     imported,
     skipped,
+    unchanged,
     details,
     warnings,
   };
@@ -1033,8 +1563,11 @@ export async function runTeamImport(
   const completedSince = options.completedSince ?? null;
   const asOf = options.asOf ?? new Date();
   const fallbackId = options.fallbackOwnerId ?? null;
+  const unmatchedOwner = options.unmatchedOwner ?? "no-owner";
+  const existingRows = options.existingRows ?? "keep";
 
   const writer = new Writer(db, dryRun);
+  const preview = new PreviewCollector();
   const teamMembers = members ?? (await loadMembers(db, teamId));
   const owners = new OwnerResolver(teamId, teamMembers, {
     createOwners,
@@ -1074,6 +1607,10 @@ export async function runTeamImport(
       owners,
       existingIds,
       rockTeam: options.rockTeam,
+      existingRows,
+      unmatchedOwner,
+      includeArchived,
+      preview,
     });
     rockIdByTitle = map;
     kinds.push(stats);
@@ -1097,6 +1634,9 @@ export async function runTeamImport(
         rockTeam: options.rockTeam,
         includeArchived,
         completedSince,
+        unmatchedOwner,
+        preview,
+        existingRows,
       }),
     );
   }
@@ -1110,6 +1650,9 @@ export async function runTeamImport(
         existingIds,
         includeArchived,
         completedSince,
+        unmatchedOwner,
+        preview,
+        existingRows,
       }),
     );
   }
@@ -1125,6 +1668,9 @@ export async function runTeamImport(
           includeArchived,
           completedSince,
           sheetName: table.sheetName,
+          unmatchedOwner,
+          preview,
+          existingRows,
         }),
       );
     }
@@ -1140,6 +1686,8 @@ export async function runTeamImport(
           existingIds,
           includeArchived,
           rockTeam: options.rockTeam,
+          preview,
+          existingRows,
         }),
       );
     }
@@ -1153,6 +1701,8 @@ export async function runTeamImport(
     kinds,
     placeholdersCreated: owners.created,
     unresolvedOwners: [...owners.unresolved],
+    rows: preview.rows,
+    previewTruncated: preview.truncated,
   };
 }
 

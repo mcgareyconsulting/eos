@@ -5,16 +5,18 @@ import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizePersonKey } from "@/lib/csv-import";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import {
+  headlineTablesFromBytes,
   issueTablesFromBytes,
   preferRegexForKind,
+  rocksWorkbookFromBytes,
   runTeamImport,
   tableFromBytes,
   type TeamImportInputs,
 } from "@/lib/team-import";
-import type { ImportActionResult } from "./import-types";
+import { SKIP_ROWS, type ImportActionResult } from "./import-types";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_KINDS = ["rocks", "todos", "issues"] as const;
+const ALLOWED_KINDS = ["rocks", "todos", "issues", "headlines"] as const;
 
 function isKind(v: string): v is WebImportKind {
   return (ALLOWED_KINDS as readonly string[]).includes(v);
@@ -24,6 +26,7 @@ function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/rocks`);
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath(`/teams/${teamId}/issues`);
+  revalidatePath(`/teams/${teamId}/headlines`);
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath(`/teams/${teamId}/import`);
   revalidatePath("/home");
@@ -50,25 +53,40 @@ function buildInputs(
   buf: Buffer,
   filename: string,
 ): { inputs: TeamImportInputs; headers: string[]; rowCount: number; sheets: string[] } {
-  if (kind === "issues") {
-    const tables = issueTablesFromBytes(buf, filename);
+  if (kind === "issues" || kind === "headlines") {
+    const tables =
+      kind === "issues"
+        ? issueTablesFromBytes(buf, filename)
+        : headlineTablesFromBytes(buf, filename);
     const headers = tables[0]?.headers ?? [];
     const rowCount = tables.reduce((n, t) => n + t.rows.length, 0);
     const sheets = tables.map((t) => t.sheetName).filter((s): s is string => !!s);
     return {
-      inputs: { issues: { tables } },
+      inputs: kind === "issues" ? { issues: { tables } } : { headlines: { tables } },
       headers,
       rowCount,
       sheets,
     };
   }
 
+  if (kind === "rocks") {
+    // Ninety ships rocks + milestones as one workbook; take both (N6).
+    const { rocks, milestones, sheets } = rocksWorkbookFromBytes(buf, filename);
+    return {
+      inputs: {
+        rocks: { table: rocks },
+        ...(milestones ? { milestones: { table: milestones } } : {}),
+      },
+      headers: rocks.headers,
+      rowCount: rocks.rows.length + (milestones?.rows.length ?? 0),
+      sheets,
+    };
+  }
+
   const table = tableFromBytes(buf, filename, preferRegexForKind(kind));
-  const inputs: TeamImportInputs =
-    kind === "rocks" ? { rocks: { table } } : { todos: { table } };
 
   return {
-    inputs,
+    inputs: { todos: { table } },
     headers: table.headers,
     rowCount: table.rows.length,
     sheets: [],
@@ -76,14 +94,16 @@ function buildInputs(
 }
 
 /**
- * Preview (dry-run) or apply an import of Rocks, To-Dos, or Issues for a team.
+ * Preview (dry-run) or apply an import of Rocks, To-Dos, Issues, or Headlines
+ * for a team.
  * Form fields:
- *   - kind: rocks | todos | issues
+ *   - kind: rocks | todos | issues | headlines
  *   - file: File
  *   - dryRun: "1" | "0"
  *   - createOwners: "1" | "0"
  *   - includeArchived: "1" | "0"
- *   - fallbackOwnerId: optional team member uid (empty = skip unmatched)
+ *   - fallbackOwnerId: "" / absent = No Owner (owner_id null + the unmatched
+ *     name in the description), SKIP_ROWS = drop the row, or a team member uid
  *   - rockTeam: optional Department/Team-column filter (e.g. "Enterprise Systems & Data")
  *   - ownerAlias: repeatable "CSV Name=memberUid" (or member display name)
  */
@@ -97,7 +117,10 @@ export async function importTeamFile(
 
     const kindRaw = String(formData.get("kind") ?? "");
     if (!isKind(kindRaw)) {
-      return { ok: false, error: "Choose Rocks, To-Dos, or Issues." };
+      return {
+        ok: false,
+        error: "Choose Rocks, To-Dos, Issues, or Headlines.",
+      };
     }
     const kind = kindRaw;
 
@@ -113,8 +136,13 @@ export async function importTeamFile(
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
     const rockTeam = String(formData.get("rockTeam") ?? "").trim() || undefined;
 
+    // Unmatched owners import as No Owner by default — losing rows silently is
+    // worse than importing them unassigned. SKIP_ROWS opts back out; picking a
+    // member parks them on that member instead (N6).
+    const unmatchedOwner = fallbackRaw === SKIP_ROWS ? "skip" : "no-owner";
+
     let fallbackOwnerId: string | null = null;
-    if (fallbackRaw) {
+    if (fallbackRaw && fallbackRaw !== SKIP_ROWS) {
       if (!members.some((m) => m.user_id === fallbackRaw)) {
         return { ok: false, error: "Owner fallback is not a member of this team." };
       }
@@ -172,7 +200,13 @@ export async function importTeamFile(
       [
         "title",
         "name",
-        kind === "rocks" ? "rock" : kind === "todos" ? "to-do" : "issue",
+        kind === "rocks"
+          ? "rock"
+          : kind === "todos"
+            ? "to-do"
+            : kind === "issues"
+              ? "issue"
+              : "headline",
         "todo",
         "task",
       ].includes(h),
@@ -191,6 +225,7 @@ export async function importTeamFile(
       fallbackOwnerId,
       includeArchived,
       rockTeam,
+      unmatchedOwner,
       ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
     });
 

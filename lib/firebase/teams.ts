@@ -185,6 +185,50 @@ export const getOrgTeams = cache(
 );
 
 /**
+ * Teams the current user may import data *into*.
+ *
+ * Importing writes rocks / to-dos / issues / headlines onto a team wholesale,
+ * so it is a leader-or-admin capability, not a membership one: org admins get
+ * every team, everyone else gets only the teams they lead
+ * (`team_members.role === "leader"`, the same test requireTeamLeader uses).
+ *
+ * `alwaysIncludeTeamId` keeps the team whose Import page this is in the list
+ * even when the viewer only reads it — otherwise the "Import into" select
+ * would have no option matching its own value.
+ */
+export const getImportableTeams = cache(
+  async (alwaysIncludeTeamId?: string): Promise<{ id: string; name: string }[]> => {
+    const { uid, isAdmin, db } = await requireFirebaseUser();
+
+    if (isAdmin) return getOrgTeams();
+
+    const memberships = await db
+      .collection("team_members")
+      .where("user_id", "==", uid)
+      .get();
+
+    const ids = new Set(
+      memberships.docs
+        .filter((d) => d.data()?.role === "leader")
+        .map((d) => d.data().team_id as string)
+        .filter(Boolean),
+    );
+    if (alwaysIncludeTeamId) ids.add(alwaysIncludeTeamId);
+    if (ids.size === 0) return [];
+
+    const docs = await db.getAll(
+      ...[...ids].map((id) => db.collection("teams").doc(id)),
+    );
+    return docs
+      .filter((d) => d.exists)
+      .map((d) => ({ id: d.id, name: (d.data()?.name as string) ?? "Team" }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+  },
+);
+
+/**
  * Everyone holding the org-admin custom claim (`role: "admin"`), rostered or
  * not — the operator account typically sits on no roster at all. Claims live
  * on Identity Platform, not Firestore, so this is an Auth listing pass;

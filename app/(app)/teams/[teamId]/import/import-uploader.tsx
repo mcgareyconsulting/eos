@@ -70,11 +70,15 @@ export function ImportUploader({
   teamId,
   teamName,
   orgTeams,
+  importableTeams,
   members,
 }: {
   teamId: string;
   teamName: string;
+  /** Every team name — used to match the file's Department column. */
   orgTeams: { id: string; name: string }[];
+  /** Teams this user may import into: all for an admin, else teams they lead. */
+  importableTeams: { id: string; name: string }[];
   members: MemberOption[];
 }) {
   const router = useRouter();
@@ -278,9 +282,10 @@ export function ImportUploader({
           <select
             value={teamId}
             onChange={(e) => router.push(`/teams/${e.target.value}/import`)}
-            className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            disabled={importableTeams.length < 2}
+            className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
           >
-            {orgTeams.map((t) => (
+            {importableTeams.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
@@ -288,7 +293,10 @@ export function ImportUploader({
           </select>
           <span className="text-xs text-zinc-500">
             The team these rows land on. Switching opens that team&rsquo;s
-            Import page.
+            Import page.{" "}
+            {importableTeams.length < 2
+              ? "You can import into the teams you lead; an admin can import into any team."
+              : null}
           </span>
         </label>
 

@@ -3,6 +3,7 @@ import {
   requireTeamAccess,
   getTeamMembers,
   getOrgTeams,
+  getImportableTeams,
 } from "@/lib/firebase/teams";
 import { ImportUploader } from "./import-uploader";
 
@@ -13,9 +14,14 @@ export default async function ImportPage({
 }) {
   const { teamId } = await params;
   const { team } = await requireTeamAccess(teamId);
-  const [members, orgTeams] = await Promise.all([
+  const [members, orgTeams, importableTeams] = await Promise.all([
     getTeamMembers(teamId),
+    // Department filter matches text in the *file*, so it offers every team
+    // name (already a soft-directory read) plus an "Other…" escape hatch.
     getOrgTeams(),
+    // "Import into" is a write surface: admins get every team, everyone else
+    // only the teams they lead.
+    getImportableTeams(teamId),
   ]);
 
   return (
@@ -41,6 +47,7 @@ export default async function ImportPage({
         teamId={teamId}
         teamName={team.name}
         orgTeams={orgTeams}
+        importableTeams={importableTeams}
         members={members.map((m) => ({
           user_id: m.user_id,
           full_name: m.full_name,

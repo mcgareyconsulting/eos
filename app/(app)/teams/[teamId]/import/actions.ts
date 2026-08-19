@@ -12,7 +12,7 @@ import {
   tableFromBytes,
   type TeamImportInputs,
 } from "@/lib/team-import";
-import type { ImportActionResult } from "./import-types";
+import { NO_OWNER, type ImportActionResult } from "./import-types";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
 const ALLOWED_KINDS = ["rocks", "todos", "issues"] as const;
@@ -96,7 +96,8 @@ function buildInputs(
  *   - dryRun: "1" | "0"
  *   - createOwners: "1" | "0"
  *   - includeArchived: "1" | "0"
- *   - fallbackOwnerId: optional team member uid (empty = skip unmatched)
+ *   - fallbackOwnerId: team member uid, "" (skip unmatched), or NO_OWNER
+ *     (import with owner_id null + the unmatched name in the description)
  *   - rockTeam: optional Department/Team-column filter (e.g. "Enterprise Systems & Data")
  *   - existingRocks: "update" | "skip" (rocks kind; skip leaves stored rocks alone)
  *   - ownerAlias: repeatable "CSV Name=memberUid" (or member display name)
@@ -131,8 +132,12 @@ export async function importTeamFile(
     const existingRocks =
       formData.get("existingRocks") === "skip" ? "skip" : "update";
 
+    // Sentinel from the fallback dropdown: import the row with No Owner and
+    // keep the unmatched name in the description (N6).
+    const unmatchedOwner = fallbackRaw === NO_OWNER ? "no-owner" : "skip";
+
     let fallbackOwnerId: string | null = null;
-    if (fallbackRaw) {
+    if (fallbackRaw && fallbackRaw !== NO_OWNER) {
       if (!members.some((m) => m.user_id === fallbackRaw)) {
         return { ok: false, error: "Owner fallback is not a member of this team." };
       }
@@ -210,6 +215,7 @@ export async function importTeamFile(
       includeArchived,
       rockTeam,
       existingRocks,
+      unmatchedOwner,
       ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
     });
 

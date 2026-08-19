@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import { importTeamFile } from "./actions";
-import type { ImportActionResult } from "./import-types";
+import { NO_OWNER, type ImportActionResult } from "./import-types";
 
 // Sentinel for the "Other…" option — a Department value the app has no team
 // for. Cannot collide with a real team name.
@@ -479,7 +479,7 @@ export function ImportUploader({
         )}
         <label className="flex flex-col gap-1 text-sm sm:col-span-2">
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            Unmatched owner fallback
+            Unmatched owner
           </span>
           <select
             value={fallbackOwnerId}
@@ -487,6 +487,9 @@ export function ImportUploader({
             className="max-w-md rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
           >
             <option value="">Skip rows with unknown owners</option>
+            <option value={NO_OWNER}>
+              Import with No Owner (keep the name in the description)
+            </option>
             {members.map((m) => (
               <option key={m.user_id} value={m.user_id}>
                 {m.full_name || m.user_id}

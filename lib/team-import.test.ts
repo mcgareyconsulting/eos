@@ -4,6 +4,7 @@ import {
   normalizeHeadlineKind,
   pickRockWorkbookSheets,
   rocksWorkbookFromBytes,
+  withUnmatchedOwnerNote,
 } from "./team-import";
 
 // Pins the Type/sheet-name → headline kind mapping so a client export keeps
@@ -112,5 +113,44 @@ describe("rocksWorkbookFromBytes", () => {
     assert.equal(got.rocks.rows.length, 1);
     assert.equal(got.milestones, undefined);
     assert.deepEqual(got.sheets, []);
+  });
+});
+
+// N6 finding 4: a departed employee's rows must still import — with No Owner
+// and the old name kept where a human will see it, not skipped silently.
+
+describe("withUnmatchedOwnerNote", () => {
+  test("appends to an existing description", () => {
+    assert.equal(
+      withUnmatchedOwnerNote("Vendor rollout", "Pat Lee"),
+      "Vendor rollout\n\nImported owner: Pat Lee",
+    );
+  });
+
+  test("becomes the description when there was none", () => {
+    assert.equal(withUnmatchedOwnerNote(null, "Pat Lee"), "Imported owner: Pat Lee");
+    assert.equal(withUnmatchedOwnerNote("", "Pat Lee"), "Imported owner: Pat Lee");
+    assert.equal(withUnmatchedOwnerNote(undefined, "Pat Lee"), "Imported owner: Pat Lee");
+  });
+
+  test("trims the name and the surrounding description", () => {
+    assert.equal(
+      withUnmatchedOwnerNote("  Vendor rollout  ", "  Pat Lee  "),
+      "Vendor rollout\n\nImported owner: Pat Lee",
+    );
+  });
+
+  // Rocks re-import by title, so the note must not stack up on every upload.
+  test("is idempotent across re-imports", () => {
+    const once = withUnmatchedOwnerNote("Vendor rollout", "Pat Lee");
+    assert.equal(withUnmatchedOwnerNote(once, "Pat Lee"), once);
+    assert.equal(withUnmatchedOwnerNote(withUnmatchedOwnerNote(once, "Pat Lee"), "Pat Lee"), once);
+  });
+
+  test("a different unmatched name still appends", () => {
+    const once = withUnmatchedOwnerNote("Vendor rollout", "Pat Lee");
+    const twice = withUnmatchedOwnerNote(once, "Sam Diaz");
+    assert.ok(twice.includes("Imported owner: Pat Lee"));
+    assert.ok(twice.includes("Imported owner: Sam Diaz"));
   });
 });

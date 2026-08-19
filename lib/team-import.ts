@@ -59,6 +59,15 @@ export type TeamImportOptions = {
    * milestones attach to them (N6).
    */
   existingRocks?: "update" | "skip";
+  /**
+   * What to do with a row whose Owner name matches nobody on the team (and
+   * that neither createOwners nor fallbackOwnerId caught).
+   *   "skip"     — drop the row (default; the CLI's behavior).
+   *   "no-owner" — import it with `owner_id: null` and keep the name in the
+   *                description, so a departed employee's rows still land and
+   *                the history stays visible (N6).
+   */
+  unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
 };
 
@@ -309,6 +318,20 @@ export class OwnerResolver {
     return this.opts.aliases?.get(key) ?? this.index.get(key) ?? null;
   }
 
+  /**
+   * resolve() plus the name that failed to match, so an importer can put it in
+   * the row's description instead of dropping the row. A blank Owner cell is
+   * not "unmatched" — there was no name to match.
+   */
+  async resolveOwner(
+    rawName: string,
+  ): Promise<{ uid: string | null; unmatchedName: string | null }> {
+    const raw = (rawName ?? "").trim();
+    const uid = await this.resolve(rawName);
+    if (uid !== null || !raw) return { uid, unmatchedName: null };
+    return { uid: null, unmatchedName: raw };
+  }
+
   async resolve(rawName: string): Promise<string | null> {
     const raw = (rawName ?? "").trim();
     if (!raw) return this.opts.fallbackId;
@@ -353,6 +376,21 @@ export class OwnerResolver {
     this.cache.set(key, uid);
     return uid;
   }
+}
+
+/**
+ * Keep an unmatched Owner name with the row it came from. The client's case is
+ * a departed employee: the rows still have to import, but "who used to own
+ * this" must not silently vanish (N6).
+ */
+export function withUnmatchedOwnerNote(
+  description: string | null | undefined,
+  name: string,
+): string | null {
+  const note = `Imported owner: ${name.trim()}`;
+  const body = (description ?? "").trim();
+  if (!note.endsWith(":") && body.includes(note)) return body; // re-import
+  return body ? `${body}\n\n${note}` : note;
 }
 
 export async function loadExistingIds(
@@ -564,6 +602,7 @@ async function importRocks(
     existingIds: Set<string>;
     rockTeam?: string;
     existingRocks: "update" | "skip";
+    unmatchedOwner: "skip" | "no-owner";
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
@@ -571,6 +610,7 @@ async function importRocks(
   let imported = 0;
   let skipped = 0;
   let unchanged = 0;
+  let noOwner = 0;
   let attachments = 0;
   const warnings: string[] = [];
   const details: string[] = [];
@@ -612,12 +652,25 @@ async function importRocks(
     // with a null owner (shared department) rather than skipping.
     // Department-typed rocks still import when the owner can't be resolved
     // (they land in the Department section as shared ownership).
-    let ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null && rockType !== "department") {
+    // A department rock always tolerates a null owner (shared ownership); any
+    // rock does when the Owner name simply matched nobody and the caller asked
+    // for No Owner rather than a dropped row.
+    const allowNullOwner =
+      rockType === "department" ||
+      (unmatchedName !== null && ctx.unmatchedOwner === "no-owner");
+    if (ownerId === null && !allowNullOwner) {
       skipped++;
       continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
     }
 
     if (cell(row, table.headers, "Attachment Names", "Attachments")) attachments++;
@@ -645,7 +698,7 @@ async function importRocks(
     await ctx.writer.set(["rocks", rockId], {
       team_id: ctx.teamId,
       title,
-      description: normalizeDescription(cell(row, table.headers, "Description")) || null,
+      description,
       status,
       rock_type: rockType,
       quarter:
@@ -674,6 +727,9 @@ async function importRocks(
   }
   if (unchanged) {
     details.push(`${unchanged} existing rock(s) left untouched`);
+  }
+  if (noOwner) {
+    details.push(`${noOwner} imported as No Owner`);
   }
   if (!ctx.rockTeam && teamValues.size > 1) {
     warnings.push(
@@ -706,12 +762,14 @@ async function importMilestones(
     rockTeam?: string;
     includeArchived: boolean;
     completedSince: string | null;
+    unmatchedOwner: "skip" | "no-owner";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
   let archived = 0;
   let stale = 0;
+  let noOwner = 0;
   const missingRocks = new Set<string>();
   const details: string[] = [];
   const warnings: string[] = [];
@@ -736,10 +794,10 @@ async function importMilestones(
       continue;
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
       continue;
     }
@@ -750,6 +808,13 @@ async function importMilestones(
       continue;
     }
 
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
+    }
+
     const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
     const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
     const isNew = !ctx.existingIds.has(todoId);
@@ -757,7 +822,7 @@ async function importMilestones(
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description: normalizeDescription(cell(row, table.headers, "Description")) || null,
+      description,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -775,6 +840,7 @@ async function importMilestones(
 
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (missingRocks.size > 0) {
     warnings.push(
       `${missingRocks.size} milestone(s) reference a rock that isn't on the team: ${[...missingRocks].slice(0, 8).join(", ")}${missingRocks.size > 8 ? "…" : ""}`,
@@ -800,12 +866,14 @@ async function importTodos(
     existingIds: Set<string>;
     includeArchived: boolean;
     completedSince: string | null;
+    unmatchedOwner: "skip" | "no-owner";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
   let archived = 0;
   let stale = 0;
+  let noOwner = 0;
   const recurring: string[] = [];
   const details: string[] = [];
   const warnings: string[] = [];
@@ -827,10 +895,10 @@ async function importTodos(
       recurring.push(`${title} (${repeat})`);
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
       continue;
     }
@@ -849,11 +917,17 @@ async function importTodos(
     const todoId = importDocId("todo", ctx.teamId, title);
     const isNew = !ctx.existingIds.has(todoId);
 
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
+    }
+
     await ctx.writer.set(["todos", todoId], {
       team_id: ctx.teamId,
       title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null,
+      description,
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedOn ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`)) : null,
@@ -871,6 +945,7 @@ async function importTodos(
 
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (recurring.length > 0) {
     warnings.push(
       `${recurring.length} to-do(s) repeat on a schedule, imported as one-offs: ${recurring.slice(0, 5).join("; ")}${recurring.length > 5 ? "…" : ""}`,
@@ -897,10 +972,12 @@ async function importIssues(
     includeArchived: boolean;
     completedSince: string | null;
     sheetName?: string;
+    unmatchedOwner: "skip" | "no-owner";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let skipped = 0;
+  let noOwner = 0;
   let archived = 0;
   let stale = 0;
   let shortCount = 0;
@@ -928,10 +1005,10 @@ async function importIssues(
       continue;
     }
 
-    const ownerId = await ctx.owners.resolve(
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null) {
+    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
       skipped++;
       continue;
     }
@@ -947,11 +1024,17 @@ async function importIssues(
     const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
     const isNew = !ctx.existingIds.has(issueId);
 
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
+    }
+
     await ctx.writer.set(["issues", issueId], {
       team_id: ctx.teamId,
       title,
-      description:
-        normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null,
+      description,
       owner_id: ownerId,
       ...(isNew ? { votes: 0 } : {}),
       type,
@@ -977,6 +1060,7 @@ async function importIssues(
   details.push(`${shortCount} short-term, ${longCount} long-term`);
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
+  if (noOwner) details.push(`${noOwner} imported as No Owner`);
 
   return {
     kind: "issues",
@@ -1119,6 +1203,7 @@ export async function runTeamImport(
   const completedSince = options.completedSince ?? null;
   const asOf = options.asOf ?? new Date();
   const fallbackId = options.fallbackOwnerId ?? null;
+  const unmatchedOwner = options.unmatchedOwner ?? "skip";
 
   const writer = new Writer(db, dryRun);
   const teamMembers = members ?? (await loadMembers(db, teamId));
@@ -1161,6 +1246,7 @@ export async function runTeamImport(
       existingIds,
       rockTeam: options.rockTeam,
       existingRocks: options.existingRocks ?? "update",
+      unmatchedOwner,
     });
     rockIdByTitle = map;
     kinds.push(stats);
@@ -1184,6 +1270,7 @@ export async function runTeamImport(
         rockTeam: options.rockTeam,
         includeArchived,
         completedSince,
+        unmatchedOwner,
       }),
     );
   }
@@ -1197,6 +1284,7 @@ export async function runTeamImport(
         existingIds,
         includeArchived,
         completedSince,
+        unmatchedOwner,
       }),
     );
   }
@@ -1212,6 +1300,7 @@ export async function runTeamImport(
           includeArchived,
           completedSince,
           sheetName: table.sheetName,
+          unmatchedOwner,
         }),
       );
     }

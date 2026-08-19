@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import { importTeamFile } from "./actions";
 import { NO_OWNER, type ImportActionResult } from "./import-types";
+import type { PreviewRow } from "@/lib/team-import-types";
 
 // Sentinel for the "Other…" option — a Department value the app has no team
 // for. Cannot collide with a real team name.
@@ -654,6 +655,14 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         </p>
       )}
 
+      {report.rows.length > 0 && (
+        <PreviewTable
+          rows={report.rows}
+          truncated={report.previewTruncated}
+          dryRun={report.dryRun}
+        />
+      )}
+
       {preview.headers.length > 0 && (
         <details className="text-xs text-zinc-500">
           <summary className="cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300">
@@ -669,5 +678,107 @@ function ResultPanel({ result }: { result: ImportActionResult }) {
         </p>
       )}
     </div>
+  );
+}
+
+const ACTION_STYLES: Record<PreviewRow["action"], string> = {
+  create:
+    "bg-[rgba(44,179,74,.10)] text-[#177a3d] ring-[rgba(44,179,74,.35)] dark:bg-[rgba(44,179,74,.15)] dark:text-hpb-green",
+  update:
+    "bg-[rgba(0,51,160,.08)] text-hpb-blue ring-[rgba(0,51,160,.30)] dark:bg-[rgba(0,51,160,.20)] dark:text-white",
+  skip: "bg-zinc-100 text-zinc-500 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700",
+};
+
+const ACTION_LABELS: Record<PreviewRow["action"], string> = {
+  create: "New",
+  update: "Update",
+  skip: "Skipped",
+};
+
+/**
+ * Row-by-row view of what the importer read: the resolved owner, the fields
+ * that decide where the row lands, and what will happen to it. This is the
+ * point of a dry run — the old panel showed only a filename and a write
+ * count, which never answered "did it map my columns correctly?".
+ */
+function PreviewTable({
+  rows,
+  truncated,
+  dryRun,
+}: {
+  rows: PreviewRow[];
+  truncated: number;
+  dryRun: boolean;
+}) {
+  const skipped = rows.filter((r) => r.action === "skip").length;
+  return (
+    <details open className="text-sm">
+      <summary className="cursor-pointer font-medium text-zinc-900 hover:text-hpb-blue dark:text-zinc-100 dark:hover:text-hpb-gold">
+        {dryRun ? "What will land" : "What landed"} — {rows.length} row
+        {rows.length === 1 ? "" : "s"}
+        {skipped > 0 ? ` · ${skipped} skipped` : ""}
+      </summary>
+
+      {/* Wide content scrolls inside its own box, never the page. */}
+      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full border-collapse text-left text-[12.5px]">
+          <thead className="sticky top-0 bg-zinc-50 text-[10.5px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950">
+            <tr>
+              <th className="px-2.5 py-1.5 font-semibold">Title</th>
+              <th className="px-2.5 py-1.5 font-semibold">Owner</th>
+              <th className="px-2.5 py-1.5 font-semibold">Details</th>
+              <th className="px-2.5 py-1.5 font-semibold">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr
+                key={`${r.kind}-${i}`}
+                className="border-t border-zinc-100 align-top dark:border-zinc-800"
+              >
+                <td className="max-w-[22rem] px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200">
+                  <span className="line-clamp-2">{r.title || "—"}</span>
+                  {r.note ? (
+                    <span className="mt-0.5 block text-[11px] text-zinc-500">
+                      {r.note}
+                    </span>
+                  ) : null}
+                </td>
+                <td
+                  className={cn(
+                    "whitespace-nowrap px-2.5 py-1.5",
+                    r.owner === "No Owner"
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-zinc-700 dark:text-zinc-300",
+                  )}
+                >
+                  {r.owner}
+                </td>
+                <td className="px-2.5 py-1.5 text-zinc-500">
+                  {r.detail.join(" · ") || "—"}
+                </td>
+                <td className="px-2.5 py-1.5">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-px text-[10.5px] font-bold ring-1 ring-inset",
+                      ACTION_STYLES[r.action],
+                    )}
+                  >
+                    {ACTION_LABELS[r.action]}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {truncated > 0 && (
+        <p className="mt-1 text-xs text-zinc-500">
+          {truncated} more row{truncated === 1 ? "" : "s"} not listed. Counts
+          above cover every row.
+        </p>
+      )}
+    </details>
   );
 }

@@ -5,6 +5,7 @@ import {
   pickRockWorkbookSheets,
   rocksWorkbookFromBytes,
   withUnmatchedOwnerNote,
+  PreviewCollector,
 } from "./team-import";
 
 // Pins the Type/sheet-name → headline kind mapping so a client export keeps
@@ -152,5 +153,41 @@ describe("withUnmatchedOwnerNote", () => {
     const twice = withUnmatchedOwnerNote(once, "Sam Diaz");
     assert.ok(twice.includes("Imported owner: Pat Lee"));
     assert.ok(twice.includes("Imported owner: Sam Diaz"));
+  });
+});
+
+// N6 finding 2: the dry run has to show what will land, row by row — but a
+// 5k-row export must not become a payload the browser swallows whole.
+
+describe("PreviewCollector", () => {
+  const row = (title: string) =>
+    ({
+      kind: "rocks" as const,
+      action: "create" as const,
+      title,
+      owner: "Sarah Chen",
+      detail: [],
+    });
+
+  test("keeps rows up to the cap, counts the overflow", () => {
+    const c = new PreviewCollector(3);
+    for (const t of ["a", "b", "c", "d", "e"]) c.add(row(t));
+    assert.equal(c.rows.length, 3);
+    assert.equal(c.truncated, 2);
+    assert.deepEqual(c.rows.map((r) => r.title), ["a", "b", "c"]);
+  });
+
+  test("nothing truncated under the cap", () => {
+    const c = new PreviewCollector(10);
+    c.add(row("a"));
+    c.add(row("b"));
+    assert.equal(c.rows.length, 2);
+    assert.equal(c.truncated, 0);
+  });
+
+  test("preserves insertion order", () => {
+    const c = new PreviewCollector();
+    for (const t of ["z", "m", "a"]) c.add(row(t));
+    assert.deepEqual(c.rows.map((r) => r.title), ["z", "m", "a"]);
   });
 });

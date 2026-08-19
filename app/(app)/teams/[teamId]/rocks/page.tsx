@@ -3,9 +3,17 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
-import { getUserTeamsFirebase } from "@/lib/firebase/auth";
-import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import {
+  requireTeamAccess,
+  getTeamMembers,
+  getOrgTeams,
+} from "@/lib/firebase/teams";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
+import { chunkForInQuery } from "@/lib/firestore-in";
+import {
+  groupSharedRocksByOwner,
+  isSharedIntoTeam,
+} from "@/lib/rocks-share";
 import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
 import {
@@ -86,13 +94,14 @@ export default async function RocksPage({
   const { owner: ownerParam, archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(teamId);
-  const [{ teams: userTeams }, members] = await Promise.all([
-    getUserTeamsFirebase(),
+  const [orgTeams, members] = await Promise.all([
+    getOrgTeams(),
     getTeamMembers(teamId),
   ]);
-  const shareTeams = userTeams
+  const shareTeams = orgTeams
     .filter((t) => t.id !== teamId)
     .map((t) => ({ id: t.id, name: t.name }));
+  const teamNameById = new Map(orgTeams.map((t) => [t.id, t.name]));
 
   const quarter = currentQuarter();
   const eoq = toDateString(endOfQuarter());
@@ -100,8 +109,12 @@ export default async function RocksPage({
   // Fetch rocks, todos (milestones), and status history in parallel.
   // Status comments live in rock_status_updates (append-only); they were
   // written on save but never rendered — P0-5 / Jenna P14-3.
-  const [rocksSnap, todosSnap, statusSnap] = await Promise.all([
+  const [rocksSnap, sharedSnap, todosSnap, statusSnap] = await Promise.all([
     db.collection("rocks").where("team_id", "==", teamId).get(),
+    db
+      .collection("rocks")
+      .where("shared_team_ids", "array-contains", teamId)
+      .get(),
     db.collection("todos").where("team_id", "==", teamId).get(),
     db
       .collection("rock_status_updates")
@@ -138,6 +151,33 @@ export default async function RocksPage({
   const allRocks = allRocksRaw.filter((r) =>
     showArchived ? r.archived_at != null : r.archived_at == null,
   );
+
+  const homeIds = new Set(allRocksRaw.map((r) => r.id));
+  const sharedRocksRaw = sharedSnap.docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        team_id: x.team_id as string,
+        title: x.title as string,
+        owner_id: (x.owner_id as string | null) ?? null,
+        quarter: x.quarter as string,
+        due_date: (x.due_date as string | null) ?? null,
+        status: x.status as string,
+        description: (x.description as string | null) ?? null,
+        rock_type: (x.rock_type as string | null) ?? null,
+        shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
+        archived_at: archivedAtMillis(x.archived_at),
+      };
+    })
+    .filter(
+      (r) =>
+        !homeIds.has(r.id) &&
+        isSharedIntoTeam(r, teamId) &&
+        r.archived_at == null,
+    );
+  // Shared-in rocks belong on the Active list only — they archive on the
+  // parent team, not here.
 
   // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
   // which can't cross the Server → Client component boundary.
@@ -183,6 +223,59 @@ export default async function RocksPage({
     );
   }
 
+  const sharedRockIds = sharedRocksRaw.map((r) => r.id);
+  if (sharedRockIds.length > 0) {
+    const extraTodoSnaps = await Promise.all(
+      chunkForInQuery(sharedRockIds).map((ids) =>
+        db.collection("todos").where("source_rock_id", "in", ids).get(),
+      ),
+    );
+    const extraStatusSnaps = await Promise.all(
+      chunkForInQuery(sharedRockIds).map((ids) =>
+        db
+          .collection("rock_status_updates")
+          .where("rock_id", "in", ids)
+          .get(),
+      ),
+    );
+    for (const snap of extraTodoSnaps) {
+      for (const d of snap.docs) {
+        const t = d.data() as TodoDoc;
+        if (!t.source_rock_id) continue;
+        const m: MilestoneSerialized = {
+          id: d.id,
+          title: t.title,
+          owner_id: t.owner_id,
+          due_date: t.due_date,
+          completed: !!t.completed_at,
+          description: t.description ?? null,
+        };
+        const list = milestonesByRock.get(t.source_rock_id) ?? [];
+        list.push(m);
+        milestonesByRock.set(t.source_rock_id, list);
+      }
+    }
+    for (const snap of extraStatusSnaps) {
+      for (const d of snap.docs) {
+        const x = d.data();
+        const rockId = x.rock_id as string | undefined;
+        if (!rockId) continue;
+        const created = x.created_at as { toMillis?: () => number } | null;
+        const entry: StatusUpdateSerialized = {
+          id: d.id,
+          status: String(x.status ?? ""),
+          comment: (x.comment as string | null) ?? null,
+          user_id: (x.user_id as string | null) ?? null,
+          created_at_ms: created?.toMillis?.() ?? null,
+          author_name: "—",
+        };
+        const list = statusByRock.get(rockId) ?? [];
+        list.push(entry);
+        statusByRock.set(rockId, list);
+      }
+    }
+  }
+
   for (const list of milestonesByRock.values()) {
     list.sort((a, b) => {
       if (!a.due_date && !b.due_date) return 0;
@@ -190,6 +283,30 @@ export default async function RocksPage({
       if (!b.due_date) return -1;
       return a.due_date.localeCompare(b.due_date);
     });
+  }
+  for (const list of statusByRock.values()) {
+    list.sort(
+      (a, b) => (b.created_at_ms ?? 0) - (a.created_at_ms ?? 0),
+    );
+  }
+
+  const extraNameIds = [
+    ...sharedRocksRaw.map((r) => r.owner_id),
+    ...[...statusByRock.values()].flatMap((list) =>
+      list.map((e) => e.user_id),
+    ),
+  ].filter((id): id is string => !!id && !members.some((m) => m.user_id === id));
+  const extraNameById = new Map<string, string>();
+  if (extraNameIds.length > 0) {
+    const unique = [...new Set(extraNameIds)];
+    const docs = await db.getAll(
+      ...unique.map((id) => db.collection("users").doc(id)),
+    );
+    for (const d of docs) {
+      if (!d.exists) continue;
+      const name = String(d.data()?.full_name ?? "").trim();
+      if (name) extraNameById.set(d.id, name);
+    }
   }
 
   // Filter: "all" or a member user_id. Legacy values from the retired
@@ -206,7 +323,19 @@ export default async function RocksPage({
   const filter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
 
   const ownerName = (id: string | null) =>
-    id ? members.find((m) => m.user_id === id)?.full_name ?? "—" : "—";
+    id
+      ? members.find((m) => m.user_id === id)?.full_name ??
+        extraNameById.get(id) ??
+        "—"
+      : "—";
+
+  for (const list of statusByRock.values()) {
+    for (const e of list) {
+      if (e.author_name === "—" && e.user_id) {
+        e.author_name = ownerName(e.user_id);
+      }
+    }
+  }
 
   // All view: Department section first (shared ownership + Level=Department
   // rocks, even when a person is accountable), then members A–Z, then owners
@@ -280,6 +409,19 @@ export default async function RocksPage({
 
   const sections = buildSections(allRocks);
 
+  const sharedForView = showArchived
+    ? []
+    : filter === "all"
+      ? sharedRocksRaw
+      : sharedRocksRaw.filter((r) => r.owner_id === filter);
+  const sharedGroups = groupSharedRocksByOwner(
+    sharedForView.map((r) => ({ ...r, team_id: r.team_id })),
+    ownerName,
+  ).map((g) => ({
+    ...g,
+    rocks: sortRocks(g.rocks),
+  }));
+
   const emptyMessage = showArchived
     ? "No archived rocks yet."
     : filter === "all"
@@ -316,7 +458,7 @@ export default async function RocksPage({
         }
       />
 
-      {sections.length === 0 ? (
+      {sections.length === 0 && sharedGroups.length === 0 ? (
         <RockSection title={showArchived ? "Archived" : "Rocks"}>
           {showArchived ? (
             <EmptyState
@@ -329,26 +471,53 @@ export default async function RocksPage({
           )}
         </RockSection>
       ) : (
-        sections.map((g) => (
-          <RockSection key={g.key} title={g.title} count={g.rocks.length}>
-            {g.rocks.map((r) => (
-              <RockRow
-                key={r.id}
-                teamId={teamId}
-                userId={uid}
-                rock={r}
-                ownerName={ownerName(r.owner_id)}
-                members={members}
-                milestones={milestonesByRock.get(r.id) ?? []}
-                defaultDue={eoq}
-                statusHistory={statusByRock.get(r.id) ?? []}
-                currentUserId={uid}
-                teamName={team.name}
-                shareTeams={shareTeams}
-              />
-            ))}
-          </RockSection>
-        ))
+        <>
+          {sections.map((g) => (
+            <RockSection key={g.key} title={g.title} count={g.rocks.length}>
+              {g.rocks.map((r) => (
+                <RockRow
+                  key={r.id}
+                  teamId={teamId}
+                  userId={uid}
+                  rock={r}
+                  ownerName={ownerName(r.owner_id)}
+                  members={members}
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={eoq}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={uid}
+                  teamName={team.name}
+                  shareTeams={shareTeams}
+                />
+              ))}
+            </RockSection>
+          ))}
+          {sharedGroups.map((g) => (
+            <RockSection
+              key={`shared-${g.ownerId ?? "none"}`}
+              title={g.title}
+              count={g.rocks.length}
+            >
+              {g.rocks.map((r) => (
+                <RockRow
+                  key={r.id}
+                  teamId={teamId}
+                  userId={uid}
+                  rock={r}
+                  ownerName={ownerName(r.owner_id)}
+                  members={members}
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={eoq}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={uid}
+                  teamName={teamNameById.get(r.team_id) ?? "another team"}
+                  shareTeams={shareTeams}
+                  readOnly
+                />
+              ))}
+            </RockSection>
+          ))}
+        </>
       )}
     </div>
   );

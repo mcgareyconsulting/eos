@@ -1,9 +1,17 @@
 import Link from "next/link";
 import { FileText, Video } from "lucide-react";
 import { notFound } from "next/navigation";
-import { Timestamp } from "firebase-admin/firestore";
-import { getUserTeamsFirebase } from "@/lib/firebase/auth";
-import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import {
+  Timestamp,
+  type QueryDocumentSnapshot,
+} from "firebase-admin/firestore";
+import {
+  requireTeamAccess,
+  getTeamMembers,
+  getOrgTeams,
+} from "@/lib/firebase/teams";
+import { chunkForInQuery } from "@/lib/firestore-in";
+import { isSharedIntoTeam } from "@/lib/rocks-share";
 import {
   type Segment,
   isSegment,
@@ -562,53 +570,93 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [rocksSnap, todosSnap, { teams: userTeams }] = await Promise.all([
+    const [rocksSnap, sharedSnap, todosSnap, orgTeams] = await Promise.all([
       db.collection("rocks").where("team_id", "==", teamId).get(),
+      db
+        .collection("rocks")
+        .where("shared_team_ids", "array-contains", teamId)
+        .get(),
       db
         .collection("todos")
         .where("team_id", "==", teamId)
         .where("visibility", "==", "team")
         .get(),
-      getUserTeamsFirebase(),
+      getOrgTeams(),
     ]);
-    // Teams the viewer can share a rock with — same semantics as the Rocks
-    // tab (rocks/page.tsx): every team the user belongs to, minus this one.
-    const shareTeams = userTeams
+    const shareTeams = orgTeams
       .filter((t) => t.id !== teamId)
       .map((t) => ({ id: t.id, name: t.name }));
-    const initialRocks = rocksSnap.docs
-      // Archived rocks stay off the L10 (mirrors the client-side filter).
-      .filter((d) => d.data().archived_at == null)
-      .map((d) => {
-        const x = d.data();
-        return {
-          id: d.id,
-          team_id: x.team_id,
-          title: x.title,
-          owner_id: x.owner_id ?? null,
-          quarter: x.quarter,
-          due_date: x.due_date ?? null,
-          status: x.status,
-          description: x.description ?? null,
-          rock_type: x.rock_type ?? null,
-          // Must ride along — the edit modal seeds its share picker from
-          // this, and saving without it wipes the field (see rock-modal).
-          shared_team_ids: x.shared_team_ids ?? [],
-        };
-      });
-    const initialTodos = todosSnap.docs.map((d) => {
+    const mapRock = (d: QueryDocumentSnapshot) => {
       const x = d.data();
       return {
         id: d.id,
-        team_id: x.team_id,
-        title: x.title,
-        owner_id: x.owner_id ?? null,
-        due_date: x.due_date ?? null,
-        completed_at: x.completed_at ? true : null,
-        source_rock_id: x.source_rock_id ?? null,
-        description: x.description ?? null,
+        team_id: x.team_id as string,
+        title: x.title as string,
+        owner_id: (x.owner_id as string | null) ?? null,
+        quarter: x.quarter as string,
+        due_date: (x.due_date as string | null) ?? null,
+        status: x.status as string,
+        description: (x.description as string | null) ?? null,
+        rock_type: (x.rock_type as string | null) ?? null,
+        shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       };
-    });
+    };
+    const homeRocks = rocksSnap.docs
+      .filter((d) => d.data().archived_at == null)
+      .map(mapRock);
+    const homeIds = new Set(homeRocks.map((r) => r.id));
+    const sharedRocks = sharedSnap.docs
+      .filter((d) => d.data().archived_at == null)
+      .map(mapRock)
+      .filter((r) => !homeIds.has(r.id) && isSharedIntoTeam(r, teamId));
+    const initialRocks = [...homeRocks, ...sharedRocks];
+    const extraTodoSnaps =
+      sharedRocks.length === 0
+        ? []
+        : await Promise.all(
+            chunkForInQuery(sharedRocks.map((r) => r.id)).map((ids) =>
+              db.collection("todos").where("source_rock_id", "in", ids).get(),
+            ),
+          );
+    const mapTodo = (d: QueryDocumentSnapshot) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        team_id: x.team_id as string,
+        title: x.title as string,
+        owner_id: (x.owner_id as string | null) ?? null,
+        due_date: (x.due_date as string | null) ?? null,
+        completed_at: x.completed_at ? true : null,
+        source_rock_id: (x.source_rock_id as string | null) ?? null,
+        description: (x.description as string | null) ?? null,
+      };
+    };
+    const initialTodos = [
+      ...todosSnap.docs.map(mapTodo),
+      ...extraTodoSnaps
+        .flatMap((s) => s.docs)
+        .filter((d) => d.data().visibility !== "private")
+        .map(mapTodo),
+    ];
+    const extraOwnerIds = [
+      ...new Set(
+        sharedRocks
+          .map((r) => r.owner_id)
+          .filter((id): id is string => !!id)
+          .filter((id) => !members.some((m) => m.user_id === id)),
+      ),
+    ];
+    const extraOwnerNames: { user_id: string; full_name: string }[] = [];
+    if (extraOwnerIds.length > 0) {
+      const docs = await db.getAll(
+        ...extraOwnerIds.map((id) => db.collection("users").doc(id)),
+      );
+      for (const d of docs) {
+        if (!d.exists) continue;
+        const full_name = String(d.data()?.full_name ?? "").trim();
+        if (full_name) extraOwnerNames.push({ user_id: d.id, full_name });
+      }
+    }
     return (
       <SegmentRocks
         teamId={teamId}
@@ -623,6 +671,8 @@ async function SegmentContent({
         initialSpeakerIndex={speakerIndex}
         teamName={team.name}
         shareTeams={shareTeams}
+        allTeams={orgTeams}
+        extraOwnerNames={extraOwnerNames}
       />
     );
   }

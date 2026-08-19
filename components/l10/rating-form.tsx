@@ -16,14 +16,20 @@ export function RatingForm({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (score == null) return;
     start(async () => {
-      await submitAction(score, notes);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
+      try {
+        setError(null);
+        await submitAction(score, notes);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save rating.");
+      }
     });
   }
 
@@ -69,6 +75,9 @@ export function RatingForm({
         </button>
         {saved && (
           <span className="text-xs text-hpb-green">Saved ✓</span>
+        )}
+        {error && (
+          <span className="text-xs text-red-600 dark:text-red-400">{error}</span>
         )}
       </div>
     </form>

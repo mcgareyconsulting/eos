@@ -60,6 +60,7 @@ export function RockDetailTrigger({
   statusHistory = [],
   className,
   children,
+  readOnly = false,
 }: {
   teamId: string;
   userId: string;
@@ -70,6 +71,7 @@ export function RockDetailTrigger({
   statusHistory?: StatusUpdateSerialized[];
   className?: string;
   children: React.ReactNode;
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -273,6 +275,7 @@ export function RockDetailModal({
             teamId={teamId}
             milestones={checklist}
             variant="modal"
+            readOnly={readOnly}
           />
         )}
 

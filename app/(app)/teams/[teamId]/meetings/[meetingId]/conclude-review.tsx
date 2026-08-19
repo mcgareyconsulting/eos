@@ -84,12 +84,17 @@ export function ConcludeReview({
 
   return (
     <div className="space-y-6">
-      <NotesCard teamId={teamId} meetingId={meetingId} initialNotes={notes} />
+      <NotesCard
+        teamId={teamId}
+        meetingId={meetingId}
+        initialNotes={notes}
+        readOnly={readOnly}
+      />
 
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-            Rate this meeting
+            {readOnly ? "Meeting rating" : "Rate this meeting"}
           </h2>
           <span className="text-xs text-zinc-600 dark:text-zinc-400">
             {presentRatings.length === 0
@@ -104,6 +109,7 @@ export function ConcludeReview({
           teamId={teamId}
           meetingId={meetingId}
           myRating={myRating}
+          readOnly={readOnly}
         />
 
         {(ratings.length > 0 || waitingOn.length > 0) && (
@@ -186,12 +192,33 @@ function MeetingRatingWidget({
   teamId,
   meetingId,
   myRating,
+  readOnly,
 }: {
   teamId: string;
   meetingId: string;
   myRating: MeetingRating | null;
+  readOnly: boolean;
 }) {
   const router = useRouter();
+
+  // Concluded + already rated: the form is the hole (N32). First write
+  // after Finish is still allowed so recap catch-up works.
+  if (readOnly && myRating) {
+    return (
+      <p className="text-sm text-zinc-700 dark:text-zinc-300">
+        Your rating:{" "}
+        <span className="font-semibold text-hpb-blue">{myRating.rating}</span>
+        {myRating.notes ? (
+          <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
+            — {myRating.notes}
+          </span>
+        ) : null}
+        <span className="mt-1 block text-xs text-zinc-500">
+          Final — ratings cannot be changed after the meeting ends.
+        </span>
+      </p>
+    );
+  }
 
   async function submit(score: number, notes: string) {
     const fd = new FormData();
@@ -218,10 +245,12 @@ function NotesCard({
   teamId,
   meetingId,
   initialNotes,
+  readOnly = false,
 }: {
   teamId: string;
   meetingId: string;
   initialNotes: string | null;
+  readOnly?: boolean;
 }) {
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [pending, start] = useTransition();
@@ -234,6 +263,7 @@ function NotesCard({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function persist(value: string) {
+    if (readOnly) return;
     if (value === lastSaved.current) return;
     const fd = new FormData();
     fd.set("notes", value);
@@ -246,17 +276,35 @@ function NotesCard({
   }
 
   useEffect(() => {
+    if (readOnly) return;
     if (notes === lastSaved.current) return;
     timer.current = setTimeout(() => persist(notes), NOTES_AUTOSAVE_MS);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notes]);
+  }, [notes, readOnly]);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     persist(notes);
+  }
+
+  if (readOnly) {
+    return (
+      <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
+        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Meeting notes
+        </h2>
+        {initialNotes?.trim() ? (
+          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
+            {initialNotes}
+          </p>
+        ) : (
+          <p className="text-sm text-zinc-500">No notes recorded.</p>
+        )}
+      </section>
+    );
   }
 
   return (

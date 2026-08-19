@@ -12,6 +12,10 @@ import {
 } from "@/lib/l10/speaking-order";
 import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
+  groupSharedRocksByOwner,
+  isSharedIntoTeam,
+} from "@/lib/rocks-share";
+import {
   DEPARTMENT_SECTION_TITLE,
   isDepartmentRock,
 } from "../../rocks/rock-type";
@@ -80,6 +84,8 @@ export function SegmentRocks({
   initialSpeakerIndex,
   teamName,
   shareTeams,
+  allTeams = [],
+  extraOwnerNames = [],
 }: {
   teamId: string;
   meetingId: string;
@@ -93,11 +99,21 @@ export function SegmentRocks({
   initialSpeakerIndex: number;
   teamName: string;
   shareTeams: { id: string; name: string }[];
+  allTeams?: { id: string; name: string }[];
+  extraOwnerNames?: { user_id: string; full_name: string }[];
 }) {
   const db = getClientDb();
 
   const rocksQuery = useMemo(
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
+    [db, teamId],
+  );
+  const sharedRocksQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "rocks"),
+        where("shared_team_ids", "array-contains", teamId),
+      ),
     [db, teamId],
   );
   // Milestones are todos with source_rock_id set and visibility="team".
@@ -125,15 +141,43 @@ export function SegmentRocks({
     [db, teamId],
   );
 
-  const homeRocks = useCollection<RockDoc>(rocksQuery, initialRocks);
-  const todos = useCollection<TodoDoc>(todosQuery, initialTodos);
+  const initialHome = useMemo(
+    () => initialRocks.filter((r) => r.team_id === teamId),
+    [initialRocks, teamId],
+  );
+  const initialShared = useMemo(
+    () => initialRocks.filter((r) => isSharedIntoTeam(r, teamId)),
+    [initialRocks, teamId],
+  );
+  const homeRocks = useCollection<RockDoc>(rocksQuery, initialHome);
+  const sharedRocksLive = useCollection<RockDoc>(
+    sharedRocksQuery,
+    initialShared,
+    "shared-rocks",
+  );
+  const liveTodos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
+  const extraTodos = useMemo(
+    () => initialTodos.filter((t) => t.team_id !== teamId),
+    [initialTodos, teamId],
+  );
+  const todos = useMemo(() => {
+    const seen = new Set(liveTodos.map((t) => t.id));
+    return [
+      ...liveTodos,
+      ...extraTodos.filter((t) => !seen.has(t.id)),
+    ];
+  }, [liveTodos, extraTodos]);
 
   // Archived rocks belong to the Rocks tab's Archived view, not the L10.
-  const rocks = useMemo(
-    () => homeRocks.filter((r) => r.archived_at == null),
-    [homeRocks],
-  );
+  const rocks = useMemo(() => {
+    const home = homeRocks.filter((r) => r.archived_at == null);
+    const guest = sharedRocksLive.filter(
+      (r) => r.archived_at == null && isSharedIntoTeam(r, teamId),
+    );
+    const seen = new Set(home.map((r) => r.id));
+    return [...home, ...guest.filter((r) => !seen.has(r.id))];
+  }, [homeRocks, sharedRocksLive, teamId]);
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -164,6 +208,8 @@ export function SegmentRocks({
   );
 
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
+  for (const n of extraOwnerNames) nameById.set(n.user_id, n.full_name);
+  const teamNameById = new Map(allTeams.map((t) => [t.id, t.name]));
 
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
   for (const t of todos) {
@@ -213,8 +259,10 @@ export function SegmentRocks({
   // while the Rocks tab (which doesn't filter) looked fine. The meeting
   // reviews the rocks the team actually has; cancelled ones stay out.
   const visible = rocks.filter((r) => r.status !== "cancelled");
+  const homeVisible = visible.filter((r) => r.team_id === teamId);
+  const sharedVisible = visible.filter((r) => isSharedIntoTeam(r, teamId));
   const groups = groupRocksForL10(
-    visible,
+    homeVisible,
     isDepartmentRock,
     members,
     speakingOrder,
@@ -222,12 +270,16 @@ export function SegmentRocks({
     currentSpeaker,
     DEPARTMENT_SECTION_TITLE,
   );
+  const sharedGroups = groupSharedRocksByOwner(sharedVisible, (id) =>
+    id ? (nameById.get(id) ?? "—") : "—",
+  );
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          {visible.length} rock{visible.length === 1 ? "" : "s"}
+          {homeVisible.length + sharedVisible.length} rock
+          {homeVisible.length + sharedVisible.length === 1 ? "" : "s"}
         </div>
         <QuickAddIssue
           teamId={teamId}
@@ -236,7 +288,7 @@ export function SegmentRocks({
         />
       </div>
 
-      {groups.length === 0 && (
+      {groups.length === 0 && sharedGroups.length === 0 && (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
           No rocks yet — add them on the Rocks tab.
         </div>
@@ -311,6 +363,41 @@ export function SegmentRocks({
                 currentUserId={userId}
                 teamName={teamName}
                 shareTeams={shareTeams}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {sharedGroups.map((g) => (
+        <section
+          key={`shared-${g.ownerId ?? "none"}`}
+          className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <header className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+              {g.title}
+            </h3>
+            <span className="text-xs text-zinc-500">{g.rocks.length}</span>
+          </header>
+          <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {g.rocks.map((r) => (
+              <RockRow
+                key={r.id}
+                teamId={teamId}
+                userId={userId}
+                rock={r}
+                ownerName={
+                  r.owner_id ? (nameById.get(r.owner_id) ?? "—") : "—"
+                }
+                members={members}
+                milestones={milestonesByRock.get(r.id) ?? []}
+                defaultDue={defaultDue}
+                statusHistory={statusByRock.get(r.id) ?? []}
+                currentUserId={userId}
+                teamName={teamNameById.get(r.team_id) ?? "another team"}
+                shareTeams={shareTeams}
+                readOnly
               />
             ))}
           </div>

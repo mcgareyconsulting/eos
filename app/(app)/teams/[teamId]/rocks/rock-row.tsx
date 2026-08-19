@@ -28,6 +28,7 @@ import { type StatusUpdateSerialized } from "./status-history";
 
 type Rock = {
   id: string;
+  team_id?: string;
   title: string;
   owner_id: string | null;
   quarter: string;
@@ -58,6 +59,7 @@ export function RockRow({
   currentUserId,
   teamName,
   shareTeams = [],
+  readOnly = false,
 }: {
   teamId: string;
   userId: string;
@@ -70,6 +72,8 @@ export function RockRow({
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  /** Guest-team view of a shared-in rock — no edit / archive / status. */
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -122,6 +126,7 @@ export function RockRow({
                 ownerName={displayOwner}
                 milestones={detailMilestones}
                 statusHistory={statusHistory}
+                readOnly={readOnly}
                 className="max-w-full truncate text-left text-sm font-semibold hover:text-hpb-blue dark:hover:text-hpb-gold"
               >
                 {rock.title}
@@ -134,6 +139,11 @@ export function RockRow({
               >
                 {ROCK_TYPE_LABELS[type]}
               </span>
+              {readOnly && teamName ? (
+                <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+                  from {teamName}
+                </span>
+              ) : null}
             </div>
 
             <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
@@ -174,10 +184,17 @@ export function RockRow({
           </div>
 
           <div className="flex w-28 shrink-0 justify-end">
-            <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
+            {readOnly ? (
+              <span className="text-[11px] font-medium capitalize text-zinc-500">
+                {status.replace("_", " ")}
+              </span>
+            ) : (
+              <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-0.5">
+            {readOnly ? null : (
             <EditRockButton
               teamId={teamId}
               rock={rock}
@@ -212,6 +229,7 @@ export function RockRow({
                   <Trash2 className="h-[15px] w-[15px]" />
                 </button>
               </ConfirmSubmitForm>
+            )}
             )}
           </div>
         </div>
@@ -278,9 +296,11 @@ export function RockRow({
                 teamId={teamId}
                 members={members}
                 milestones={milestones}
+                readOnly={readOnly}
               />
 
               <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+                {readOnly ? null : (
                 <AddMilestoneLink
                   teamId={teamId}
                   rock={rock}
@@ -291,6 +311,7 @@ export function RockRow({
                   teamName={teamName}
                   shareTeams={shareTeams}
                 />
+                )}
                 <RockDetailTrigger
                   teamId={teamId}
                   userId={userId}
@@ -299,6 +320,7 @@ export function RockRow({
                   ownerName={displayOwner}
                   milestones={detailMilestones}
                   statusHistory={statusHistory}
+                  readOnly={readOnly}
                   className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
                   Full detail &amp; status history →

@@ -107,8 +107,10 @@ service cloud.firestore {
     // Parent team members always have full access. Guest teams listed in
     // shared_team_ids may read (up to 8 shares; index checks below). Writes
     // stay on the home team only — edit status/share from the parent team.
-    function rockSharedToMe() {
-      let ids = resource.data.get('shared_team_ids', []);
+    // Share-down is allowed: the writer does not have to sit on the guest
+    // team (N4 — Leadership rock shared into ESD).
+    function listSharedToMe(data) {
+      let ids = data.get('shared_team_ids', []);
       return ids is list && (
         (ids.size() > 0 && isMember(ids[0])) ||
         (ids.size() > 1 && isMember(ids[1])) ||
@@ -120,6 +122,18 @@ service cloud.firestore {
         (ids.size() > 7 && isMember(ids[7]))
       );
     }
+    function rockSharedToMe() {
+      return listSharedToMe(resource.data);
+    }
+    function sourceRockVisibleToMe(rockId) {
+      return rockId is string
+        && rockId != ''
+        && exists(/databases/$(db)/documents/rocks/$(rockId))
+        && (
+          isMember(get(/databases/$(db)/documents/rocks/$(rockId)).data.team_id)
+          || listSharedToMe(get(/databases/$(db)/documents/rocks/$(rockId)).data)
+        );
+    }
     match /rocks/{id} {
       allow read:   if admin() || isMember(resource.data.team_id) || rockSharedToMe();
       allow update, delete: if admin() || isMember(resource.data.team_id);
@@ -128,7 +142,9 @@ service cloud.firestore {
 
     // ---------- rock status updates (immutable history) ----------
     match /rock_status_updates/{id} {
-      allow read:   if admin() || isMember(resource.data.team_id);
+      allow read:   if admin()
+                    || isMember(resource.data.team_id)
+                    || sourceRockVisibleToMe(resource.data.rock_id);
       allow create: if admin()
                     || (isMember(request.resource.data.team_id)
                         && request.resource.data.user_id == request.auth.uid);
@@ -149,7 +165,11 @@ service cloud.firestore {
       allow read: if admin()
                   || (isMember(resource.data.team_id)
                       && (resource.data.visibility == "team"
-                          || resource.data.owner_id == request.auth.uid));
+                          || resource.data.owner_id == request.auth.uid))
+                  // Guest team can see team-visible milestones of a rock
+                  // shared into them (parent team_id is not theirs).
+                  || (resource.data.visibility == "team"
+                      && sourceRockVisibleToMe(resource.data.source_rock_id));
       allow update: if admin()
                     || (isMember(resource.data.team_id)
                         && todoStampsUntouched());
@@ -236,8 +256,15 @@ service cloud.firestore {
 
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
-      allow read, update, delete: if admin() || isMember(resource.data.team_id);
-      allow create:               if admin() || isMember(request.resource.data.team_id);
+      allow read, delete: if admin() || isMember(resource.data.team_id);
+      // Concluded meetings are frozen for client writes (N32). Notes,
+      // attendance, and segment state go through the Admin SDK, which
+      // bypasses this; the conclude lock for those lives in the server
+      // actions. Clients cannot reopen or rewrite a finished meeting.
+      allow update: if admin()
+                    || (isMember(resource.data.team_id)
+                        && resource.data.ended_at == null);
+      allow create: if admin() || isMember(request.resource.data.team_id);
 
       function meetingTeam() {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
@@ -248,6 +275,8 @@ service cloud.firestore {
       // Conclude segment; clients only read aggregates via server
       // components, so no client write path is needed. Collection name kept
       // as `effectiveness_scores` for path stability (rules + audit trigger).
+      // Conclude-lock (N32: no rewrite after ended_at) is enforced in
+      // rateMeeting — Admin SDK bypasses these rules.
       match /effectiveness_scores/{scoreId} {
         allow read:  if admin() || isMember(meetingTeam());
         allow write: if admin();

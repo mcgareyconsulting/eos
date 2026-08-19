@@ -246,7 +246,7 @@ function parseSharedTeamIds(
     const id = String(item ?? "").trim();
     if (!id || id === homeTeamId || seen.has(id)) continue;
     if (!allowedTeamIds.has(id)) {
-      throw new Error("Can only share with teams you belong to.");
+      throw new Error("Unknown team — pick from the directory list.");
     }
     seen.add(id);
     out.push(id);
@@ -255,20 +255,12 @@ function parseSharedTeamIds(
   return out;
 }
 
-async function allowedShareTeamIds(
-  db: Firestore,
-  uid: string,
-  isAdmin: boolean,
-): Promise<Set<string>> {
-  if (isAdmin) {
-    const snap = await db.collection("teams").get();
-    return new Set(snap.docs.map((d) => d.id));
-  }
-  const snap = await db
-    .collection("team_members")
-    .where("user_id", "==", uid)
-    .get();
-  return new Set(snap.docs.map((d) => d.data().team_id as string));
+async function allowedShareTeamIds(db: Firestore): Promise<Set<string>> {
+  // Share-down: a parent-team member may share into any org team, not only
+  // teams they sit on. Leadership → ESD is the case that failed when the
+  // picker was membership-only (N4 Pass 20/21).
+  const snap = await db.collection("teams").get();
+  return new Set(snap.docs.map((d) => d.id));
 }
 
 function revalidateRockSurfaces(teamId: string, sharedTeamIds: string[]) {
@@ -286,12 +278,12 @@ export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
 
-  const allowed = await allowedShareTeamIds(db, uid, !!isAdmin);
+  const allowed = await allowedShareTeamIds(db);
   const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
 
   const milestones = parseMilestones(formData.get("milestones"));
@@ -330,12 +322,12 @@ export async function updateRockWithMilestones(
   rockId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
 
-  const allowed = await allowedShareTeamIds(db, uid, !!isAdmin);
+  const allowed = await allowedShareTeamIds(db);
   const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
 
   const milestones = parseMilestones(formData.get("milestones"));

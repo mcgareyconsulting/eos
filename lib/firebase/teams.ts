@@ -172,6 +172,18 @@ export type DirectoryTeam = {
  */
 export type OrgAdmin = { uid: string; name: string; email: string | null };
 
+/** Soft directory: every in-domain user may read team names (P2-7). */
+export const getOrgTeams = cache(
+  async (): Promise<{ id: string; name: string }[]> => {
+    const { db } = await requireFirebaseUser();
+    const snap = await db.collection("teams").orderBy("name").get();
+    return snap.docs.map((d) => ({
+      id: d.id,
+      name: (d.data()?.name as string) ?? "Team",
+    }));
+  },
+);
+
 /**
  * Everyone holding the org-admin custom claim (`role: "admin"`), rostered or
  * not — the operator account typically sits on no roster at all. Claims live

@@ -33,6 +33,10 @@ import {
 import { archiveHeadlinesDiscussedDuringMeeting } from "../headlines/actions";
 import { archiveIssuesClosedDuringMeeting } from "../issues/actions";
 import { archiveTodosCompletedDuringMeeting } from "../todos/actions";
+import {
+  RATING_LOCKED_MESSAGE,
+  ratingWriteAllowed,
+} from "@/lib/l10/ratings";
 
 function listPath(teamId: string) {
   return `/teams/${teamId}/meetings`;
@@ -467,7 +471,10 @@ export async function saveMeetingNotes(
   formData: FormData,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  if (meetingSnap.data()?.ended_at != null) {
+    throw new Error("Meeting notes cannot be edited after the meeting ends.");
+  }
   const notes = String(formData.get("notes") ?? "");
   await db.collection("meetings").doc(meetingId).update({ notes });
   revalidatePath(detailPath(teamId, meetingId));
@@ -483,23 +490,33 @@ export async function rateMeeting(
   formData: FormData,
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const rating = Number(formData.get("rating"));
   if (!Number.isFinite(rating) || rating < 1 || rating > 10) {
     throw new Error("Rating must be 1–10");
   }
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-  await db
+  const scoreRef = db
     .collection("meetings")
     .doc(meetingId)
     .collection("effectiveness_scores")
-    .doc(uid)
-    .set({
-      user_id: uid,
-      rating: Math.round(rating),
-      notes,
-      created_at: FieldValue.serverTimestamp(),
-    });
+    .doc(uid);
+  const existing = await scoreRef.get();
+  const meetingEnded = meetingSnap.data()?.ended_at != null;
+  if (
+    !ratingWriteAllowed({
+      meetingEnded,
+      alreadyRated: existing.exists,
+    })
+  ) {
+    throw new Error(RATING_LOCKED_MESSAGE);
+  }
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  await scoreRef.set({
+    user_id: uid,
+    rating: Math.round(rating),
+    notes,
+    created_at: existing.data()?.created_at ?? FieldValue.serverTimestamp(),
+  });
   revalidatePath(detailPath(teamId, meetingId));
 }
 
@@ -512,7 +529,10 @@ export async function setAttendeeAbsence(
   absent: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "meetings", meetingId, teamId);
+  const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
+  if (meetingSnap.data()?.ended_at != null) {
+    throw new Error("Attendance is frozen once the meeting has concluded.");
+  }
   const ref = db.collection("meetings").doc(meetingId);
   await ref.update({
     absent_user_ids: absent

@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-15
+updated: 2026-08-18
 verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -11,7 +11,7 @@ queue:                        # agent-maintained, set by agreement in session
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: F4
   next: [N23, N32, QW1, N18, F3, N3, N2, N24, N4]
-  awaiting: [N1, P3-1, N10, F2, B1, P3-5]
+  awaiting: [P3-1, N10, F2, B1, P3-5]
 ---
 
 # HPB · ROADMAP
@@ -63,12 +63,14 @@ by cost-to-close, then by size:
 | 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
-must not be read as "next up": **N1** (Steph's time) · **P3-1** (Joe, Open
-question 3) · **N10** (Cloud Storage bucket — rides with F2) · **F2**
-(security-tier selection + IAM resolution) · **B1**, **P3-5** (client
-BigQuery conventions). **N4 left `awaiting` in Pass 19** when the client
-green-lit sharing — it now sits at the tail of `next`; **N20** still rides
-with it.
+must not be read as "next up": **P3-1** (Joe, Open question 3) · **N10**
+(Cloud Storage bucket — rides with F2) · **F2** (security-tier selection +
+IAM resolution) · **B1**, **P3-5** (client BigQuery conventions). **N1 left
+`awaiting` in Pass 21** — Steph's onboarding walkthrough ran 2026-08-18;
+remaining N1 work is a leftover admin-dropdown confirm, not client calendar.
+**N4** stays at the tail of `next`; **N20** still rides with it. Sharing
+was tested on a second team today and failed (Steph rock) — that is now a
+live repro on an already-queued item, not a new queue row.
 
 **Reconciled 2026-08-11** against `origin/main`: **U1**, **P1-7** (PR #26)
 and **P2-1** (PR #27) left the queue as `shipped` — all three now wait on
@@ -158,6 +160,38 @@ research (N31). Owed follow-ups added: Joe checks dark mode, Brian moves
 off the ESD team, Steph's Meetings-tab privileges (QW1). **Queue changed by
 agreement:** N32 enters at position 2 as an urgent fix and ships with N23 —
 the only Pass 19/20 item to be queued rather than land as backlog.
+
+**Session 2026-08-18 (Pass 21) — Steph onboarding + import walkthrough.**
+N1's client-time gate opened: new-team onboarding was **solid**, in-app
+import was **decent**, new-team + adding members was **not**. Findings
+land on existing items where they already lived, plus two new backlog
+rows. **N1 → `in-progress`**, leaves `awaiting` (Steph's calendar is no
+longer the block); leftover verify is whether an **admin** sees every team
+in the sidebar dropdown. **N6** absorbs the import cluster: milestone
+sheet ignored when importing a rocks workbook (in-app `kind=rocks` never
+sets `inputs.milestones` — ninety's two-sheet xlsx is CLI-only for that
+half); Preview/dry-run shows filename + write counts, not a row-level
+"what will land" (this *is* Jessica's existing N6 dry-run/mapping ask,
+confirmed live); department filter is a free-text box defaulting to ESD
+— want the **active team** as the default and a **team dropdown** to
+import into another team instead of typing a name; unmatched owner
+(fired employee came up today) should import as **No Owner** and append
+the old name to the description, not skip / placeholder; headlines still
+CLI-only — in-app headlines import needed, plus a confirm on archived-row
+import (the `includeArchived` checkbox exists; client wants the contract
+stated). **N4** sharing was tested on the new second team and **did not
+work** (Steph rock). Label rule from the same session: anything shared
+across teams lists at the **bottom** as **Shared By {First Last}** of the
+item's actual person owner (not the source team name). Company-rock
+behavior: the Leadership team (still to be added) uses **company** rocks
+instead of team/department rocks — `rock_type: company` already exists
+in the model but the create form folded it into Team on 08-12. **N35**
+(new): company-wide people CSV (first, last, email) then add-to-team via
+dropdown; add-member modal must search the existing directory instead of
+re-typing. **N38** (new): deactivate user — block login, keep data, gray
+out owned items (the correct alternative to Auth-delete, which re-keys
+uid and orphans memberships — P1-2). **Queue unchanged** except N1
+leaving `awaiting`; new items land as backlog.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -282,7 +316,7 @@ project is confirmed working (hence deps F1).
 - 2026-07-27 · note · src cutover-checklist#12 — decommission steps written; explicitly sequenced after client project confirmed working
 
 ### F4 · Archive model + rules hardening — audit follow-through
-*W0 · in-progress · due — · deps — · owner daniel · src audit-2026-08-04#medium · upd 2026-08-10*
+*W0 · in-progress · due — · deps — · owner daniel · src audit-2026-08-04#medium · upd 2026-08-19*
 
 Effort S–M remaining. The 2026-08-04 audit's triage items 1–6 are **merged**
 (PR #19): H1 merge-script guards, H2 Home private-todo leak, M12/M13 date +
@@ -295,17 +329,18 @@ todos/issues/headlines — Firestore `== null` does not match missing fields,
 so legacy imports are invisible to the Monday sweep until this runs; (b)
 confirm the tightened `firestore.rules` are deployed to prod (folded into
 F1 — **F1 done 2026-08-10**; treat rules as live unless an ops re-check
-disagrees); (c) `L10_GAPS` red item still open — rules allow direct client
-update/delete of meeting docs, so the server-side meeting guards are
-advisory against a devtools user; (d) audit M3/M6–M8/M14 + L-tail remain
-unfixed. M5 verified 2026-08-12 as **not** mooted by PR #22 — the Archived
-tab crash is live and now tracked as **N23**, queued ahead of F5.
+disagrees); (c) `L10_GAPS` red item **partial** — N32 froze client **updates** on
+concluded meetings (`ended_at != null`); delete of a finished meeting
+is still member-writable; (d) audit M3/M6–M8/M14 + L-tail remain
+unfixed. M5 is **N23**. Backfill script: `scripts/backfill-archived-at.ts`
+(dry-run default; `--apply` to write).
 
 **Trail**
 - 2026-07-29 · note · src l10-gaps#data-infra-hygiene — red flag: Firestore rules allow direct client update/delete of meeting docs; tighten to read-only for clients
 - 2026-08-04 · build · src pr#19 — audit triage 1–6 fixed and merged: H1, H2, M9–M13, M1 partial, M2, M4; tests 182 passing
 - 2026-08-04 · note · src audit-2026-08-04#fixes-applied — operator TODO recorded: archived_at backfill required before the next Monday sweep matters; rules need a deploy for M4 to take effect
 - 2026-08-10 · note · src F1 — prod ship closed; rules deploy assumed with F1 (spot-check if Monday sweep or tenancy misbehaves)
+- 2026-08-19 · build · src session-2026-08-19 — `scripts/backfill-archived-at.ts` (todos/issues/headlines; dry-run default). Monday sweep 08-17 has already run; still worth applying so the next Monday sees legacy imports. N32 also froze client updates on concluded meeting docs (partial close of (c)).
 
 ---
 
@@ -394,9 +429,10 @@ not auto-rostered. Invite = pre-provision (no app email); self-serve
 Code: `requireTeamAccess`/`requireTeamLeader`/`requireAdmin`, Members
 This-team|All-teams tabs, admin New-team, `/directory` redirect,
 `pnpm admin:set-role` script. Ops runbook: `docs/TEAM_MGMT_OPS.md`.
-Remaining: N1 client walkthrough to promote to `verified`. Stretch still
-open, not in scope here: CSV directory import, private-team flag, ninety
-Owner/Implementer roles (see N6 and Resolved-log context).
+Remaining: N1 leftover confirm (admin sees every team in the sidebar
+dropdown) before promoting to `verified`. Stretch extracted: company
+people CSV + add-from-directory is **N35**; private-team flag and ninety
+Owner/Implementer roles stay out of scope here.
 
 **Trail**
 - 2026-07-30 · transcript · src tracker-2026-08-03#9 — Jenna: multi-team org; needs admin testing; "employee issues must not leak across individuals/teams"
@@ -404,27 +440,26 @@ Owner/Implementer roles (see N6 and Resolved-log context).
 - 2026-08-15 · client · src l10-2026-08-12-transcript — daniel walked the built model live (All Teams visible to everyone as a directory with rosters; leaders add/remove their own members; only global admin creates teams) and it drew no objection — the model holds against client review
 - 2026-08-10 · pr · src pr#24 — team management merged to main; sandbox-exercised; prod deploy pending
 - 2026-08-10 · done · src F1 — prod ship confirmed; teams infra live; N1 still gates `verified`
+- 2026-08-18 · client · src onboarding-2026-08-18 — Steph walkthrough ran (N1). New-team onboarding solid; adding members not. Directory CSV stretch pulled to N35. Admin-sees-all-teams dropdown still to confirm before `verified`
 
 ### N1 · Steph as admin + new-team onboarding test
-*W2 · not-started · due — · deps P2-7,F1 · owner both · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W2 · in-progress · due — · deps P2-7,F1 · owner both · src roadmap-prior#pass-18 · upd 2026-08-18*
 
-Effort S. Grant `role: "admin"` to Steph (`pnpm admin:set-role`, sign
-out/in after claim); walk create team → invite leader → Done → leader
-invites members. Confirm directory soft-read + hard data isolation from a
-real client account. The validation gate for P2-7 reaching `verified`. Ops
-notes: `docs/TEAM_MGMT_OPS.md`. F1 is live; needs Steph's time (client side),
-which is why this sits in `awaiting` rather than `next` — an earlier revision
-of this body claimed it was `queue.now`, which the front matter has not agreed
-with since 2026-08-11.
+Effort S remaining. The walkthrough **ran 2026-08-18**. Verdict: new-team
+onboarding was solid; in-app import was decent (findings on **N6**);
+new-team + adding members was not (extracted to **N35**). Cross-team
+share was exercised on the new second team and failed (**N4**). Leaves
+`awaiting` — Steph's calendar is no longer the block.
 
-**Runnable on prod today.** The team-management flow this tests shipped in
-**PR #24** and is live on `90ec7cb`, so it does **not** wait on F5 — Steph can
-walk create-team → invite → members against prod as it stands. Two operational
-notes before doing it: `pnpm accounts:create` is **not** sandboxed (Firebase
-Auth is project-level, so it affects prod and sandbox alike), and deleting an
-Auth user re-keys the uid, which orphans memberships (P1-2). The cutover
-checklist also still lists **email addresses for Steph, Cora and Jessica** as
-owed by the client — needed before inviting them.
+**Still open before P2-7 → `verified`:** confirm an **org admin** sees
+**every team** in the sidebar team dropdown, not only teams they belong
+to. That was the original "god mode on team data" promise and was not
+explicitly checked today.
+
+Ops notes: `docs/TEAM_MGMT_OPS.md`. `pnpm accounts:create` is still not
+sandboxed. Deleting an Auth user still re-keys uid (P1-2) — the client
+path for leavers is now **N38** (deactivate), not delete. Leadership
+team is still to be added (company rocks live there — see N4).
 
 **Trail**
 - 2026-08-03 · transcript · src tracker-2026-08-03#13 — Steph: wants admin testing when ready
@@ -432,6 +467,7 @@ owed by the client — needed before inviting them.
 - 2026-08-10 · note · src F1 — prod unblocked; promoted to queue.now
 - 2026-08-12 · note · src session-2026-08-12 — flagged as the item behind today's L10 new-team/new-member test; confirmed runnable on prod (PR #24 is live) and therefore not gated on F5
 - 2026-08-12 · followup · src l10-2026-08-12 — daniel to schedule a separate onboarding meeting with Steph; the walkthrough this item waits on now has a concrete vehicle
+- 2026-08-18 · client · src onboarding-2026-08-18 — walkthrough ran. Onboarding solid; import decent; add-members not. Admin-dropdown confirm still owed. Findings → N4 / N6 / N35 / N38
 
 ### N2 · Multi-team stress-testing setup
 *W2 · not-started · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
@@ -444,6 +480,7 @@ Deliverable includes documenting how to spin the scenario up (sandbox seed
 **Trail**
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 2
 - 2026-08-15 · followup · src l10-2026-08-12-transcript — daniel owes Brian's move off the ESD team ("we'll get Brian on a different team here soon"); his no-goal scorecard rows surfaced in the ESD L10 and confused the room. A one-off, but it is also the first real membership move — use it as the N2 scenario's first step rather than doing it by hand and learning nothing
+- 2026-08-18 · note · src onboarding-2026-08-18 — a second team now exists (N1 walkthrough). Leadership team is still to be added (company rocks — N4). Use both in the stress scenario rather than inventing sandbox-only teams
 
 ### N3 · Verify ESD team migration data
 *W2 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -490,8 +527,62 @@ so the client path matches Home.
 **Trail**
 - 2026-08-12 · note · src pr#28 — read path merged with no rules coverage; recorded as backlog, not queued, since the writer that makes it reachable is unbuilt
 - 2026-08-12 · decision · src session-2026-08-12 — daniel: N20 valid, but no second team exists, so sharing is deferred; the PR #30 writer stays (inert with one team), the read surfaces come out. Fix these rules before any sharing surface returns — see N4 consolidation.
+- 2026-08-18 · note · src onboarding-2026-08-18 — second team now exists and a share was attempted (failed — N4). N20 is reachable the moment the writer is used again; do not ship share without these rules.
+- 2026-08-19 · decision · src session-2026-08-19 — share-down overrules "writer must sit on the guest team". Parent-team member (or admin) may share into any org team. Guest read rule (`listSharedToMe`) is the N20 remaining piece and is in `firestore.rules`.
 
-## Workstream 3 — Product (client feedback, Passes 13–20)
+### N35 · Directory: company people CSV + add-member from directory
+*W2 · not-started · due — · deps P2-7 · owner daniel · src onboarding-2026-08-18 · upd 2026-08-18*
+
+Effort M. The Pass 11 / P2-7 stretch, now concrete from Steph's
+onboarding session. New-team onboarding was solid; **adding members was
+not** — every person had to be typed in (first, last, email) even when
+they already exist in the org directory.
+
+Two surfaces, one directory:
+
+1. **Company CSV import** of people, then assign to a team from a
+   dropdown. Format: **first, last, email**. This is org-directory
+   provisioning, not entity import (N6). Creates/updates user docs +
+   Auth-ready accounts the same way today's add-member path does;
+   membership is a second step (the dropdown), not implied by the file.
+2. **Add-member modal searches the existing directory.** When adding
+   someone to a team, pick/search a person who is already in the org
+   (typeahead on name or email) instead of re-entering first/last/email.
+   Creating a brand-new person stays available for true newcomers.
+
+Do not collapse this into N6 — different payload, different permissions
+(org admin vs team leader), and the CSV is people not rocks.
+
+**Trail**
+- 2026-07-13 · note · src roadmap-prior#pass-11 — CSV user import named in directory/admin asks
+- 2026-08-10 · note · src P2-7 — stretch left open: CSV directory import
+- 2026-08-18 · request · src onboarding-2026-08-18 — Steph: company CSV (first, last, email) then add-to-team dropdown; add-member modal should pull/search the existing directory
+
+### N38 · Deactivate user (soft-delete)
+*W2 · not-started · due — · deps P2-7 · owner daniel · src onboarding-2026-08-18 · upd 2026-08-18*
+
+Effort M. Fired / departed employees came up on the 2026-08-18 import
+(unmatched owner — N6 #4). Today's only lever is deleting the Auth user,
+which **re-keys the uid and orphans memberships** (P1-2). Wrong tool.
+
+**Deactivate** = block sign-in (allowlist / Auth disable / a
+`deactivated_at` flag the session and rules both honor) and **keep the
+data**. Owned rocks, todos, issues, headlines, scorecard rows stay put,
+rendered with a grayed-out / former-member treatment so the history is
+readable and nothing silently retitles to "No Owner" unless an import
+or a later reassign says so. Reactivate is in scope (clear the flag,
+sign-in works again). Hard-delete stays an operator script, not an
+in-app button.
+
+Pairs with N6's unmatched-owner rule (import a leaver's rows as No
+Owner + name in the description) and with N35 (directory is the list
+deactivate acts on).
+
+**Trail**
+- 2026-08-10 · note · src P1-2 — deleting an Auth user re-keys uid and orphans memberships
+- 2026-08-18 · request · src onboarding-2026-08-18 — deactivate blocks login, retains data, gray-out owned items
+
+## Workstream 3 — Product (client feedback, Passes 13–21)
 
 ### QW1 · Pass 18 quick-win batch (PR #22)
 *W3 · shipped · due — · deps F1 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
@@ -532,7 +623,7 @@ double-checks, not observed bugs.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — the concrete symptom: Steph's Meetings tab shows "join live meeting" but not the agenda surface Joe reached ("I don't think I got to where Joe was able to get to"); daniel: "I'll double check that". Check against her actual role, not the leader role
 
 ### N4 · Multi-team surface + shared rocks
-*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-15*
+*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-19*
 
 **Core shipped PR #28** (`feature/multi-team`), discovered by reconciliation
 2026-08-12 — this item was still marked `not-started` while its build sat on
@@ -620,14 +711,25 @@ rocks and then here's ... shared with you, or like shared rocks, or
 something like that ... some kind of distinction would be helpful." The
 "Shared with you" section in point 2 already carries it. Flag cleared.
 
+**Built 2026-08-19 (read surfaces + share-down).** The 08-18 fail was the
+guest Rocks/L10 list never querying `shared_team_ids array-contains`.
+Writer already persisted. Fix: guest Rocks tab and L10 show shared-in
+rocks at the **bottom** as **Shared by {First Last}** of the person
+owner; guest row is read-only (`from {parent team}`). Share picker
+lists **every org team** (not only memberships) so Leadership can share
+*down* into ESD. Server accepts any org team id. Guest milestone/status
+reads allowed when the parent rock is shared to the viewer (rules).
+
 **Remaining:**
-- Reinstate the shared-in read surfaces per the spec above (removed code is
-  in PR #30's history — `git log feature/multi-team`) with the
-  milestone-scoped filtering (only the assigned milestone shows).
-- **N20** rules governance *before* reinstating (the writer already exists).
-- Resolve the share-*down* case (point 4) — a leadership-team rock reaching
-  members who cannot read the leadership team. Rules work, not UI work.
-- Migrate legacy `owner_id: null` rocks; guest **edit** policy if needed.
+- Milestone-assignee pull-in (rock headline + **only** that milestone)
+  is not this path — still to build.
+- **Company rocks on the Leadership team.** Leadership (still to be
+  added) uses `rock_type: company` instead of team/department. The field
+  already exists; the 08-12 form folded Company into Team
+  (`ROCK_KIND_OPTIONS` is Individual | Team only, `toFormRockType`
+  remaps company → department). Re-offer Company on Leadership (and
+  only there, unless the client says otherwise).
+- Migrate legacy `owner_id: null` rocks.
 - The original tab question beyond Home (per-team sections vs unified feed vs
   sticky filter) is still open for the non-Home surfaces.
 
@@ -650,6 +752,10 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-15 · correction · src l10-2026-08-12-notes — mechanism is dual, not milestone-only; daniel's own notes green-light the share function alongside the milestone rule, and Steph confirms rock→multi-team share is 90's behavior and hers, so `shared_team_ids` stays primary alongside the milestone pull-in
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph: cannot create a rock on leadership and share it *down*; only up/across works, reads as a permissions restriction — the real gap, missed in Pass 19
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Cora's live demo (Moody's reporting, 4 milestones, sees only hers) is existing 90 behavior endorsed as the default, not a new spec
+- 2026-08-18 · client · src onboarding-2026-08-18 — second team now exists; Steph rock share was tested and did not work
+- 2026-08-18 · request · src onboarding-2026-08-18 — shared items list at the bottom as "Shared By {First Last}" of the person owner
+- 2026-08-18 · request · src onboarding-2026-08-18 — Leadership team (to be added) carries company rocks, not team rocks; re-offer `rock_type: company` there
+- 2026-08-19 · build · src session-2026-08-19 — guest Rocks + L10 list shared-in rocks ("Shared by {First Last}"); picker = all org teams (share-down); guest read-only; todo/status rules follow the shared rock. Diagnose: writer was fine, read surface was missing.
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
@@ -693,7 +799,7 @@ committing to the layout.
 - 2026-08-12 · request · src session-2026-08-12 — daniel: to-do needs restyled like home page, two column, rock milestone to-dos and normal to-dos on the left; style relative to the pieces that can be pulled over
 
 ### N23 · Rocks Archived tab crashes — audit M5 confirmed live
-*W3 · in-progress · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+*W3 · in-progress · due 2026-08-16 · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-19*
 
 Effort S. The Rocks **Archived** tab throws as soon as any archived rock
 exists — reported broken on `main` 2026-08-12. Root cause is exactly audit
@@ -715,15 +821,15 @@ the Sunday before the sweep. **Fix built** on
 `feat/rocks-owner-type-simplify` (with the rocks-simplification work):
 `archived_at` serialized to millis at the projection, plus the L1 rocks
 half — the L10 rocks segment now filters archived rocks (client
-subscription and server prefetch). Still open from L1: due-soon milestone
-surfaces (`todos/page.tsx`, `segment-todos.tsx`) don't check the parent
-rock's archive state, so an archived rock's milestones keep nagging — Home
-already handles this via `lib/home-board.ts`, the team surfaces don't.
+subscription and server prefetch). L1 remainder closed in this tree:
+`todos/page.tsx` and `segment-todos.tsx` both call
+`isMilestoneHiddenByRock`. Remaining: merge + mini-ship with N32.
 
 **Trail**
 - 2026-08-04 · note · src audit-2026-08-04#M5 — predicted: "Archived rocks tab will throw once any rock is archived"; latent only because the archive path didn't exist yet
 - 2026-08-12 · report · src session-2026-08-12 — daniel: Rocks archive tab broken on main; diagnosis matches M5 (raw Timestamp across the RSC boundary into RockRow); prod carries the same code
 - 2026-08-12 · build · src feat/rocks-owner-type-simplify — millis serialization + L10 archived-rock filter (L1 rocks half); 331 tests pass, tsc clean; awaits PR merge + prod mini-ship
+- 2026-08-19 · verify · src session-2026-08-19 — serialization + L1 milestone filter both present on this tree; still not on prod (`98bb30b`). Ships with N32.
 
 ### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
 *W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-15*
@@ -965,7 +1071,7 @@ this replaces email volume rather than adding to it.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
 
 ### N32 · Meeting rating stays editable after the meeting ends
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
+*W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-19*
 
 Effort S. **Urgent — queued at position 2 (2026-08-15) and ships with N23's
 mini-ship.** Two live-on-prod bugs of the same size, and neither should wait
@@ -992,6 +1098,7 @@ other end-of-meeting writes (recap, segment state) while in there.
 **Trail**
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph + Joe: votes remain editable after the meeting concludes and the panel is closed; recurring, not first sighting; tampering scenario named by Joe; daniel acknowledged as a bug
 - 2026-08-15 · decision · src session-2026-08-15 — daniel: urgent. Enters `next` at 2, ahead of QW1, and rides N23's mini-ship. Integrity bug on prod, small fix, no reason to hold it
+- 2026-08-19 · build · src session-2026-08-19 — lock in `rateMeeting`: after `ended_at`, first write still allowed (recap catch-up), rewrite rejected. Conclude panel is read-only once you have a score (visible, not an open form). Same freeze on notes + attendance writes. Client meeting-doc updates denied after conclude in `firestore.rules`. `lib/l10/ratings.ts` holds the predicate. Needs merge + mini-ship with N23; rules deploy this time.
 
 ### N33 · Agenda side panel → modal
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
@@ -1035,19 +1142,57 @@ rock it is*. Both can ride the same row treatment.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Joe: cannot tell departmental from individual rocks in the list; a 90 critique, cheap for us because `rock_type` already exists
 
 ### N6 · Better import functionality
-*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-18*
 
 Effort M. Beyond the current CSV/xlsx import: clearer mapping, validation,
-dry-run, re-import, error report. Ties in the Pass 11 CSV directory-import
-ask (the remaining P2-7 stretch). Attachments are out of import scope
+dry-run, re-import, error report. Attachments are out of import scope
 (decided with N3/N10). Current import docs: `docs/CSV_IMPORT.md`. Note
 from the audit era: import payloads now write explicit `archived_at: null`
 (PR #19), so re-imports can't un-archive — preserve that in any rework.
+The Pass 11 people CSV (directory) moved to N35 — this item is entity
+import (rocks / milestones / todos / issues / headlines).
+
+**Live findings 2026-08-18 (onboarding import). Verdict: decent, not
+done.** In-app import exists at `/teams/[teamId]/import` for rocks /
+todos / issues only.
+
+1. **Milestone import is broken when importing rocks.** Ninety ships
+   rocks + milestones as one two-sheet `.xlsx`. The CLI accepts both
+   (`--rocks` + `--milestones` on the same file). The in-app Rocks kind
+   never sets `inputs.milestones`, so the milestone sheet is silently
+   dropped. Fix: when kind is rocks and the workbook has a milestone
+   sheet (or add an explicit Milestones kind), run `importMilestones`
+   in the same pass, linking by rock title the way the CLI already does.
+2. **Preview does not show anything relevant.** This is Jessica's
+   existing dry-run/mapping ask (Pass 18 + the 08-12 API/upload
+   follow-up), confirmed live. Today's Preview prints filename, row
+   count, write counts, skipped, and a collapsed header list — not a
+   row-level view of what will land. Dry-run has to preview the payload,
+   not the file metadata.
+3. **Team filter / target is a typed box, pre-filled "Enterprise
+   Systems & Data".** Replace with: default the department/team-column
+   filter to the **active team** (the one on the URL), and a **team
+   dropdown** to import into another team. No more free-text Filter
+   by Department.
+4. **Unmatched owner (fired employee came up today).** Do not skip the
+   row and do not create a placeholder member. Import the item with
+   **No Owner** (`owner_id: null`) and append the unmatched name to the
+   **description** so the history is visible. Distinct from the
+   existing skip / `--no-create-owners` / fallback-owner paths.
+5. **Headlines import** is still CLI-only (`WebImportKind` is rocks /
+   todos / issues). Add Headlines as an in-app kind.
+6. **Archived-data import — confirm the contract.** `includeArchived`
+   already exists as a checkbox (off by default; CLI `--include-archived`).
+   Client asked for confirmation of what archived rows do. State it on
+   the page (skipped unless checked; `archived_at` stamped; re-import
+   cannot un-archive) rather than inventing a second path.
 
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — CSV user import named in Pass 11 directory/admin asks
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 6; attachments excluded
 - 2026-08-12 · followup · src l10-2026-08-12 — daniel to follow up with Jessica on API documentation and how she'd like to upload data; her answer shapes whether this item stays CSV-first or grows an API surface
+- 2026-08-18 · client · src onboarding-2026-08-18 — import "decent"; milestone sheet dropped on rocks upload; preview not useful (Jessica's dry-run ask, live); team filter should be dropdowns; unmatched owner → No Owner + name in description; headlines kind missing; archived-import contract to confirm
+- 2026-08-18 · decision · src onboarding-2026-08-18 — people/directory CSV is N35, not this item
 
 ### N10 · Attachments + links on entities (forward only)
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -1336,7 +1481,7 @@ client's project (cutover-checklist §9 — never reuse the trial's).
 - 2026-08-04 · note · src audit-2026-08-04#medium — M6/L11: milestone edits and archive path bypass the Tasks mirror
 
 ### P1-2 · Access ops — allowlist + membership
-*W4 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-13 · upd 2026-08-10*
+*W4 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-13 · upd 2026-08-18*
 
 Effort S, standing item. Keep `SIGN_IN_ALLOWLIST` (local `.env.local` +
 Cloud Run service env) covering the HPB domain + operator primary email —
@@ -1352,6 +1497,7 @@ re-invite memberships for that person.
 - 2026-07-29 · transcript · src roadmap-prior#pass-13 — system-access failures during the live client L10
 - 2026-08-03 · build · src roadmap-prior#pass-13 — dual-auth desync diagnosed; LiveAuthBanner + dual sign-out shipped; remainder is ops
 - 2026-08-10 · note · src roadmap-prior#resume-here — operator primary email now daniel@mcgareyconsulting.com after alias conversion
+- 2026-08-18 · note · src onboarding-2026-08-18 — leavers are N38 (deactivate), not Auth-delete. P1-2 still owns allowlist + membership ops; it does not grow a deactivate UI
 
 ### N19 · Bitbucket migration + security docs
 *W4 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -1394,7 +1540,7 @@ tokens + webhook secret in Secret Manager.
 | Security-tier selection from the Pass 10 levers menu (Tier 0 / 1 / 2) | F2 | 2026-07-01 |
 | IAM resolution per `docs/HPB_IAM_REQUEST.md` (Option A grant or Option B bindings) — confirmation of which was applied | F2, F3 | 2026-07-27 |
 | Joe's confirmation that Transformation actually uses scorecard share-up | P3-1 | 2026-07-30 |
-| Steph's time for the admin/new-team walkthrough (F1 live) | N1 | 2026-08-10 |
+| Leadership team to be created (company rocks live there) | N4 | 2026-08-18 |
 
 ## Open questions
 
@@ -1456,6 +1602,7 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-12 · P3-2 · closed — rich text + links shipped (PR #29) across headlines / issues / rocks / to-dos **and** comments; the P2-5 links-only `linkify` deleted so one markup path remains; stored in the existing plain-string field, so no migration and nothing downstream learns HTML; awaits F5 for `verified`
 - 2026-08-12 · Q-index · answered — PR #28's `shared_team_ids array-contains` query needs no composite index (equality-only, served by merged single-field indexes) and PR #28 changed neither `firestore.rules` nor `firestore.indexes.json`; F5 carries no extra deploy step for it
 - 2026-08-11 · Q-queues · answered — three parallel queues (root front matter W2-only, agent-local P0–P3 aid, docs/ROADMAP.md numbered lists) consolidated into one cross-workstream `queue.next`; docs/ROADMAP.md banner-superseded; `queue.now` N1 → F4 because N1 is gated on Steph's calendar and a client-gated `now` stalls the queue
+- 2026-08-18 · N1 · in-progress — Steph onboarding walkthrough ran; new-team solid, import decent, add-members not. Leaves `awaiting`. Leftover: admin sees all teams in the sidebar dropdown before P2-7 → `verified`
 
 ## Sources
 
@@ -1470,6 +1617,7 @@ distinct from Trail entries, which carry a layer + src.*
 | team-mgmt-ops | docs/TEAM_MGMT_OPS.md | Team-management ops runbook (P2-7, N1) |
 | feedback-2026-08-04 | docs/feedback/HPB_Feedback_Roadmap_Progress_2026-08-04.pdf | Client-facing progress snapshot vs the 08-03 tracker |
 | tracker-2026-08-03 | Daniel_Tool_Feedback_Tracker.xlsx (client-held; not a repo artifact — verbatim triage retained in docs/ROADMAP.md Pass 14 log; anchors are its row numbers) | Structured client feedback, 22 items, Jenna/Steph/Jessica; re-read 2026-08-10 |
+| onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
 
 `src pr#NN` refs resolve to pull requests on the project's GitHub origin

@@ -41,11 +41,13 @@ export function MilestoneChecklist({
   members,
   milestones,
   variant = "row",
+  readOnly = false,
 }: {
   teamId: string;
   members?: Member[];
   milestones: MilestoneSerialized[];
   variant?: "row" | "modal";
+  readOnly?: boolean;
 }) {
   if (milestones.length === 0) return null;
 
@@ -61,6 +63,7 @@ export function MilestoneChecklist({
         teamId={teamId}
         milestones={milestones}
         nameFor={nameFor}
+        readOnly={readOnly}
       />
     );
   }
@@ -70,11 +73,11 @@ export function MilestoneChecklist({
       {milestones.map((m) => (
         <li key={m.id}>
           <label className="flex cursor-pointer items-center gap-2.5 rounded-[7px] px-2 py-1.5 hover:bg-zinc-200/50 dark:hover:bg-zinc-800">
-            <TodoCheckbox
+            <MilestoneTick
               teamId={teamId}
               todoId={m.id}
               completed={m.completed}
-              appearance="milestone"
+              readOnly={readOnly}
             />
             <span
               className={cn(
@@ -105,14 +108,50 @@ export function MilestoneChecklist({
   );
 }
 
+function MilestoneTick({
+  teamId,
+  todoId,
+  completed,
+  readOnly,
+}: {
+  teamId: string;
+  todoId: string;
+  completed: boolean;
+  readOnly: boolean;
+}) {
+  if (readOnly) {
+    return (
+      <span
+        className={cn(
+          "inline-block h-4 w-4 shrink-0 rounded-sm border",
+          completed
+            ? "border-hpb-green bg-hpb-green"
+            : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+        )}
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <TodoCheckbox
+      teamId={teamId}
+      todoId={todoId}
+      completed={completed}
+      appearance="milestone"
+    />
+  );
+}
+
 function ModalMilestoneList({
   teamId,
   milestones,
   nameFor,
+  readOnly,
 }: {
   teamId: string;
   milestones: MilestoneSerialized[];
   nameFor: (m: MilestoneSerialized) => string;
+  readOnly: boolean;
 }) {
   const open = milestones.filter((m) => !m.completed);
   const done = milestones.filter((m) => m.completed);
@@ -125,11 +164,11 @@ function ModalMilestoneList({
           key={m.id}
           className="flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-zinc-200 px-3.5 py-[11px] dark:border-zinc-700"
         >
-          <TodoCheckbox
+          <MilestoneTick
             teamId={teamId}
             todoId={m.id}
             completed={m.completed}
-            appearance="milestone"
+            readOnly={readOnly}
           />
           <span
             className="min-w-0 flex-1 truncate text-[13.5px] font-bold text-zinc-900 dark:text-zinc-100"
@@ -168,11 +207,11 @@ function ModalMilestoneList({
               {done.map((m) => (
                 <li key={m.id}>
                   <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-[11px] py-2">
-                    <TodoCheckbox
+                    <MilestoneTick
                       teamId={teamId}
                       todoId={m.id}
                       completed={m.completed}
-                      appearance="milestone"
+                      readOnly={readOnly}
                     />
                     <span
                       className="min-w-0 flex-1 truncate text-[13px] text-zinc-400"

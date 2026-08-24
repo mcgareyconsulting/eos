@@ -397,6 +397,10 @@ export function MeetingRail({
             speakerIndex={speakerIndex}
             absentUserIds={absentUserIds}
             members={members}
+            // Segue is a once-around stage and owns the round-done signal;
+            // every other stage can go multiple rounds, so its Next speaker
+            // cycles back to the top instead of dead-ending.
+            wrap={activeSegment !== "segue"}
           />
         )}
 

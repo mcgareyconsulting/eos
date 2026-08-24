@@ -120,6 +120,33 @@ describe("stepSpeakerIndex", () => {
     assert.equal(stepSpeakerIndex([], 0, [], 1), 0);
     assert.equal(stepSpeakerIndex(order, 99, [], -1), 1);
   });
+
+  test("wrap cycles the round in both directions", () => {
+    assert.equal(stepSpeakerIndex(order, 2, [], 1, true), 0);
+    assert.equal(stepSpeakerIndex(order, 0, [], -1, true), 2);
+    // Mid-round it behaves exactly as before.
+    assert.equal(stepSpeakerIndex(order, 0, [], 1, true), 1);
+  });
+
+  test("wrap skips absentees on the way round", () => {
+    // Last present person is Marcus; Elena is out, so Next lands on Sarah.
+    assert.equal(stepSpeakerIndex(order, 1, ["u-elena"], 1, true), 0);
+    // Backwards past the front, skipping the absent tail.
+    assert.equal(stepSpeakerIndex(order, 0, ["u-elena"], -1, true), 1);
+  });
+
+  test("wrap is a no-op when the viewer is the only person present", () => {
+    assert.equal(
+      stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], 1, true),
+      0,
+    );
+    assert.equal(stepSpeakerIndex([], 0, [], 1, true), 0);
+  });
+
+  test("wrap defaults off, so Segue still dead-ends", () => {
+    assert.equal(stepSpeakerIndex(order, 2, [], 1), 2);
+    assert.equal(stepSpeakerIndex(order, 0, [], -1), 0);
+  });
 });
 
 describe("firstPresentIndex", () => {

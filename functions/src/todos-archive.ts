@@ -70,7 +70,6 @@ export type HeadlineArchiveCandidate = {
   discussed?: boolean | null;
   discussed_at?: { toMillis?: () => number } | null;
   archived_at?: unknown | null;
-  broadcast?: boolean | null;
 };
 
 function isActiveDiscussedHeadline(
@@ -79,7 +78,10 @@ function isActiveDiscussedHeadline(
   discussed_at: { toMillis: () => number };
 } {
   if (h.archived_at != null) return false;
-  if (h.broadcast) return false;
+  // Broadcast copies used to be excluded here. They are not any more: a
+  // cascaded headline is fanned out one doc per team, so archiving this
+  // team's copy after they discuss it is a per-team act and leaves every
+  // other team's queue untouched. Client ask, 8/19 L10.
   if (h.discussed !== true) return false;
   if (
     h.discussed_at == null ||

@@ -145,6 +145,42 @@ export function voteCredits(
   return { byIssue, used, remaining: Math.max(0, max - used) };
 }
 
+/**
+ * Room-wide vote tally for the L10 Issues header.
+ *
+ * Client ask (Steph, 8/19 L10): "we always ask everyone if they voted ... it
+ * might be cool to just tally up if the available votes have been exhausted
+ * or not, because then you don't have to confirm that everybody has submitted
+ * their three votes."
+ *
+ * Cast comes from the team totals denormalized on each issue, so this needs no
+ * read of other people's `issue_votes` (which no client subscribes to).
+ * Available counts only the people actually in the room — absentees are never
+ * going to spend theirs, and a denominator that can't be reached would defeat
+ * the whole point of the chip.
+ */
+export function teamVoteTally(
+  issues: { votes?: number | null }[],
+  presentVoterCount: number,
+  max: number = MAX_VOTES_PER_TEAM,
+): { cast: number; available: number; allIn: boolean; label: string; detail: string } {
+  let cast = 0;
+  for (const i of issues) {
+    const n = Number(i.votes ?? 0);
+    if (Number.isFinite(n) && n > 0) cast += n;
+  }
+  const available = Math.max(0, presentVoterCount) * max;
+  // Never claim "all in" on an empty room — 0 of 0 is not a finished vote.
+  const allIn = available > 0 && cast >= available;
+  const label = allIn ? "All votes in" : `${cast} of ${available} votes cast`;
+  const detail = allIn
+    ? `Everyone in the room has spent all ${max} of their credits.`
+    : `${cast} of ${available} credits spent — ${presentVoterCount} ${
+        presentVoterCount === 1 ? "person" : "people"
+      } in the room x ${max} each. Absentees are not counted.`;
+  return { cast, available, allIn, label, detail };
+}
+
 /** User-facing copy for the remaining-credits chip (L10 Issues header). */
 export function voteCreditsSummary(
   used: number,

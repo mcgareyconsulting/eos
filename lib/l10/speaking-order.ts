@@ -57,18 +57,36 @@ export function clampSpeakerIndex(index: number, length: number): number {
 
 // Steps the pointer, skipping anyone marked absent for this meeting — the
 // whole reason attendance is set during Segue rather than at Conclude.
-// Returns the current index unchanged when there is no eligible person in
-// that direction, so the control simply goes inert at the ends of the round
-// instead of landing on someone who isn't in the room.
+//
+// `wrap` decides what happens at the edge of the round:
+//   - false (default): returns the current index unchanged, so the control
+//     goes inert at the ends instead of landing on someone who isn't in the
+//     room. Segue wants this — it is a once-around stage.
+//   - true: the round is a cycle. Past the last present person the pointer
+//     lands back on the first, and Prev mirrors it backwards. Client ask
+//     (Ryan, 8/19 L10): discussion stages go multiple rounds, and getting
+//     back to the top by clicking Prev N times is worse than a wrap.
+// Either way a round with no eligible person returns `from` unchanged.
 export function stepSpeakerIndex(
   order: string[],
   index: number,
   absentUserIds: string[],
   direction: 1 | -1,
+  wrap = false,
 ): number {
   if (order.length === 0) return 0;
   const absent = new Set(absentUserIds);
   const from = clampSpeakerIndex(index, order.length);
+
+  if (wrap) {
+    const n = order.length;
+    // At most one full lap: if nobody else is present we land back on `from`.
+    for (let step = 1; step <= n; step++) {
+      const i = (((from + direction * step) % n) + n) % n;
+      if (!absent.has(order[i])) return i;
+    }
+    return from;
+  }
 
   for (let i = from + direction; i >= 0 && i < order.length; i += direction) {
     if (!absent.has(order[i])) return i;

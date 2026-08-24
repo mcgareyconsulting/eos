@@ -6,6 +6,7 @@ import {
   rankLongTerm,
   rankShortTerm,
   splitIssuesByTerm,
+  teamVoteTally,
   voteCredits,
   voteCreditsSummary,
   type RankableIssue,
@@ -249,5 +250,43 @@ describe("voteCreditsSummary", () => {
     const s = voteCreditsSummary(99);
     assert.equal(s.remaining, 0);
     assert.equal(s.depleted, true);
+  });
+});
+
+describe("teamVoteTally", () => {
+  const cast = (...counts: number[]) => counts.map((votes) => ({ votes }));
+
+  test("counts credits spent across every issue against the room's budget", () => {
+    const t = teamVoteTally(cast(3, 2, 1), 4); // 4 present x 3 = 12
+    assert.equal(t.cast, 6);
+    assert.equal(t.available, 12);
+    assert.equal(t.allIn, false);
+    assert.equal(t.label, "6 of 12 votes cast");
+  });
+
+  test("flips to all-in once the room has spent everything", () => {
+    const t = teamVoteTally(cast(5, 4), 3); // 9 of 9
+    assert.equal(t.allIn, true);
+    assert.equal(t.label, "All votes in");
+  });
+
+  test("excludes absentees from the denominator", () => {
+    // 5 on the roster, 2 marked absent — the reachable budget is 3 x 3.
+    assert.equal(teamVoteTally(cast(9), 3).allIn, true);
+  });
+
+  test("an empty room is never 'all in'", () => {
+    const t = teamVoteTally([], 0);
+    assert.equal(t.available, 0);
+    assert.equal(t.allIn, false);
+  });
+
+  test("ignores missing, zero and malformed vote counts", () => {
+    const t = teamVoteTally(
+      [{ votes: null }, { votes: 0 }, {}, { votes: Number.NaN }, { votes: 2 }],
+      2,
+    );
+    assert.equal(t.cast, 2);
+    assert.equal(t.available, 2 * MAX_VOTES_PER_TEAM);
   });
 });

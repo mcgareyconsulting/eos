@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { Pencil, X } from "lucide-react";
 import { updateHeadline } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
@@ -34,6 +35,11 @@ export function HeadlineEditButton({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [title, setTitle] = useState(headline.title);
   const [body, setBody] = useState(headline.body ?? "");
@@ -90,112 +96,120 @@ export function HeadlineEditButton({
         <Pencil className="h-4 w-4" />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit headline"
-            className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <h2 className="text-base font-semibold tracking-tight">
-                Edit headline
-              </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Fields scroll; the footer stays pinned so Save is always reachable
-                no matter how much the author writes in Detail. */}
-            <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Headline
-                </span>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Headline (one line)"
-                  required
-                  autoFocus
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                />
-              </label>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Category
-                </span>
-                <select
-                  value={kind}
-                  onChange={(e) =>
-                    setKind(e.target.value as HeadlineEditValues["kind"])
-                  }
-                  className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                >
-                  {KIND_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Detail{" "}
-                  <span className="font-normal text-zinc-400">(optional)</span>
-                </span>
-                <RichTextEditor
-                  value={body}
-                  onChange={setBody}
-                  rows={16}
-                  placeholder="Detail (optional)"
-                  textareaClassName="leading-relaxed"
-                  className="dark:bg-zinc-950"
-                />
-              </label>
-
-              {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  {error}
-                </p>
-              )}
-              </div>
-
-              <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+      {/* Portalled to <body>: the trigger lives inside a row action
+          cluster that fades with `opacity-0 group-hover:opacity-100`,
+          and opacity applies to the whole subtree — a `fixed` child is
+          not exempt. Rendered in place, an open dialog went invisible
+          the moment the pointer left the row (client-reported 8/19).
+          The portal takes it out from under that ancestor entirely. */}
+      {open && mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setOpen(false)}
+              aria-hidden
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Edit headline"
+              className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+                <h2 className="text-base font-semibold tracking-tight">
+                  Edit headline
+                </h2>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  aria-label="Close"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  {pending ? "Saving…" : "Save"}
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              {/* Fields scroll; the footer stays pinned so Save is always reachable
+                  no matter how much the author writes in Detail. */}
+              <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Headline
+                  </span>
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Headline (one line)"
+                    required
+                    autoFocus
+                    className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Category
+                  </span>
+                  <select
+                    value={kind}
+                    onChange={(e) =>
+                      setKind(e.target.value as HeadlineEditValues["kind"])
+                    }
+                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                  >
+                    {KIND_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Detail{" "}
+                    <span className="font-normal text-zinc-400">(optional)</span>
+                  </span>
+                  <RichTextEditor
+                    value={body}
+                    onChange={setBody}
+                    rows={16}
+                    placeholder="Detail (optional)"
+                    textareaClassName="leading-relaxed"
+                    className="dark:bg-zinc-950"
+                  />
+                </label>
+
+                {error && (
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {error}
+                  </p>
+                )}
+                </div>
+
+                <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pending}
+                    className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    {pending ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

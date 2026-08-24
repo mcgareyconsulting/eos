@@ -793,6 +793,7 @@ async function SegmentContent({
         initialIssues={initialIssues}
         initialVotes={initialVotes}
         initialCurrentIssueId={currentIssueId}
+        initialAbsentUserIds={absentUserIds}
         members={members}
       />
     );

@@ -24,6 +24,7 @@ export function SpeakingOrderRail({
   speakerIndex,
   absentUserIds,
   members,
+  wrap = false,
 }: {
   teamId: string;
   meetingId: string;
@@ -31,6 +32,15 @@ export function SpeakingOrderRail({
   speakerIndex: number;
   absentUserIds: string[];
   members: { user_id: string; full_name: string }[];
+  /**
+   * Cycle the round instead of going inert at its ends. On for the stages
+   * that genuinely go around more than once (Ryan, 8/19 L10: "sometimes we
+   * go multiple rounds, and that's much easier than clicking previous a
+   * bunch of times"); off for Segue, which is once-around by design and
+   * owns the round-done signal. Wrapping only moves the SPEAKER — advancing
+   * the stage stays on the transport buttons below, deliberately.
+   */
+  wrap?: boolean;
 }) {
   const [pending, start] = useTransition();
 
@@ -51,12 +61,13 @@ export function SpeakingOrderRail({
       await setSpeakingIndex(
         teamId,
         meetingId,
-        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction),
+        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction, wrap),
       );
     });
 
-  const atStart = currentUid === visible[0];
-  const atEnd = currentUid === visible[visible.length - 1];
+  // With wrap on there are no ends to go inert at.
+  const atStart = !wrap && currentUid === visible[0];
+  const atEnd = !wrap && currentUid === visible[visible.length - 1];
 
   return (
     <div className="space-y-2 px-3 py-3">

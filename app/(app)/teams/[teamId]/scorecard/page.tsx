@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { loadScorecardGroups } from "@/lib/firebase/scorecard-groups";
 import { parseWeekRange, type GoalDirection } from "@/lib/scorecard";
 import {
   entriesToRecord,
@@ -12,6 +13,7 @@ import {
   parseScorecardPeriod,
 } from "@/lib/scorecard-periods";
 import { AddMetricModal } from "./add-metric-modal";
+import { ManageGroupsButton } from "./manage-groups";
 
 type MetricDoc = {
   team_id: string;
@@ -44,6 +46,8 @@ export default async function ScorecardPage({
     .where("team_id", "==", tid)
     .get();
 
+  const groups = await loadScorecardGroups(db, tid);
+
   const metrics = metricsSnap.docs
     .map((d) => {
       const x = d.data() as MetricDoc;
@@ -72,25 +76,35 @@ export default async function ScorecardPage({
     ),
   );
 
+  // Suggestions for the Add-measurable picker: defined categories first, in
+  // their configured order, then any label still only living on a metric.
+  // Without the group docs a category created but not yet used would be
+  // missing from the very picker meant to assign it.
   const groupNames = [
-    ...new Set(
-      metrics
-        .map((m) => m.group?.trim() || "")
-        .filter((g) => g !== ""),
-    ),
-  ].sort((a, b) => a.localeCompare(b));
+    ...new Set([
+      ...groups.map((g) => g.name),
+      ...metrics.map((m) => m.group?.trim() || "").filter((g) => g !== ""),
+    ]),
+  ];
 
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Scorecard</h1>
-        <AddMetricModal
-          teamId={tid}
-          members={members}
-          defaultOwnerId={uid}
-          groups={groupNames}
-          activePeriod={period}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <ManageGroupsButton
+            teamId={tid}
+            groups={groups}
+            activePeriod={period}
+          />
+          <AddMetricModal
+            teamId={tid}
+            members={members}
+            defaultOwnerId={uid}
+            groups={groupNames}
+            activePeriod={period}
+          />
+        </div>
       </header>
 
       <Suspense
@@ -109,6 +123,7 @@ export default async function ScorecardPage({
           members={members}
           showDelete
           showGroupEditor
+          groups={groups}
         />
       </Suspense>
     </div>

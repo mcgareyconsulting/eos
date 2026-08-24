@@ -431,14 +431,16 @@ export function missingCount(values: (number | null)[]): number {
  * category renders its own speaking round. That is what lets category
  * grouping and speaking order compose instead of competing (N40).
  *
- * Categories are listed alphabetically; uncategorised rows come back
- * separately so a caller can render them without a header. A team that has
- * never set a category gets everything in `ungrouped` and the output is
- * indistinguishable from a flat list.
+ * Category order comes from `orderNames` when the caller has group docs —
+ * position first, so Compliance can sit below Weekly — and falls back to
+ * alphabetical when it doesn't. Uncategorised rows come back separately so a
+ * caller can render them without a header, and a team that has never set a
+ * category gets everything in `ungrouped`, indistinguishable from a flat list.
  */
 export function groupMetricsByCategory<T extends { group?: string | null }>(
   metrics: T[],
   flat = false,
+  orderNames?: (names: string[]) => string[],
 ): { ungrouped: T[]; groups: { name: string; items: T[] }[] } {
   if (flat) return { ungrouped: [...metrics], groups: [] };
 
@@ -455,9 +457,17 @@ export function groupMetricsByCategory<T extends { group?: string | null }>(
     else byName.set(name, [m]);
   }
 
-  const groups = [...byName.keys()]
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({ name, items: byName.get(name)! }));
+  const names = [...byName.keys()];
+  // Callers with group docs pass their own order (position, then name).
+  // Without them there is nothing better than alphabetical.
+  const ordered = orderNames
+    ? orderNames(names)
+    : names.sort((a, b) => a.localeCompare(b));
 
-  return { ungrouped, groups };
+  return {
+    ungrouped,
+    groups: ordered
+      .filter((name) => byName.has(name))
+      .map((name) => ({ name, items: byName.get(name)! })),
+  };
 }

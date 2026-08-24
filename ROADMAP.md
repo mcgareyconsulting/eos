@@ -1329,6 +1329,33 @@ Related, from the same import: getting other teams' scorecards in needs an
 in-app path at all. Scorecard import is still CLI-only — recorded as **N6
 finding 7**, not here.
 
+**Groups became a first-class thing (same session).** Free text sorted
+alphabetically put Compliance *above* Weekly, which is backwards — Compliance
+is a weekly category that must not outrank the ordinary weekly measurables,
+and no sort rule derived from the name can express that. So a category is now
+something you create, with a **name**, a **period**, and a **position you
+choose** (daniel: "we will define custom"). New `scorecard_groups` collection
+(team-scoped rules alongside `scorecard_metrics`), a **Categories** modal on
+the Scorecard tab to add / reorder / delete, and metrics still reference a
+category by name — which is what the importer already writes and the grid
+already reads, so nothing had to migrate.
+
+Decisions worth keeping:
+- **"Weekly" stays a real category** rather than being dissolved into
+  "ungrouped weekly metrics" (daniel's call). Uncategorised measurables still
+  render above every category.
+- **Assigning a metric to a category moves it into that category's period.** A
+  weekly measurable dropped into a monthly category would otherwise show under
+  neither tab.
+- **Import creates categories in first-seen order**, so Steph's
+  Weekly-then-Compliance file produces exactly that order with nobody setting
+  it. Re-import **never** rewrites `sort_order` or `interval` on a category
+  that already exists — `Writer.set` merges, so without that guard a
+  re-import would silently undo a hand-reordered list.
+- **Deleting a category keeps its measurables**, un-assigned.
+- **Unmanaged labels still render**, after the defined categories, so a
+  hand-typed name never disappears.
+
 **Trail**
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph: 90 has scorecard categories (weekly / compliance), used by leadership too; believes ours has none. Steph + Joe agree to grant daniel view access to the IT team scorecard in 90
 - 2026-08-24 · finding · src session-2026-08-24 — the feature exists as `group` / "Section"; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Tab half = naming; L10 half = speaker-order vs category-order conflict, needs a decision
@@ -1336,6 +1363,8 @@ finding 7**, not here.
 - 2026-08-24 · confirmed · src session-2026-08-24 — ninety's export carries `Group Name` = Weekly / Compliance (screenshot). Categories arrived with the import and already group on the Scorecard tab; remaining scope is the rename plus the L10 speaker-order-vs-category decision
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: build category grouping in the L10 too — group by category, then speaker order within each category. Not an either/or after all
 - 2026-08-24 · build · src session-2026-08-24 — shipped: "Section" → "Category" + visible affordance; `flatList` no longer forced by speaking order; `groupMetricsByCategory()` extracted and tested
+- 2026-08-24 · decision · src session-2026-08-24 — daniel: Compliance below Weekly; categories assignable by name AND period; you can create a category as well as a measurable; a weekly category does not take precedence over ordinary weekly measurables. Ordering is custom, not derived
+- 2026-08-24 · build · src session-2026-08-24 — `scorecard_groups` collection + rules, Categories modal (add / reorder / delete), importer creates categories in first-seen order and never clobbers an existing one's position, assignment aligns the metric's period
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*

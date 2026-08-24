@@ -6,6 +6,10 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { useScorecardEntries } from "@/lib/firebase/use-scorecard-entries";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
+import {
+  compareGroups,
+  type ScorecardGroup,
+} from "@/lib/scorecard-groups";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { GoalDirection, WeekRange } from "@/lib/scorecard";
 import {
@@ -50,6 +54,7 @@ export function SegmentScorecard({
   period = "weekly",
   initialMetrics,
   initialEntries,
+  initialGroups,
   members,
   speakingOrder: speakingOrderProp,
   absentUserIds = [],
@@ -61,6 +66,8 @@ export function SegmentScorecard({
   period?: ScorecardPeriod;
   initialMetrics: MetricDoc[];
   initialEntries: EntryDoc[];
+  /** Seeded from the server so category order never flashes alphabetical. */
+  initialGroups: ScorecardGroup[];
   members: Member[];
   /** Meeting/team speaking order — drives Default order (P1-4). */
   speakingOrder?: string[];
@@ -77,6 +84,21 @@ export function SegmentScorecard({
     [db, teamId],
   );
   const metrics = useCollection<MetricDoc>(metricsQuery, initialMetrics);
+  // Live too: reordering categories on the Scorecard tab mid-meeting should
+  // land in the room without a refresh, same as a metric edit does.
+  const groupsQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "scorecard_groups"),
+        where("team_id", "==", teamId),
+      ),
+    [db, teamId],
+  );
+  const groupsLive = useCollection<ScorecardGroup>(groupsQuery, initialGroups);
+  const groups = useMemo(
+    () => [...groupsLive].sort(compareGroups),
+    [groupsLive],
+  );
 
   const metricIds = useMemo(() => metrics.map((m) => m.id), [metrics]);
   // Load far enough back for the active interval (annual = multi-year).
@@ -137,6 +159,7 @@ export function SegmentScorecard({
       members={members}
       showDelete={false}
       showGroupEditor={false}
+      groups={groups}
       compact
       speakingOrder={speakingOrder}
       absentUserIds={absentUserIds}

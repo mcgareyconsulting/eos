@@ -9,6 +9,11 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { DocumentData, Firestore, WriteBatch } from "firebase-admin/firestore";
 import { currentQuarter, endOfQuarter, toDateString } from "./dates";
 import {
+  groupDocId,
+  groupNameKey,
+  normalizeGroupName,
+} from "./scorecard-groups";
+import {
   cell,
   importDocId,
   inferUnit,
@@ -589,6 +594,10 @@ async function importScorecard(
   let entries = 0;
   let skipped = 0;
   let noOwner = 0;
+  // First-seen order becomes sort_order, so a file whose rows run
+  // Weekly-then-Compliance produces exactly that order with nobody setting it
+  // by hand. Everything imports weekly, so every group created here is weekly.
+  const groupOrder = new Map<string, { name: string; order: number }>();
 
   for (const [i, row] of table.rows.entries()) {
     const name = cell(row, table.headers, "Title", "Name", "Metric", "Measurable");
@@ -684,6 +693,13 @@ async function importScorecard(
     // says how much history rides along with each measurable — otherwise the
     // write count reads as wrong against the row count (N6 findings 2 + 7).
     const group = cell(row, table.headers, "Group Name", "Group", "Section");
+    const groupName = normalizeGroupName(group);
+    if (groupName) {
+      const key = groupNameKey(groupName);
+      if (!groupOrder.has(key)) {
+        groupOrder.set(key, { name: groupName, order: groupOrder.size });
+      }
+    }
     ctx.preview.add({
       kind: "scorecard",
       action: isNew ? "create" : "update",
@@ -703,9 +719,39 @@ async function importScorecard(
     });
   }
 
+  // Create a group doc per distinct Group Name so the label carries a period
+  // and a position, not just a string on each metric.
+  //
+  // Only for groups that don't exist yet. Writer.set merges, so re-importing
+  // the same file would otherwise reset `sort_order` and `interval` — silently
+  // undoing a hand-reordered list or a group someone moved to monthly. An
+  // existing group keeps whatever the team set.
+  let newGroups = 0;
+  for (const { name, order } of groupOrder.values()) {
+    const id = groupDocId(ctx.teamId, name);
+    if (ctx.existingIds.has(id)) continue;
+    await ctx.writer.set(["scorecard_groups", id], {
+      team_id: ctx.teamId,
+      name,
+      interval: "weekly",
+      sort_order: order,
+      import_source: "csv",
+    });
+    newGroups++;
+  }
+
   if (weekColumns.length) {
     details.push(
       `${entries} weekly entries across ${weekColumns.length} week columns`,
+    );
+  }
+  if (groupOrder.size) {
+    const names = [...groupOrder.values()].map((g) => g.name).join(", ");
+    details.push(
+      `${groupOrder.size} ${groupOrder.size === 1 ? "category" : "categories"}: ${names}` +
+        (newGroups === groupOrder.size
+          ? ""
+          : ` (${groupOrder.size - newGroups} already set up — order kept)`),
     );
   }
   if (noOwner) details.push(`${noOwner} imported with No Owner`);
@@ -1637,6 +1683,7 @@ export async function runTeamImport(
 
   const existingIds = await loadExistingIds(db, teamId, [
     "scorecard_metrics",
+    "scorecard_groups",
     "rocks",
     "todos",
     "issues",

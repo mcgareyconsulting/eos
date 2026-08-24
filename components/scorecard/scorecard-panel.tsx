@@ -22,6 +22,7 @@ import {
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
 import { compareBySpeakingOrder } from "@/lib/l10/speaking-order";
+import type { ScorecardGroup } from "@/lib/scorecard-groups";
 
 /**
  * Client shell for the standalone scorecard: filter state + metric filter by
@@ -38,6 +39,7 @@ export function ScorecardPanel({
   members,
   showDelete = true,
   showGroupEditor = true,
+  groups = [],
   compact = false,
   /** L10: when set, Default order walks owner speaking order (P1-4). */
   speakingOrder,
@@ -56,6 +58,8 @@ export function ScorecardPanel({
   members: ScorecardMember[];
   showDelete?: boolean;
   showGroupEditor?: boolean;
+  /** Team's scorecard groups; ordering + period for the category headers. */
+  groups?: ScorecardGroup[];
   /** L10 segment: weekly-only, no period tabs. */
   compact?: boolean;
   speakingOrder?: string[];
@@ -231,6 +235,8 @@ export function ScorecardPanel({
         members={members}
         showDelete={showDelete}
         showGroupEditor={showGroupEditor}
+        groups={groups}
+        interval={period}
         compact={compact}
         hideLocalSearch
         /*

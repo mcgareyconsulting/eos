@@ -5,6 +5,10 @@ import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
+import {
+  orderGroupNames,
+  type ScorecardGroup,
+} from "@/lib/scorecard-groups";
 import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
 import {
   average,
@@ -123,6 +127,8 @@ export function ScorecardGrid({
   members,
   showDelete = false,
   showGroupEditor = true,
+  groups = [],
+  interval = "weekly",
   compact = false,
   /** When true, skip the grid's own search strip (parent owns filters). */
   hideLocalSearch = false,
@@ -138,6 +144,10 @@ export function ScorecardGrid({
   members: ScorecardMember[];
   showDelete?: boolean;
   showGroupEditor?: boolean;
+  /** Team's group docs — supply position so Compliance can sit below Weekly. */
+  groups?: ScorecardGroup[];
+  /** Which period this grid is showing; groups are per-period. */
+  interval?: ScorecardGroup["interval"];
   compact?: boolean;
   hideLocalSearch?: boolean;
   flatList?: boolean;
@@ -195,9 +205,12 @@ export function ScorecardGrid({
 
   // Bucketing preserves `filtered`'s order, which is the caller's sort — so
   // in the L10 each category renders its own speaking round.
-  const { ungrouped, groups } = useMemo(
-    () => groupMetricsByCategory(filtered, flatList),
-    [filtered, flatList],
+  const { ungrouped, groups: metricGroups } = useMemo(
+    () =>
+      groupMetricsByCategory(filtered, flatList, (names) =>
+        orderGroupNames(names, groups, interval),
+      ),
+    [filtered, flatList, groups, interval],
   );
 
   const stickyShadow =
@@ -592,7 +605,7 @@ export function ScorecardGrid({
               </tr>
             )}
             {ungrouped.map(renderMetricRow)}
-            {groups.flatMap((g) => [
+            {metricGroups.flatMap((g) => [
               renderGroupHeader(g.name, g.items.length),
               ...g.items.map(renderMetricRow),
             ])}

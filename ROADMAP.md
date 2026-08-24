@@ -1299,21 +1299,31 @@ section with speaker order inside each, or make it a per-team preference.
 display problem is **N43**. Joe said on the call it was already being fixed;
 daniel confirmed 2026-08-24 that it never landed.
 
-**Unblocked 2026-08-24 — and probably narrower than written.** Rather than
+**Unblocked 2026-08-24, and confirmed narrower than written.** Rather than
 waiting on view access in 90, daniel **imported Steph's IT team scorecard
-into our app**, so the target structure is inspectable directly. Note what
-that likely did on its own: the scorecard importer already maps
+into our app**. Her export carries a **`Group Name`** column holding exactly
+the categories she described — `Weekly` and `Compliance` (screenshot
+confirmed) — and the scorecard importer already maps
 `Group Name` / `Group` / `Section` → our `group` field
-(`lib/team-import.ts:626`), and `Group Name` is ninety's own column. If her
-export carried the weekly / compliance split, **those sections are already
-populated and rendering as grouped rows on the Scorecard tab**. Check that
-before building anything — it may reduce this item to the naming change plus
-the L10 decision, with no data work at all.
+(`lib/team-import.ts:626`). **So her categories came in with the data and
+are already rendering as grouped section rows on the Scorecard tab.** No
+data work, no model work.
+
+What is actually left is therefore only:
+1. **Naming.** We call it "Section"; the client calls it a category, and
+   the affordance is a small grey "No section" link. Rename and make it
+   visible.
+2. **The L10 decision** (below) — the one real question.
+
+Related, from the same import: getting other teams' scorecards in needs an
+in-app path at all. Scorecard import is still CLI-only — recorded as **N6
+finding 7**, not here.
 
 **Trail**
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph: 90 has scorecard categories (weekly / compliance), used by leadership too; believes ours has none. Steph + Joe agree to grant daniel view access to the IT team scorecard in 90
 - 2026-08-24 · finding · src session-2026-08-24 — the feature exists as `group` / "Section"; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Tab half = naming; L10 half = speaker-order vs category-order conflict, needs a decision
-- 2026-08-24 · unblocked · src session-2026-08-24 — daniel imported Steph's IT 90 scorecard instead of taking view access; importer already maps `Group Name`/`Group`/`Section` → `group`, so her categories may have come in with the data. Verify before building
+- 2026-08-24 · unblocked · src session-2026-08-24 — daniel imported Steph's IT 90 scorecard instead of taking view access; importer already maps `Group Name`/`Group`/`Section` → `group`
+- 2026-08-24 · confirmed · src session-2026-08-24 — ninety's export carries `Group Name` = Weekly / Compliance (screenshot). Categories arrived with the import and already group on the Scorecard tab; remaining scope is the rename plus the L10 speaker-order-vs-category decision
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
@@ -1408,7 +1418,7 @@ than hypothetical.
 - 2026-08-24 · correction · src session-2026-08-24 — daniel: the fix never landed. Recorded as its own item rather than folded into N28, which has no client witness
 
 ### N6 · Better import functionality
-*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-18*
+*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
 
 Effort M. Beyond the current CSV/xlsx import: clearer mapping, validation,
 dry-run, re-import, error report. Attachments are out of import scope
@@ -1420,7 +1430,8 @@ import (rocks / milestones / todos / issues / headlines).
 
 **Live findings 2026-08-18 (onboarding import). Verdict: decent, not
 done.** In-app import exists at `/teams/[teamId]/import` for rocks /
-todos / issues only.
+todos / issues only — headlines was added 2026-08-19 (`2de1be1`, finding 5);
+**scorecard is still missing** (finding 7).
 
 1. **Milestone import is broken when importing rocks.** Ninety ships
    rocks + milestones as one two-sheet `.xlsx`. The CLI accepts both
@@ -1452,6 +1463,26 @@ todos / issues only.
    Client asked for confirmation of what archived rows do. State it on
    the page (skipped unless checked; `archived_at` stamped; re-import
    cannot un-archive) rather than inventing a second path.
+7. **Scorecard import is still CLI-only** (new 2026-08-24, daniel —
+   raised while importing Steph's IT scorecard for N40). Same shape as
+   finding 5, one kind later: the *parser* fully supports scorecard
+   (`lib/team-import.ts` writes `scorecard_metrics` **and** back-fills
+   `scorecard_entries` from the week columns, and maps
+   `Group Name` / `Group` / `Section` → `group`), and `ImportKind`
+   includes `"scorecard"` — but `WebImportKind` is
+   `rocks | todos | issues | headlines`, so the Import page never offers
+   it. Add it to `WebImportKind`, `KINDS` and `EXPECTED_HEADERS`; the
+   team dropdown, preview and owner-alias machinery all come for free.
+   **Two wrinkles to settle while in there:**
+   - *Preview shape.* Scorecard is the only kind that writes two
+     collections. A row-level preview (finding 2) should say metrics
+     **and** week-entries, or the write count will read as wrong.
+   - *`interval` is hardcoded `"weekly"` on import.* Every imported
+     metric lands weekly regardless of what it is, so monthly/quarterly
+     measurables import into the wrong interval tab — and Steph's
+     Compliance group is exactly the kind of thing that may not be
+     weekly. Either read an interval column or state the limitation on
+     the page.
 
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — CSV user import named in Pass 11 directory/admin asks
@@ -1459,6 +1490,7 @@ todos / issues only.
 - 2026-08-12 · followup · src l10-2026-08-12 — daniel to follow up with Jessica on API documentation and how she'd like to upload data; her answer shapes whether this item stays CSV-first or grows an API surface
 - 2026-08-18 · client · src onboarding-2026-08-18 — import "decent"; milestone sheet dropped on rocks upload; preview not useful (Jessica's dry-run ask, live); team filter should be dropdowns; unmatched owner → No Owner + name in description; headlines kind missing; archived-import contract to confirm
 - 2026-08-18 · decision · src onboarding-2026-08-18 — people/directory CSV is N35, not this item
+- 2026-08-24 · request · src session-2026-08-24 — daniel: need an in-app Import path for **scorecard** data so other teams can be onboarded without the CLI. Parser already supports it; only `WebImportKind` gates it. Flagged alongside: two-collection preview, and the hardcoded `interval: "weekly"`
 
 ### N10 · Attachments + links on entities (forward only)
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*

@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-18
+updated: 2026-08-24
 verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -192,6 +192,57 @@ re-typing. **N38** (new): deactivate user — block login, keep data, gray
 out owned items (the correct alternative to Auth-delete, which re-keys
 uid and orphans memberships — P1-2). **Queue unchanged** except N1
 leaving `awaiting`; new items land as backlog.
+
+**Session 2026-08-24 (Pass 22) — two live L10s on 2026-08-19 (IT + ESD).**
+The client ran a full L10 in the tool on **two** teams the same day, with
+Gemini notes + transcripts for both. Seven asks came back; four were built
+and shipped this session (`64b11d9`, `3ded811`), two were corroborations of
+existing items, and one turned out to be **already built**.
+
+Built: **N39** (headline edit modal went invisible when the cursor left the
+viewport) · **N41** (room-wide vote tally) · **N42** (speaker round wraps) ·
+and **N26**'s check-off half, which was the week's blocking workflow bug.
+
+Two findings worth more than the fixes:
+
+1. **N26 was never a data-model problem.** Cascading headlines are already
+   fanned out **one doc per team** (`importDocId("headline", teamId, …)`),
+   so "mark it off for my team only" was a *guard to drop*, not a schema to
+   design. Pass 19/20 had left this open as "per-team or per-user — decide";
+   the data had already decided. Edit/delete stay blocked, `discussed` and
+   `archived` do not.
+2. **N39 was a CSS containment bug, not an event handler.** A full sweep
+   found **zero** pointer-leave / blur-close handlers in the repo at HEAD or
+   at the prod commit — nothing could close a dialog. The modal was rendered
+   *inside* the row's `opacity-0 group-hover:opacity-100` action cluster, and
+   `opacity` applies to the whole subtree including `position: fixed`
+   children. It never closed; it went transparent, and came back with the
+   typed text intact. Its `fixed inset-0` backdrop is a DOM descendant of the
+   row, which is why hovering anywhere on the page held it open and only
+   leaving the window dropped it — exactly what Ryan described. Portalling to
+   `<body>` fixes the class of bug, not just the instance; **only headlines**
+   nested a modal that way (every other surface puts `opacity-0` on the
+   button and renders its modal as a sibling).
+
+**N40 (scorecard categories) is already built and was not found.** Metrics
+already carry a `group` field with an inline editor and grouped header rows.
+It is labelled **"Section"**, not "category", and the affordance is a small
+grey "No section" link. The reason Steph concluded it did not exist: the L10
+**suppresses sections by design** — `scorecard-panel.tsx` forces `flatList`
+whenever a speaking order is present ("L10 speaking order must not be
+reshuffled by section groups"), and she was driving the meeting. So the tab
+half is naming/discoverability; the L10 half is a genuine ordering conflict
+(90 groups by category in-meeting, we sort by speaker) and needs a decision.
+
+**Scope decision (daniel, this session):** speaker wrap is **one behaviour
+across the board, Segue included** — no per-stage flag. The earlier
+"everything except Segue" reading is retired. Segue keeps its round-done
+marker; it just no longer dead-ends. The old inert-at-the-ends contract in
+`stepSpeakerIndex` is deliberately replaced, and its tests rewritten.
+
+**Not queued, deliberately:** N29 and N34 both gained a second independent
+witness (below) but no new scope, so neither moved. **Queue unchanged** this
+session — everything built was S-sized and rode outside it.
 
 **ID reconciliation** with the agent-local aid
 (`CLIENT_FEEDBACK_PRIORITY.md`, which keeps its own P0–P3 / D-series
@@ -885,7 +936,7 @@ team already reads.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — 90's shape: "3 of 7 of us are here" + per-member checkmarks + joined members queued for sharing order
 
 ### N26 · Headlines — collapse long bodies + check off after sharing
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-24*
 
 Effort S–M. Two asks from live use, both born of P3-2 rich text making
 headline bodies long:
@@ -902,11 +953,38 @@ headline bodies long:
    (per-team or per-user — decide) that does not touch the broadcast
    source doc.
 
+**Both halves shipped (Pass 22).** Collapse landed 2026-08-19 (`0f5c7a1`,
+`HeadlineBody` — click-toggled disclosure with a one-line clamp). Check-off
+landed 2026-08-24 (`3ded811`).
+
+The per-team question Pass 19 left open — "a dismissed state (per-team or
+per-user — decide)" — needed no design: cascading headlines are **already
+one doc per team** (`importDocId("headline", ctx.teamId, …)` in
+`lib/team-import.ts`, and the headlines query is `where("team_id", "==",
+teamId)`). So `discussed` and `archived_at` were already per-team facts and
+the only thing in the way was a blanket read-only guard applied to all four
+mutations. Dropped from `setHeadlineDiscussed` and `setHeadlineArchived`;
+**kept** on `updateHeadline` and `deleteHeadline`, because those would
+rewrite the org's message for whoever cascaded it. The Finish and Monday
+sweeps stopped holding broadcast copies back (`lib/todos-archive.ts` +
+`functions/src/todos-archive.ts` — the second needs a **Cloud Function
+deploy**, not just an app ship). Badge now reads "Org-wide · text is
+read-only" so it says *which half* is locked. Archive is exposed on
+broadcast rows on the Headlines tab; edit/delete stay hidden.
+
+Confirmed verbatim on both 8/19 calls. Steph: "each team will have that in
+their queue to share ... when they mark it off, it's setting the status that
+it was shared with a team, not that it's not available to share anymore."
+Joe: "it'd be nice if this team could mark it complete, but it doesn't
+affect other teams."
+
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — descriptions are quite long; collapse by default, expand on demand
 - 2026-08-12 · request · src l10-2026-08-12 — want to close out organizational headlines even though read-only
 - 2026-08-15 · correction · src l10-2026-08-12-transcript — check-off is wanted for *all* headlines ("share it, then check it off"), not only org-level; Pass 19 scoped it too narrowly
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph on collapse: leadership can have ~20 headlines; click to read rather than display all bodies continuously
+- 2026-08-19 · client · src l10-2026-08-19-it — Steph + Joe: cascading messages still can't be marked off; want per-team completion that doesn't affect other teams. Second sighting same day on ESD (src l10-2026-08-19-esd)
+- 2026-08-24 · build · src session-2026-08-24 — collapse shipped `0f5c7a1`; check-off shipped `3ded811`. Per-team was a guard to drop, not a model to change — the fan-out is already per team. Edit/delete stay blocked; sweeps updated; functions deploy required
 
 ### N27 · Leader-driven meeting sync (follow the leader, off-sync opt-out)
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
@@ -965,7 +1043,7 @@ which unit/interval, what scroll gesture felt wrong.
 - 2026-08-15 · correction · src l10-2026-08-12-notes — re-attributed from `client` to daniel's own observation: the ask is verbatim his, and the room's scorecard feedback was uniformly positive. Real item, no client pressure, repro still owed
 
 ### N29 · Milestones as a two-week reminder (To-Dos tab + L10)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-24*
 
 Effort S–M. Live verdict on the milestone surfaces: effective but **too much
 information**. daniel, driving the page live: "this is a little bit of a
@@ -1010,6 +1088,7 @@ question for the in-meeting surface).
 - 2026-08-15 · client · src l10-2026-08-12-transcript — daniel live: milestone block buries to-dos below the fold ("broken page"); Joe: overwhelming, wants a two-week dropdown like headlines
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Jessica: Home already shows milestones under rocks, may not need a separate personal section; but team view should show everyone's
 - 2026-08-15 · request · src l10-2026-08-12-transcript — Steph: leadership turned this off in 90, ESD liked it — asks for a per-team toggle
+- 2026-08-19 · client · src l10-2026-08-19-it — third corroboration, no scope change: Joe restated the two-week rule to the room ("if it's due in two weeks, it would show up") and Steph accepted it. New detail — her actual complaint is that "you can't see the rock that it's associated with", so the surfaced row should carry its parent rock (display work; N34 owns the row treatment)
 
 ### N30 · Demark comments made during live discussion
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
@@ -1121,14 +1200,23 @@ demand for it.
 **Trail**
 - 2026-08-15 · request · src l10-2026-08-12-transcript — daniel: dislikes the right sidebar, proposes a normal modal; Steph neutral-to-low signal now, expects visibility to rise as the org adopts
 
-### N34 · Mark departmental vs individual rocks and milestones on sight
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-15*
+### N34 · Separate departmental from individual rocks (Home board sections)
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-24*
 
-Effort S. Joe, screen-sharing 90's milestone list, named it as a standing
-complaint about **90**, not about our app — but it lands as a gap we can
-close cheaply: looking at the list, "this is departmental and this is
-departmental, so that's not specified — which, that's a critique I have for
-90. I'd like to know what's departmental and what's not."
+Effort S. **Re-aimed at our app (Pass 22).** Pass 19/20 recorded this as
+Joe critiquing **90** rather than us — "that's a critique I have for 90.
+I'd like to know what's departmental and what's not." On 2026-08-19 Cora
+made the same complaint about **our Home board**, and specified the fix:
+not a badge, but **separate sections**. Reviewing Joe's shared screen:
+"it's got all of the rocks but it also includes the two departmental ones
+... I like seeing the departmental rocks, but I would like them to be in
+their own section, to be like *my rocks* and *the departmental rocks*.
+Because at first I was looking at it like, what rocks am I on here?"
+
+So the target is a grouped Home board — "My Rocks" and "Departmental Rocks"
+as distinct sections — with the badge treatment as the cheaper fallback on
+rows elsewhere (To-Dos, the L10 segments). Second independent witness, aimed
+at us rather than at 90, with a concrete layout.
 
 We already carry the data. The Pass 18/19 rock model settled on `owner_id`
 (a person, always) plus `rock_type` (individual / team / company), so this
@@ -1140,6 +1228,136 @@ rock it is*. Both can ride the same row treatment.
 
 **Trail**
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Joe: cannot tell departmental from individual rocks in the list; a 90 critique, cheap for us because `rock_type` already exists
+- 2026-08-19 · client · src l10-2026-08-19-esd — Cora, on OUR Home board: personal and departmental rocks are intermingled and she couldn't tell which were hers. Asks for separate sections ("my rocks and the departmental rocks"), not a badge. Re-aims the item at our app
+
+### N39 · Headline edit modal vanished when the cursor left the window
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+
+Effort S. **Shipped 2026-08-24 (`64b11d9` + `3ded811`).** Client-reported by
+three people in the 8/19 IT L10 while editing a headline mid-meeting. Steph:
+"when I move my cursor off of this screen, it drops the focus ... I would
+expect the modal to stay up until I close it." Ryan pinned the boundary: "if
+you stay over that website, it stays. But if you leave the screen, it's
+gone." Joe reproduced it live.
+
+**Not an event handler — a CSS containment bug.** A sweep for
+`onMouseLeave` / `onPointerLeave` / `mouseleave` / `focusout` /
+`visibilitychange` / window `blur` across `app`, `components` and `lib`
+returns **zero hits**, at HEAD and at `98bb30b` (the commit prod was
+serving). Nothing in the codebase can close a dialog on pointer exit. What
+actually happened: `HeadlineEditButton` rendered the modal **inline**, and
+its trigger lives inside the row's action cluster
+(`opacity-0 group-hover:opacity-100`, `segment-headlines.tsx:171` /
+`headlines/page.tsx:179`). `opacity` applies to the entire rendered subtree
+and `position: fixed` does not escape it, so an open dialog was painted at
+opacity 0. It never closed and never lost the typed text.
+
+Why Ryan's description was exact: the modal's `fixed inset-0` backdrop is a
+DOM *descendant* of the row, and an element is `:hover` when the pointer is
+over any descendant — so hovering anywhere in the viewport held the row
+hovered and the modal visible, and only leaving the window dropped it.
+
+Fixed by portalling to `document.body` (precedent: `status-popover.tsx`),
+which removes the trap structurally rather than patching the instance. **Only
+headlines nested a modal inside a faded wrapper** — `rock-row.tsx`,
+`issues-list.tsx`, `segment-issues.tsx`, `todo-list-row.tsx`,
+`entity-comments.tsx`, `meetings-list.tsx`, `scorecard-grid.tsx` and
+`move-term-button.tsx` all put `opacity-0` on the button itself and render
+their modals as siblings. No SSR guard needed: `open` starts false and only
+a click sets it.
+
+**Trail**
+- 2026-08-19 · client · src l10-2026-08-19-it — Steph, Ryan, Joe: editing a headline, the modal disappears when the cursor leaves the browser viewport; expected to persist until closed
+- 2026-08-24 · build · src session-2026-08-24 — diagnosed as ancestor `opacity-0`, not a dismissal handler (zero pointer-leave handlers exist); portalled to `<body>`; blast radius confirmed limited to the two headline surfaces
+
+### N40 · Scorecard categories — already built, and hidden in the L10
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+
+Effort S (tab) + decision (L10). Steph asked for scorecard **categories** —
+"we have like weekly, and then we have compliance, so John kind of moved the
+compliance ones into a separate category ... I don't know that that
+functionality exists right now."
+
+**It does.** `scorecard_metrics` carries a `group` field, `GroupCell` is an
+inline editor for it, `setMetricGroup` is the server action, and
+`scorecard-grid.tsx` renders grouped header rows. Two reasons she did not
+find it:
+1. **It is called "Section", not "Category"**, and the affordance is a small
+   grey "No section" link under the metric name — easy to miss entirely.
+2. **The L10 suppresses sections by design.** `scorecard-panel.tsx` forces
+   `flatList` whenever a speaking order is present, commented "L10 speaking
+   order must not be reshuffled by section groups." She was driving the
+   meeting, so she saw a flat list.
+
+So this splits. The **tab half** is naming + discoverability, and is cheap.
+The **L10 half** is a real product conflict and needs a call, not a fix: 90
+groups by category *in the meeting*; we sort by speaker. Both orderings
+cannot hold at once. Options: keep speaker order (status quo), group by
+section with speaker order inside each, or make it a per-team preference.
+
+**Also raised in the same segment, separate from this:** large numbers render
+"a little wonky" on the scorecard (Steph had zoomed in; `$2.3M`-scale values
+in `min-w-[4.5rem]` cells). Joe said it was already reported and being fixed
+— **confirm with daniel whether that landed** before opening an item.
+
+**Blocked on:** Steph granting daniel **view access to the IT team's
+scorecard in 90** so the target structure can be seen (her action item from
+the meeting; see Owed).
+
+**Trail**
+- 2026-08-19 · client · src l10-2026-08-19-it — Steph: 90 has scorecard categories (weekly / compliance), used by leadership too; believes ours has none. Steph + Joe agree to grant daniel view access to the IT team scorecard in 90
+- 2026-08-24 · finding · src session-2026-08-24 — the feature exists as `group` / "Section"; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Tab half = naming; L10 half = speaker-order vs category-order conflict, needs a decision
+
+### N41 · Room-wide vote tally on the Issues segment
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+
+Effort S. **Shipped 2026-08-24 (`64b11d9`).** Steph, mid-vote: "we always
+ask everyone if they voted ... it might be cool to just tally up, like if
+the available votes have been exhausted or not. That would actually be kind
+of a nice feature, because then you don't have to confirm that everybody has
+submitted their three votes."
+
+Cheaper than it looks: no client subscribes to other people's `issue_votes`,
+but the team total is already denormalized onto each issue, so **cast** is a
+sum over issues already on screen. **Available** counts only people in the
+room — absentees never spend theirs, and an unreachable denominator would
+defeat the chip. Reads the live `absent_user_ids` off the meeting-doc
+subscription the discuss pointer already uses, so marking someone absent
+mid-meeting re-bases it immediately. `teamVoteTally()` in `lib/issues.ts`
+(5 tests), `TeamVoteTallyBadge` beside the existing personal credits chip.
+
+**Trail**
+- 2026-08-19 · request · src l10-2026-08-19-it — Steph: show total votes available vs used so the room can see when everyone has voted, without asking round the table
+- 2026-08-24 · build · src session-2026-08-24 — shipped; computed from denormalized `issues.votes` against present members x `MAX_VOTES_PER_TEAM`
+
+### N42 · Speaker round wraps instead of dead-ending
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+
+Effort S. **Shipped 2026-08-24 (`64b11d9` + `3ded811`).** Ryan: "I
+definitely like the speakers being on every page ... but maybe we allow it
+to wrap. So you get to the last speaker, you click next, and it goes back to
+the beginning. Sometimes we go multiple rounds, and that's much easier than
+clicking previous a bunch of times to get to the first speaker."
+
+**Scope settled by daniel (Pass 22): one behaviour across the board, Segue
+included.** The first reading — wrap everywhere *except* Segue, since Segue
+is once-around and owns the round-done marker — was explicitly retired in
+favour of consistency. Segue still shows "everyone's shared"; it just no
+longer dead-ends. Both directions cycle: once Next wraps, a Prev that goes
+inert at the first speaker would recreate Ryan's complaint mirrored.
+
+Implementation is the pure module: `stepSpeakerIndex` now always cycles (at
+most one lap, so it can never land on someone absent), and the `atStart` /
+`atEnd` disables came out of both `speaking-order-rail.tsx` and Segue's own
+stepper. **Deliberately not built:** Joe's follow-on idea that next-past-last
+should also *advance the stage* — wrapping and auto-advance are mutually
+exclusive, and stage transport stays on its own buttons. The old
+inert-at-the-ends contract and its tests were replaced, not worked around.
+
+**Trail**
+- 2026-08-19 · request · src l10-2026-08-19-it — Ryan: wrap the speaker list back to the first speaker at the end of the round; Joe agrees, flags that next-past-last currently should trigger stage advance
+- 2026-08-19 · client · src l10-2026-08-19-esd — Steph on round shape: "for headlines or for segue, we would only go through once, but ... in discussion for like an issue, we might go around twice"
+- 2026-08-24 · decision · src session-2026-08-24 — daniel: wrap everywhere including Segue, one behaviour across the board; per-stage exception dropped. Stage advance stays separate from speaker wrap
 
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-18*
@@ -1541,6 +1759,8 @@ tokens + webhook secret in Secret Manager.
 | IAM resolution per `docs/HPB_IAM_REQUEST.md` (Option A grant or Option B bindings) — confirmation of which was applied | F2, F3 | 2026-07-27 |
 | Joe's confirmation that Transformation actually uses scorecard share-up | P3-1 | 2026-07-30 |
 | Leadership team to be created (company rocks live there) | N4 | 2026-08-18 |
+| Steph to grant daniel **view access to the IT team's scorecard in 90** so the category structure can be seen (her action item from the 8/19 IT L10) | N40 | 2026-08-19 |
+| daniel to confirm whether the scorecard large-number display fix already landed (Joe reported it as in flight on 8/19) | N40 | 2026-08-19 |
 
 ## Open questions
 
@@ -1602,6 +1822,11 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-12 · P3-2 · closed — rich text + links shipped (PR #29) across headlines / issues / rocks / to-dos **and** comments; the P2-5 links-only `linkify` deleted so one markup path remains; stored in the existing plain-string field, so no migration and nothing downstream learns HTML; awaits F5 for `verified`
 - 2026-08-12 · Q-index · answered — PR #28's `shared_team_ids array-contains` query needs no composite index (equality-only, served by merged single-field indexes) and PR #28 changed neither `firestore.rules` nor `firestore.indexes.json`; F5 carries no extra deploy step for it
 - 2026-08-11 · Q-queues · answered — three parallel queues (root front matter W2-only, agent-local P0–P3 aid, docs/ROADMAP.md numbered lists) consolidated into one cross-workstream `queue.next`; docs/ROADMAP.md banner-superseded; `queue.now` N1 → F4 because N1 is gated on Steph's calendar and a client-gated `now` stalls the queue
+- 2026-08-24 · N39 · closed — headline edit modal "disappearing" was an ancestor `opacity-0` on the hover action cluster, not a dismissal handler (the repo has none); portalled to `<body>` (`3ded811`). Only headlines nested a modal that way
+- 2026-08-24 · N41 · closed — room-wide vote tally shipped: `teamVoteTally()` + `TeamVoteTallyBadge`, computed from denormalized `issues.votes` against present members, live off the meeting doc (`64b11d9`)
+- 2026-08-24 · N42 · closed — speaker round now cycles on every stage including Segue; `stepSpeakerIndex` always wraps, end-guards removed from the rail and Segue. Old inert-at-the-ends contract retired (`3ded811`)
+- 2026-08-24 · N26 · closed — both halves shipped: collapse `0f5c7a1`, per-team check-off `3ded811`. The Pass 19 "per-team or per-user — decide" question was moot: cascading headlines are already one doc per team, so it was a guard to drop. **Monday sweep change needs a Cloud Function deploy**
+- 2026-08-24 · Q-scorecard-categories · answered — scorecard categories already exist as the `group` / "Section" field with grouped rows; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Remaining work is naming + the speaker-order-vs-category decision → N40
 - 2026-08-18 · N1 · in-progress — Steph onboarding walkthrough ran; new-team solid, import decent, add-members not. Leaves `awaiting`. Leftover: admin sees all teams in the sidebar dropdown before P2-7 → `verified`
 
 ## Sources
@@ -1617,6 +1842,8 @@ distinct from Trail entries, which carry a layer + src.*
 | team-mgmt-ops | docs/TEAM_MGMT_OPS.md | Team-management ops runbook (P2-7, N1) |
 | feedback-2026-08-04 | docs/feedback/HPB_Feedback_Roadmap_Progress_2026-08-04.pdf | Client-facing progress snapshot vs the 08-03 tracker |
 | tracker-2026-08-03 | Daniel_Tool_Feedback_Tracker.xlsx (client-held; not a repo artifact — verbatim triage retained in docs/ROADMAP.md Pass 14 log; anchors are its row numbers) | Structured client feedback, 22 items, Jenna/Steph/Jessica; re-read 2026-08-10 |
+| l10-2026-08-19-it | (Gemini notes + transcript, client-held — not a repo artifact) | IT Systems & Security L10, 2026-08-19; anchors are its transcript timestamps. N26 / N39 / N40 / N41 / N42 / N29 |
+| l10-2026-08-19-esd | (Gemini notes + transcript, client-held — not a repo artifact) | Enterprise Systems & Data L10, 2026-08-19; anchors are its transcript timestamps. N26 / N34 / N42 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
 

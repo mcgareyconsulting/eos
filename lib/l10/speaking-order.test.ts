@@ -108,44 +108,30 @@ describe("stepSpeakerIndex", () => {
     assert.equal(stepSpeakerIndex(order, 0, ["u-marcus"], 1), 2);
   });
 
-  test("stays put when there is nobody eligible in that direction", () => {
-    assert.equal(stepSpeakerIndex(order, 2, [], 1), 2);
-    assert.equal(stepSpeakerIndex(order, 0, [], -1), 0);
-    // Everyone ahead is absent — the control goes inert rather than landing
-    // on someone who isn't in the room.
-    assert.equal(stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], 1), 0);
-  });
-
   test("handles an empty order and an out-of-range starting index", () => {
     assert.equal(stepSpeakerIndex([], 0, [], 1), 0);
     assert.equal(stepSpeakerIndex(order, 99, [], -1), 1);
   });
 
-  test("wrap cycles the round in both directions", () => {
-    assert.equal(stepSpeakerIndex(order, 2, [], 1, true), 0);
-    assert.equal(stepSpeakerIndex(order, 0, [], -1, true), 2);
-    // Mid-round it behaves exactly as before.
-    assert.equal(stepSpeakerIndex(order, 0, [], 1, true), 1);
+  // The round is a cycle on every stage, Segue included. This replaces the
+  // old inert-at-the-ends contract — see the note on stepSpeakerIndex.
+  test("cycles past the end of the round in both directions", () => {
+    assert.equal(stepSpeakerIndex(order, 2, [], 1), 0);
+    assert.equal(stepSpeakerIndex(order, 0, [], -1), 2);
   });
 
-  test("wrap skips absentees on the way round", () => {
-    // Last present person is Marcus; Elena is out, so Next lands on Sarah.
-    assert.equal(stepSpeakerIndex(order, 1, ["u-elena"], 1, true), 0);
+  test("skips absentees on the way round the cycle", () => {
+    // Marcus is the last person present; Elena is out, so Next lands on Sarah.
+    assert.equal(stepSpeakerIndex(order, 1, ["u-elena"], 1), 0);
     // Backwards past the front, skipping the absent tail.
-    assert.equal(stepSpeakerIndex(order, 0, ["u-elena"], -1, true), 1);
+    assert.equal(stepSpeakerIndex(order, 0, ["u-elena"], -1), 1);
   });
 
-  test("wrap is a no-op when the viewer is the only person present", () => {
-    assert.equal(
-      stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], 1, true),
-      0,
-    );
-    assert.equal(stepSpeakerIndex([], 0, [], 1, true), 0);
-  });
-
-  test("wrap defaults off, so Segue still dead-ends", () => {
-    assert.equal(stepSpeakerIndex(order, 2, [], 1), 2);
-    assert.equal(stepSpeakerIndex(order, 0, [], -1), 0);
+  test("is a no-op when the current speaker is the only person present", () => {
+    // One lap finds nobody else eligible, so the pointer never lands on
+    // someone who isn't in the room.
+    assert.equal(stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], 1), 0);
+    assert.equal(stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], -1), 0);
   });
 });
 

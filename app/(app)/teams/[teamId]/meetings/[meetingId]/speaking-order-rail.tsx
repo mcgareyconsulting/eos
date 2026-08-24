@@ -24,7 +24,6 @@ export function SpeakingOrderRail({
   speakerIndex,
   absentUserIds,
   members,
-  wrap = false,
 }: {
   teamId: string;
   meetingId: string;
@@ -32,15 +31,6 @@ export function SpeakingOrderRail({
   speakerIndex: number;
   absentUserIds: string[];
   members: { user_id: string; full_name: string }[];
-  /**
-   * Cycle the round instead of going inert at its ends. On for the stages
-   * that genuinely go around more than once (Ryan, 8/19 L10: "sometimes we
-   * go multiple rounds, and that's much easier than clicking previous a
-   * bunch of times"); off for Segue, which is once-around by design and
-   * owns the round-done signal. Wrapping only moves the SPEAKER — advancing
-   * the stage stays on the transport buttons below, deliberately.
-   */
-  wrap?: boolean;
 }) {
   const [pending, start] = useTransition();
 
@@ -61,13 +51,9 @@ export function SpeakingOrderRail({
       await setSpeakingIndex(
         teamId,
         meetingId,
-        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction, wrap),
+        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction),
       );
     });
-
-  // With wrap on there are no ends to go inert at.
-  const atStart = !wrap && currentUid === visible[0];
-  const atEnd = !wrap && currentUid === visible[visible.length - 1];
 
   return (
     <div className="space-y-2 px-3 py-3">
@@ -103,7 +89,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(-1)}
-          disabled={pending || atStart}
+          disabled={pending}
           className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           ← Prev
@@ -111,7 +97,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(1)}
-          disabled={pending || atEnd}
+          disabled={pending}
           className="flex-1 rounded-md bg-hpb-green px-2 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-40"
         >
           Next speaker →

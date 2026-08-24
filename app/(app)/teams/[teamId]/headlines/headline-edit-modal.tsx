@@ -35,11 +35,6 @@ export function HeadlineEditButton({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const [title, setTitle] = useState(headline.title);
   const [body, setBody] = useState(headline.body ?? "");
@@ -102,7 +97,9 @@ export function HeadlineEditButton({
           not exempt. Rendered in place, an open dialog went invisible
           the moment the pointer left the row (client-reported 8/19).
           The portal takes it out from under that ancestor entirely. */}
-      {open && mounted &&
+      {/* No SSR guard needed: `open` starts false and only a click sets it,
+          so this branch is never reached during the server render. */}
+      {open &&
         createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div

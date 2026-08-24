@@ -219,7 +219,7 @@ describe("selectIssuesClosedBeforeWeek", () => {
 describe("selectHeadlinesDiscussedBeforeWeek", () => {
   const weekStart = 2_000_000;
 
-  test("only discussed non-broadcast before week start", () => {
+  test("only discussed before week start; standing items never close", () => {
     const ids = selectHeadlinesDiscussedBeforeWeek(
       [
         {
@@ -237,16 +237,30 @@ describe("selectHeadlinesDiscussedBeforeWeek", () => {
           discussed: false,
           discussed_at: null,
         },
-        {
-          id: "bc",
-          discussed: true,
-          discussed_at: ts(weekStart - 1),
-          broadcast: true,
-        },
       ],
       weekStart,
     );
     assert.deepEqual(ids, ["old"]);
+  });
+
+  // Broadcast copies used to be held back here. They are not any more: a
+  // cascaded headline is fanned out one doc per team, so closing this team's
+  // copy after they have shared it leaves every other team's queue alone.
+  // Client ask, 8/19 L10 — "each team will have that in their queue to
+  // share ... when they mark it off, it's setting the status that it was
+  // shared with a team, not that it's not available to share anymore."
+  test("a broadcast copy archives like any other once discussed", () => {
+    const ids = selectHeadlinesDiscussedBeforeWeek(
+      [
+        {
+          id: "bc",
+          discussed: true,
+          discussed_at: ts(weekStart - 1),
+        },
+      ],
+      weekStart,
+    );
+    assert.deepEqual(ids, ["bc"]);
   });
 });
 

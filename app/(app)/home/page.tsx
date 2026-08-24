@@ -10,6 +10,7 @@ import {
   selectHomeTodos,
   selectMilestonesForRocks,
   shouldShowHomeRock,
+  splitHomeRocksByType,
   todoVisibilityLabel,
 } from "@/lib/home-board";
 import {
@@ -398,6 +399,8 @@ export default async function HomePage() {
       due_date: r.due_date,
       quarter: r.quarter || "",
       team_id: r.team_id,
+      owner_id: r.owner_id ?? null,
+      rock_type: r.rock_type ?? null,
       href: `/teams/${r.team_id}/rocks`,
       ownerLabel,
       milestoneDone,
@@ -416,6 +419,9 @@ export default async function HomePage() {
       }),
     };
   });
+
+  const { mine: myRocks, departmental: departmentalRocks } =
+    splitHomeRocksByType(rockItems);
 
   // Personal scorecard: metrics I own on teams I can open.
   const myMetrics: MetricRow[] = myMetricsSnap.docs
@@ -527,9 +533,32 @@ export default async function HomePage() {
             ))}
           </HomeColumn>
 
-          <HomeColumn title="Rocks" count={rockItems.length} flush>
-            <HomeRocksList rocks={rockItems} />
-          </HomeColumn>
+          {/* N34: "My Rocks" and "Departmental Rocks" read as two lists, not
+              one mixed one — Cora couldn't tell which rocks were actually
+              hers. Split by rock_type, so a department rock she owns still
+              sits with the department's. Either section is dropped entirely
+              when empty rather than showing an empty-state twice. */}
+          <div className="space-y-4">
+            {myRocks.length > 0 && (
+              <HomeColumn title="My Rocks" count={myRocks.length} flush>
+                <HomeRocksList rocks={myRocks} />
+              </HomeColumn>
+            )}
+            {departmentalRocks.length > 0 && (
+              <HomeColumn
+                title="Departmental Rocks"
+                count={departmentalRocks.length}
+                flush
+              >
+                <HomeRocksList rocks={departmentalRocks} />
+              </HomeColumn>
+            )}
+            {rockItems.length === 0 && (
+              <HomeColumn title="Rocks" count={0} flush>
+                <HomeRocksList rocks={[]} />
+              </HomeColumn>
+            )}
+          </div>
         </div>
 
         <HomeColumn title="My metrics" count={metricItems.length} flush>

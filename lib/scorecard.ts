@@ -141,16 +141,42 @@ export function formatGoal(
   return `${arrow} ${formatValue(goal, unit)}`;
 }
 
+/**
+ * Above this magnitude, counts and currency render compactly ($2.3M, not
+ * $2,300,000). N43: scorecard cells are `min-w-[4.5rem]`, so a full-precision
+ * million overflows its column and pushes the whole grid — which is
+ * `overflow-x-auto` — into a horizontal scroll. Client-reported 8/19.
+ *
+ * 100k is the first magnitude that stops fitting: "$99,999" is seven
+ * characters and does fit, "$100,000" is eight and does not.
+ */
+const COMPACT_FROM = 100_000;
+
+function compact(value: number): string {
+  return value.toLocaleString(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+}
+
 // Same unit rendering as formatGoal but without the comparator prefix.
 // Used for averages, individual cell displays, etc.
+//
+// Large counts and currency abbreviate — pair this with formatValueExact()
+// in a `title` so the precise figure is always one hover away, and note that
+// editing a cell still works on the raw number, never on this string.
 export function formatValue(value: number | null, unit: string): string {
   if (value == null) return "—";
   if (unit === "currency") {
+    if (Math.abs(value) >= COMPACT_FROM) return `$${compact(value)}`;
     return `$${value.toLocaleString(undefined, {
       maximumFractionDigits: 0,
     })}`;
   }
   if (unit === "percent") {
+    // Percentages are not abbreviated: a four-figure percent is already a
+    // data problem, and "1.2K%" reads as a formatting bug rather than a big
+    // number.
     return `${value.toLocaleString(undefined, {
       maximumFractionDigits: 1,
     })}%`;
@@ -160,6 +186,23 @@ export function formatValue(value: number | null, unit: string): string {
     return value ? "Yes" : "No";
   }
   if (unit === "time") return formatMinutes(value);
+  if (Math.abs(value) >= COMPACT_FROM) return compact(value);
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+/**
+ * Full-precision rendering of the same value, for tooltips beside an
+ * abbreviated formatValue(). Identical to formatValue() for every unit that
+ * never abbreviates, so callers can use it unconditionally.
+ */
+export function formatValueExact(value: number | null, unit: string): string {
+  if (value == null) return "—";
+  if (unit === "currency") {
+    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+  if (unit === "yesno" || unit === "time" || unit === "percent") {
+    return formatValue(value, unit);
+  }
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 

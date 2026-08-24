@@ -10,6 +10,7 @@ import {
   average,
   formatGoal,
   formatValue,
+  formatValueExact,
   hitRate,
   onTrack,
   STATUS_TONE,
@@ -361,7 +362,7 @@ export function ScorecardGrid({
             title={
               avg == null
                 ? "No entries yet"
-                : `Average of ${values.filter((v) => v != null).length} recorded periods`
+                : `${formatValueExact(avg, m.unit)} — average of ${values.filter((v) => v != null).length} recorded periods`
             }
           >
             {formatValue(avg, m.unit)}

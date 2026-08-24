@@ -59,6 +59,12 @@ const KINDS: {
     blurb:
       "Cascading, customer, and employee headlines. Multi-sheet .xlsx imports every headline sheet.",
   },
+  {
+    id: "scorecard",
+    label: "Scorecard",
+    blurb:
+      "Measurables and their week-by-week history in one file. Group Name becomes the Category. Everything imports as weekly.",
+  },
 ];
 
 function findStephanie(members: MemberOption[]): string {

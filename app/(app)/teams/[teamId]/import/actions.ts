@@ -16,7 +16,13 @@ import {
 import { SKIP_ROWS, type ImportActionResult } from "./import-types";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_KINDS = ["rocks", "todos", "issues", "headlines"] as const;
+const ALLOWED_KINDS = [
+  "rocks",
+  "todos",
+  "issues",
+  "headlines",
+  "scorecard",
+] as const;
 
 function isKind(v: string): v is WebImportKind {
   return (ALLOWED_KINDS as readonly string[]).includes(v);
@@ -27,6 +33,7 @@ function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath(`/teams/${teamId}/issues`);
   revalidatePath(`/teams/${teamId}/headlines`);
+  revalidatePath(`/teams/${teamId}/scorecard`);
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath(`/teams/${teamId}/import`);
   revalidatePath("/home");
@@ -85,6 +92,15 @@ function buildInputs(
 
   const table = tableFromBytes(buf, filename, preferRegexForKind(kind));
 
+  if (kind === "scorecard") {
+    return {
+      inputs: { scorecard: { table } },
+      headers: table.headers,
+      rowCount: table.rows.length,
+      sheets: [],
+    };
+  }
+
   return {
     inputs: { todos: { table } },
     headers: table.headers,
@@ -94,10 +110,10 @@ function buildInputs(
 }
 
 /**
- * Preview (dry-run) or apply an import of Rocks, To-Dos, Issues, or Headlines
- * for a team.
+ * Preview (dry-run) or apply an import of Rocks, To-Dos, Issues, Headlines
+ * or Scorecard measurables for a team.
  * Form fields:
- *   - kind: rocks | todos | issues | headlines
+ *   - kind: rocks | todos | issues | headlines | scorecard
  *   - file: File
  *   - dryRun: "1" | "0"
  *   - createOwners: "1" | "0"
@@ -195,21 +211,19 @@ export async function importTeamFile(
       };
     }
 
+    // What this kind's title column can also be called. A chained ternary
+    // here silently fell through to "headline" for any kind added later, so
+    // it is a lookup — scorecard's column is Metric / Measurable.
+    const TITLE_ALIASES: Record<WebImportKind, string[]> = {
+      rocks: ["rock"],
+      todos: ["to-do"],
+      issues: ["issue"],
+      headlines: ["headline"],
+      scorecard: ["metric", "measurable"],
+    };
     const headerKeys = headers.map((h) => h.trim().toLowerCase());
     const hasTitle = headerKeys.some((h) =>
-      [
-        "title",
-        "name",
-        kind === "rocks"
-          ? "rock"
-          : kind === "todos"
-            ? "to-do"
-            : kind === "issues"
-              ? "issue"
-              : "headline",
-        "todo",
-        "task",
-      ].includes(h),
+      ["title", "name", ...TITLE_ALIASES[kind], "todo", "task"].includes(h),
     );
     if (!hasTitle) {
       const expected = EXPECTED_HEADERS[kind].required.join(", ");

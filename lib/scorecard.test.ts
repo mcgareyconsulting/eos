@@ -5,6 +5,7 @@ import {
   formatGoal,
   formatScorecardDraft,
   formatValue,
+  formatValueExact,
   hitRate,
   missingCount,
   onTrack,
@@ -216,5 +217,59 @@ describe("missingCount", () => {
 
   it("counts all-null array", () => {
     assert.equal(missingCount([null, null, null]), 3);
+  });
+});
+
+// N43: full-precision millions overflowed the fixed-width scorecard cells and
+// pushed the whole grid into a horizontal scroll.
+describe("formatValue — large numbers (N43)", () => {
+  it("abbreviates currency and counts at or above 100k", () => {
+    assert.equal(formatValue(2_300_000, "currency"), "$2.3M");
+    assert.equal(formatValue(100_000, "currency"), "$100K");
+    assert.equal(formatValue(2_300_000, "number"), "2.3M");
+  });
+
+  it("leaves anything that already fits alone", () => {
+    assert.equal(formatValue(99_999, "currency"), "$99,999");
+    assert.equal(formatValue(1_250, "number"), "1,250");
+    assert.equal(formatValue(63, "number"), "63");
+  });
+
+  it("abbreviates negatives by magnitude, not by sign", () => {
+    assert.equal(formatValue(-2_300_000, "currency"), "$-2.3M");
+    assert.equal(formatValue(-99_999, "number"), "-99,999");
+  });
+
+  it("never abbreviates percent, yes/no or time", () => {
+    // A four-figure percent is a data problem; "1.2K%" would read as a bug.
+    assert.equal(formatValue(150_000, "percent"), "150,000%");
+    assert.equal(formatValue(1, "yesno"), "Yes");
+    assert.equal(formatValue(200_000, "time"), "3333:20");
+  });
+
+  it("goals inherit the abbreviation", () => {
+    assert.equal(formatGoal(2_300_000, "gte", "currency"), ">= $2.3M");
+  });
+});
+
+describe("formatValueExact", () => {
+  it("keeps every digit, for the tooltip beside an abbreviated cell", () => {
+    assert.equal(formatValueExact(2_300_000, "currency"), "$2,300,000");
+    assert.equal(formatValueExact(2_300_000, "number"), "2,300,000");
+  });
+
+  it("matches formatValue for units that never abbreviate", () => {
+    for (const [v, u] of [
+      [150_000, "percent"],
+      [1, "yesno"],
+      [200_000, "time"],
+      [63, "number"],
+    ] as const) {
+      assert.equal(formatValueExact(v, u), formatValue(v, u));
+    }
+  });
+
+  it("renders an empty value the same way", () => {
+    assert.equal(formatValueExact(null, "currency"), "—");
   });
 });

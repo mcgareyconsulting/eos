@@ -288,7 +288,7 @@ export function AddMetricModal({
 
               <label className="block space-y-1">
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Section{" "}
+                  Category{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
                 <input
@@ -296,7 +296,7 @@ export function AddMetricModal({
                   list="scorecard-add-groups"
                   value={group}
                   onChange={(e) => setGroup(e.target.value)}
-                  placeholder="e.g. Deposit volume"
+                  placeholder="e.g. Weekly, Compliance"
                   className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
                 <datalist id="scorecard-add-groups">

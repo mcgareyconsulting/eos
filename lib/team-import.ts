@@ -569,6 +569,8 @@ async function importScorecard(
     asOf: Date;
     includeArchived: boolean;
     existingIds: Set<string>;
+    unmatchedOwner: "skip" | "no-owner";
+    preview: PreviewCollector;
   },
 ): Promise<KindStats> {
   const weekColumns = table.headers
@@ -586,6 +588,7 @@ async function importScorecard(
   let metrics = 0;
   let entries = 0;
   let skipped = 0;
+  let noOwner = 0;
 
   for (const [i, row] of table.rows.entries()) {
     const name = cell(row, table.headers, "Title", "Name", "Metric", "Measurable");
@@ -605,12 +608,36 @@ async function importScorecard(
     const sampleValues = weekColumns.map((c) => row[c.header] ?? "");
     const unit = inferUnit(parsed.unit, sampleValues);
 
-    const ownerId = await ctx.owners.resolve(
+    // Same No Owner contract as rocks / todos / issues / headlines (N6
+    // finding 4): a name that matches nobody must not silently drop the
+    // measurable — it imports unowned with the original name kept in the
+    // description. This matters more here than elsewhere, because a dropped
+    // scorecard row takes its whole history of week values with it.
+    const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null) {
+    const allowNullOwner =
+      unmatchedName !== null && ctx.unmatchedOwner === "no-owner";
+    if (ownerId === null && !allowNullOwner) {
       skipped++;
+      ctx.preview.add({
+        kind: "scorecard",
+        action: "skip",
+        title: name,
+        owner: unmatchedName ?? "—",
+        detail: [],
+        note: unmatchedName
+          ? `No team member matches "${unmatchedName}"`
+          : "No Owner in the file",
+      });
       continue;
+    }
+
+    let description =
+      normalizeDescription(cell(row, table.headers, "Description")) || null;
+    if (ownerId === null && unmatchedName) {
+      description = withUnmatchedOwnerNote(description, unmatchedName);
+      noOwner++;
     }
 
     const metricId = importDocId("metric", ctx.teamId, name);
@@ -624,14 +651,20 @@ async function importScorecard(
       direction: parsed.direction,
       owner_id: ownerId,
       group: cell(row, table.headers, "Group Name", "Group", "Section") || null,
+      // Every imported measurable lands weekly. The file's week columns are
+      // weekly periods, so this is right for the data we can read — but a
+      // monthly or quarterly measurable imports into the wrong interval tab
+      // and has to be corrected on the Scorecard tab. Called out on the
+      // Import page rather than guessed at (N6 finding 7).
       interval: "weekly",
-      description: normalizeDescription(cell(row, table.headers, "Description")) || null,
+      description,
       sort_order: i,
       import_source: "csv",
       ...(isNew ? { created_at: FieldValue.serverTimestamp() } : {}),
     });
     metrics++;
 
+    let rowEntries = 0;
     for (const col of weekColumns) {
       const value = parseNumericValue(row[col.header] ?? "");
       if (value === null) continue;
@@ -644,7 +677,30 @@ async function importScorecard(
         created_at: FieldValue.serverTimestamp(),
       });
       entries++;
+      rowEntries++;
     }
+
+    // Scorecard is the only kind that writes two collections, so the preview
+    // says how much history rides along with each measurable — otherwise the
+    // write count reads as wrong against the row count (N6 findings 2 + 7).
+    const group = cell(row, table.headers, "Group Name", "Group", "Section");
+    ctx.preview.add({
+      kind: "scorecard",
+      action: isNew ? "create" : "update",
+      title: name,
+      owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+      detail: [
+        group ? `Category: ${group}` : "No category",
+        unit,
+        `${rowEntries} ${rowEntries === 1 ? "period" : "periods"}`,
+      ],
+      note:
+        ownerId === null && unmatchedName
+          ? `"${unmatchedName}" is not on the team — imported with No Owner`
+          : rowEntries === 0
+            ? "Measurable only — no values in the week columns"
+            : undefined,
+    });
   }
 
   if (weekColumns.length) {
@@ -652,6 +708,9 @@ async function importScorecard(
       `${entries} weekly entries across ${weekColumns.length} week columns`,
     );
   }
+  if (noOwner) details.push(`${noOwner} imported with No Owner`);
+  // Everything imports weekly; say so rather than let it be discovered later.
+  if (metrics) details.push("all created as weekly measurables");
 
   return {
     kind: "scorecard",
@@ -1595,6 +1654,8 @@ export async function runTeamImport(
         asOf,
         includeArchived,
         existingIds,
+        unmatchedOwner,
+        preview,
       }),
     );
   }

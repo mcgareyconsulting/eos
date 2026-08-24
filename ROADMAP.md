@@ -1295,18 +1295,25 @@ groups by category *in the meeting*; we sort by speaker. Both orderings
 cannot hold at once. Options: keep speaker order (status quo), group by
 section with speaker order inside each, or make it a per-team preference.
 
-**Also raised in the same segment, separate from this:** large numbers render
-"a little wonky" on the scorecard (Steph had zoomed in; `$2.3M`-scale values
-in `min-w-[4.5rem]` cells). Joe said it was already reported and being fixed
-— **confirm with daniel whether that landed** before opening an item.
+**Also raised in the same segment, now its own item:** the large-number
+display problem is **N43**. Joe said on the call it was already being fixed;
+daniel confirmed 2026-08-24 that it never landed.
 
-**Blocked on:** Steph granting daniel **view access to the IT team's
-scorecard in 90** so the target structure can be seen (her action item from
-the meeting; see Owed).
+**Unblocked 2026-08-24 — and probably narrower than written.** Rather than
+waiting on view access in 90, daniel **imported Steph's IT team scorecard
+into our app**, so the target structure is inspectable directly. Note what
+that likely did on its own: the scorecard importer already maps
+`Group Name` / `Group` / `Section` → our `group` field
+(`lib/team-import.ts:626`), and `Group Name` is ninety's own column. If her
+export carried the weekly / compliance split, **those sections are already
+populated and rendering as grouped rows on the Scorecard tab**. Check that
+before building anything — it may reduce this item to the naming change plus
+the L10 decision, with no data work at all.
 
 **Trail**
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph: 90 has scorecard categories (weekly / compliance), used by leadership too; believes ours has none. Steph + Joe agree to grant daniel view access to the IT team scorecard in 90
 - 2026-08-24 · finding · src session-2026-08-24 — the feature exists as `group` / "Section"; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Tab half = naming; L10 half = speaker-order vs category-order conflict, needs a decision
+- 2026-08-24 · unblocked · src session-2026-08-24 — daniel imported Steph's IT 90 scorecard instead of taking view access; importer already maps `Group Name`/`Group`/`Section` → `group`, so her categories may have come in with the data. Verify before building
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
@@ -1358,6 +1365,47 @@ inert-at-the-ends contract and its tests were replaced, not worked around.
 - 2026-08-19 · request · src l10-2026-08-19-it — Ryan: wrap the speaker list back to the first speaker at the end of the round; Joe agrees, flags that next-past-last currently should trigger stage advance
 - 2026-08-19 · client · src l10-2026-08-19-esd — Steph on round shape: "for headlines or for segue, we would only go through once, but ... in discussion for like an issue, we might go around twice"
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: wrap everywhere including Segue, one behaviour across the board; per-stage exception dropped. Stage advance stays separate from speaker wrap
+
+### N43 · Scorecard large numbers render badly
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+
+Effort S. **Confirmed still live 2026-08-24** — Joe told the room on 8/19
+that this was already reported and being fixed ("he messaged me about two
+hours ago and said that was the case and that he was going to get it
+fixed"); daniel confirms it never landed. Client-visible on the scorecard
+today.
+
+Steph, on a `$2.3M`-scale cell: "the larger numbers are a little a little
+wonky from a display." She had also zoomed the browser in to read the grid
+("I increased the percentage so that I could see it better because it's just
+pretty tiny"), which compounds it — so there are arguably two complaints
+here: big values render badly, and the default type size is small.
+
+Mechanism: `formatValue()` (`lib/scorecard.ts:146`) renders currency at full
+precision — `2300000` becomes `$2,300,000`, ten characters — into cells
+fixed at `min-w-[4.5rem]` (`value-cell.tsx:15,103`). At the grid's type size
+that overflows its column, and since the whole grid is `overflow-x-auto`
+(`scorecard-grid.tsx:476`) the result is a horizontally scrolling table
+rather than a clipped cell — which matches Steph having to "scroll the
+metric oddly" (and is likely the same underlying complaint as **N28**, which
+Pass 20 re-attributed to daniel with no client witness; N43 is the witnessed
+version).
+
+Likely fix: compact notation above some magnitude —
+`Intl.NumberFormat(undefined, { notation: "compact" })` giving `$2.3M` —
+with the exact value kept in a `title` and in edit mode, so nothing is lost.
+`formatValue` is pure and already covered by `lib/scorecard.test.ts`, so the
+change is testable in isolation. Decide the threshold and whether percent /
+plain units get the same treatment. Worth doing alongside **N28** rather
+than separately: same surface, same scroll symptom.
+
+**Now checkable against real data:** Steph's IT team scorecard was imported
+2026-08-24 (see N40), so the actual value magnitudes are in the app rather
+than hypothetical.
+
+**Trail**
+- 2026-08-19 · client · src l10-2026-08-19-it — Steph: larger numbers display wonky on the scorecard; had zoomed in because default type is small. Joe: already reported, believed in flight
+- 2026-08-24 · correction · src session-2026-08-24 — daniel: the fix never landed. Recorded as its own item rather than folded into N28, which has no client witness
 
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-18*
@@ -1759,8 +1807,6 @@ tokens + webhook secret in Secret Manager.
 | IAM resolution per `docs/HPB_IAM_REQUEST.md` (Option A grant or Option B bindings) — confirmation of which was applied | F2, F3 | 2026-07-27 |
 | Joe's confirmation that Transformation actually uses scorecard share-up | P3-1 | 2026-07-30 |
 | Leadership team to be created (company rocks live there) | N4 | 2026-08-18 |
-| Steph to grant daniel **view access to the IT team's scorecard in 90** so the category structure can be seen (her action item from the 8/19 IT L10) | N40 | 2026-08-19 |
-| daniel to confirm whether the scorecard large-number display fix already landed (Joe reported it as in flight on 8/19) | N40 | 2026-08-19 |
 
 ## Open questions
 
@@ -1826,6 +1872,7 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-24 · N41 · closed — room-wide vote tally shipped: `teamVoteTally()` + `TeamVoteTallyBadge`, computed from denormalized `issues.votes` against present members, live off the meeting doc (`64b11d9`)
 - 2026-08-24 · N42 · closed — speaker round now cycles on every stage including Segue; `stepSpeakerIndex` always wraps, end-guards removed from the rail and Segue. Old inert-at-the-ends contract retired (`3ded811`)
 - 2026-08-24 · N26 · closed — both halves shipped: collapse `0f5c7a1`, per-team check-off `3ded811`. The Pass 19 "per-team or per-user — decide" question was moot: cascading headlines are already one doc per team, so it was a guard to drop. **Monday sweep change needs a Cloud Function deploy**
+- 2026-08-24 · Q-scorecard-fix · answered — the scorecard large-number fix Joe reported as in flight on 8/19 never landed (daniel); recorded as N43 rather than assumed closed
 - 2026-08-24 · Q-scorecard-categories · answered — scorecard categories already exist as the `group` / "Section" field with grouped rows; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Remaining work is naming + the speaker-order-vs-category decision → N40
 - 2026-08-18 · N1 · in-progress — Steph onboarding walkthrough ran; new-team solid, import decent, add-members not. Leaves `awaiting`. Leftover: admin sees all teams in the sidebar dropdown before P2-7 → `verified`
 

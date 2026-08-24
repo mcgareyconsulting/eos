@@ -423,21 +423,21 @@ export function missingCount(values: (number | null)[]): number {
 }
 
 /**
- * Bucket scorecard rows into their categories, preserving the order they
- * arrive in.
+ * Bucket scorecard rows into their groups, preserving the order they arrive
+ * in.
  *
  * The incoming order is the sort the caller already applied — speaking order
- * in the L10 — and bucketing never reorders within a category, so each
- * category renders its own speaking round. That is what lets category
- * grouping and speaking order compose instead of competing (N40).
+ * in the L10 — and bucketing never reorders within a group, so each group
+ * renders its own speaking round. That is what lets grouping and speaking
+ * order compose instead of competing (N40).
  *
- * Category order comes from `orderNames` when the caller has group docs —
+ * Group order comes from `orderNames` when the caller has group docs —
  * position first, so Compliance can sit below Weekly — and falls back to
- * alphabetical when it doesn't. Uncategorised rows come back separately so a
+ * alphabetical when it doesn't. Ungrouped rows come back separately so a
  * caller can render them without a header, and a team that has never set a
- * category gets everything in `ungrouped`, indistinguishable from a flat list.
+ * group gets everything in `ungrouped`, indistinguishable from a flat list.
  */
-export function groupMetricsByCategory<T extends { group?: string | null }>(
+export function bucketMetricsByGroup<T extends { group?: string | null }>(
   metrics: T[],
   flat = false,
   orderNames?: (names: string[]) => string[],

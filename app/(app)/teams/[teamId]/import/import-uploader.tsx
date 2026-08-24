@@ -63,7 +63,7 @@ const KINDS: {
     id: "scorecard",
     label: "Scorecard",
     blurb:
-      "Measurables and their week-by-week history in one file. Group Name becomes the Category. Everything imports as weekly.",
+      "Measurables and their week-by-week history in one file. Group Name becomes the measurable's group. Everything imports as weekly.",
   },
 ];
 

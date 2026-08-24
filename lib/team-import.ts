@@ -706,7 +706,7 @@ async function importScorecard(
       title: name,
       owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
       detail: [
-        group ? `Category: ${group}` : "No category",
+        group ? `Group: ${group}` : "No group",
         unit,
         `${rowEntries} ${rowEntries === 1 ? "period" : "periods"}`,
       ],
@@ -748,7 +748,7 @@ async function importScorecard(
   if (groupOrder.size) {
     const names = [...groupOrder.values()].map((g) => g.name).join(", ");
     details.push(
-      `${groupOrder.size} ${groupOrder.size === 1 ? "category" : "categories"}: ${names}` +
+      `${groupOrder.size} ${groupOrder.size === 1 ? "group" : "groups"}: ${names}` +
         (newGroups === groupOrder.size
           ? ""
           : ` (${groupOrder.size - newGroups} already set up — order kept)`),

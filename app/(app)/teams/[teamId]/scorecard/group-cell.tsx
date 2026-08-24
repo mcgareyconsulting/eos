@@ -3,15 +3,15 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { setMetricGroup } from "./actions";
 
-// Inline editor for a metric's category label. Mirrors ValueCell's
-// click-to-edit pattern so category assignment feels consistent with the
-// week-cell editing already on this page.
+// Inline editor for a metric's group label. Mirrors ValueCell's click-to-edit
+// pattern so group assignment feels consistent with the week-cell editing
+// already on this page.
 //
-// Called "Category" in the UI, `group` in the data — ninety calls it
-// "Group Name" in its exports and the client calls it a category (N40:
-// Steph asked for a feature that already existed because it was labelled
-// "Section"). The unset state reads "+ Category" rather than "No section",
-// because a grey noun looked like a status rather than something clickable.
+// "Group" in the UI and `group` in the data — the same word ninety uses in
+// its exports ("Group Name"), and the word the client uses out loud. It shipped
+// briefly as "Section", which is why Steph asked for a feature that already
+// existed (N40). The unset state reads "+ Group" rather than a grey noun,
+// which looked like a status rather than something clickable.
 export function GroupCell({
   teamId,
   metricId,
@@ -29,7 +29,7 @@ export function GroupCell({
     (_state, next: string | null) => next,
   );
 
-  const display = optimisticGroup ?? "+ Category";
+  const display = optimisticGroup ?? "+ Group";
 
   if (!editing) {
     return (
@@ -41,8 +41,8 @@ export function GroupCell({
         }}
         title={
           optimisticGroup
-            ? `Category: ${optimisticGroup} — click to change`
-            : "Group this measurable under a category (e.g. Weekly, Compliance)"
+            ? `Group: ${optimisticGroup} — click to change`
+            : "Put this measurable in a group (e.g. Weekly, Compliance)"
         }
         className={
           "block text-left text-xs hover:underline " +
@@ -76,7 +76,7 @@ export function GroupCell({
       type="text"
       size={1}
       value={draft}
-      placeholder="Category"
+      placeholder="Group"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

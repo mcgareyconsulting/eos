@@ -72,7 +72,7 @@ export const EXPECTED_HEADERS: Record<
       "week columns (one per period, e.g. 08/17/2026)",
     ],
     notes:
-      "Group Name (ninety's own column, also accepted as Group / Section) becomes the measurable's Category. Every date-like column is read as a period and imported as that week's value, so one file brings both the measurables and their history. Goal accepts a comparator (>= 5, <= 63). Heads up: imported measurables are all created as WEEKLY — non-weekly ones need their interval set on the Scorecard tab afterwards.",
+      "Group Name (ninety's own column, also accepted as Group / Section) becomes the measurable's group. Every date-like column is read as a period and imported as that week's value, so one file brings both the measurables and their history. Goal accepts a comparator (>= 5, <= 63). Heads up: imported measurables are all created as WEEKLY — non-weekly ones need their interval set on the Scorecard tab afterwards.",
   },
   headlines: {
     required: ["Owner", "Title"],

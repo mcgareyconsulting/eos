@@ -1,4 +1,6 @@
 // Scorecard groups — a named, ordered bucket of measurables within a period.
+// "Group" in the UI and `group` in the data, matching ninety's own "Group
+// Name" column and what the client says out loud.
 //
 // Before this, `group` was a free-text label typed onto each metric and the
 // grid sorted the resulting names alphabetically. That put Compliance above

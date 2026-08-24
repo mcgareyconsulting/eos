@@ -58,7 +58,7 @@ export function ScorecardPanel({
   members: ScorecardMember[];
   showDelete?: boolean;
   showGroupEditor?: boolean;
-  /** Team's scorecard groups; ordering + period for the category headers. */
+  /** Team's scorecard groups; ordering + period for the group headers. */
   groups?: ScorecardGroup[];
   /** L10 segment: weekly-only, no period tabs. */
   compact?: boolean;
@@ -240,13 +240,13 @@ export function ScorecardPanel({
         compact={compact}
         hideLocalSearch
         /*
-         * Category grouping and speaking order compose rather than compete
-         * (N40). Rows arrive already sorted — by speaking order in the L10 —
-         * and the grid buckets them in that order, so each category renders
-         * its own speaking round: Weekly in speaker order, then Compliance in
-         * speaker order. This is how the client's previous tool worked and
-         * why Steph thought the feature was missing; the L10 used to force a
-         * flat list here on the assumption the two orderings conflicted.
+         * Grouping and speaking order compose rather than compete (N40).
+         * Rows arrive already sorted — by speaking order in the L10 — and the
+         * grid buckets them in that order, so each group renders its own
+         * speaking round: Weekly in speaker order, then Compliance in speaker
+         * order. This is how the client's previous tool worked and why Steph
+         * thought the feature was missing; the L10 used to force a flat list
+         * here on the assumption the two orderings conflicted.
          *
          * An explicit sort, filter or search still flattens — regrouping rows
          * someone deliberately re-sorted would bury what they asked for.

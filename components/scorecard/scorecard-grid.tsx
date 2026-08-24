@@ -15,7 +15,7 @@ import {
   formatGoal,
   formatValue,
   formatValueExact,
-  groupMetricsByCategory,
+  bucketMetricsByGroup,
   hitRate,
   onTrack,
   STATUS_TONE,
@@ -204,10 +204,10 @@ export function ScorecardGrid({
   }, [metrics, search, members, hideLocalSearch]);
 
   // Bucketing preserves `filtered`'s order, which is the caller's sort — so
-  // in the L10 each category renders its own speaking round.
+  // in the L10 each group renders its own speaking round.
   const { ungrouped, groups: metricGroups } = useMemo(
     () =>
-      groupMetricsByCategory(filtered, flatList, (names) =>
+      bucketMetricsByGroup(filtered, flatList, (names) =>
         orderGroupNames(names, groups, interval),
       ),
     [filtered, flatList, groups, interval],

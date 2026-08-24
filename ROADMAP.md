@@ -1270,7 +1270,7 @@ a click sets it.
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph, Ryan, Joe: editing a headline, the modal disappears when the cursor leaves the browser viewport; expected to persist until closed
 - 2026-08-24 · build · src session-2026-08-24 — diagnosed as ancestor `opacity-0`, not a dismissal handler (zero pointer-leave handlers exist); portalled to `<body>`; blast radius confirmed limited to the two headline surfaces
 
-### N40 · Scorecard categories — surfaced, and grouped in the L10
+### N40 · Scorecard groups — surfaced, ordered, and grouped in the L10
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
 
 Effort S (tab) + decision (L10). Steph asked for scorecard **categories** —
@@ -1310,11 +1310,14 @@ are already rendering as grouped section rows on the Scorecard tab.** No
 data work, no model work.
 
 **Shipped 2026-08-24 (`004f22e` + follow-up).** Both halves:
-1. **Naming.** "Section" → **Category** everywhere in the UI, and the unset
-   state reads **"+ Category"** in link colour rather than a grey "No
-   section" that looked like a status rather than a control.
-2. **L10 grouping.** daniel's call: group by category, **speaking order
-   inside each category**. They turn out to compose rather than compete —
+1. **Naming.** "Section" → **Group** everywhere in the UI, and the unset
+   state reads **"+ Group"** in link colour rather than a grey noun that
+   looked like a status rather than a control. Landed briefly as "Category"
+   before daniel settled on **Group** — which is also what the data field has
+   always been called and what ninety's export column says ("Group Name"), so
+   UI, schema and source file now use one word.
+2. **L10 grouping.** daniel's call: group by group, **speaking order inside
+   each one**. They turn out to compose rather than compete —
    rows already arrive sorted (by speaking order in the L10) and bucketing
    preserves that order, so each category renders its own speaking round:
    Weekly in speaker order, then Compliance in speaker order. The forced
@@ -1363,8 +1366,9 @@ Decisions worth keeping:
 - 2026-08-24 · confirmed · src session-2026-08-24 — ninety's export carries `Group Name` = Weekly / Compliance (screenshot). Categories arrived with the import and already group on the Scorecard tab; remaining scope is the rename plus the L10 speaker-order-vs-category decision
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: build category grouping in the L10 too — group by category, then speaker order within each category. Not an either/or after all
 - 2026-08-24 · build · src session-2026-08-24 — shipped: "Section" → "Category" + visible affordance; `flatList` no longer forced by speaking order; `groupMetricsByCategory()` extracted and tested
-- 2026-08-24 · decision · src session-2026-08-24 — daniel: Compliance below Weekly; categories assignable by name AND period; you can create a category as well as a measurable; a weekly category does not take precedence over ordinary weekly measurables. Ordering is custom, not derived
-- 2026-08-24 · build · src session-2026-08-24 — `scorecard_groups` collection + rules, Categories modal (add / reorder / delete), importer creates categories in first-seen order and never clobbers an existing one's position, assignment aligns the metric's period
+- 2026-08-24 · decision · src session-2026-08-24 — daniel: Compliance below Weekly; groups assignable by name AND period; you can create a group as well as a measurable; a weekly group does not take precedence over ordinary weekly measurables. Ordering is custom, not derived
+- 2026-08-24 · build · src session-2026-08-24 — `scorecard_groups` collection + rules, Groups modal (add / reorder / delete), importer creates groups in first-seen order and never clobbers an existing one's position, assignment aligns the metric's period
+- 2026-08-24 · decision · src session-2026-08-24 — daniel: call it **Group**, not Category. Matches the `group` field and ninety's "Group Name" column — one word across UI, schema and source file
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
@@ -1945,7 +1949,7 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-24 · N41 · closed — room-wide vote tally shipped: `teamVoteTally()` + `TeamVoteTallyBadge`, computed from denormalized `issues.votes` against present members, live off the meeting doc (`64b11d9`)
 - 2026-08-24 · N42 · closed — speaker round now cycles on every stage including Segue; `stepSpeakerIndex` always wraps, end-guards removed from the rail and Segue. Old inert-at-the-ends contract retired (`3ded811`)
 - 2026-08-24 · N26 · closed — both halves shipped: collapse `0f5c7a1`, per-team check-off `3ded811`. The Pass 19 "per-team or per-user — decide" question was moot: cascading headlines are already one doc per team, so it was a guard to drop. **Monday sweep change needs a Cloud Function deploy**
-- 2026-08-24 · N40 · closed — scorecard categories shipped: renamed from "Section", affordance surfaced, and the L10 now groups by category with speaking order preserved inside each group (they compose — bucketing keeps the caller's sort). Category editing stays on the tab
+- 2026-08-24 · N40 · closed — scorecard **groups** shipped: renamed from "Section" (via a short-lived "Category"), affordance surfaced, groups became real docs with a period and a chosen order, and the L10 groups with speaking order preserved inside each (they compose — bucketing keeps the caller's sort). Group editing stays on the tab
 - 2026-08-24 · Q-scorecard-l10-order · answered — category grouping vs speaking order in the L10 is not an either/or: group by category, speaker order within. Retires the "L10 speaking order must not be reshuffled by section groups" assumption
 - 2026-08-24 · Q-scorecard-fix · answered — the scorecard large-number fix Joe reported as in flight on 8/19 never landed (daniel); recorded as N43 rather than assumed closed
 - 2026-08-24 · Q-scorecard-categories · answered — scorecard categories already exist as the `group` / "Section" field with grouped rows; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Remaining work is naming + the speaker-order-vs-category decision → N40

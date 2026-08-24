@@ -16,12 +16,12 @@ import {
 } from "./actions";
 
 /**
- * "Categories" button + modal: create a category, and set the order categories
- * appear in within their period.
+ * "Groups" button + modal: create a group, and set the order groups appear in
+ * within their period.
  *
- * Order is the whole reason this exists. A category used to be a free-text
- * label sorted alphabetically, which put Compliance above Weekly — backwards,
- * because Compliance is a weekly category that shouldn't outrank the ordinary
+ * Order is the whole reason this exists. A group used to be a free-text label
+ * sorted alphabetically, which put Compliance above Weekly — backwards,
+ * because Compliance is a weekly group that shouldn't outrank the ordinary
  * weekly measurables. Position is chosen here instead of inferred (N40).
  */
 export function ManageGroupsButton({
@@ -109,7 +109,7 @@ export function ManageGroupsButton({
         className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
       >
         <Layers className="h-4 w-4" aria-hidden />
-        Categories
+        Groups
       </button>
 
       {open &&
@@ -123,12 +123,12 @@ export function ManageGroupsButton({
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="Scorecard categories"
+              aria-label="Scorecard groups"
               className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             >
               <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
                 <h2 className="text-base font-semibold tracking-tight">
-                  Scorecard categories
+                  Scorecard groups
                 </h2>
                 <button
                   type="button"
@@ -145,7 +145,7 @@ export function ManageGroupsButton({
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Category name (e.g. Compliance)"
+                    placeholder="Group name (e.g. Compliance)"
                     className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <select
@@ -179,8 +179,8 @@ export function ManageGroupsButton({
 
                 {byPeriod.length === 0 ? (
                   <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    No categories yet. Measurables without one sit at the top of
-                    the scorecard; categories group the rest underneath.
+                    No groups yet. Measurables without one sit at the top of
+                    the scorecard; groups collect the rest underneath.
                   </p>
                 ) : (
                   byPeriod.map(({ period, items }) => (
@@ -222,7 +222,7 @@ export function ManageGroupsButton({
                               onClick={() => remove(g.id)}
                               disabled={pending}
                               aria-label={`Delete ${g.name}`}
-                              title="Delete category — its measurables stay, ungrouped"
+                              title="Delete group — its measurables stay, ungrouped"
                               className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 dark:text-zinc-600 dark:hover:bg-red-950/40"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -235,9 +235,9 @@ export function ManageGroupsButton({
                 )}
 
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Measurables with no category show first, then each category in
-                  this order. Deleting a category keeps its measurables and
-                  leaves them uncategorised.
+                  Measurables with no group show first, then each group in this
+                  order. Deleting a group keeps its measurables and leaves them
+                  ungrouped.
                 </p>
               </div>
             </div>

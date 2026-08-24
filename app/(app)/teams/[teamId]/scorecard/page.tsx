@@ -76,10 +76,10 @@ export default async function ScorecardPage({
     ),
   );
 
-  // Suggestions for the Add-measurable picker: defined categories first, in
-  // their configured order, then any label still only living on a metric.
-  // Without the group docs a category created but not yet used would be
-  // missing from the very picker meant to assign it.
+  // Suggestions for the Add-measurable picker: defined groups first, in their
+  // configured order, then any label still only living on a metric. Without
+  // the group docs a group created but not yet used would be missing from the
+  // very picker meant to assign it.
   const groupNames = [
     ...new Set([
       ...groups.map((g) => g.name),

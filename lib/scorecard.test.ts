@@ -6,7 +6,7 @@ import {
   formatScorecardDraft,
   formatValue,
   formatValueExact,
-  groupMetricsByCategory,
+  bucketMetricsByGroup,
   hitRate,
   missingCount,
   onTrack,
@@ -276,8 +276,8 @@ describe("formatValueExact", () => {
 });
 
 // N40: in the L10, rows arrive pre-sorted by speaking order. Grouping must
-// bucket them without reordering, so each category is its own speaking round.
-describe("groupMetricsByCategory (N40)", () => {
+// bucket them without reordering, so each group is its own speaking round.
+describe("bucketMetricsByGroup (N40)", () => {
   const inSpeakingOrder = [
     { id: "1", group: "Weekly" },
     { id: "2", group: "Compliance" },
@@ -286,22 +286,22 @@ describe("groupMetricsByCategory (N40)", () => {
     { id: "5", group: "Compliance" },
   ];
 
-  it("keeps the incoming order inside each category", () => {
-    const { groups } = groupMetricsByCategory(inSpeakingOrder);
+  it("keeps the incoming order inside each group", () => {
+    const { groups } = bucketMetricsByGroup(inSpeakingOrder);
     const weekly = groups.find((g) => g.name === "Weekly");
     const compliance = groups.find((g) => g.name === "Compliance");
     assert.deepEqual(weekly?.items.map((m) => m.id), ["1", "3"]);
     assert.deepEqual(compliance?.items.map((m) => m.id), ["2", "5"]);
   });
 
-  it("lists categories alphabetically and splits out uncategorised rows", () => {
-    const { ungrouped, groups } = groupMetricsByCategory(inSpeakingOrder);
+  it("lists groups alphabetically and splits out ungrouped rows", () => {
+    const { ungrouped, groups } = bucketMetricsByGroup(inSpeakingOrder);
     assert.deepEqual(groups.map((g) => g.name), ["Compliance", "Weekly"]);
     assert.deepEqual(ungrouped.map((m) => m.id), ["4"]);
   });
 
-  it("treats blank and whitespace categories as uncategorised", () => {
-    const { ungrouped, groups } = groupMetricsByCategory([
+  it("treats blank and whitespace names as ungrouped", () => {
+    const { ungrouped, groups } = bucketMetricsByGroup([
       { id: "a", group: "" },
       { id: "b", group: "   " },
       { id: "c", group: undefined },
@@ -311,18 +311,18 @@ describe("groupMetricsByCategory (N40)", () => {
   });
 
   it("flat mode returns everything ungrouped, order intact", () => {
-    const { ungrouped, groups } = groupMetricsByCategory(inSpeakingOrder, true);
+    const { ungrouped, groups } = bucketMetricsByGroup(inSpeakingOrder, true);
     assert.deepEqual(groups, []);
     assert.deepEqual(ungrouped.map((m) => m.id), ["1", "2", "3", "4", "5"]);
   });
 
-  it("a team that never set a category is indistinguishable from flat", () => {
-    // Field absent on the doc, which is what an un-categorised team has.
+  it("a team that never set a group is indistinguishable from flat", () => {
+    // Field absent on the doc, which is what an ungrouped team has.
     const rows = [
       { id: "x", group: undefined },
       { id: "y", group: undefined },
     ];
-    const grouped = groupMetricsByCategory(rows);
+    const grouped = bucketMetricsByGroup(rows);
     assert.deepEqual(grouped.ungrouped.map((m) => m.id), ["x", "y"]);
     assert.deepEqual(grouped.groups, []);
   });

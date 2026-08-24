@@ -288,7 +288,7 @@ export function AddMetricModal({
 
               <label className="block space-y-1">
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Category{" "}
+                  Group{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
                 <input

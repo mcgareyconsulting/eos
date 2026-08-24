@@ -66,7 +66,7 @@ export function SegmentScorecard({
   period?: ScorecardPeriod;
   initialMetrics: MetricDoc[];
   initialEntries: EntryDoc[];
-  /** Seeded from the server so category order never flashes alphabetical. */
+  /** Seeded from the server so group order never flashes alphabetical. */
   initialGroups: ScorecardGroup[];
   members: Member[];
   /** Meeting/team speaking order — drives Default order (P1-4). */
@@ -84,7 +84,7 @@ export function SegmentScorecard({
     [db, teamId],
   );
   const metrics = useCollection<MetricDoc>(metricsQuery, initialMetrics);
-  // Live too: reordering categories on the Scorecard tab mid-meeting should
+  // Live too: reordering groups on the Scorecard tab mid-meeting should
   // land in the room without a refresh, same as a metric edit does.
   const groupsQuery = useMemo(
     () =>

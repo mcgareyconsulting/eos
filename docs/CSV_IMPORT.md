@@ -12,7 +12,9 @@ Team members can upload a **.csv / .tsv / .xlsx** from the sidebar:
   description, rather than dropping the row — on every kind including Scorecard.
   Placeholder members and a fallback owner are still available.
 - **Scorecard** brings the measurables and their week-by-week history in one
-  pass; ninety's `Group Name` column becomes the measurable's **Category**.
+  pass; ninety's `Group Name` column becomes the measurable's **group**, and
+  each distinct name is created as a scorecard group (weekly, in the order the
+  file lists them). Re-importing never rewrites a group's order or period.
   Every imported measurable is created as **weekly** — set a different interval
   on the Scorecard tab afterwards if the file was monthly or quarterly.
 - **Milestones** remain **CLI-only** as a standalone kind (`pnpm import:csv`),

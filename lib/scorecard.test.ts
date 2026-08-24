@@ -6,6 +6,7 @@ import {
   formatScorecardDraft,
   formatValue,
   formatValueExact,
+  groupMetricsByCategory,
   hitRate,
   missingCount,
   onTrack,
@@ -271,5 +272,58 @@ describe("formatValueExact", () => {
 
   it("renders an empty value the same way", () => {
     assert.equal(formatValueExact(null, "currency"), "—");
+  });
+});
+
+// N40: in the L10, rows arrive pre-sorted by speaking order. Grouping must
+// bucket them without reordering, so each category is its own speaking round.
+describe("groupMetricsByCategory (N40)", () => {
+  const inSpeakingOrder = [
+    { id: "1", group: "Weekly" },
+    { id: "2", group: "Compliance" },
+    { id: "3", group: "Weekly" },
+    { id: "4", group: null },
+    { id: "5", group: "Compliance" },
+  ];
+
+  it("keeps the incoming order inside each category", () => {
+    const { groups } = groupMetricsByCategory(inSpeakingOrder);
+    const weekly = groups.find((g) => g.name === "Weekly");
+    const compliance = groups.find((g) => g.name === "Compliance");
+    assert.deepEqual(weekly?.items.map((m) => m.id), ["1", "3"]);
+    assert.deepEqual(compliance?.items.map((m) => m.id), ["2", "5"]);
+  });
+
+  it("lists categories alphabetically and splits out uncategorised rows", () => {
+    const { ungrouped, groups } = groupMetricsByCategory(inSpeakingOrder);
+    assert.deepEqual(groups.map((g) => g.name), ["Compliance", "Weekly"]);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["4"]);
+  });
+
+  it("treats blank and whitespace categories as uncategorised", () => {
+    const { ungrouped, groups } = groupMetricsByCategory([
+      { id: "a", group: "" },
+      { id: "b", group: "   " },
+      { id: "c", group: undefined },
+    ]);
+    assert.equal(groups.length, 0);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["a", "b", "c"]);
+  });
+
+  it("flat mode returns everything ungrouped, order intact", () => {
+    const { ungrouped, groups } = groupMetricsByCategory(inSpeakingOrder, true);
+    assert.deepEqual(groups, []);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["1", "2", "3", "4", "5"]);
+  });
+
+  it("a team that never set a category is indistinguishable from flat", () => {
+    // Field absent on the doc, which is what an un-categorised team has.
+    const rows = [
+      { id: "x", group: undefined },
+      { id: "y", group: undefined },
+    ];
+    const grouped = groupMetricsByCategory(rows);
+    assert.deepEqual(grouped.ungrouped.map((m) => m.id), ["x", "y"]);
+    assert.deepEqual(grouped.groups, []);
   });
 });

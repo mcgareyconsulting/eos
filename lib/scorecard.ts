@@ -421,3 +421,43 @@ export function hitRate(
 export function missingCount(values: (number | null)[]): number {
   return values.filter((v) => v == null).length;
 }
+
+/**
+ * Bucket scorecard rows into their categories, preserving the order they
+ * arrive in.
+ *
+ * The incoming order is the sort the caller already applied — speaking order
+ * in the L10 — and bucketing never reorders within a category, so each
+ * category renders its own speaking round. That is what lets category
+ * grouping and speaking order compose instead of competing (N40).
+ *
+ * Categories are listed alphabetically; uncategorised rows come back
+ * separately so a caller can render them without a header. A team that has
+ * never set a category gets everything in `ungrouped` and the output is
+ * indistinguishable from a flat list.
+ */
+export function groupMetricsByCategory<T extends { group?: string | null }>(
+  metrics: T[],
+  flat = false,
+): { ungrouped: T[]; groups: { name: string; items: T[] }[] } {
+  if (flat) return { ungrouped: [...metrics], groups: [] };
+
+  const ungrouped: T[] = [];
+  const byName = new Map<string, T[]>();
+  for (const m of metrics) {
+    const name = m.group?.trim() || "";
+    if (!name) {
+      ungrouped.push(m);
+      continue;
+    }
+    const bucket = byName.get(name);
+    if (bucket) bucket.push(m);
+    else byName.set(name, [m]);
+  }
+
+  const groups = [...byName.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, items: byName.get(name)! }));
+
+  return { ungrouped, groups };
+}

@@ -233,9 +233,19 @@ export function ScorecardPanel({
         showGroupEditor={showGroupEditor}
         compact={compact}
         hideLocalSearch
-        // L10 speaking order must not be reshuffled by section groups.
+        /*
+         * Category grouping and speaking order compose rather than compete
+         * (N40). Rows arrive already sorted — by speaking order in the L10 —
+         * and the grid buckets them in that order, so each category renders
+         * its own speaking round: Weekly in speaker order, then Compliance in
+         * speaker order. This is how the client's previous tool worked and
+         * why Steph thought the feature was missing; the L10 used to force a
+         * flat list here on the assumption the two orderings conflicted.
+         *
+         * An explicit sort, filter or search still flattens — regrouping rows
+         * someone deliberately re-sorted would bury what they asked for.
+         */
         flatList={
-          Boolean(speakingOrder?.length) ||
           (sort !== "name" && sort !== "order") ||
           status !== "all" ||
           ownerId !== "" ||

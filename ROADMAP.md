@@ -1270,8 +1270,8 @@ a click sets it.
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph, Ryan, Joe: editing a headline, the modal disappears when the cursor leaves the browser viewport; expected to persist until closed
 - 2026-08-24 · build · src session-2026-08-24 — diagnosed as ancestor `opacity-0`, not a dismissal handler (zero pointer-leave handlers exist); portalled to `<body>`; blast radius confirmed limited to the two headline surfaces
 
-### N40 · Scorecard categories — already built, and hidden in the L10
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+### N40 · Scorecard categories — surfaced, and grouped in the L10
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
 
 Effort S (tab) + decision (L10). Steph asked for scorecard **categories** —
 "we have like weekly, and then we have compliance, so John kind of moved the
@@ -1309,11 +1309,21 @@ confirmed) — and the scorecard importer already maps
 are already rendering as grouped section rows on the Scorecard tab.** No
 data work, no model work.
 
-What is actually left is therefore only:
-1. **Naming.** We call it "Section"; the client calls it a category, and
-   the affordance is a small grey "No section" link. Rename and make it
-   visible.
-2. **The L10 decision** (below) — the one real question.
+**Shipped 2026-08-24 (`004f22e` + follow-up).** Both halves:
+1. **Naming.** "Section" → **Category** everywhere in the UI, and the unset
+   state reads **"+ Category"** in link colour rather than a grey "No
+   section" that looked like a status rather than a control.
+2. **L10 grouping.** daniel's call: group by category, **speaking order
+   inside each category**. They turn out to compose rather than compete —
+   rows already arrive sorted (by speaking order in the L10) and bucketing
+   preserves that order, so each category renders its own speaking round:
+   Weekly in speaker order, then Compliance in speaker order. The forced
+   `flatList` for the speaking-order case is gone; an explicit sort, filter
+   or search still flattens, because regrouping rows someone deliberately
+   re-sorted would bury what they asked for. Grouping logic moved out of the
+   grid into `groupMetricsByCategory()` so the ordering contract is pinned by
+   tests rather than living in a `useMemo`. Category *editing* stays on the
+   Scorecard tab — the L10 already passed `showGroupEditor={false}`.
 
 Related, from the same import: getting other teams' scorecards in needs an
 in-app path at all. Scorecard import is still CLI-only — recorded as **N6
@@ -1324,6 +1334,8 @@ finding 7**, not here.
 - 2026-08-24 · finding · src session-2026-08-24 — the feature exists as `group` / "Section"; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Tab half = naming; L10 half = speaker-order vs category-order conflict, needs a decision
 - 2026-08-24 · unblocked · src session-2026-08-24 — daniel imported Steph's IT 90 scorecard instead of taking view access; importer already maps `Group Name`/`Group`/`Section` → `group`
 - 2026-08-24 · confirmed · src session-2026-08-24 — ninety's export carries `Group Name` = Weekly / Compliance (screenshot). Categories arrived with the import and already group on the Scorecard tab; remaining scope is the rename plus the L10 speaker-order-vs-category decision
+- 2026-08-24 · decision · src session-2026-08-24 — daniel: build category grouping in the L10 too — group by category, then speaker order within each category. Not an either/or after all
+- 2026-08-24 · build · src session-2026-08-24 — shipped: "Section" → "Category" + visible affordance; `flatList` no longer forced by speaking order; `groupMetricsByCategory()` extracted and tested
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
@@ -1904,6 +1916,8 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-24 · N41 · closed — room-wide vote tally shipped: `teamVoteTally()` + `TeamVoteTallyBadge`, computed from denormalized `issues.votes` against present members, live off the meeting doc (`64b11d9`)
 - 2026-08-24 · N42 · closed — speaker round now cycles on every stage including Segue; `stepSpeakerIndex` always wraps, end-guards removed from the rail and Segue. Old inert-at-the-ends contract retired (`3ded811`)
 - 2026-08-24 · N26 · closed — both halves shipped: collapse `0f5c7a1`, per-team check-off `3ded811`. The Pass 19 "per-team or per-user — decide" question was moot: cascading headlines are already one doc per team, so it was a guard to drop. **Monday sweep change needs a Cloud Function deploy**
+- 2026-08-24 · N40 · closed — scorecard categories shipped: renamed from "Section", affordance surfaced, and the L10 now groups by category with speaking order preserved inside each group (they compose — bucketing keeps the caller's sort). Category editing stays on the tab
+- 2026-08-24 · Q-scorecard-l10-order · answered — category grouping vs speaking order in the L10 is not an either/or: group by category, speaker order within. Retires the "L10 speaking order must not be reshuffled by section groups" assumption
 - 2026-08-24 · Q-scorecard-fix · answered — the scorecard large-number fix Joe reported as in flight on 8/19 never landed (daniel); recorded as N43 rather than assumed closed
 - 2026-08-24 · Q-scorecard-categories · answered — scorecard categories already exist as the `group` / "Section" field with grouped rows; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Remaining work is naming + the speaker-order-vs-category decision → N40
 - 2026-08-18 · N1 · in-progress — Steph onboarding walkthrough ran; new-team solid, import decent, add-members not. Leaves `awaiting`. Leftover: admin sees all teams in the sidebar dropdown before P2-7 → `verified`

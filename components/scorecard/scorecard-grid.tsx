@@ -11,6 +11,7 @@ import {
   formatGoal,
   formatValue,
   formatValueExact,
+  groupMetricsByCategory,
   hitRate,
   onTrack,
   STATUS_TONE,
@@ -192,23 +193,12 @@ export function ScorecardGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metrics, search, members, hideLocalSearch]);
 
-  const groupedMetrics = useMemo(() => {
-    const map = new Map<string, ScorecardMetric[]>();
-    for (const m of filtered) {
-      const key = flatList ? "" : m.group?.trim() || "";
-      const bucket = map.get(key);
-      if (bucket) bucket.push(m);
-      else map.set(key, [m]);
-    }
-    return map;
-  }, [filtered, flatList]);
-
-  const ungrouped = groupedMetrics.get("") ?? [];
-  const groupNames = flatList
-    ? []
-    : [...groupedMetrics.keys()]
-        .filter((g) => g !== "")
-        .sort((a, b) => a.localeCompare(b));
+  // Bucketing preserves `filtered`'s order, which is the caller's sort — so
+  // in the L10 each category renders its own speaking round.
+  const { ungrouped, groups } = useMemo(
+    () => groupMetricsByCategory(filtered, flatList),
+    [filtered, flatList],
+  );
 
   const stickyShadow =
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
@@ -602,13 +592,10 @@ export function ScorecardGrid({
               </tr>
             )}
             {ungrouped.map(renderMetricRow)}
-            {groupNames.flatMap((g) => {
-              const rows = groupedMetrics.get(g) ?? [];
-              return [
-                renderGroupHeader(g, rows.length),
-                ...rows.map(renderMetricRow),
-              ];
-            })}
+            {groups.flatMap((g) => [
+              renderGroupHeader(g.name, g.items.length),
+              ...g.items.map(renderMetricRow),
+            ])}
           </tbody>
         </table>
       </div>

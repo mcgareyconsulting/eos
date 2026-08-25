@@ -18,15 +18,26 @@
 // Every group is created weekly, matching the importer (which imports all
 // measurables as weekly) — change a group's period in the modal afterwards.
 //
-// Usage:
-//   pnpm tsx scripts/backfill-scorecard-groups.ts
-//   pnpm tsx scripts/backfill-scorecard-groups.ts --apply
+// Usage (dry-run first, always):
+//   pnpm backfill:groups                              # sandbox (.env.local)
+//   pnpm backfill:groups -- --env-file .env.prod      # LIVE, dry-run
+//   pnpm backfill:groups -- --env-file .env.prod --apply
 //
-// Targets whatever `.env.local` points at (same as seed / import). Confirm
-// the printed project + database before --apply.
+// `.env.local` is the DEV config and points at the SANDBOX database, same as
+// everywhere else in this repo — so the default run does not touch live data.
+// Targeting prod is an explicit `--env-file .env.prod`, not a flag you can
+// pass by accident. The project + database are printed before anything is
+// written; read them before adding --apply.
 
 import { config } from "dotenv";
-config({ path: ".env.local" });
+
+const envFlag = process.argv.indexOf("--env-file");
+const envFile = envFlag === -1 ? ".env.local" : process.argv[envFlag + 1];
+if (!envFile) {
+  console.error("--env-file needs a path, e.g. --env-file .env.prod");
+  process.exit(1);
+}
+config({ path: envFile });
 
 import { getAdminDb } from "../lib/firebase/admin";
 import { groupDocId, normalizeGroupName } from "../lib/scorecard-groups";
@@ -47,8 +58,16 @@ async function main() {
   const db = getAdminDb();
 
   console.log(
-    `\nN40 scorecard group backfill  project=${project}  database=${database}  mode=${apply ? "APPLY" : "dry-run"}\n`,
+    `\nN40 scorecard group backfill` +
+      `\n  env file:  ${envFile}` +
+      `\n  project:   ${project}` +
+      `\n  database:  ${database}` +
+      `\n  mode:      ${apply ? "APPLY — writes" : "dry-run"}\n`,
   );
+
+  if (apply && database.includes("sandbox")) {
+    console.log("(sandbox database — safe to re-run)\n");
+  }
 
   const [metricsSnap, groupsSnap] = await Promise.all([
     db.collection("scorecard_metrics").get(),

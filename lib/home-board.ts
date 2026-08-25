@@ -162,3 +162,35 @@ export function byDueDateAsc<T extends { due_date: string | null }>(
   if (!b.due_date) return -1;
   return a.due_date.localeCompare(b.due_date);
 }
+
+/**
+ * Split the Home rocks column into the viewer's own rocks and the
+ * department/company ones.
+ *
+ * N34, Cora on 2026-08-19 reviewing her own Home board: "it's got all of the
+ * rocks but it also includes the two departmental ones ... I like seeing the
+ * departmental rocks, but I would like them to be in their own section, to be
+ * like *my rocks* and *the departmental rocks*. Because at first I was
+ * looking at it like, what rocks am I on here?"
+ *
+ * Split by kind, not by who the viewer is: a department rock the viewer
+ * happens to own is still the department's rock, and that is the distinction
+ * being asked for. Everything else — owned, shared in, or reached through a
+ * milestone assigned to the viewer — is theirs.
+ *
+ * Uses the same `isDepartmentRock` rule as the rest of this module, which
+ * means callers must pass `owner_id`: a legacy rock with no owner counts as
+ * departmental, and an item shape missing the field would silently put every
+ * rock in that bucket.
+ */
+export function splitHomeRocksByType<
+  T extends { owner_id?: string | null; rock_type?: string | null },
+>(rocks: T[]): { mine: T[]; departmental: T[] } {
+  const mine: T[] = [];
+  const departmental: T[] = [];
+  for (const r of rocks) {
+    if (isDepartmentRock(r)) departmental.push(r);
+    else mine.push(r);
+  }
+  return { mine, departmental };
+}

@@ -85,12 +85,9 @@ export function SegmentSegue({
   const currentPos = currentUid ? attending.indexOf(currentUid) : -1;
   const remaining =
     currentPos === -1 ? attending.length : attending.length - currentPos - 1;
+  // Still shown when everyone has had the floor — the round-done marker is a
+  // cue, not a stop. The controls keep working so the room can go round again.
   const roundDone = attending.length > 0 && remaining === 0;
-  // stepSpeakerIndex deliberately goes inert at the ends of the round — mirror
-  // that in the buttons (as the rail does) instead of leaving live-looking
-  // controls that silently do nothing.
-  const atStart = currentPos <= 0;
-  const atEnd = currentPos === -1 || currentPos >= attending.length - 1;
 
   // Swap with the neighbouring *attending* person, but write positions in the
   // full order so absent teammates keep their slot for when they're back.
@@ -157,7 +154,7 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(-1)}
-              disabled={pending || attending.length === 0 || atStart}
+              disabled={pending || attending.length === 0}
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               ← Prev
@@ -165,7 +162,7 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(1)}
-              disabled={pending || attending.length === 0 || atEnd}
+              disabled={pending || attending.length === 0}
               className="rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-60"
             >
               Next speaker →

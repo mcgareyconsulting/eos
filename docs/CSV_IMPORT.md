@@ -5,13 +5,20 @@
 Team members can upload a **.csv / .tsv / .xlsx** from the sidebar:
 **Import** → `/teams/[teamId]/import`.
 
-- Pick **Rocks**, **To-Dos**, or **Issues**, drop the file, **Preview (dry run)**
-  then **Import**.
+- Pick **Rocks**, **To-Dos**, **Issues**, **Headlines** or **Scorecard**, drop
+  the file, **Preview (dry run)** then **Import**.
 - Same column rules as below; same deterministic ids (a row already on the team is matched by title and kept).
-- Defaults are safer than the CLI: unknown owners are **skipped** unless you
-  enable placeholder members or choose a fallback owner.
-- Scorecard, milestones, and headlines remain **CLI-only** for now
-  (`pnpm import:csv`).
+- Unknown owners import as **No Owner** with the name from the file kept in the
+  description, rather than dropping the row — on every kind including Scorecard.
+  Placeholder members and a fallback owner are still available.
+- **Scorecard** brings the measurables and their week-by-week history in one
+  pass; ninety's `Group Name` column becomes the measurable's **group**, and
+  each distinct name is created as a scorecard group (weekly, in the order the
+  file lists them). Re-importing never rewrites a group's order or period.
+  Every imported measurable is created as **weekly** — set a different interval
+  on the Scorecard tab afterwards if the file was monthly or quarterly.
+- **Milestones** remain **CLI-only** as a standalone kind (`pnpm import:csv`),
+  though a rocks **workbook** carrying a milestone sheet imports both halves.
 
 Shared engine: `lib/team-import.ts` (used by the page and the CLI).
 

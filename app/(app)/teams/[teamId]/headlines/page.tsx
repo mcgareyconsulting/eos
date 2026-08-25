@@ -138,7 +138,6 @@ export default async function HeadlinesPage({
             teamId={teamId}
             headlineId={h.id}
             discussed={discussed}
-            disabled={readOnly}
           />
         )}
         <div className="min-w-0 flex-1">
@@ -159,7 +158,7 @@ export default async function HeadlinesPage({
             )}
             {readOnly && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
-                Org-wide · read-only
+                Org-wide · text is read-only
               </span>
             )}
           </div>
@@ -175,8 +174,12 @@ export default async function HeadlinesPage({
             {creatorName(h)} · {when}
           </div>
         </div>
-        {!readOnly && (
-          <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+        {/* Archive stays available on a broadcast copy — closing this team's
+            own copy is a per-team act and leaves every other team's queue
+            alone. Edit and delete do not: those would rewrite the org's
+            message for whoever cascaded it. */}
+        <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
+          {!readOnly && (
             <HeadlineEditButton
               teamId={teamId}
               headline={{
@@ -186,32 +189,32 @@ export default async function HeadlinesPage({
                 kind: h.kind,
               }}
             />
-            <form action={toggleArchive}>
+          )}
+          <form action={toggleArchive}>
+            <button
+              type="submit"
+              className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              aria-label={archivedRow ? "Restore headline" : "Archive headline"}
+              title={archivedRow ? "Restore" : "Archive now"}
+            >
+              <Archive className="h-4 w-4" />
+            </button>
+          </form>
+          {!archivedRow && !readOnly && (
+            <ConfirmSubmitForm
+              action={remove}
+              confirmMessage="Delete this headline? This can't be undone."
+            >
               <button
                 type="submit"
-                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                aria-label={archivedRow ? "Restore headline" : "Archive headline"}
-                title={archivedRow ? "Restore" : "Archive now"}
+                className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
+                aria-label="Delete headline"
               >
-                <Archive className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" />
               </button>
-            </form>
-            {!archivedRow && (
-              <ConfirmSubmitForm
-                action={remove}
-                confirmMessage="Delete this headline? This can't be undone."
-              >
-                <button
-                  type="submit"
-                  className="rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/40"
-                  aria-label="Delete headline"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </ConfirmSubmitForm>
-            )}
-          </div>
-        )}
+            </ConfirmSubmitForm>
+          )}
+        </div>
       </div>
     );
   }

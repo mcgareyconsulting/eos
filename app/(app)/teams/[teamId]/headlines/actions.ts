@@ -50,8 +50,9 @@ export async function addHeadline(teamId: string, formData: FormData) {
 /**
  * Edit a headline's title / detail / category. Any team member with access
  * can edit (same convention as updateTodoMeta / updateIssueMeta — no
- * owner-only restriction). Org-wide broadcast copies stay read-only, same
- * guard as delete/discuss/archive.
+ * owner-only restriction). Org-wide broadcast copies stay read-only here and
+ * in delete: the wording belongs to whoever cascaded it. Marking one
+ * discussed or archiving it is a different question — see setHeadlineDiscussed.
  */
 export async function updateHeadline(
   teamId: string,
@@ -92,17 +93,26 @@ export async function deleteHeadline(teamId: string, headlineId: string) {
   revalidateHeadlines(teamId);
 }
 
-/** Mark (or clear) a headline as discussed in the meeting. */
+/**
+ * Mark (or clear) a headline as discussed in the meeting.
+ *
+ * Org-wide broadcast headlines are checkable here even though their text is
+ * read-only, and that is deliberate. A cascaded message is fanned out as one
+ * doc PER TEAM (`importDocId("headline", teamId, …)`), so "discussed" is
+ * already a per-team fact — checking it off closes the item for this team's
+ * queue and cannot touch anyone else's copy or the source. That is exactly
+ * the EOS cycle the client described (Steph, 8/19 L10): "once we've talked
+ * about it to our team we like to mark it off so that it doesn't show up
+ * again ... each team will have that in their queue to share." Editing and
+ * deleting stay blocked — those would rewrite the org's message.
+ */
 export async function setHeadlineDiscussed(
   teamId: string,
   headlineId: string,
   discussed: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
-  if (snap.data()?.broadcast) {
-    throw new Error("Org-wide headlines are read-only");
-  }
+  await requireTeamDoc(db, "headlines", headlineId, teamId);
   await db
     .collection("headlines")
     .doc(headlineId)
@@ -113,17 +123,18 @@ export async function setHeadlineDiscussed(
   revalidateHeadlines(teamId);
 }
 
-/** Soft-archive or restore a single headline. Standing items stay unarchived. */
+/**
+ * Soft-archive or restore a single headline. Standing items stay unarchived.
+ * Broadcast copies are archivable for the same reason they are checkable —
+ * the doc is this team's own copy. See setHeadlineDiscussed.
+ */
 export async function setHeadlineArchived(
   teamId: string,
   headlineId: string,
   archived: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
-  if (snap.data()?.broadcast) {
-    throw new Error("Org-wide headlines are read-only");
-  }
+  await requireTeamDoc(db, "headlines", headlineId, teamId);
   // Restore clears discuss so standing items don't re-archive on next Finish.
   await db
     .collection("headlines")

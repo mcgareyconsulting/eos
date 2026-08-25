@@ -141,16 +141,42 @@ export function formatGoal(
   return `${arrow} ${formatValue(goal, unit)}`;
 }
 
+/**
+ * Above this magnitude, counts and currency render compactly ($2.3M, not
+ * $2,300,000). N43: scorecard cells are `min-w-[4.5rem]`, so a full-precision
+ * million overflows its column and pushes the whole grid — which is
+ * `overflow-x-auto` — into a horizontal scroll. Client-reported 8/19.
+ *
+ * 100k is the first magnitude that stops fitting: "$99,999" is seven
+ * characters and does fit, "$100,000" is eight and does not.
+ */
+const COMPACT_FROM = 100_000;
+
+function compact(value: number): string {
+  return value.toLocaleString(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+}
+
 // Same unit rendering as formatGoal but without the comparator prefix.
 // Used for averages, individual cell displays, etc.
+//
+// Large counts and currency abbreviate — pair this with formatValueExact()
+// in a `title` so the precise figure is always one hover away, and note that
+// editing a cell still works on the raw number, never on this string.
 export function formatValue(value: number | null, unit: string): string {
   if (value == null) return "—";
   if (unit === "currency") {
+    if (Math.abs(value) >= COMPACT_FROM) return `$${compact(value)}`;
     return `$${value.toLocaleString(undefined, {
       maximumFractionDigits: 0,
     })}`;
   }
   if (unit === "percent") {
+    // Percentages are not abbreviated: a four-figure percent is already a
+    // data problem, and "1.2K%" reads as a formatting bug rather than a big
+    // number.
     return `${value.toLocaleString(undefined, {
       maximumFractionDigits: 1,
     })}%`;
@@ -160,6 +186,23 @@ export function formatValue(value: number | null, unit: string): string {
     return value ? "Yes" : "No";
   }
   if (unit === "time") return formatMinutes(value);
+  if (Math.abs(value) >= COMPACT_FROM) return compact(value);
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+/**
+ * Full-precision rendering of the same value, for tooltips beside an
+ * abbreviated formatValue(). Identical to formatValue() for every unit that
+ * never abbreviates, so callers can use it unconditionally.
+ */
+export function formatValueExact(value: number | null, unit: string): string {
+  if (value == null) return "—";
+  if (unit === "currency") {
+    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+  if (unit === "yesno" || unit === "time" || unit === "percent") {
+    return formatValue(value, unit);
+  }
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
@@ -377,4 +420,54 @@ export function hitRate(
 /** Periods in the window with no entry at all — the sparse-data signal. */
 export function missingCount(values: (number | null)[]): number {
   return values.filter((v) => v == null).length;
+}
+
+/**
+ * Bucket scorecard rows into their groups, preserving the order they arrive
+ * in.
+ *
+ * The incoming order is the sort the caller already applied — speaking order
+ * in the L10 — and bucketing never reorders within a group, so each group
+ * renders its own speaking round. That is what lets grouping and speaking
+ * order compose instead of competing (N40).
+ *
+ * Group order comes from `orderNames` when the caller has group docs —
+ * position first, so Compliance can sit below Weekly — and falls back to
+ * alphabetical when it doesn't. Ungrouped rows come back separately so a
+ * caller can render them without a header, and a team that has never set a
+ * group gets everything in `ungrouped`, indistinguishable from a flat list.
+ */
+export function bucketMetricsByGroup<T extends { group?: string | null }>(
+  metrics: T[],
+  flat = false,
+  orderNames?: (names: string[]) => string[],
+): { ungrouped: T[]; groups: { name: string; items: T[] }[] } {
+  if (flat) return { ungrouped: [...metrics], groups: [] };
+
+  const ungrouped: T[] = [];
+  const byName = new Map<string, T[]>();
+  for (const m of metrics) {
+    const name = m.group?.trim() || "";
+    if (!name) {
+      ungrouped.push(m);
+      continue;
+    }
+    const bucket = byName.get(name);
+    if (bucket) bucket.push(m);
+    else byName.set(name, [m]);
+  }
+
+  const names = [...byName.keys()];
+  // Callers with group docs pass their own order (position, then name).
+  // Without them there is nothing better than alphabetical.
+  const ordered = orderNames
+    ? orderNames(names)
+    : names.sort((a, b) => a.localeCompare(b));
+
+  return {
+    ungrouped,
+    groups: ordered
+      .filter((name) => byName.has(name))
+      .map((name) => ({ name, items: byName.get(name)! })),
+  };
 }

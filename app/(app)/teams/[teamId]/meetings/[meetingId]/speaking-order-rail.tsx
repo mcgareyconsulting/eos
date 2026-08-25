@@ -55,9 +55,6 @@ export function SpeakingOrderRail({
       );
     });
 
-  const atStart = currentUid === visible[0];
-  const atEnd = currentUid === visible[visible.length - 1];
-
   return (
     <div className="space-y-2 px-3 py-3">
       <div className="truncate text-xs text-zinc-600 dark:text-zinc-400">
@@ -92,7 +89,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(-1)}
-          disabled={pending || atStart}
+          disabled={pending}
           className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           ← Prev
@@ -100,7 +97,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(1)}
-          disabled={pending || atEnd}
+          disabled={pending}
           className="flex-1 rounded-md bg-hpb-green px-2 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-40"
         >
           Next speaker →

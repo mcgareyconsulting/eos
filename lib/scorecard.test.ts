@@ -5,6 +5,8 @@ import {
   formatGoal,
   formatScorecardDraft,
   formatValue,
+  formatValueExact,
+  bucketMetricsByGroup,
   hitRate,
   missingCount,
   onTrack,
@@ -216,5 +218,112 @@ describe("missingCount", () => {
 
   it("counts all-null array", () => {
     assert.equal(missingCount([null, null, null]), 3);
+  });
+});
+
+// N43: full-precision millions overflowed the fixed-width scorecard cells and
+// pushed the whole grid into a horizontal scroll.
+describe("formatValue — large numbers (N43)", () => {
+  it("abbreviates currency and counts at or above 100k", () => {
+    assert.equal(formatValue(2_300_000, "currency"), "$2.3M");
+    assert.equal(formatValue(100_000, "currency"), "$100K");
+    assert.equal(formatValue(2_300_000, "number"), "2.3M");
+  });
+
+  it("leaves anything that already fits alone", () => {
+    assert.equal(formatValue(99_999, "currency"), "$99,999");
+    assert.equal(formatValue(1_250, "number"), "1,250");
+    assert.equal(formatValue(63, "number"), "63");
+  });
+
+  it("abbreviates negatives by magnitude, not by sign", () => {
+    assert.equal(formatValue(-2_300_000, "currency"), "$-2.3M");
+    assert.equal(formatValue(-99_999, "number"), "-99,999");
+  });
+
+  it("never abbreviates percent, yes/no or time", () => {
+    // A four-figure percent is a data problem; "1.2K%" would read as a bug.
+    assert.equal(formatValue(150_000, "percent"), "150,000%");
+    assert.equal(formatValue(1, "yesno"), "Yes");
+    assert.equal(formatValue(200_000, "time"), "3333:20");
+  });
+
+  it("goals inherit the abbreviation", () => {
+    assert.equal(formatGoal(2_300_000, "gte", "currency"), ">= $2.3M");
+  });
+});
+
+describe("formatValueExact", () => {
+  it("keeps every digit, for the tooltip beside an abbreviated cell", () => {
+    assert.equal(formatValueExact(2_300_000, "currency"), "$2,300,000");
+    assert.equal(formatValueExact(2_300_000, "number"), "2,300,000");
+  });
+
+  it("matches formatValue for units that never abbreviate", () => {
+    for (const [v, u] of [
+      [150_000, "percent"],
+      [1, "yesno"],
+      [200_000, "time"],
+      [63, "number"],
+    ] as const) {
+      assert.equal(formatValueExact(v, u), formatValue(v, u));
+    }
+  });
+
+  it("renders an empty value the same way", () => {
+    assert.equal(formatValueExact(null, "currency"), "—");
+  });
+});
+
+// N40: in the L10, rows arrive pre-sorted by speaking order. Grouping must
+// bucket them without reordering, so each group is its own speaking round.
+describe("bucketMetricsByGroup (N40)", () => {
+  const inSpeakingOrder = [
+    { id: "1", group: "Weekly" },
+    { id: "2", group: "Compliance" },
+    { id: "3", group: "Weekly" },
+    { id: "4", group: null },
+    { id: "5", group: "Compliance" },
+  ];
+
+  it("keeps the incoming order inside each group", () => {
+    const { groups } = bucketMetricsByGroup(inSpeakingOrder);
+    const weekly = groups.find((g) => g.name === "Weekly");
+    const compliance = groups.find((g) => g.name === "Compliance");
+    assert.deepEqual(weekly?.items.map((m) => m.id), ["1", "3"]);
+    assert.deepEqual(compliance?.items.map((m) => m.id), ["2", "5"]);
+  });
+
+  it("lists groups alphabetically and splits out ungrouped rows", () => {
+    const { ungrouped, groups } = bucketMetricsByGroup(inSpeakingOrder);
+    assert.deepEqual(groups.map((g) => g.name), ["Compliance", "Weekly"]);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["4"]);
+  });
+
+  it("treats blank and whitespace names as ungrouped", () => {
+    const { ungrouped, groups } = bucketMetricsByGroup([
+      { id: "a", group: "" },
+      { id: "b", group: "   " },
+      { id: "c", group: undefined },
+    ]);
+    assert.equal(groups.length, 0);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["a", "b", "c"]);
+  });
+
+  it("flat mode returns everything ungrouped, order intact", () => {
+    const { ungrouped, groups } = bucketMetricsByGroup(inSpeakingOrder, true);
+    assert.deepEqual(groups, []);
+    assert.deepEqual(ungrouped.map((m) => m.id), ["1", "2", "3", "4", "5"]);
+  });
+
+  it("a team that never set a group is indistinguishable from flat", () => {
+    // Field absent on the doc, which is what an ungrouped team has.
+    const rows = [
+      { id: "x", group: undefined },
+      { id: "y", group: undefined },
+    ];
+    const grouped = bucketMetricsByGroup(rows);
+    assert.deepEqual(grouped.ungrouped.map((m) => m.id), ["x", "y"]);
+    assert.deepEqual(grouped.groups, []);
   });
 });

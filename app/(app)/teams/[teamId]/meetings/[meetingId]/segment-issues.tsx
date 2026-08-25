@@ -26,7 +26,10 @@ import {
   type IssueType,
 } from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
-import { VoteCreditsBadge } from "../../issues/vote-credits-badge";
+import {
+  TeamVoteTallyBadge,
+  VoteCreditsBadge,
+} from "../../issues/vote-credits-badge";
 import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { IssueFormModal } from "../../issues/issue-form-modal";
@@ -72,6 +75,7 @@ export function SegmentIssues({
   initialIssues,
   initialVotes,
   initialCurrentIssueId,
+  initialAbsentUserIds,
   members,
 }: {
   teamId: string;
@@ -80,6 +84,7 @@ export function SegmentIssues({
   initialIssues: IssueDoc[];
   initialVotes: VoteDoc[];
   initialCurrentIssueId: string | null;
+  initialAbsentUserIds: string[];
   members: Member[];
 }) {
   const db = getClientDb();
@@ -107,11 +112,20 @@ export function SegmentIssues({
   const issuesLive = useCollection<IssueDoc>(issuesQuery, initialIssues);
   const votes = useCollection<VoteDoc>(votesQuery, initialVotes);
   // Live "discussing now" pointer, shared across all clients via the meeting doc.
-  const meetingLive = useDoc<{ current_issue_id?: string | null }>(
-    meetingRef,
-    { current_issue_id: initialCurrentIssueId },
-  );
+  const meetingLive = useDoc<{
+    current_issue_id?: string | null;
+    absent_user_ids?: string[] | null;
+  }>(meetingRef, {
+    current_issue_id: initialCurrentIssueId,
+    absent_user_ids: initialAbsentUserIds,
+  });
   const discussingId = meetingLive.current_issue_id ?? null;
+  // Same subscription the discuss pointer rides, so marking someone absent
+  // mid-meeting re-bases the tally's denominator immediately.
+  const absentUserIds = meetingLive.absent_user_ids ?? [];
+  const presentVoterCount = members.filter(
+    (m) => !absentUserIds.includes(m.user_id),
+  ).length;
 
   const { byIssue: myVoteByIssue, used: myVotesUsed, remaining: myVotesRemaining } =
     voteCredits(votes);
@@ -154,7 +168,15 @@ export function SegmentIssues({
           Long-term ({rankedLong.length})
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {tab === "short" && <VoteCreditsBadge used={myVotesUsed} />}
+          {tab === "short" && (
+            <>
+              <VoteCreditsBadge used={myVotesUsed} />
+              <TeamVoteTallyBadge
+                issues={issues}
+                presentVoterCount={presentVoterCount}
+              />
+            </>
+          )}
           {tab === "long" && (
             <span className="text-xs text-zinc-500">
               Not votable · move to short-term to work this meeting

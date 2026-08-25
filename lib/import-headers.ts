@@ -1,7 +1,12 @@
 // Client-safe column docs for the in-app Import page.
 // Keep in sync with docs/CSV_IMPORT.md and lib/team-import parsers.
 
-export type WebImportKind = "rocks" | "todos" | "issues" | "headlines";
+export type WebImportKind =
+  | "rocks"
+  | "todos"
+  | "issues"
+  | "headlines"
+  | "scorecard";
 
 export const EXPECTED_HEADERS: Record<
   WebImportKind,
@@ -55,6 +60,19 @@ export const EXPECTED_HEADERS: Record<
     ],
     notes:
       "Type: short / long (or sheet name Short-Term / Long-Term for .xlsx). Status: open / solving / solved / dropped. Multi-sheet workbooks import all issue sheets.",
+  },
+  scorecard: {
+    required: ["Title"],
+    optional: [
+      "Owner",
+      "Group Name",
+      "Description",
+      "Goal",
+      "Unit",
+      "week columns (one per period, e.g. 08/17/2026)",
+    ],
+    notes:
+      "Group Name (ninety's own column, also accepted as Group / Section) becomes the measurable's group. Every date-like column is read as a period and imported as that week's value, so one file brings both the measurables and their history. Goal accepts a comparator (>= 5, <= 63). Heads up: imported measurables are all created as WEEKLY — non-weekly ones need their interval set on the Scorecard tab afterwards.",
   },
   headlines: {
     required: ["Owner", "Title"],

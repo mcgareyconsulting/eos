@@ -37,6 +37,7 @@ import { endOfQuarter, toDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { MeetingRail } from "./meeting-rail";
 import { SegmentSegue } from "./segment-segue";
+import { loadScorecardGroups } from "@/lib/firebase/scorecard-groups";
 import { SegmentScorecard } from "./segment-scorecard";
 import { SegmentRocks } from "./segment-rocks";
 import { SegmentHeadlines } from "./segment-headlines";
@@ -531,6 +532,7 @@ async function SegmentContent({
       .collection("scorecard_metrics")
       .where("team_id", "==", teamId)
       .get();
+    const scorecardGroups = await loadScorecardGroups(db, teamId);
     const initialMetrics = metricsSnap.docs.map((d) => {
       const x = d.data();
       return {
@@ -556,6 +558,7 @@ async function SegmentContent({
       <SegmentScorecard
         teamId={teamId}
         meetingId={meetingId}
+        initialGroups={scorecardGroups}
         weekRange={scorecardWeekRange}
         period={scorecardPeriod}
         initialMetrics={initialMetrics}
@@ -793,6 +796,7 @@ async function SegmentContent({
         initialIssues={initialIssues}
         initialVotes={initialVotes}
         initialCurrentIssueId={currentIssueId}
+        initialAbsentUserIds={absentUserIds}
         members={members}
       />
     );

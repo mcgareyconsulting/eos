@@ -16,7 +16,11 @@ import {
   ownersPresentThenAbsent,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
-import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
+import {
+  MILESTONE_REMINDER_DAYS,
+  isMilestoneDueSoon,
+  isMilestoneHiddenByRock,
+} from "@/lib/milestone-visibility";
 import { EmptyState } from "@/components/empty-state";
 import {
   TodoListRow,
@@ -317,16 +321,24 @@ export function SegmentTodos({
   );
 
   const allTodos = [...teamTodos, ...myTodos].filter((t) => !t.archived_at);
-  // Pure to-dos only in owner cards. All open milestones surface in their own
-  // section (P0-4 / P14-4) — same idea as standalone To-Dos; still editable
-  // under Rocks. Milestones whose parent rock is done/cancelled/archived are
+  // Pure to-dos only in owner cards. Milestones surface in their own section
+  // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under
+  // Rocks. Milestones whose parent rock is done/cancelled/archived are
   // dropped, same as the standalone Milestones column.
+  //
+  // N29: unlike the standalone tab this stays TEAM-wide rather than scoping
+  // to the viewer — Jessica, on this surface specifically: "in this view I
+  // would say it's better to see everyone's milestone, so if you know
+  // something's coming up for someone else you can push them on it if you
+  // think they're not ready." What it does share is the two-week window, so
+  // the section reads as what the room needs to chase this fortnight.
   const pureTodos = allTodos.filter((t) => !t.source_rock_id);
   const openMilestones: MilestoneTodoItem[] = allTodos
     .filter(
       (t) =>
         Boolean(t.source_rock_id) &&
         !t.completed_at &&
+        isMilestoneDueSoon(t.due_date) &&
         !isMilestoneHiddenByRock(rockById.get(t.source_rock_id ?? "")),
     )
     .sort(byDue)
@@ -373,147 +385,165 @@ export function SegmentTodos({
         />
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-          <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
-          <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-            Milestones
-          </h3>
-          <span className="text-xs text-zinc-500">
-            {openMilestones.length}
-          </span>
-        </header>
-        {openMilestones.length === 0 ? (
-          <EmptyState icon={Flag} title="No open milestones" />
-        ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {milestoneGroups.map((g) => (
-              <div key={g.key}>
-                <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-                    {initials(g.title) || "?"}
-                  </span>
-                  <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                    {g.title}
-                  </h4>
-                  <span className="text-xs text-zinc-500">
-                    {g.items.length}
-                  </span>
-                </div>
-                {g.items.map((m) => (
-                  <MilestoneTodoRow
-                    key={m.id}
-                    teamId={teamId}
-                    milestone={m}
-                    ownerName={g.title}
-                    hideOwner
-                  />
-                ))}
-              </div>
-            ))}
+      {/* N29: two columns, matching the standalone To-Dos page — and
+          to-dos FIRST. Stacked, the milestone block sat on top and
+          pushed the actual to-dos below the fold ("just vomit at the
+          top of the to-dos page, so you got to scroll to the bottom").
+          Stacks again under lg so a narrow meeting window still reads. */}
+      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-3">
+        {groups.length === 0 && (
+          <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            No to-dos.
           </div>
         )}
-      </section>
 
-      {groups.length === 0 && (
-        <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-          No to-dos.
-        </div>
-      )}
+        {openCount === 0 && doneCount > 0 && (
+          <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
+            All to-dos done — nice week.
+          </div>
+        )}
 
-      {openCount === 0 && doneCount > 0 && (
-        <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
-          All to-dos done — nice week.
-        </div>
-      )}
-
-      {/* One card per owner — same chrome as L10 Rocks. */}
-      {groups.map((g) => (
-        <section
-          key={g.key}
-          className={
-            "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
-            (g.isCurrentSpeaker
-              ? "border-hpb-green/50"
-              : "border-zinc-300 dark:border-zinc-800") +
-            (g.absent ? " opacity-60" : "")
-          }
-        >
-          <header
+        {/* One card per owner — same chrome as L10 Rocks. */}
+        {groups.map((g) => (
+          <section
+            key={g.key}
             className={
-              "flex items-center gap-2 border-b px-4 py-2 " +
+              "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
               (g.isCurrentSpeaker
-                ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
-                : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
+                ? "border-hpb-green/50"
+                : "border-zinc-300 dark:border-zinc-800") +
+              (g.absent ? " opacity-60" : "")
             }
           >
-            <span
+            <header
               className={
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                "flex items-center gap-2 border-b px-4 py-2 " +
                 (g.isCurrentSpeaker
-                  ? "bg-hpb-green text-white"
-                  : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
+                  ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
+                  : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
               }
             >
-              {initials(g.title) || "?"}
-            </span>
+              <span
+                className={
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
+                  (g.isCurrentSpeaker
+                    ? "bg-hpb-green text-white"
+                    : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
+                }
+              >
+                {initials(g.title) || "?"}
+              </span>
+              <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                {g.title}
+              </h3>
+              <span className="text-xs text-zinc-500">
+                {[
+                  g.open.length > 0 ? `${g.open.length} open` : null,
+                  g.done.length > 0 ? `${g.done.length} done` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "none"}
+              </span>
+              {g.isCurrentSpeaker && (
+                <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
+                  <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
+                  Now speaking
+                </span>
+              )}
+              {g.absent && !g.isCurrentSpeaker && (
+                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Absent
+                </span>
+              )}
+            </header>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {g.open.length === 0 && g.done.length === 0 && (
+                <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
+              )}
+              {g.open.map((t) => (
+                <TodoListRow
+                  key={t.id}
+                  teamId={teamId}
+                  todo={toListItem(t)}
+                  ownerName={g.title}
+                  members={members}
+                  hideOwner
+                />
+              ))}
+              {g.done.length > 0 && (
+                <>
+                  <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
+                    Done
+                  </div>
+                  {g.done.map((t) => (
+                    <TodoListRow
+                      key={t.id}
+                      teamId={teamId}
+                      todo={toListItem(t)}
+                      ownerName={g.title}
+                      members={members}
+                      hideOwner
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          </section>
+        ))}
+        </div>
+
+        <div className="space-y-3">
+        <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
             <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              {g.title}
+              Milestones
             </h3>
             <span className="text-xs text-zinc-500">
-              {[
-                g.open.length > 0 ? `${g.open.length} open` : null,
-                g.done.length > 0 ? `${g.done.length} done` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "none"}
+              {openMilestones.length}
             </span>
-            {g.isCurrentSpeaker && (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
-                Now speaking
-              </span>
-            )}
-            {g.absent && !g.isCurrentSpeaker && (
-              <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Absent
-              </span>
-            )}
+            <span className="ml-auto text-[11px] text-zinc-500 dark:text-zinc-400">
+              due in the next {MILESTONE_REMINDER_DAYS} days
+            </span>
           </header>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {g.open.length === 0 && g.done.length === 0 && (
-              <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
-            )}
-            {g.open.map((t) => (
-              <TodoListRow
-                key={t.id}
-                teamId={teamId}
-                todo={toListItem(t)}
-                ownerName={g.title}
-                members={members}
-                hideOwner
-              />
-            ))}
-            {g.done.length > 0 && (
-              <>
-                <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                  Done
+          {openMilestones.length === 0 ? (
+            <EmptyState
+              icon={Flag}
+              title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
+              hint="Milestones further out stay under their rock on the Rocks segment."
+            />
+          ) : (
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {milestoneGroups.map((g) => (
+                <div key={g.key}>
+                  <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
+                      {initials(g.title) || "?"}
+                    </span>
+                    <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+                      {g.title}
+                    </h4>
+                    <span className="text-xs text-zinc-500">
+                      {g.items.length}
+                    </span>
+                  </div>
+                  {g.items.map((m) => (
+                    <MilestoneTodoRow
+                      key={m.id}
+                      teamId={teamId}
+                      milestone={m}
+                      ownerName={g.title}
+                      hideOwner
+                    />
+                  ))}
                 </div>
-                {g.done.map((t) => (
-                  <TodoListRow
-                    key={t.id}
-                    teamId={teamId}
-                    todo={toListItem(t)}
-                    ownerName={g.title}
-                    members={members}
-                    hideOwner
-                  />
-                ))}
-              </>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
-      ))}
+        </div>
+      </div>
     </div>
   );
 }

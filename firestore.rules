@@ -92,6 +92,13 @@ service cloud.firestore {
       allow create:      if admin() || isMember(request.resource.data.team_id);
     }
 
+    // Groups are just named, ordered buckets within a period — same team
+    // gate as the metrics that reference them by name.
+    match /scorecard_groups/{id} {
+      allow read, write: if admin() || isMember(resource.data.team_id);
+      allow create:      if admin() || isMember(request.resource.data.team_id);
+    }
+
     match /scorecard_entries/{id} {
       function metricTeam() {
         return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data.team_id;

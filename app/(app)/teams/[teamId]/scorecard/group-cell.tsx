@@ -3,9 +3,15 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { setMetricGroup } from "./actions";
 
-// Inline editor for a metric's section/group label. Mirrors ValueCell's
-// click-to-edit pattern so section assignment feels consistent with the
-// week-cell editing already on this page.
+// Inline editor for a metric's group label. Mirrors ValueCell's click-to-edit
+// pattern so group assignment feels consistent with the week-cell editing
+// already on this page.
+//
+// "Group" in the UI and `group` in the data — the same word ninety uses in
+// its exports ("Group Name"), and the word the client uses out loud. It shipped
+// briefly as "Section", which is why Steph asked for a feature that already
+// existed (N40). The unset state reads "+ Group" rather than a grey noun,
+// which looked like a status rather than something clickable.
 export function GroupCell({
   teamId,
   metricId,
@@ -23,7 +29,7 @@ export function GroupCell({
     (_state, next: string | null) => next,
   );
 
-  const display = optimisticGroup ?? "No section";
+  const display = optimisticGroup ?? "+ Group";
 
   if (!editing) {
     return (
@@ -33,7 +39,17 @@ export function GroupCell({
           setDraft(optimisticGroup ?? "");
           setEditing(true);
         }}
-        className="block text-left text-xs text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline"
+        title={
+          optimisticGroup
+            ? `Group: ${optimisticGroup} — click to change`
+            : "Put this measurable in a group (e.g. Weekly, Compliance)"
+        }
+        className={
+          "block text-left text-xs hover:underline " +
+          (optimisticGroup
+            ? "text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            : "text-hpb-blue/70 dark:text-hpb-gold/70 hover:text-hpb-blue dark:hover:text-hpb-gold")
+        }
       >
         {display}
       </button>
@@ -60,7 +76,7 @@ export function GroupCell({
       type="text"
       size={1}
       value={draft}
-      placeholder="Section"
+      placeholder="Group"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

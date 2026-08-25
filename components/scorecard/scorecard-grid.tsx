@@ -5,11 +5,17 @@ import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
+import {
+  orderGroupNames,
+  type ScorecardGroup,
+} from "@/lib/scorecard-groups";
 import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
 import {
   average,
   formatGoal,
   formatValue,
+  formatValueExact,
+  bucketMetricsByGroup,
   hitRate,
   onTrack,
   STATUS_TONE,
@@ -121,6 +127,8 @@ export function ScorecardGrid({
   members,
   showDelete = false,
   showGroupEditor = true,
+  groups = [],
+  interval = "weekly",
   compact = false,
   /** When true, skip the grid's own search strip (parent owns filters). */
   hideLocalSearch = false,
@@ -136,6 +144,10 @@ export function ScorecardGrid({
   members: ScorecardMember[];
   showDelete?: boolean;
   showGroupEditor?: boolean;
+  /** Team's group docs — supply position so Compliance can sit below Weekly. */
+  groups?: ScorecardGroup[];
+  /** Which period this grid is showing; groups are per-period. */
+  interval?: ScorecardGroup["interval"];
   compact?: boolean;
   hideLocalSearch?: boolean;
   flatList?: boolean;
@@ -191,23 +203,15 @@ export function ScorecardGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metrics, search, members, hideLocalSearch]);
 
-  const groupedMetrics = useMemo(() => {
-    const map = new Map<string, ScorecardMetric[]>();
-    for (const m of filtered) {
-      const key = flatList ? "" : m.group?.trim() || "";
-      const bucket = map.get(key);
-      if (bucket) bucket.push(m);
-      else map.set(key, [m]);
-    }
-    return map;
-  }, [filtered, flatList]);
-
-  const ungrouped = groupedMetrics.get("") ?? [];
-  const groupNames = flatList
-    ? []
-    : [...groupedMetrics.keys()]
-        .filter((g) => g !== "")
-        .sort((a, b) => a.localeCompare(b));
+  // Bucketing preserves `filtered`'s order, which is the caller's sort — so
+  // in the L10 each group renders its own speaking round.
+  const { ungrouped, groups: metricGroups } = useMemo(
+    () =>
+      bucketMetricsByGroup(filtered, flatList, (names) =>
+        orderGroupNames(names, groups, interval),
+      ),
+    [filtered, flatList, groups, interval],
+  );
 
   const stickyShadow =
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
@@ -361,7 +365,7 @@ export function ScorecardGrid({
             title={
               avg == null
                 ? "No entries yet"
-                : `Average of ${values.filter((v) => v != null).length} recorded periods`
+                : `${formatValueExact(avg, m.unit)} — average of ${values.filter((v) => v != null).length} recorded periods`
             }
           >
             {formatValue(avg, m.unit)}
@@ -601,13 +605,10 @@ export function ScorecardGrid({
               </tr>
             )}
             {ungrouped.map(renderMetricRow)}
-            {groupNames.flatMap((g) => {
-              const rows = groupedMetrics.get(g) ?? [];
-              return [
-                renderGroupHeader(g, rows.length),
-                ...rows.map(renderMetricRow),
-              ];
-            })}
+            {metricGroups.flatMap((g) => [
+              renderGroupHeader(g.name, g.items.length),
+              ...g.items.map(renderMetricRow),
+            ])}
           </tbody>
         </table>
       </div>

@@ -7,7 +7,11 @@ import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { initials } from "@/lib/initials";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
-import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
+import {
+  MILESTONE_REMINDER_DAYS,
+  isMilestoneDueSoon,
+  isMilestoneHiddenByRock,
+} from "@/lib/milestone-visibility";
 import {
   getTasksStatus,
   pullCompletionsForOwner,
@@ -244,11 +248,21 @@ export default async function TodosPage({
       : list.filter((t) => t.owner_id === ownerFilter);
   const todos = scoped(showArchived ? archivedTodos : activeTodos);
 
-  const visibleMilestones = (
-    ownerFilter === "all"
-      ? allMilestones
-      : allMilestones.filter((m) => m.owner_id === ownerFilter)
-  ).sort(byDue);
+  // N29: this column is a REMINDER, not an inventory. Two rules —
+  //  1. only what is due inside the two-week window (overdue included), and
+  //  2. with no explicit owner filter, only the viewer's own.
+  // Before this, every open milestone on the team rendered here and pushed
+  // the actual to-dos below the fold. An explicit owner filter still wins,
+  // so the control keeps working rather than becoming decorative.
+  const visibleMilestones = allMilestones
+    .filter((m) =>
+      ownerFilter === "all"
+        ? m.owner_id === uid
+        : m.owner_id === ownerFilter,
+    )
+    .filter((m) => isMilestoneDueSoon(m.due_date))
+    .sort(byDue);
+  const milestoneScopeIsSelf = ownerFilter === "all";
 
   const ownerName = (id: string | null) =>
     ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
@@ -394,12 +408,19 @@ export default async function TodosPage({
             ))}
           </BoardColumn>
 
-          <BoardColumn title="Milestones" count={visibleMilestones.length}>
+          <BoardColumn
+            title={milestoneScopeIsSelf ? "Your milestones" : "Milestones"}
+            count={visibleMilestones.length}
+          >
             {visibleMilestones.length === 0 ? (
               <EmptyState
                 icon={Flag}
-                title="No open milestones"
-                hint="Rock milestones show here while their parent rock is still active."
+                title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
+                hint={
+                  milestoneScopeIsSelf
+                    ? "Your rock milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
+                    : "Milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
+                }
               />
             ) : (
               milestoneGroups.map((g) => (

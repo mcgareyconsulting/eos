@@ -8,6 +8,7 @@ import {
   selectHomeTodos,
   selectMilestonesForRocks,
   shouldShowHomeRock,
+  splitHomeRocksByType,
   todoVisibilityLabel,
   type HomeRockLike,
 } from "./home-board";
@@ -244,5 +245,60 @@ describe("byDueDateAsc", () => {
       rows.map((r) => r.due_date),
       ["2026-07-01", "2026-08-01", null],
     );
+  });
+});
+
+describe("splitHomeRocksByType (N34)", () => {
+  const rocks = [
+    { id: "a", owner_id: "u-cora", rock_type: "individual" },
+    { id: "b", owner_id: "u-cora", rock_type: "department" },
+    { id: "c", owner_id: "u-joe", rock_type: null },
+    { id: "d", owner_id: "u-joe", rock_type: "company" },
+    { id: "e", owner_id: "u-cora", rock_type: "team" },
+  ];
+
+  test("department and company rocks form the departmental section", () => {
+    const { mine, departmental } = splitHomeRocksByType(rocks);
+    assert.deepEqual(
+      departmental.map((r) => r.id),
+      ["b", "d"],
+    );
+    assert.deepEqual(
+      mine.map((r) => r.id),
+      ["a", "c", "e"],
+    );
+  });
+
+  test("a department rock the viewer owns is still departmental", () => {
+    // Rock "b" is owned by Cora and still belongs to the department — the
+    // split is by kind, not by who happens to own it.
+    const { departmental } = splitHomeRocksByType(rocks);
+    assert.ok(departmental.some((r) => r.id === "b"));
+  });
+
+  test("a legacy rock with no owner counts as departmental", () => {
+    const { mine, departmental } = splitHomeRocksByType([
+      { id: "legacy", owner_id: null, rock_type: null },
+      { id: "blank", owner_id: "", rock_type: "individual" },
+    ]);
+    assert.deepEqual(
+      departmental.map((r) => r.id),
+      ["legacy", "blank"],
+    );
+    assert.deepEqual(mine, []);
+  });
+
+  test("preserves the incoming order inside each section", () => {
+    const { mine } = splitHomeRocksByType(rocks);
+    assert.deepEqual(
+      mine.map((r) => r.id),
+      ["a", "c", "e"],
+    );
+  });
+
+  test("an empty board yields two empty sections, not undefined", () => {
+    const { mine, departmental } = splitHomeRocksByType([]);
+    assert.deepEqual(mine, []);
+    assert.deepEqual(departmental, []);
   });
 });

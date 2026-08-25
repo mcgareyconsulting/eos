@@ -5,6 +5,7 @@ import { setEntry } from "./actions";
 import {
   formatScorecardDraft,
   formatValue,
+  formatValueExact,
   parseScorecardValue,
 } from "@/lib/scorecard";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,10 @@ export function ValueCell({
   }, [error]);
 
   const display = formatValue(optimisticValue, unit);
+  // Large values abbreviate ($2.3M) so the cell keeps its width — the precise
+  // figure stays one hover away, and editing always works on the raw number.
+  const exact = formatValueExact(optimisticValue, unit);
+  const abbreviated = exact !== display;
 
   // Soft cell tints match the client's existing mental model (green = hit
   // goal, red = missed) without the harsh solid fills of the legacy tool.
@@ -96,9 +101,15 @@ export function ValueCell({
       <button
         type="button"
         onClick={beginEdit}
-        title={error ?? undefined}
+        title={error ?? (abbreviated ? exact : undefined)}
         aria-invalid={error ? true : undefined}
-        aria-label={error ? `${display}. ${error}` : undefined}
+        aria-label={
+          error
+            ? `${exact}. ${error}`
+            : abbreviated
+              ? exact
+              : undefined
+        }
         className={cn(
           "w-full min-w-[4.5rem] rounded-md px-2 py-1.5 text-right tabular-nums hover:ring-1 hover:ring-inset hover:ring-zinc-300 dark:hover:ring-zinc-600",
           tone,

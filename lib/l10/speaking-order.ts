@@ -57,9 +57,18 @@ export function clampSpeakerIndex(index: number, length: number): number {
 
 // Steps the pointer, skipping anyone marked absent for this meeting — the
 // whole reason attendance is set during Segue rather than at Conclude.
-// Returns the current index unchanged when there is no eligible person in
-// that direction, so the control simply goes inert at the ends of the round
-// instead of landing on someone who isn't in the room.
+//
+// The round is a CYCLE, on every stage including Segue. Past the last person
+// present the pointer lands back on the first, and Prev mirrors it backwards.
+// Client ask (Ryan, 8/19 L10): "you get to the last speaker, you click next,
+// and it goes back to the beginning ... sometimes we go multiple rounds, and
+// that's much easier than clicking previous a bunch of times." daniel's call
+// on scope: one behaviour across the board, no per-stage exception — Segue
+// still shows its round-done marker, it just no longer dead-ends.
+//
+// This replaces the old inert-at-the-ends contract deliberately. A round with
+// nobody else present still returns `from` unchanged, so the control can never
+// land on someone who is not in the room.
 export function stepSpeakerIndex(
   order: string[],
   index: number,
@@ -69,8 +78,11 @@ export function stepSpeakerIndex(
   if (order.length === 0) return 0;
   const absent = new Set(absentUserIds);
   const from = clampSpeakerIndex(index, order.length);
+  const n = order.length;
 
-  for (let i = from + direction; i >= 0 && i < order.length; i += direction) {
+  // At most one full lap: if nobody else is present we land back on `from`.
+  for (let step = 1; step <= n; step++) {
+    const i = (((from + direction * step) % n) + n) % n;
     if (!absent.has(order[i])) return i;
   }
   return from;

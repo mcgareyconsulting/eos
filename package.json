@@ -15,6 +15,7 @@
     "reset": "tsx scripts/reset-demo.ts",
     "team:info": "tsx scripts/team-info.ts",
     "import:csv": "tsx scripts/import-csv.ts",
+    "backfill:groups": "tsx scripts/backfill-scorecard-groups.ts",
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",

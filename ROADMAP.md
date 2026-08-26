@@ -1,7 +1,7 @@
 ---
 project: HPB
 updated: 2026-08-26
-verified: main @ 4498653  # prod still runs 98bb30b (rev eos-00046-nxv) — main is ~13 days ahead; see Deployment truth
+verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -9,8 +9,8 @@ config:                       # inputs to derived math — store inputs, never r
 queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
-  now: SHIP2   # prod is 13 days behind main; N23 + N32 are built and still live-broken for the client
-  next: [F4, QW1, N18, F3, N3, N2, N4]
+  now: QW1     # prod == main; the backlog is verification, not shipping
+  next: [F4, N18, F3, N3, N2, N4]
   awaiting: [P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -27,16 +27,30 @@ The merged client-feedback priority list is agent-local on the consultant
 machine (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`) and
 is a working aid, never an authority.
 
-**Deployment truth as of 2026-08-12 (F5 shipped):** **prod = main code.**
-Cloud Run (service `eos`, `hpb-eos-prod`, us-east1) runs revision
-**`eos-00046-nxv`**, image tag **`98bb30b`** — current `main` code
-(commits after `98bb30b` are roadmap-only). The F5 ship delivered PRs
-#25–#29 (settings/profile + Google Tasks completion, custom agendas,
-My-Home board + multi-team, rich text) and the `firestore.rules` deploy
-(#27 agenda rules). F1 and F5 `done`. **Known-broken on prod:** the Rocks
-Archived tab (**N23**) — the fix did not exist when F5 shipped, and the
-Monday sweep (2026-08-17) will create the first archived rocks that
-trigger it. N23 now needs its own small ship before the sweep.
+**Deployment truth as of 2026-08-26 — verified against `gcloud`, not against
+this file.** Cloud Run (service `eos`, `hpb-eos-prod`, us-east1) runs revision
+**`eos-00070-pjg`**, image tag **`1d7624b`** — which is `main` HEAD. Zero
+commits sit between prod and main.
+
+- **`firestore.rules`**: deployed ruleset `aec1b6e8` (updated 2026-08-25
+  13:56Z) is **byte-identical** to the repo's `firestore.rules` — checked by
+  fetching the live ruleset source and diffing, not by reading a timestamp.
+  Live on both `hpb-eos-prod-db` and `hpb-eos-sandbox-db`.
+- **Cloud Functions**: `archiveStaleTodos` last updated 2026-08-25 14:26Z,
+  after the N26 sweep change landed in code (2026-08-24 20:26Z). Deployed.
+
+⚠ **This section was wrong for two weeks and nothing caught it.** It claimed
+prod ran `98bb30b` / `eos-00046-nxv` from 2026-08-12; prod was in fact 24
+revisions further on, having been shipped repeatedly in between. Every
+downstream conclusion inherited the error — N23 and N32 were described as
+"live and broken for the client" when both had shipped, and an invented
+**SHIP2** item sat at `queue.now` calling for a deploy that had already
+happened several times over.
+
+**The rule this earns: deployment state is never read from this file.** It is
+one `gcloud run services describe` away, and the file is a lagging copy that
+nobody updates on ship. Statuses here describe *code*; the cluster is the only
+authority on what is *running*.
 
 ## Queue — the single ordering
 
@@ -52,13 +66,12 @@ by cost-to-close, then by size:
 
 | # | Item | Effort | Why here |
 |---|---|---|---|
-| now | **SHIP2** | S | Prod is 13 days / 10 PRs behind `main`. **N23** (Archived tab crashes) and **N32** (ratings rewritable after conclude) are *built* and still broken for the client — the remaining work is the ship, not the fix. Needs three deploys: image, `firestore.rules`, Cloud Functions |
-| 1 | **F4** | S | `archived_at: null` backfill. Now sequenced *after* SHIP2 so the Archived tab is fixed before legacy rows become sweepable. The 08-17 sweep has already run once without it |
-| 2 | **QW1** | S | Prod spot-check + Open question 6 — covers the F5 payload (U1, P1-7, P2-1, P3-2 → `verified`) and now the SHIP2 payload, plus the sign-in/OAuth negative test |
-| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 5 | **N3** | M | No deps; migration integrity before broader rollout |
-| 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
+| now | **QW1** | S | Prod == main, so nothing is waiting on a deploy — what's waiting is *confirmation*. A large payload has shipped unverified (U1, P1-7, P2-1, P3-2 → `verified`), plus the sign-in/OAuth negative test and Open question 6. This is now the only thing standing between "shipped" and "known good" |
+| 1 | **F4** | S | `archived_at: null` backfill — the last genuinely outstanding operator task. Legacy imports stay invisible to the Monday sweep until it runs |
+| 2 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 3 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
+| 4 | **N3** | M | No deps; migration integrity before broader rollout |
+| 5 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **P3-1** (Joe, Open question 3) · **N10**
@@ -302,12 +315,22 @@ found, and only one of them is a build:
    and have already diverged on scroll behaviour — one visual language, two
    implementations, no shared source.
 
+6. **Cached-fact drift — the worst one, and it was in this file's own
+   header.** "Deployment truth" claimed prod ran `98bb30b` from 2026-08-12.
+   Prod was 24 revisions further on. Unlike the other five this one was not
+   merely stale, it was *load-bearing*: it produced a wrong `queue.now`
+   (**SHIP2**), a three-deploy checklist for deploys already done, and two
+   bugs described as live for the client that had shipped. Found by daniel,
+   not by the audit — because the audit read the file for deployment state,
+   which is exactly the mistake.
+
 **The cross-cutting cause is one thing: the file is updated when someone asks
 a question, not when someone ships.** Three consecutive passes have opened
 with a reconciliation. Worth noting that a mechanical check would catch types
-1 and 2 (grep each `not-started` item's named symbols before trusting the
-status) but not 3, 4 or 5 — those need someone re-reading the item's premise
-against the code, which is what this pass was.
+1, 2 and 6 (grep each `not-started` item's named symbols before trusting the
+status; run `gcloud run services describe` before trusting a revision id) but
+not 3, 4 or 5 — those need someone re-reading the item's premise against the
+code, which is what this pass was.
 
 **Tier key (workstreams — the project's forcing logic):**
 
@@ -387,44 +410,24 @@ four move to QW1's prod spot-check. Revision id captured: **`eos-00046-nxv`**.
 - 2026-08-12 · risk · src cutover-plan#open-items — the OAuth-client collision that broke all trial sign-in was recorded only in docs/CUTOVER_PLAN.md and P1-7, never on F5 — the item that would trigger it. Folded in above.
 - 2026-08-12 · ship · src session-2026-08-12 — daniel: F5 cleared on prod, `firestore.rules` deployed. Confirmed via gcloud: rev `eos-00046-nxv`, image `98bb30b`, 100% traffic. Shipped **without** the N23 archive-tab fix (item opened the same day); N23 needs its own mini-ship before the 08-17 sweep. Sign-in/OAuth landmine above not yet explicitly re-tested — fold the sign-in check (incl. the negative test) into QW1's prod spot-check.
 
-### SHIP2 · Ship main (#30–#39 + 08-26 polish) to Cloud Run prod
-*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-26 · upd 2026-08-26*
+### SHIP2 · Retired — the ship it called for had already happened
+*W0 · void · due — · deps — · owner daniel · src session-2026-08-26 · upd 2026-08-26*
 
-Effort S. **Prod is `98bb30b` (2026-08-12); `main` is `4498653`.** Thirteen
-days and ten merge PRs of client-visible work sit unshipped, including two
-bugs the client has already hit and one they reported twice:
+**Opened and retired the same day (2026-08-26).** Created as `queue.now` on
+the strength of this file's "Deployment truth" section, which said prod ran
+`98bb30b` from 2026-08-12. It did not: prod was on `eos-00070-pjg` and had
+been shipped many times since. daniel caught it — *"ship has been run many
+times, so we should be way updated past 8-12."*
 
-- **N23** — Rocks **Archived** tab crashes on any archived rock. The Monday
-  sweep has run since (08-17), so the crash is reachable on prod today.
-- **N32** — meeting ratings stay rewritable after conclude. Steph reported it
-  twice; Joe named the integrity angle.
+Everything SHIP2 listed as urgent was already live: N23's archive-tab fix,
+N32's rating lock, the rules deploy (deployed ruleset is byte-identical to
+the repo), and the Cloud Functions deploy for N26's sweep.
 
-Also riding: **N26** (headline collapse + per-team check-off), **N39**,
-**N41**, **N42** (now wrap-everywhere-but-Segue), **N40** (scorecard groups),
-**N29**, **N34**, **N43**, **N24**'s L10 Active|Archived slice, **N6**
-(import overhaul), **N4** shared-rock surfaces, and **N44** (08-26 polish).
-
-**Three deploys, not one** — `pnpm ship` covers only the image + runtime env:
-
-1. **App image** — `pnpm ship` (dry-run first; tag = short commit).
-2. **`firestore.rules`** — 65 changed lines since prod: N32's conclude freeze
-   (`ended_at == null` on meeting update), `scorecard_groups` (N40), and the
-   shared-rock read path (partial N20). *Without this the rating lock is
-   server-action-only.* `firebase deploy --only firestore:rules --project
-   hpb-eos-prod`.
-3. **Cloud Functions** — `functions/src/todos-archive.ts` dropped the
-   `broadcast` exclusion for N26. *Without this the Monday sweep never
-   archives a cascaded headline a team checked off.* Deploy needs the
-   `database` option (already wired, `functions/src/index.ts:122`).
-
-Carries the same ⚠ **sign-in landmine** as F5 — the OAuth-client collision was
-never explicitly re-tested after F5. Do the negative test (a non-HPB,
-non-allowlisted account must be rejected) and do not ship shortly before a
-live L10. **F4's `archived_at` backfill should follow the ship**, not precede
-it, so the Archived tab is already fixed when legacy rows become sweepable.
-
-**Trail**
-- 2026-08-26 · note · src session-2026-08-26 — recorded after a drift check: the front matter still queued N23 and N32 as work when both had been built on 08-19 and merged. The remaining work was never the fix, it was the ship — so the ship became the queue item instead of hiding behind two `in-progress` rows
+Kept as a `void` entry rather than deleted, because the failure is worth
+having on the record: **a stale cached fact in this file produced a
+confidently-argued, entirely wrong priority call**, complete with a
+three-deploy checklist and a warning about client-visible bugs that were not
+client-visible. Verification cost one `gcloud` command.
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -2305,6 +2308,8 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-26 · N45 · closed — restore now clears the sweepable field on issues + to-dos (rocks/headlines already did), and one archived predicate per entity replaces three that disagreed
 - 2026-08-26 · Q-l10-archived-toggle · answered — local state, resets when the segment unmounts. URL state was ruled out: the meeting page owns four params already, one `?archived=` is ambiguous across segments, and N27's auto re-attach (`router.replace`) would wipe it mid-meeting
 - 2026-08-26 · Q-board-column · answered — one `components/board-column.tsx` replaces `HomeColumn` + `BoardColumn`. Scroll stays a prop rather than a winner: Home's independent columns should scroll, the To-Dos page should scroll as one so its columns can't drift under the reader
+- 2026-08-26 · SHIP2 · void — opened and retired the same day. The ship it demanded had already run many times; prod was on `eos-00070-pjg`/`1d7624b`, not the `98bb30b` this file claimed. Caught by daniel, not by the audit
+- 2026-08-26 · Q-deploy-truth · answered — deployment state is never read from this file. `gcloud run services describe eos --project hpb-eos-prod --region us-east1` is the authority; the rules check is a diff of the live ruleset source against `firestore.rules`, not a timestamp comparison
 
 ## Sources
 

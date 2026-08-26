@@ -2,6 +2,7 @@ import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { isArchivedIssue } from "@/lib/issues";
 import { IssueFormModal } from "./issue-form-modal";
 import { IssuesList, type IssueDoc } from "./issues-list";
 
@@ -38,7 +39,7 @@ export default async function IssuesPage({
 
   const allIssues: IssueDoc[] = issuesSnap.docs.map((d) => {
     const x = d.data();
-    const archived = x.archived_at != null;
+    const archived = isArchivedIssue(x);
     return {
       id: d.id,
       team_id: x.team_id,

@@ -74,6 +74,28 @@ function statusRank(s: IssueStatus | null | undefined): number {
   return idx === -1 ? STATUS_ORDER.length : idx;
 }
 
+/**
+ * Is this issue archived?
+ *
+ * One definition for every surface. There were three, and two of them
+ * disagreed on the same page (found 2026-08-26): the Issues tab's server
+ * render used `archived_at != null` while its own live client filter also
+ * honoured a legacy `archived` boolean — so a doc carrying only the boolean
+ * rendered as Active and then vanished on hydration. The L10 segment had
+ * copied the client version, so the tab and the meeting disagreed too.
+ *
+ * The permissive rule wins. No writer in the repo sets the boolean any more
+ * (`setIssueArchived` and the importer both write `archived_at`), but dropping
+ * the clause would resurrect any legacy doc that still has it, which is the
+ * failure that shows up in front of the client rather than in a test.
+ */
+export function isArchivedIssue(i: {
+  archived?: boolean | null;
+  archived_at?: unknown;
+}): boolean {
+  return i.archived === true || i.archived_at != null;
+}
+
 // The minimum shape the ranking rules need. Both surfaces pass richer docs.
 export type RankableIssue = {
   id: string;

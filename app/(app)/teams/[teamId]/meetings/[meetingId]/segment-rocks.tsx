@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
 import { Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
@@ -22,6 +22,7 @@ import {
 import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
+import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import { ownerLabel } from "@/lib/user-name";
 
@@ -170,15 +171,37 @@ export function SegmentRocks({
     ];
   }, [liveTodos, extraTodos]);
 
-  // Archived rocks belong to the Rocks tab's Archived view, not the L10.
-  const rocks = useMemo(() => {
-    const home = homeRocks.filter((r) => r.archived_at == null);
-    const guest = sharedRocksLive.filter(
-      (r) => r.archived_at == null && isSharedIntoTeam(r, teamId),
-    );
+  // Active and archived as two lists, not one filtered by a flag: the speaking
+  // order, department grouping and counts below all read `rocks`, and only the
+  // active set belongs in them (N24). Archived rocks are reachable in-meeting
+  // via the toggle — the client asked for the view in both modes on 2026-08-12,
+  // which retired the old "archived belongs to the Rocks tab" rule.
+  const dedupe = (home: RockDoc[], shared: RockDoc[]) => {
     const seen = new Set(home.map((r) => r.id));
-    return [...home, ...guest.filter((r) => !seen.has(r.id))];
-  }, [homeRocks, sharedRocksLive, teamId]);
+    return [...home, ...shared.filter((r) => !seen.has(r.id))];
+  };
+  const rocks = useMemo(
+    () =>
+      dedupe(
+        homeRocks.filter((r) => r.archived_at == null),
+        sharedRocksLive.filter(
+          (r) => r.archived_at == null && isSharedIntoTeam(r, teamId),
+        ),
+      ),
+    [homeRocks, sharedRocksLive, teamId],
+  );
+  const archivedRocks = useMemo(
+    () =>
+      dedupe(
+        homeRocks.filter((r) => r.archived_at != null),
+        sharedRocksLive.filter(
+          (r) => r.archived_at != null && isSharedIntoTeam(r, teamId),
+        ),
+      ),
+    [homeRocks, sharedRocksLive, teamId],
+  );
+  // Resets on unmount, by design (N24) — Active is the room's default.
+  const [showArchived, setShowArchived] = useState(false);
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.
@@ -259,7 +282,11 @@ export function SegmentRocks({
   // which never string-matches "2026-Q3", so the segment rendered empty
   // while the Rocks tab (which doesn't filter) looked fine. The meeting
   // reviews the rocks the team actually has; cancelled ones stay out.
-  const visible = rocks.filter((r) => r.status !== "cancelled");
+  // Archived view shows them as they are — a cancelled rock that was archived
+  // is exactly the kind of thing someone opens this view to find.
+  const visible = showArchived
+    ? archivedRocks
+    : rocks.filter((r) => r.status !== "cancelled");
   const homeVisible = visible.filter((r) => r.team_id === teamId);
   const sharedVisible = visible.filter((r) => isSharedIntoTeam(r, teamId));
   const groups = groupRocksForL10(
@@ -282,16 +309,26 @@ export function SegmentRocks({
           {homeVisible.length + sharedVisible.length} rock
           {homeVisible.length + sharedVisible.length === 1 ? "" : "s"}
         </div>
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="Off-track rock: "
-          meetingId={meetingId}
-        />
+        <div className="flex items-center gap-2">
+          <EntityViewToggle
+            showArchived={showArchived}
+            onChange={setShowArchived}
+            activeCount={rocks.filter((r) => r.status !== "cancelled").length}
+            archivedCount={archivedRocks.length}
+          />
+          <QuickAddIssue
+            teamId={teamId}
+            prefill="Off-track rock: "
+            meetingId={meetingId}
+          />
+        </div>
       </div>
 
       {groups.length === 0 && sharedGroups.length === 0 && (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-400">
-          No rocks yet — add them on the Rocks tab.
+          {showArchived
+            ? "No archived rocks."
+            : "No rocks yet — add them on the Rocks tab."}
         </div>
       )}
 

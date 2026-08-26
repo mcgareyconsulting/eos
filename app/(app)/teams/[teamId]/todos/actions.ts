@@ -229,7 +229,15 @@ export async function deleteTodo(teamId: string, todoId: string) {
   revalidatePath(pathFor(teamId));
 }
 
-/** Soft-archive or restore a pure to-do (not rock milestones). */
+/**
+ * Soft-archive or restore a pure to-do (not rock milestones).
+ *
+ * Restore un-checks it. A to-do is archived because it was completed, and
+ * both the Finish sweep and the Monday worker re-archive anything still
+ * carrying `completed_at` — so clearing only `archived_at` would let a to-do
+ * restored mid-L10 disappear again at Finish. Same rule rocks and headlines
+ * already follow on restore.
+ */
 export async function setTodoArchived(
   teamId: string,
   todoId: string,
@@ -243,9 +251,11 @@ export async function setTodoArchived(
   await db
     .collection("todos")
     .doc(todoId)
-    .update({
-      archived_at: archived ? FieldValue.serverTimestamp() : null,
-    });
+    .update(
+      archived
+        ? { archived_at: FieldValue.serverTimestamp() }
+        : { archived_at: null, completed_at: null },
+    );
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath("/home");

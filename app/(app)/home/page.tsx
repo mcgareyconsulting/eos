@@ -39,6 +39,7 @@ import {
   HomeMetricsList,
   type HomeMetricListItem,
 } from "./home-metrics-list";
+import { BoardColumn } from "@/components/board-column";
 import { cn } from "@/lib/utils";
 
 type TodoRow = {
@@ -526,12 +527,12 @@ export default async function HomePage() {
 
       <div className="space-y-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,2.8fr)] lg:items-start">
-          <HomeColumn title="To-Dos" count={myTodos.length}>
+          <BoardColumn scroll title="To-Dos" count={myTodos.length}>
             {myTodos.length === 0 && <Empty>No open to-dos of yours.</Empty>}
             {myTodos.map((t) => (
               <TodoRowLink key={t.id} todo={t} />
             ))}
-          </HomeColumn>
+          </BoardColumn>
 
           {/* N34: "My Rocks" and "Departmental Rocks" read as two lists, not
               one mixed one — Cora couldn't tell which rocks were actually
@@ -540,30 +541,31 @@ export default async function HomePage() {
               when empty rather than showing an empty-state twice. */}
           <div className="space-y-4">
             {myRocks.length > 0 && (
-              <HomeColumn title="My Rocks" count={myRocks.length} flush>
+              <BoardColumn scroll title="My Rocks" count={myRocks.length} flush>
                 <HomeRocksList rocks={myRocks} />
-              </HomeColumn>
+              </BoardColumn>
             )}
             {departmentalRocks.length > 0 && (
-              <HomeColumn
+              <BoardColumn
+                scroll
                 title="Departmental Rocks"
                 count={departmentalRocks.length}
                 flush
               >
                 <HomeRocksList rocks={departmentalRocks} />
-              </HomeColumn>
+              </BoardColumn>
             )}
             {rockItems.length === 0 && (
-              <HomeColumn title="Rocks" count={0} flush>
+              <BoardColumn scroll title="Rocks" count={0} flush>
                 <HomeRocksList rocks={[]} />
-              </HomeColumn>
+              </BoardColumn>
             )}
           </div>
         </div>
 
-        <HomeColumn title="My metrics" count={metricItems.length} flush>
+        <BoardColumn scroll title="My metrics" count={metricItems.length} flush>
           <HomeMetricsList metrics={metricItems} />
-        </HomeColumn>
+        </BoardColumn>
       </div>
     </div>
   );
@@ -603,35 +605,6 @@ function TodoRowLink({ todo }: { todo: TodoRow }) {
   );
 }
 
-function HomeColumn({
-  title,
-  count,
-  children,
-  flush,
-}: {
-  title: string;
-  count: number;
-  children: React.ReactNode;
-  /** Skip divide-y (Rocks table manages its own grid/header). */
-  flush?: boolean;
-}) {
-  return (
-    <section className="flex min-h-0 min-w-0 flex-col">
-      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
-        {title}{" "}
-        <span className="font-bold text-zinc-400">({count})</span>
-      </h2>
-      <div
-        className={cn(
-          "max-h-[min(70vh,40rem)] overflow-y-auto rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900",
-          !flush && "divide-y divide-zinc-100 dark:divide-zinc-800",
-        )}
-      >
-        {children}
-      </div>
-    </section>
-  );
-}
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <EmptyState title={children} />;

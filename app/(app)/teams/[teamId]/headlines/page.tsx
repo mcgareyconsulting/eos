@@ -8,7 +8,11 @@ import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
-import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
+import {
+  groupByOwner,
+  isArchivedHeadline,
+  splitCascadingSection,
+} from "@/lib/headlines";
 import { deleteHeadline, setHeadlineArchived } from "./actions";
 import { AddHeadlineModal } from "./add-headline-modal";
 import { HeadlineDiscussedCheckbox } from "./headline-checkbox";
@@ -37,10 +41,6 @@ const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
   cascading: "Cascading",
   general: "General / FYI",
 };
-
-function isArchived(h: HeadlineDoc): boolean {
-  return h.archived_at != null;
-}
 
 export default async function HeadlinesPage({
   params,
@@ -81,8 +81,8 @@ export default async function HeadlinesPage({
   const matchesOwner = (h: HeadlineDoc) =>
     ownerFilter === "all" || h.created_by === ownerFilter;
 
-  const active = all.filter((h) => !isArchived(h));
-  const archived = all.filter((h) => isArchived(h));
+  const active = all.filter((h) => !isArchivedHeadline(h));
+  const archived = all.filter((h) => isArchivedHeadline(h));
   const headlines = (showArchived ? archived : active).filter(matchesOwner);
 
   const creatorName = (h: HeadlineDoc) => {
@@ -108,7 +108,7 @@ export default async function HeadlinesPage({
     const body = normalizeDescription(h.body);
     const readOnly = !!h.broadcast;
     const discussed = h.discussed === true;
-    const archivedRow = isArchived(h);
+    const archivedRow = isArchivedHeadline(h);
     const toggleArchive = setHeadlineArchived.bind(
       null,
       teamId,

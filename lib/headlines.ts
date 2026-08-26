@@ -53,6 +53,14 @@ export type OwnerGroup<T> = {
  * first appear in. Rows with no resolvable name collect into one group that
  * always sorts last, regardless of where it first appeared.
  */
+/**
+ * Is this headline archived? Shared so the tab and the L10 segment cannot
+ * drift — they each had their own copy of this one-liner until 2026-08-26.
+ */
+export function isArchivedHeadline(h: { archived_at?: unknown }): boolean {
+  return h.archived_at != null;
+}
+
 export function groupByOwner<T>(
   headlines: T[],
   getOwnerName: (h: T) => string,

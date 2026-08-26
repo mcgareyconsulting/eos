@@ -9,6 +9,11 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useAuthUid } from "@/lib/firebase/use-collection";
 import { cn } from "@/lib/utils";
 import {
+  isDetached,
+  shouldFollowRefresh,
+  shouldReattach,
+} from "@/lib/l10/follow";
+import {
   SEGMENT_LABELS,
   normalizeSegment,
   type Segment,
@@ -38,10 +43,10 @@ const CONFIRM_WINDOW_MS = 4000;
 
 // Live orchestrator chrome, rendered as the meeting's own left rail. The
 // active stage + timer live on the meeting doc and stream to every client
-// (last-write-wins). Each user may peek at another stage locally (?view=)
-// without moving the group; a follower left behind when someone else drives
-// the stage forward gets the same "Group is on X — Catch up" pill as a
-// deliberate peeker, rather than being pulled along automatically.
+// (last-write-wins). Everyone follows the leader by default: when the stage
+// moves, attached viewers move with it. Peeking at another stage locally
+// (?view=) detaches you — it never moves the group, and the group never moves
+// you — until you press "Group is on X — Catch up", which re-attaches.
 //
 // This is a side panel rather than a bar above the content because vertical
 // space is the scarce resource during an L10 — the old full-width card pushed
@@ -180,11 +185,12 @@ export function MeetingRail({
   const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
   const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
 
-  // Followers are NOT force-navigated when someone else drives the stage
-  // forward — being pulled to a new segment mid-read is jarring. Instead
-  // `peeking` below (viewSegment !== activeSegment) goes true exactly as it
-  // would for a deliberate peek, so they see the same "Group is on X — Catch
-  // up" pill and move over on their own terms.
+  // Followers ARE carried forward when someone drives the stage (N27, client
+  // ask 2026-08-12). The old rule was the reverse — nobody was force-navigated,
+  // on the grounds that being pulled mid-read is jarring — and the room's
+  // verdict was that hunting for a Catch up pill every stage is worse. The
+  // mid-read concern is answered by keeping the opt-out: peek at any stage and
+  // you are detached until you press Catch up. See the follow effect above.
 
   // The meeting ending is a global event everyone should see immediately —
   // and the recap is the shared closing moment, so open it for everyone, not
@@ -195,6 +201,48 @@ export function MeetingRail({
       router.refresh();
     }
   }, [ended, initialEnded, router, pathname]);
+
+  // Follow the leader (N27). Default state is attached: no `?view=` means this
+  // viewer tracks the group's stage, so when the leader advances we pull their
+  // content over instead of stranding them on a stale stage behind a pill.
+  //
+  // Stepping away is still theirs to choose — clicking an agenda row sets
+  // `?view=`, which detaches them (`following` false) and this effect stops
+  // touching their screen. Catch up clears `?view=` and re-attaches.
+  //
+  // The ref makes this fire once per stage change: after the refresh lands,
+  // viewSegment matches activeSegment and the effect settles. Without it, a
+  // refresh that hasn't re-rendered yet would queue another on every snapshot.
+  const followedSegment = useRef<AgendaToolType | null>(null);
+  useEffect(() => {
+    if (activeSegment === viewSegment) followedSegment.current = activeSegment;
+    if (
+      !shouldFollowRefresh({
+        following,
+        ended,
+        activeSegment,
+        viewSegment,
+        lastFollowed: followedSegment.current,
+      })
+    ) {
+      return;
+    }
+    followedSegment.current = activeSegment;
+    router.refresh();
+  }, [following, ended, activeSegment, viewSegment, router]);
+
+  // Auto re-attach (N27). A detached viewer whose stage the group has since
+  // arrived at is indistinguishable from an attached one — same stage, no
+  // pill — and the flag only shows itself by stranding them one stage later.
+  // Drop it. `replace`, not `push`: this happens without them asking, and a
+  // history entry per re-attach would walk the back button through the
+  // meeting. No refresh — the content is already the right stage.
+  useEffect(() => {
+    if (!shouldReattach({ following, ended, activeSegment, viewSegment })) {
+      return;
+    }
+    router.replace(pathname);
+  }, [following, ended, activeSegment, viewSegment, router, pathname]);
 
   const [driving, startDrive] = useTransition();
   const [finishing, startFinish] = useTransition();
@@ -244,7 +292,12 @@ export function MeetingRail({
     });
 
   const activeIndex = agendaOrder.indexOf(activeSegment);
-  const peeking = viewSegment !== activeSegment;
+  // Showing a different stage than the group is not the same question as
+  // having stepped away. An attached follower is transiently on the old stage
+  // for the moment between the leader advancing and the follow refresh
+  // landing, so the catch-up affordances key off `detached`: it means "you
+  // stepped away", not "the group moved a half-second ago".
+  const detached = isDetached({ following, activeSegment, viewSegment });
   const running = !ended;
   const atFirst = isFirstAgendaSegment(agendaItems, activeSegment);
   const atLast = isLastAgendaSegment(agendaItems, activeSegment);
@@ -474,7 +527,7 @@ export function MeetingRail({
 
           {/* Context only — the catch-up control is the floating pill below,
               so there aren't two competing buttons for the same action. */}
-          {running && peeking && (
+          {running && detached && (
             <p className="mt-2 rounded-md bg-hpb-blue/5 px-2 py-1.5 text-[11px] leading-snug text-zinc-600 dark:bg-hpb-blue/10 dark:text-zinc-300">
               Peeking at{" "}
               <strong>
@@ -567,7 +620,7 @@ export function MeetingRail({
           living in the scrolled column drifts out of reach exactly when a
           peeker reading segment content needs it. This only ever moves *you*
           to the group — it never moves the group. */}
-      {running && peeking && (
+      {running && detached && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
           <button
             type="button"

@@ -269,7 +269,16 @@ export async function deleteIssue(teamId: string, issueId: string) {
   revalidatePath(pathFor(teamId));
 }
 
-/** Soft-archive or restore an issue. */
+/**
+ * Soft-archive or restore an issue.
+ *
+ * Restore reopens it. An issue is archived because it was solved or dropped,
+ * and `archiveIssuesClosedDuringMeeting` re-archives anything still closed
+ * with a `resolved_at` inside the meeting window — so clearing only
+ * `archived_at` would let an issue restored mid-L10 vanish again at Finish.
+ * Rocks and headlines already learned this: their restores clear
+ * `completed_at` / `discussed` for exactly the same reason.
+ */
 export async function setIssueArchived(
   teamId: string,
   issueId: string,
@@ -280,9 +289,11 @@ export async function setIssueArchived(
   await db
     .collection("issues")
     .doc(issueId)
-    .update({
-      archived_at: archived ? FieldValue.serverTimestamp() : null,
-    });
+    .update(
+      archived
+        ? { archived_at: FieldValue.serverTimestamp() }
+        : { archived_at: null, status: "open", resolved_at: null },
+    );
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
 }

@@ -163,6 +163,61 @@ describe("selectIssuesClosedDuringMeeting", () => {
   });
 });
 
+// Restoring an item mid-meeting must actually restore it. Each restore path
+// clears the field that made the item sweepable in the first place — an
+// un-archive alone would leave the sweep free to re-archive it at Finish,
+// which is the bug the client would experience as "it disappeared again".
+// These pin the shape of a just-restored doc against the real selectors.
+describe("restore survives the Finish sweep", () => {
+  const start = 1_000_000;
+  const end = 1_090_000;
+
+  test("a restored to-do is not re-archived (completed_at cleared)", () => {
+    const restored = todo({ id: "t", archived_at: null, completed_at: null });
+    assert.deepEqual(
+      selectTodosCompletedDuringMeeting([restored], start, end),
+      [],
+    );
+    // Guard the test itself: with completed_at still set it WOULD be swept.
+    const notCleared = todo({ id: "t", completed_at: ts(start + 1) });
+    assert.deepEqual(
+      selectTodosCompletedDuringMeeting([notCleared], start, end),
+      ["t"],
+    );
+  });
+
+  test("a restored issue is not re-archived (reopened)", () => {
+    assert.deepEqual(
+      selectIssuesClosedDuringMeeting(
+        [{ id: "i", status: "open", resolved_at: null }],
+        start,
+        end,
+      ),
+      [],
+    );
+    // Guard: still solved inside the window and it WOULD be swept.
+    assert.deepEqual(
+      selectIssuesClosedDuringMeeting(
+        [{ id: "i", status: "solved", resolved_at: ts(start + 1) }],
+        start,
+        end,
+      ),
+      ["i"],
+    );
+  });
+
+  test("a restored headline is not re-archived (discuss cleared)", () => {
+    assert.deepEqual(
+      selectHeadlinesDiscussedDuringMeeting(
+        [{ id: "h", discussed: false, discussed_at: null }],
+        start,
+        end,
+      ),
+      [],
+    );
+  });
+});
+
 describe("selectIssuesClosedBeforeWeek", () => {
   const weekStart = 2_000_000;
 

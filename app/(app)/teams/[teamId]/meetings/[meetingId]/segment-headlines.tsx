@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Megaphone, Trash2 } from "lucide-react";
 import {
   collection,
@@ -9,12 +9,17 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { groupByOwner, splitCascadingSection } from "@/lib/headlines";
+import {
+  groupByOwner,
+  isArchivedHeadline,
+  splitCascadingSection,
+} from "@/lib/headlines";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "@/app/(app)/teams/[teamId]/headlines/headline-body";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
+import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { AddHeadlineModal } from "../../headlines/add-headline-modal";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
@@ -59,10 +64,6 @@ const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
   general: "General / FYI",
 };
 
-function isArchived(h: HeadlineDoc): boolean {
-  return h.archived_at != null;
-}
-
 export function SegmentHeadlines({
   teamId,
   meetingId,
@@ -85,8 +86,12 @@ export function SegmentHeadlines({
   );
   const headlines = useCollection<HeadlineDoc>(q, initialHeadlines);
 
-  // Active only — archived drop out of the live L10 list (selective archive).
-  const active = headlines.filter((h) => !isArchived(h));
+  // `active` feeds the segment's own grouping and ordering; `archived` is a
+  // separate list so nothing derived reads the wrong one (N24).
+  const active = headlines.filter((h) => !isArchivedHeadline(h));
+  const archived = headlines.filter(isArchivedHeadline);
+  // Resets on unmount, by design (N24) — Active is the room's default.
+  const [showArchived, setShowArchived] = useState(false);
   // Undiscussed first (still need airtime), then discussed, then by recency.
   const byDiscussedThenRecency = (a: HeadlineDoc, b: HeadlineDoc) => {
     const ad = a.discussed === true ? 1 : 0;
@@ -107,7 +112,8 @@ export function SegmentHeadlines({
   // cascading-kind headlines this team posted plus incoming broadcast
   // copies from elsewhere in the org. Same split/grouping rules as the
   // standalone Headlines tab (lib/headlines.ts) so the two surfaces agree.
-  const { team, cascading } = splitCascadingSection(active);
+  const shown = showArchived ? archived : active;
+  const { team, cascading } = splitCascadingSection(shown);
   const sortedTeam = [...team].sort(byDiscussedThenRecency);
   const sortedCascading = [...cascading].sort(byDiscussedThenRecency);
   const ownerGroups = groupByOwner(sortedTeam, creatorName);
@@ -198,6 +204,12 @@ export function SegmentHeadlines({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-2">
+        <EntityViewToggle
+          showArchived={showArchived}
+          onChange={setShowArchived}
+          activeCount={active.length}
+          archivedCount={archived.length}
+        />
         <AddHeadlineModal teamId={teamId} compact />
         <QuickAddIssue
           teamId={teamId}
@@ -206,18 +218,24 @@ export function SegmentHeadlines({
         />
       </div>
 
-      {active.length === 0 ? (
+      {shown.length === 0 ? (
         <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <EmptyState
             icon={Megaphone}
-            title="No headlines yet"
-            hint="Share customer wins, employee news, and cascading messages."
+            title={showArchived ? "No archived headlines" : "No headlines yet"}
+            hint={
+              showArchived
+                ? "Headlines marked discussed are archived when an L10 ends."
+                : "Share customer wins, employee news, and cascading messages."
+            }
           />
         </div>
       ) : (
         <div className="space-y-3">
           {ownerGroups.length > 0 && (
-            <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+            // overflow-hidden: the owner header below has its own background
+            // and paints square over the rounded top corners without it.
+            <div className="overflow-hidden rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
               {ownerGroups.map((group) => (
                 <div key={group.name}>
                   <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">

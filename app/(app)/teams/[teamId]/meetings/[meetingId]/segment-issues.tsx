@@ -22,6 +22,7 @@ import {
   splitIssuesByTerm,
   voteCredits,
   type IssuePriority,
+  isArchivedIssue,
   type IssueStatus,
   type IssueType,
 } from "@/lib/issues";
@@ -33,6 +34,7 @@ import {
 import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { IssueFormModal } from "../../issues/issue-form-modal";
+import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue } from "../actions";
@@ -52,10 +54,6 @@ type IssueDoc = {
   archived?: boolean;
   archived_at?: unknown;
 };
-
-function isArchivedIssue(i: IssueDoc): boolean {
-  return i.archived === true || i.archived_at != null;
-}
 
 type VoteDoc = {
   id: string;
@@ -89,6 +87,10 @@ export function SegmentIssues({
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
+  // Resets when the segment unmounts, by design (N24): Active is the right
+  // default for a room, and a remembered Archived view reads as "the issues
+  // are gone".
+  const [showArchived, setShowArchived] = useState(false);
   const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
 
   const issuesQuery = useMemo(
@@ -130,14 +132,22 @@ export function SegmentIssues({
   const { byIssue: myVoteByIssue, used: myVotesUsed, remaining: myVotesRemaining } =
     voteCredits(votes);
 
-  // Active only — archived issues leave the L10 list.
+  // `issues` stays the ACTIVE list and is the only thing derived meeting state
+  // reads (N24). Swapping it for the archived list when the toggle flips is
+  // the obvious one-liner and it is wrong: the vote tally below counts votes
+  // across whatever it is handed, so an archived issue's old votes would land
+  // in "all votes in" and nothing would look broken.
   const issues = issuesLive.filter((i) => !isArchivedIssue(i));
+  const archivedIssues = issuesLive.filter(isArchivedIssue);
 
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short, discussingId);
   const rankedLong = rankLongTerm(long);
-  const list = tab === "short" ? rankedShort : rankedLong;
+  const activeList = tab === "short" ? rankedShort : rankedLong;
+  // Archived is one flat list — short/long is a working distinction for live
+  // issues, and splitting a history view by it just hides half of it.
+  const list = showArchived ? archivedIssues : activeList;
 
   const ownerName = (id: string | null) =>
     ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
@@ -147,6 +157,7 @@ export function SegmentIssues({
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-800">
         <button
           type="button"
+          disabled={showArchived}
           onClick={() => setTab("short")}
           className={
             tab === "short"
@@ -158,6 +169,7 @@ export function SegmentIssues({
         </button>
         <button
           type="button"
+          disabled={showArchived}
           onClick={() => setTab("long")}
           className={
             tab === "long"
@@ -168,20 +180,27 @@ export function SegmentIssues({
           Long-term ({rankedLong.length})
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {tab === "short" && (
+          {!showArchived && tab === "short" && (
             <>
               <VoteCreditsBadge used={myVotesUsed} />
+              {/* Fed the ACTIVE list on purpose — see the note on `issues`. */}
               <TeamVoteTallyBadge
                 issues={issues}
                 presentVoterCount={presentVoterCount}
               />
             </>
           )}
-          {tab === "long" && (
+          {!showArchived && tab === "long" && (
             <span className="text-xs text-zinc-500">
               Not votable · move to short-term to work this meeting
             </span>
           )}
+          <EntityViewToggle
+            showArchived={showArchived}
+            onChange={setShowArchived}
+            activeCount={issues.length}
+            archivedCount={archivedIssues.length}
+          />
           <QuickAddIssue teamId={teamId} meetingId={meetingId} />
         </div>
       </div>
@@ -191,12 +210,18 @@ export function SegmentIssues({
           <EmptyState
             icon={AlertCircle}
             title={
-              tab === "short" ? "No short-term issues" : "No long-term issues"
+              showArchived
+                ? "No archived issues"
+                : tab === "short"
+                  ? "No short-term issues"
+                  : "No long-term issues"
             }
             hint={
-              tab === "short"
-                ? "Drop one from any segment or move from long-term."
-                : "Move one from short-term to park it."
+              showArchived
+                ? "Issues archive when they're solved or dropped."
+                : tab === "short"
+                  ? "Drop one from any segment or move from long-term."
+                  : "Move one from short-term to park it."
             }
           />
         )}

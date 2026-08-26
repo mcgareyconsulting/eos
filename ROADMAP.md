@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: SHIP2   # prod is 13 days behind main; N23 + N32 are built and still live-broken for the client
-  next: [F4, QW1, N18, F3, N3, N2, N24, N4]
+  next: [F4, QW1, N18, F3, N3, N2, N4]
   awaiting: [P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -59,7 +59,6 @@ by cost-to-close, then by size:
 | 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
 | 5 | **N3** | M | No deps; migration integrity before broader rollout |
 | 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 7 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **P3-1** (Joe, Open question 3) · **N10**
@@ -280,6 +279,35 @@ source file wins the tie.
 import page widened). Note the headlines corner bug is **N39's shape again** —
 a child painting over the box its parent drew. Two instances now; worth a
 sweep for tinted headers leading rounded lists rather than waiting for a third.
+
+**Feature-drift audit (2026-08-26, UI/UX scope — infra excluded).** Asked
+where the product has drifted from what was asked or recorded. Five kinds
+found, and only one of them is a build:
+
+1. **Record drift — built but marked `not-started`.** N21, N22 (plus N29,
+   N34, N43 earlier this session). Five in one pass. All were found by reading
+   code, none by anyone updating the file after building.
+2. **Half-item drift.** **N24** reads `not-started` but its standalone half is
+   fully built; the unbuilt half is the L10 one — the half the client hit in a
+   live meeting. A single status letter hid a scoped, ready-to-build item.
+3. **Expired-premise drift.** **N20** was written around a window ("safe
+   because the share writer doesn't exist yet"). The writer shipped; the
+   premise expired; nothing re-opened the item.
+4. **Decision-conflict drift.** **N27** asked for follow-the-leader; the code
+   deliberately implemented the opposite and said so in a comment. Neither side
+   knew about the other. Same shape as N42, which was only caught because
+   someone re-read the transcript. **Resolved and shipped the same session** —
+   the state was already there, nobody was ever pulled forward.
+5. **Copy drift.** `HomeColumn` and `BoardColumn` are the same component twice
+   and have already diverged on scroll behaviour — one visual language, two
+   implementations, no shared source.
+
+**The cross-cutting cause is one thing: the file is updated when someone asks
+a question, not when someone ships.** Three consecutive passes have opened
+with a reconciliation. Worth noting that a mechanical check would catch types
+1 and 2 (grep each `not-started` item's named symbols before trusting the
+status) but not 3, 4 or 5 — those need someone re-reading the item's premise
+against the code, which is what this pass was.
 
 **Tier key (workstreams — the project's forcing logic):**
 
@@ -617,7 +645,16 @@ is forward-only).
 ---
 
 ### N20 · Shared-rock grant is ungoverned in rules
-*W2 · not-started · due — · deps N4 · owner daniel · src pr#28 · upd 2026-08-12*
+*W2 · not-started · due — · deps N4 · owner daniel · src pr#28 · upd 2026-08-26*
+
+⚠ **The window this item was written inside has CLOSED (08-26 audit).** The
+body below says the gap is "not yet reachable because the share **writer**
+does not exist (N4) — which is the window to fix it." The writer exists now:
+`rock-modal.tsx:276` posts `shared_team_ids`, `rocks/actions.ts:43` persists
+it. The grant is reachable and still unvalidated in rules. Also stale:
+`rocks/actions.ts:246` cites a rules function `sharedRockAccess` that was
+never written under that name — the deployed-side helpers are
+`listSharedToMe` / `rockSharedToMe` (`firestore.rules:117`).
 
 Effort S. Found while reconciling PR #28 (2026-08-12). The shared-rock read
 path ships, but `shared_team_ids` is absent from `firestore.rules`, and the
@@ -878,7 +915,14 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-19 · build · src session-2026-08-19 — guest Rocks + L10 list shared-in rocks ("Shared by {First Last}"); picker = all org teams (share-down); guest read-only; todo/status rules follow the shared rock. Diagnose: writer was fine, read surface was missing.
 
 ### N21 · Headlines add-form → button (match the other tabs)
-*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*
+
+**Shipped — found by the 08-26 drift audit, not by anyone recording it.**
+Headlines uses `AddHeadlineModal` through the shared `EntityPageHeader`'s
+`add` slot, with the shared `entityAddButtonClass`; the permanently-open add
+form is gone. All four entity tabs (Rocks / To-Dos / Issues / Headlines) now
+route their add affordance and their Active | Archived toggle through
+`EntityPageHeader` + `EntityViewTabs`. Sat at `not-started` while built.
 
 Effort S. The Headlines tab carries a permanently-open add form at the top
 (title + category + detail + Add button) while every other tab uses a single
@@ -898,7 +942,24 @@ create too".
 - 2026-08-12 · request · src session-2026-08-12 — daniel: collapse the floating add fields to a button like all the other add types
 
 ### N22 · To-Dos tab restyled to the Home board
-*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-12*
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*
+
+**Shipped — found by the 08-26 drift audit.** To-Dos renders as a two-column
+board (`BoardColumn`) matching Home's language, milestones in the right
+column. Sat at `not-started` while built.
+
+**Copy drift resolved 2026-08-26.** It shipped as a copy and the copies had
+already diverged: Home's `HomeColumn` scrolled internally and took `flush`;
+To-Dos' `BoardColumn` deliberately did not scroll and took `meta`. Both
+behaviours were right for their surface — the drift was two definitions of one
+visual language, not the behaviours. Now one `components/board-column.tsx`
+taking `meta`, `flush` and `scroll`, so a difference has to be *asked for*
+rather than accumulated. Neither surface changed: Home passes `scroll`, To-Dos
+does not, and the reason each does lives in the prop's doc comment.
+
+The extraction also unified the corner clip — both scroll modes clip, so a
+tinted first child can never square off the rounded top corners again on
+either surface. That bug was found three times over on 08-26 (see N44).
 
 Effort S–M. Restyle the To-Dos tab to the two-column Home board that shipped
 in **PR #28**, with **rock-milestone to-dos and ordinary to-dos on the left**.
@@ -952,7 +1013,50 @@ subscription and server prefetch). L1 remainder closed in this tree:
 - 2026-08-19 · verify · src session-2026-08-19 — serialization + L1 milestone filter both present on this tree; still not on prod (`98bb30b`). Ships with N32.
 
 ### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
-*W3 · not-started · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-15*
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*
+
+**Both halves shipped 2026-08-26.** The standalone half turned out to be
+already built (08-26 audit) — all four tabs route through `EntityPageHeader`
+and `EntityViewTabs`, which also closed **N21** and **N22**. The L10 half,
+the one the client hit in a live meeting, was built this session.
+
+**It was never a data problem.** All four segments already subscribe to the
+team's whole collection and filter archived rows in memory, so the rows were
+streaming to every client in the meeting the whole time. No new queries, no
+indexes, no rules.
+
+**The state model was the actual work.** The tabs put the view in the URL
+(`?archived=1`); the L10 cannot. The meeting page already owns `?view=`,
+`?recap=1`, `?weeks=` and `?period=`; one `?archived=` would be ambiguous
+across four segments; and — since **N27** landed hours earlier — an auto
+re-attach calls `router.replace(pathname)`, which would have silently reset a
+viewer's Archived view to Active mid-meeting. So the L10 toggle is local
+state. `EntityViewToggle` shares `EntityViewTabs`' exact look via common
+label components, so the navigational and stateful versions cannot drift.
+
+**Resets on unmount, by decision** (daniel): Active is the right default for a
+room, and a remembered Archived view reads as "the team's issues vanished".
+
+**Restore and edit are enabled, and that was the cheaper option** (daniel:
+"no reason to not allow restore / updates unless it breaks meeting
+functionality"). The segments already render the same row components as the
+tabs, so actions came for free — suppressing them would have meant *adding*
+code. Verified against each segment's derived state before enabling.
+
+**The trap, avoided:** the one-line implementation
+(`const issues = showArchived ? archived : active`) silently corrupts the
+**N41** vote tally, which counts votes across whatever list it is handed — an
+archived issue's old votes would land in "all votes in" and nothing would look
+broken. Every segment keeps its active list feeding derived state (tally,
+short/long counts, speaking-order grouping, the milestone window) and renders
+a separate archived list. Milestones are excluded from the To-Dos archived
+view on purpose: `setTodoArchived` refuses them outright, so the view would be
+a dead end.
+
+`segment-rocks.tsx`'s retired rationale comment went with the behaviour.
+
+**Folded-in scope also done:** the shared board column — `HomeColumn` and
+`BoardColumn` collapsed into `components/board-column.tsx` (see N22).
 
 Effort S–M. App-wide coherence pass: every entity tab (Rocks, To-Dos,
 Issues, Headlines) presents the same two affordances the same way — one
@@ -1056,7 +1160,60 @@ affect other teams."
 - 2026-08-24 · build · src session-2026-08-24 — collapse shipped `0f5c7a1`; check-off shipped `3ded811`. Per-team was a guard to drop, not a model to change — the fan-out is already per team. Edit/delete stay blocked; sweeps updated; functions deploy required
 
 ### N27 · Leader-driven meeting sync (follow the leader, off-sync opt-out)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-26*
+
+**Shipped 2026-08-26.** Found by the 08-26 drift audit as a *decision
+conflict*, not a blank build: the app implemented the exact opposite on
+purpose. `meeting-rail.tsx` carried the standing rule — *"Followers are NOT
+force-navigated when someone else drives the stage forward — being pulled to a
+new segment mid-read is jarring"* — and a follower got the same "Group is on
+X — Catch up" pill as a deliberate peeker. Neither side of the contradiction
+knew about the other.
+
+**Resolved (daniel, 2026-08-26): follow by default, opt out by stepping away,
+re-attach with the existing pill.** The mid-read worry is answered by keeping
+the opt-out rather than by refusing to follow — hunting for a Catch up pill at
+every stage is the worse of the two costs.
+
+The state was already there; nobody was ever pulled forward. Three parts:
+
+1. **Attach is the default.** No `?view=` already meant "track the group" — it
+   just never refreshed. An effect now pulls the server content over when the
+   group's stage changes, once per change (a ref guards against queueing a
+   refresh per snapshot while a render is in flight).
+2. **Detach stays a deliberate act.** Clicking an agenda row sets `?view=`,
+   which is what `following: false` means. Nothing moves that screen again.
+3. **The pill is now a *detached* signal, not a *different stage* signal.** It
+   keyed off `peeking` (view ≠ group), which after (1) would flash at an
+   attached follower for the moment before their refresh lands. It keys off
+   `detached` (`peeking && !following`) instead. Catch up already cleared
+   `?view=`, so re-attaching needed no new control — as predicted.
+
+Decisions pinned in `lib/l10/follow.ts` (`shouldFollowRefresh`, `isDetached`,
+`shouldReattach`) with 13 tests, rather than left inline in the component.
+
+**Not built, and deliberately separate:** the *action notifications* half of
+the original ask ("actions notified to all") is **N31**, and presence is
+**N25**. This item was only ever the follow behaviour.
+
+4. **Auto re-attach** (daniel, same session). The one case where detached
+   state was invisible: peek at X while the group is on Y, and the group
+   *arrives* at X — same stage, no pill, nothing distinguishing you from an
+   attached viewer, right up until the group leaves X and strands you.
+   `shouldReattach` drops the flag at that moment. `router.replace`, not
+   `push` — it fires without the viewer asking, and a history entry per
+   re-attach would walk the back button through the meeting. No refresh: the
+   content is already the right stage.
+
+   This also makes the two paths agree. Clicking the group's current stage in
+   the agenda already re-attached (`peek()` routes it to `goLive()`); now the
+   group moving to your stage does the same thing. Same rule, whichever side
+   does the moving.
+
+   The follow and re-attach effects are mutually exclusive by construction —
+   one needs `following`, the other `!following` — and a test pins that across
+   the state matrix so a later edit to either predicate cannot let both drive
+   the router on one render.
 
 Effort M. Whoever hits **Start meeting** becomes the default driver: their
 transport actions (segment advance, jump) propagate to everyone in the
@@ -1082,6 +1239,11 @@ entirely. Keep it; add the follow.
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — starter drives; actions notified to all; others pulled along; users can go off-sync
 - 2026-08-15 · client · src l10-2026-08-12-transcript — blue-dot group indicator already ships and reads correctly; Joe expected followers to be pulled along; Joe endorses the driver model on accountability grounds
+- 2026-08-26 · finding · src session-2026-08-26 — drift audit: the code implemented the opposite by design and said so in a comment. Not a missing feature — a decision nobody had reconciled
+- 2026-08-26 · decision · src session-2026-08-26 — daniel: follow-the-leader by default; stepping away detaches; the existing "Group is on X — Catch up" pill is the re-engage control. The old don't-yank-mid-read rationale is answered by the opt-out
+- 2026-08-26 · build · src session-2026-08-26 — follow effect + `detached` (vs `peeking`) for the catch-up affordances; logic extracted to `lib/l10/follow.ts`. 445 tests pass, tsc + build clean, lint at baseline
+- 2026-08-26 · decision · src session-2026-08-26 — daniel: auto re-attach. A detached viewer standing on the group's own stage rejoins silently rather than waiting to be stranded by the next advance
+- 2026-08-26 · build · src session-2026-08-26 — `shouldReattach` + `router.replace` effect; mutual exclusion with the follow effect pinned by test. 450 tests pass, tsc + build clean, lint at baseline
 
 ### N28 · Scorecard metric-expand styling + scroll behavior
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
@@ -1400,7 +1562,8 @@ data work, no model work.
    `flatList` for the speaking-order case is gone; an explicit sort, filter
    or search still flattens, because regrouping rows someone deliberately
    re-sorted would bury what they asked for. Grouping logic moved out of the
-   grid into `groupMetricsByCategory()` so the ordering contract is pinned by
+   grid into `bucketMetricsByGroup()` (`lib/scorecard.ts`) so the ordering
+   contract is pinned by
    tests rather than living in a `useMemo`. Category *editing* stays on the
    Scorecard tab — the L10 already passed `showGroupEditor={false}`.
 
@@ -1441,7 +1604,7 @@ Decisions worth keeping:
 - 2026-08-24 · unblocked · src session-2026-08-24 — daniel imported Steph's IT 90 scorecard instead of taking view access; importer already maps `Group Name`/`Group`/`Section` → `group`
 - 2026-08-24 · confirmed · src session-2026-08-24 — ninety's export carries `Group Name` = Weekly / Compliance (screenshot). Categories arrived with the import and already group on the Scorecard tab; remaining scope is the rename plus the L10 speaker-order-vs-category decision
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: build category grouping in the L10 too — group by category, then speaker order within each category. Not an either/or after all
-- 2026-08-24 · build · src session-2026-08-24 — shipped: "Section" → "Category" + visible affordance; `flatList` no longer forced by speaking order; `groupMetricsByCategory()` extracted and tested
+- 2026-08-24 · build · src session-2026-08-24 — shipped: "Section" → "Category" + visible affordance; `flatList` no longer forced by speaking order; `bucketMetricsByGroup()` extracted and tested (this trail said `groupMetricsByCategory()` until the 08-26 audit — a symbol that never existed, left over from the short-lived "Category" naming)
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: Compliance below Weekly; groups assignable by name AND period; you can create a group as well as a measurable; a weekly group does not take precedence over ordinary weekly measurables. Ordering is custom, not derived
 - 2026-08-24 · build · src session-2026-08-24 — `scorecard_groups` collection + rules, Groups modal (add / reorder / delete), importer creates groups in first-seen order and never clobbers an existing one's position, assignment aligns the metric's period
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: call it **Group**, not Category. Matches the `group` field and ninety's "Group Name" column — one word across UI, schema and source file
@@ -1564,12 +1727,19 @@ transcript — no client ask behind them, all shipped the same session.
    grey uppercase `DONE` band while every row already carries a green check
    and the owner header already counts `1 done`. Three signals for one fact;
    the band was the weakest and the loudest.
-2. **Headlines: rounded top corners were being painted over.** The owner-group
-   list is `rounded-xl border`, but its first child is a header with its own
-   `bg-zinc-50` — a square background over a rounded parent, which reads as a
-   missing border rather than a covered corner. `overflow-hidden` on the
-   container. *Same shape of bug as N39* — a child ignoring the box its parent
-   drew — and worth checking whenever a tinted header leads a rounded list.
+2. **Rounded top corners were being painted over — in three places, not one.**
+   A `rounded-xl border` list whose first child is a header with its own
+   `bg-zinc-50` shows a square background over a rounded parent, which reads as
+   a missing border rather than a covered corner. Reported on the Headlines
+   tab; a sweep found the same bug in the **L10 headlines segment**
+   (`segment-headlines.tsx:220` — the tab's twin, live in the meeting) and in
+   the **To-Dos board column** (`todos/page.tsx`, whose tinted `GroupHeader`
+   leads the card). All three now carry `overflow-hidden`. `HomeColumn` was
+   already immune — its inner `overflow-y-auto` clips for free.
+   *Same shape of bug as N39*: a child ignoring the box its parent drew. The
+   sweep is the lesson — a grep for tinted first children misses any case where
+   the child is a component rather than inline classes, which is exactly how
+   the To-Dos instance hid.
 3. **Scorecard: a real break between groups.** Weekly → Compliance was one
    lightly tinted row, which does not read as a section change. Now a gap row,
    a heavy top rule and a banded header. **Kept inside one `<table>`
@@ -1584,6 +1754,50 @@ transcript — no client ask behind them, all shipped the same session.
 **Trail**
 - 2026-08-26 · request · src session-2026-08-26 — daniel, reviewing live screens: drop the redundant Done line; headlines upper rounded border not rendering; cleaner group break between Weekly and Compliance; widen the import modal for preview viewability
 - 2026-08-26 · build · src session-2026-08-26 — all four shipped; 437 tests pass, tsc + next build clean, lint unchanged at its 17-finding baseline (none in touched files)
+
+### N45 · Restore semantics + one archived predicate per entity
+
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-26 · upd 2026-08-26*
+
+Effort S. Two correctness bugs found while scoping **N24**'s L10 half, both
+shipped with it. Neither was reported by the client — the second one was
+invisible until archived rows became reachable in a meeting.
+
+**1. Restore didn't survive Finish.** Rocks and headlines already cleared the
+field that made them sweepable (`completed_at`, `discussed`) *"so the sweep
+doesn't instantly re-archive"* — the lesson was learned twice and applied
+twice. Issues and to-dos never got it:
+
+| Entity | Restore was | Now |
+|---|---|---|
+| Issues | `archived_at: null` | + `status: "open"`, `resolved_at: null` |
+| To-Dos | `archived_at: null` | + `completed_at: null` |
+
+Without it, restoring an item closed *during the current meeting* put it back
+in the sweep's window and `endMeeting` re-archived it — the client would have
+experienced it as "I restored it and it disappeared again". Pre-existing on
+the tabs; N24 moved restore inside the meeting, which is exactly where someone
+restores an issue closed ten minutes earlier. Pinned by tests that assert the
+real selectors skip a just-restored doc, each with a guard asserting the
+un-cleared shape *would* be swept.
+
+**2. The Issues tab disagreed with itself.** Three definitions of archived
+existed; two were on the same page. `issues/page.tsx` (server render, counts)
+used `archived_at != null`; `issues-list.tsx` (live client filter) also
+honoured a legacy `archived` boolean; `segment-issues.tsx` had copied the
+client version. A doc carrying only the boolean rendered **Active on the
+server and vanished on hydration** — and the tab and the L10 disagreed about
+it too. Now one `isArchivedIssue` in `lib/issues.ts`, used by all three, with
+the permissive rule kept deliberately: no writer sets the boolean any more
+(`setIssueArchived` and the importer both write `archived_at`), but dropping
+the clause would resurrect any legacy doc that still carries it — a failure
+that surfaces in front of the client, not in a test. `isArchivedHeadline`
+consolidated into `lib/headlines.ts` for the same reason.
+
+**Trail**
+- 2026-08-26 · finding · src session-2026-08-26 — scoping N24 surfaced both: restore leaves items sweepable, and three archived predicates disagree (two on one page)
+- 2026-08-26 · decision · src session-2026-08-26 — daniel: fix restore semantics, then ship the L10 archived views
+- 2026-08-26 · build · src session-2026-08-26 — issues/to-dos restore clears the sweepable field; one predicate per entity in lib. 456 tests pass, tsc + build clean, lint at baseline
 
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
@@ -2083,6 +2297,14 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-26 · Q-segue-wrap · answered — the speaker round wraps on every stage **except Segue**. Reverses the 2026-08-24 wrap-everywhere call: Segue is once-around and its round-done marker is the point. Never reached prod under the old reading
 - 2026-08-26 · Q-group-naming · answered — the scorecard bucket stays **Group**. Steph says "category" out loud, ninety's export column says "Group Name"; one word across UI, schema and source file wins the tie
 - 2026-08-26 · N44 · closed — screen-review polish batch: Done-divider drop, headlines rounded-corner clip, scorecard group break, import page widened
+- 2026-08-26 · N21 · closed — reconciliation: headlines add-form became a button via the shared `EntityPageHeader`; had read `not-started` while built
+- 2026-08-26 · N22 · closed — reconciliation: To-Dos renders as the Home-style board; had read `not-started` while built. Left a copy-drift note on N24 (`HomeColumn` vs `BoardColumn`)
+- 2026-08-26 · N27 · closed — follow-the-leader by default, detach by peeking, re-attach with the existing Catch up pill. Was a decision conflict, not a missing feature: the code implemented the opposite on purpose
+- 2026-08-26 · Q-follow-model · answered — attached is the default; `?view=` is the opt-out; the catch-up pill is the re-engage control. Pill keys off `detached`, not `peeking`, so it never flashes at a follower mid-refresh. Re-attach happens two ways: the pill, or the group arriving at the stage you stepped away to (auto, silent)
+- 2026-08-26 · N24 · closed — both halves: the standalone pattern was already built, the L10 Active | Archived views shipped with local per-segment state that resets on unmount. Restore/edit enabled; derived meeting state kept on the active list so the N41 tally cannot be poisoned
+- 2026-08-26 · N45 · closed — restore now clears the sweepable field on issues + to-dos (rocks/headlines already did), and one archived predicate per entity replaces three that disagreed
+- 2026-08-26 · Q-l10-archived-toggle · answered — local state, resets when the segment unmounts. URL state was ruled out: the meeting page owns four params already, one `?archived=` is ambiguous across segments, and N27's auto re-attach (`router.replace`) would wipe it mid-meeting
+- 2026-08-26 · Q-board-column · answered — one `components/board-column.tsx` replaces `HomeColumn` + `BoardColumn`. Scroll stays a prop rather than a winner: Home's independent columns should scroll, the To-Dos page should scroll as one so its columns can't drift under the reader
 
 ## Sources
 

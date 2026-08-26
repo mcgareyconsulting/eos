@@ -20,6 +20,7 @@ import {
   PRIORITY_LABEL,
   STATUS_BADGE,
   STATUS_LABEL,
+  isArchivedIssue,
   rankLongTerm,
   rankShortTerm,
   splitIssuesByTerm,
@@ -54,10 +55,6 @@ type TermTab = "short" | "long";
 
 function isClosedStatus(status: IssueStatus | null | undefined): boolean {
   return status === "solved" || status === "dropped";
-}
-
-function isArchivedIssue(i: IssueDoc): boolean {
-  return i.archived === true || i.archived_at != null;
 }
 
 // Issues tab: capture, edit, and triage outside the meeting. Voting is L10-only.

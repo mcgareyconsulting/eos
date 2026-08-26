@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_VOTES_PER_TEAM,
+  isArchivedIssue,
   priorityRank,
   rankLongTerm,
   rankShortTerm,
@@ -288,5 +289,23 @@ describe("teamVoteTally", () => {
     );
     assert.equal(t.cast, 2);
     assert.equal(t.available, 2 * MAX_VOTES_PER_TEAM);
+  });
+});
+
+describe("isArchivedIssue", () => {
+  test("archived_at set means archived", () => {
+    assert.equal(isArchivedIssue({ archived_at: { toMillis: () => 1 } }), true);
+  });
+
+  test("neither field set means active", () => {
+    assert.equal(isArchivedIssue({}), false);
+    assert.equal(isArchivedIssue({ archived: false, archived_at: null }), false);
+  });
+
+  // The clause that made the Issues tab disagree with itself: the server render
+  // ignored the legacy boolean, the live client honoured it, so such a doc
+  // rendered Active and vanished on hydration. One rule, permissive, both ends.
+  test("the legacy `archived` boolean still counts", () => {
+    assert.equal(isArchivedIssue({ archived: true, archived_at: null }), true);
   });
 });

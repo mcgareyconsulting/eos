@@ -16,6 +16,7 @@ import {
   getTasksStatus,
   pullCompletionsForOwner,
 } from "@/lib/google/tasks";
+import { BoardColumn } from "@/components/board-column";
 import { AddTodoModal } from "./add-todo-modal";
 import {
   MilestoneTodoRow,
@@ -473,36 +474,5 @@ function GroupHeader({
   );
 }
 
-function BoardColumn({
-  title,
-  count,
-  meta,
-  children,
-}: {
-  title: string;
-  count: number;
-  /** Optional breakdown (e.g. "5 open") when `count` alone under-explains. */
-  meta?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex min-w-0 flex-col">
-      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
-        {title}{" "}
-        <span className="font-bold text-zinc-400">({count})</span>
-        {meta && (
-          <span className="ml-1.5 font-medium normal-case tracking-normal text-zinc-400">
-            · {meta}
-          </span>
-        )}
-      </h2>
-      {/* No inner scroller — the page scrolls as one so the two columns
-          can't drift out of sync under the reader. */}
-      <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-        {children}
-      </div>
-    </section>
-  );
-}
 
 

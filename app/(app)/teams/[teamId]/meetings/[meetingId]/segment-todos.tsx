@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Flag } from "lucide-react";
 import {
   collection,
@@ -30,6 +30,7 @@ import {
   MilestoneTodoRow,
   type MilestoneTodoItem,
 } from "../../todos/milestone-todo-row";
+import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 
@@ -320,7 +321,17 @@ export function SegmentTodos({
     absentUserIds,
   );
 
-  const allTodos = [...teamTodos, ...myTodos].filter((t) => !t.archived_at);
+  // Resets on unmount, by design (N24) — Active is the room's default.
+  const [showArchived, setShowArchived] = useState(false);
+  const allRawTodos = [...teamTodos, ...myTodos];
+  const allTodos = allRawTodos.filter((t) => !t.archived_at);
+  // Archived pure to-dos, kept as their own list so nothing derived (counts,
+  // the milestone window, speaking-order grouping) can read the wrong one.
+  // Milestones are excluded: they are managed under Rocks and `setTodoArchived`
+  // refuses them outright, so an archived-milestone view would be a dead end.
+  const archivedTodos = allRawTodos.filter(
+    (t) => t.archived_at && !t.source_rock_id,
+  );
   // Pure to-dos only in owner cards. Milestones surface in their own section
   // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under
   // Rocks. Milestones whose parent rock is done/cancelled/archived are
@@ -352,7 +363,7 @@ export function SegmentTodos({
     }));
 
   const groups = groupTodosForMeeting(
-    pureTodos,
+    showArchived ? archivedTodos : pureTodos,
     members,
     speakingOrder,
     absent,
@@ -367,10 +378,18 @@ export function SegmentTodos({
 
   const openCount = groups.reduce((n, g) => n + g.open.length, 0);
   const doneCount = groups.reduce((n, g) => n + g.done.length, 0);
+  // Counts on the toggle describe the lists themselves, not the current view.
+  const activeTodoCount = pureTodos.length;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-2">
+        <EntityViewToggle
+          showArchived={showArchived}
+          onChange={setShowArchived}
+          activeCount={activeTodoCount}
+          archivedCount={archivedTodos.length}
+        />
         <AddTodoModal
           teamId={teamId}
           members={members}
@@ -394,7 +413,9 @@ export function SegmentTodos({
         <div className="space-y-3">
         {groups.length === 0 && (
           <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-            No to-dos.
+            {showArchived
+              ? "No archived to-dos."
+              : "No to-dos."}
           </div>
         )}
 

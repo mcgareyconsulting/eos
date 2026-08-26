@@ -397,6 +397,9 @@ export function MeetingRail({
             speakerIndex={speakerIndex}
             absentUserIds={absentUserIds}
             members={members}
+            // Segue is once-around; every other stage cycles. This follows the
+            // GROUP's stage, not a local peek — the buttons move the room.
+            wrap={activeSegment !== "segue"}
           />
         )}
 

@@ -709,7 +709,7 @@ function PreviewTable({
       </summary>
 
       {/* Wide content scrolls inside its own box, never the page. */}
-      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="mt-2 max-h-[32rem] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
         <table className="w-full border-collapse text-left text-[12.5px]">
           <thead className="sticky top-0 bg-zinc-50 text-[10.5px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950">
             <tr>
@@ -725,7 +725,7 @@ function PreviewTable({
                 key={`${r.kind}-${i}`}
                 className="border-t border-zinc-100 align-top dark:border-zinc-800"
               >
-                <td className="max-w-[22rem] px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200">
+                <td className="max-w-[40rem] px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200">
                   <span className="line-clamp-2">{r.title || "—"}</span>
                   {r.note ? (
                     <span className="mt-0.5 block text-[11px] text-zinc-500">

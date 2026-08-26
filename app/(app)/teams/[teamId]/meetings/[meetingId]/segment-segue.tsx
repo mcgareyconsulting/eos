@@ -10,6 +10,7 @@ import {
   currentSpeakerUid,
   presentOrder,
   reconcileSpeakingOrder,
+  canStepSpeaker,
   stepSpeakerIndex,
 } from "@/lib/l10/speaking-order";
 import { QuickAddIssue } from "@/components/quick-add-issue";
@@ -115,7 +116,9 @@ export function SegmentSegue({
       await setSpeakingIndex(
         teamId,
         meetingId,
-        stepSpeakerIndex(order, index, absentUserIds, direction),
+        // Segue is once-around: the round dead-ends rather than cycling,
+        // so "everyone has shared" stays a real signal (N42, 2026-08-26).
+        stepSpeakerIndex(order, index, absentUserIds, direction, false),
       );
     });
   }
@@ -154,7 +157,11 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(-1)}
-              disabled={pending || attending.length === 0}
+              disabled={
+                pending ||
+                attending.length === 0 ||
+                !canStepSpeaker(order, index, absentUserIds, -1, false)
+              }
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               ← Prev
@@ -162,7 +169,11 @@ export function SegmentSegue({
             <button
               type="button"
               onClick={() => step(1)}
-              disabled={pending || attending.length === 0}
+              disabled={
+                pending ||
+                attending.length === 0 ||
+                !canStepSpeaker(order, index, absentUserIds, 1, false)
+              }
               className="rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-60"
             >
               Next speaker →

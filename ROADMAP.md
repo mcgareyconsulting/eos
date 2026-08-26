@@ -1,7 +1,7 @@
 ---
 project: HPB
-updated: 2026-08-24
-verified: main @ 98bb30b  # prod runs 98bb30b (rev eos-00046-nxv) — see Deployment truth
+updated: 2026-08-26
+verified: main @ 4498653  # prod still runs 98bb30b (rev eos-00046-nxv) — main is ~13 days ahead; see Deployment truth
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -9,8 +9,8 @@ config:                       # inputs to derived math — store inputs, never r
 queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
-  now: F4
-  next: [N23, N32, QW1, N18, F3, N3, N2, N24, N4]
+  now: SHIP2   # prod is 13 days behind main; N23 + N32 are built and still live-broken for the client
+  next: [F4, QW1, N18, F3, N3, N2, N24, N4]
   awaiting: [P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -52,15 +52,14 @@ by cost-to-close, then by size:
 
 | # | Item | Effort | Why here |
 |---|---|---|---|
-| now | **F4** | S | `archived_at: null` backfill has a hard date — the Monday sweep runs 2026-08-17 and skipped legacy imports again on 08-10 |
-| 1 | **N23** | S | Rocks Archived tab crashes on any archived rock (audit M5) — **live on prod**, which F5 shipped without the fix. Fix + mini-ship must land before the 2026-08-17 sweep creates the first archived rocks. **Ships with N32** |
-| 2 | **N32** | S | **Urgent (set 2026-08-15).** Meeting ratings stay editable after the meeting concludes — live on prod, client-reported twice, and a data-integrity hole, not a cosmetic one: any participant can rewrite their score once the room clears. Rides N23's mini-ship rather than waiting for the next full ship |
-| 3 | **QW1** | S | Prod spot-check + Open question 6 — now covers the F5 payload too (U1, P1-7, P2-1, P3-2 → `verified`), plus the F5 sign-in/OAuth check |
-| 4 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
-| 5 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
-| 6 | **N3** | M | No deps; migration integrity before broader rollout |
-| 7 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
-| 8 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
+| now | **SHIP2** | S | Prod is 13 days / 10 PRs behind `main`. **N23** (Archived tab crashes) and **N32** (ratings rewritable after conclude) are *built* and still broken for the client — the remaining work is the ship, not the fix. Needs three deploys: image, `firestore.rules`, Cloud Functions |
+| 1 | **F4** | S | `archived_at: null` backfill. Now sequenced *after* SHIP2 so the Archived tab is fixed before legacy rows become sweepable. The 08-17 sweep has already run once without it |
+| 2 | **QW1** | S | Prod spot-check + Open question 6 — covers the F5 payload (U1, P1-7, P2-1, P3-2 → `verified`) and now the SHIP2 payload, plus the sign-in/OAuth negative test |
+| 3 | **N18** | S | In-progress; an owed deliverable to Joe, not a build |
+| 4 | **F3** | S–M | Unblocked by F1. Live credentials that should not exist (Vercel SA key, `GEMINI_API_KEY`, break-glass gmail) in front of a bank security review |
+| 5 | **N3** | M | No deps; migration integrity before broader rollout |
+| 6 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
+| 7 | **N24** | S–M | Cross-tab coherence (add-{item} + Active \| Archived); frames N21/N22 rather than racing them |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
 must not be read as "next up": **P3-1** (Joe, Open question 3) · **N10**
@@ -251,6 +250,37 @@ this file's **U1** is its **P3-4**; its **P3-3** (headline FYI category) is
 shipped inside **QW1**; its D-series is the Resolved log here. On conflict,
 this file wins.
 
+**Session 2026-08-26 (Pass 23) — drift check, one reversal, one polish batch.**
+Started as a status question and turned into a reconciliation. Three items
+(**N29**, **N34**, **N43**) had shipped in `004f22e` on 08-24 and still read
+`not-started`; **N23** and **N32** had been built on 08-19 and were still
+sitting in `queue.next` as if they were work. They were not — the work was the
+**ship**, which is now its own item (**SHIP2**) and `queue.now`. This is the
+third consecutive pass to find the same class of drift; the pattern is that
+*building* an item updates the code and *nothing* updates the file until
+someone asks a status question.
+
+**N32 verified end-to-end** rather than taken from the trail: predicate
+(`lib/l10/ratings.ts`), server action (`meetings/actions.ts:506`), rules
+(`firestore.rules:271`) and UI (`conclude-review.tsx:206`) all present on
+`origin/main`. Built, merged, and **not on prod** — which is the whole point
+of SHIP2.
+
+**One decision reversed.** **N42** goes back to wrap-everywhere-**but**-Segue,
+undoing the 08-24 consistency call. Checking the sources settled it: Ryan's
+ask never mentions Segue, Steph's does ("for headlines or for segue, we would
+only go through once"), and the exception lived in daniel's own notes. Nothing
+shipped under the retired reading, so no client saw it either way. **N40's
+naming re-raised and re-closed:** stays **Group** — Steph says "category", but
+ninety's export column says "Group Name", and one word across UI, schema and
+source file wins the tie.
+
+**Recorded as N44:** four screen-review polish fixes shipped the same session
+(Done-divider drop, headlines rounded-corner clip, scorecard group break,
+import page widened). Note the headlines corner bug is **N39's shape again** —
+a child painting over the box its parent drew. Two instances now; worth a
+sweep for tinted headers leading rounded lists rather than waiting for a third.
+
 **Tier key (workstreams — the project's forcing logic):**
 
 | Tier | Workstream |
@@ -328,6 +358,45 @@ four move to QW1's prod spot-check. Revision id captured: **`eos-00046-nxv`**.
 - 2026-08-12 · note · src pr#28,pr#29 — #28 and #29 also merged; prod still on the F1 revision, now five merge PRs behind. No rules/index deploy needed for #28 or #29 (checked); #27's agenda rules still are.
 - 2026-08-12 · risk · src cutover-plan#open-items — the OAuth-client collision that broke all trial sign-in was recorded only in docs/CUTOVER_PLAN.md and P1-7, never on F5 — the item that would trigger it. Folded in above.
 - 2026-08-12 · ship · src session-2026-08-12 — daniel: F5 cleared on prod, `firestore.rules` deployed. Confirmed via gcloud: rev `eos-00046-nxv`, image `98bb30b`, 100% traffic. Shipped **without** the N23 archive-tab fix (item opened the same day); N23 needs its own mini-ship before the 08-17 sweep. Sign-in/OAuth landmine above not yet explicitly re-tested — fold the sign-in check (incl. the negative test) into QW1's prod spot-check.
+
+### SHIP2 · Ship main (#30–#39 + 08-26 polish) to Cloud Run prod
+*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-26 · upd 2026-08-26*
+
+Effort S. **Prod is `98bb30b` (2026-08-12); `main` is `4498653`.** Thirteen
+days and ten merge PRs of client-visible work sit unshipped, including two
+bugs the client has already hit and one they reported twice:
+
+- **N23** — Rocks **Archived** tab crashes on any archived rock. The Monday
+  sweep has run since (08-17), so the crash is reachable on prod today.
+- **N32** — meeting ratings stay rewritable after conclude. Steph reported it
+  twice; Joe named the integrity angle.
+
+Also riding: **N26** (headline collapse + per-team check-off), **N39**,
+**N41**, **N42** (now wrap-everywhere-but-Segue), **N40** (scorecard groups),
+**N29**, **N34**, **N43**, **N24**'s L10 Active|Archived slice, **N6**
+(import overhaul), **N4** shared-rock surfaces, and **N44** (08-26 polish).
+
+**Three deploys, not one** — `pnpm ship` covers only the image + runtime env:
+
+1. **App image** — `pnpm ship` (dry-run first; tag = short commit).
+2. **`firestore.rules`** — 65 changed lines since prod: N32's conclude freeze
+   (`ended_at == null` on meeting update), `scorecard_groups` (N40), and the
+   shared-rock read path (partial N20). *Without this the rating lock is
+   server-action-only.* `firebase deploy --only firestore:rules --project
+   hpb-eos-prod`.
+3. **Cloud Functions** — `functions/src/todos-archive.ts` dropped the
+   `broadcast` exclusion for N26. *Without this the Monday sweep never
+   archives a cascaded headline a team checked off.* Deploy needs the
+   `database` option (already wired, `functions/src/index.ts:122`).
+
+Carries the same ⚠ **sign-in landmine** as F5 — the OAuth-client collision was
+never explicitly re-tested after F5. Do the negative test (a non-HPB,
+non-allowlisted account must be rejected) and do not ship shortly before a
+live L10. **F4's `archived_at` backfill should follow the ship**, not precede
+it, so the Archived tab is already fixed when legacy rows become sweepable.
+
+**Trail**
+- 2026-08-26 · note · src session-2026-08-26 — recorded after a drift check: the front matter still queued N23 and N32 as work when both had been built on 08-19 and merged. The remaining work was never the fix, it was the ship — so the ship became the queue item instead of hiding behind two `in-progress` rows
 
 ### F2 · Go-live infra gap — monitoring, backups, staging, security levers
 *W0 · not-started · due — · deps — · owner daniel · src gcp-setup#day-2-ops · upd 2026-08-10*
@@ -1043,9 +1112,12 @@ which unit/interval, what scroll gesture felt wrong.
 - 2026-08-15 · correction · src l10-2026-08-12-notes — re-attributed from `client` to daniel's own observation: the ask is verbatim his, and the room's scorecard feedback was uniformly positive. Real item, no client pressure, repro still owed
 
 ### N29 · Milestones as a two-week reminder (To-Dos tab + L10)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-24*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-26*
 
-Effort S–M. Live verdict on the milestone surfaces: effective but **too much
+Effort S–M. **Shipped 2026-08-24 (`004f22e`)** — `MILESTONE_REMINDER_DAYS = 14`;
+the standalone tab scopes to the viewer when no owner filter is set, the L10
+stays team-wide (Jessica's ask) and moved beside the to-dos instead of above
+them. Status line was still `not-started` until the 08-26 reconciliation. Live verdict on the milestone surfaces: effective but **too much
 information**. daniel, driving the page live: "this is a little bit of a
 broken page ... they're just vomit at the top of the to-dos page currently,
 so you got to scroll to the bottom" — the milestone block pushes the actual
@@ -1201,9 +1273,13 @@ demand for it.
 - 2026-08-15 · request · src l10-2026-08-12-transcript — daniel: dislikes the right sidebar, proposes a normal modal; Steph neutral-to-low signal now, expects visibility to rise as the org adopts
 
 ### N34 · Separate departmental from individual rocks (Home board sections)
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-24*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-26*
 
-Effort S. **Re-aimed at our app (Pass 22).** Pass 19/20 recorded this as
+Effort S. **Shipped 2026-08-24 (`004f22e`)** — Home splits into "My Rocks"
+and "Departmental Rocks" (`home/page.tsx:543`). Tests caught that the row item
+carried no `owner_id`, without which a legacy null owner would have dumped
+every rock into one bucket. Status line was still `not-started` until the
+08-26 reconciliation. **Re-aimed at our app (Pass 22).** Pass 19/20 recorded this as
 Joe critiquing **90** rather than us — "that's a critique I have for 90.
 I'd like to know what's departmental and what's not." On 2026-08-19 Cora
 made the same complaint about **our Home board**, and specified the fix:
@@ -1369,6 +1445,8 @@ Decisions worth keeping:
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: Compliance below Weekly; groups assignable by name AND period; you can create a group as well as a measurable; a weekly group does not take precedence over ordinary weekly measurables. Ordering is custom, not derived
 - 2026-08-24 · build · src session-2026-08-24 — `scorecard_groups` collection + rules, Groups modal (add / reorder / delete), importer creates groups in first-seen order and never clobbers an existing one's position, assignment aligns the metric's period
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: call it **Group**, not Category. Matches the `group` field and ninety's "Group Name" column — one word across UI, schema and source file
+- 2026-08-26 · decision · src session-2026-08-26 — **Group confirmed** after the naming was re-raised: Steph says "category" out loud, but ninety's own export column says "Group Name", so Group keeps UI, schema and source file on one word. Closed, not revisited
+- 2026-08-26 · build · src session-2026-08-26 — group break restyled: Weekly and Compliance now read as separate blocks (gap row + heavy top rule + banded header) instead of one tinted row. Kept inside a single `<table>` on purpose — separate tables would size their week columns independently and fall out of alignment across the horizontal scroll
 
 ### N41 · Room-wide vote tally on the Issues segment
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
@@ -1401,30 +1479,43 @@ to wrap. So you get to the last speaker, you click next, and it goes back to
 the beginning. Sometimes we go multiple rounds, and that's much easier than
 clicking previous a bunch of times to get to the first speaker."
 
-**Scope settled by daniel (Pass 22): one behaviour across the board, Segue
-included.** The first reading — wrap everywhere *except* Segue, since Segue
-is once-around and owns the round-done marker — was explicitly retired in
-favour of consistency. Segue still shows "everyone's shared"; it just no
-longer dead-ends. Both directions cycle: once Next wraps, a Prev that goes
-inert at the first speaker would recreate Ryan's complaint mirrored.
+**Scope reversed 2026-08-26 (daniel): wrap everywhere BUT Segue.** Pass 22
+had gone the other way — one behaviour across the board, Segue included, on
+consistency grounds. That is retired. Segue is a once-around stage: everyone
+shares, then the round is done, and wrapping there erases the only signal
+that the room has finished going round. Steph said as much on 8/19 ("for
+headlines or for segue, we would only go through once, but ... in discussion
+for like an issue, we might go around twice"), and Ryan's ask never mentioned
+Segue either way — the exception was in daniel's notes from the start.
 
-Implementation is the pure module: `stepSpeakerIndex` now always cycles (at
-most one lap, so it can never land on someone absent), and the `atStart` /
-`atEnd` disables came out of both `speaking-order-rail.tsx` and Segue's own
-stepper. **Deliberately not built:** Joe's follow-on idea that next-past-last
-should also *advance the stage* — wrapping and auto-advance are mutually
-exclusive, and stage transport stays on its own buttons. The old
-inert-at-the-ends contract and its tests were replaced, not worked around.
+Implementation: `stepSpeakerIndex` takes a `wrap` flag (default true) and
+returns `from` unchanged at the edges when it is false. New `canStepSpeaker`
+mirrors it so a control is disabled exactly when pressing it would do
+nothing — at the ends of Segue's round, or when nobody else is in the room.
+`segment-segue.tsx` passes `wrap: false`; `speaking-order-rail.tsx` takes
+`wrap` from the **group's** active stage (`activeSegment !== "segue"`), not
+the viewer's local peek, because those buttons drive the room. Both
+directions honour it: Prev is inert at the first speaker on Segue for the
+same reason Next is inert at the last.
+
+**Deliberately not built:** Joe's follow-on idea that next-past-last should
+also *advance the stage* — wrapping and auto-advance are mutually exclusive,
+and stage transport stays on its own buttons.
 
 **Trail**
 - 2026-08-19 · request · src l10-2026-08-19-it — Ryan: wrap the speaker list back to the first speaker at the end of the round; Joe agrees, flags that next-past-last currently should trigger stage advance
 - 2026-08-19 · client · src l10-2026-08-19-esd — Steph on round shape: "for headlines or for segue, we would only go through once, but ... in discussion for like an issue, we might go around twice"
 - 2026-08-24 · decision · src session-2026-08-24 — daniel: wrap everywhere including Segue, one behaviour across the board; per-stage exception dropped. Stage advance stays separate from speaker wrap
+- 2026-08-26 · decision · src session-2026-08-26 — **reversed**: wrap everywhere BUT Segue. Segue is once-around and its round-done marker is the point; the 08-24 consistency argument loses to it. Never shipped to prod under the 08-24 reading, so no client ever saw the wrapping Segue
+- 2026-08-26 · build · src session-2026-08-26 — `wrap` flag + `canStepSpeaker` in the pure module; Segue passes false, the rail derives it from the group's active stage. 437 tests pass, tsc + build clean
 
 ### N43 · Scorecard large numbers render badly
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-24*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-19-it · upd 2026-08-26*
 
-Effort S. **Confirmed still live 2026-08-24** — Joe told the room on 8/19
+Effort S. **Shipped 2026-08-24 (`004f22e`)** — values above 100k render
+compactly ($2.3M), exact figure moves to the tooltip + aria-label, editing
+still works on the raw number; percent / yes-no / time never abbreviate.
+Status line was still `not-started` until the 08-26 reconciliation. **Confirmed still live 2026-08-24** — Joe told the room on 8/19
 that this was already reported and being fixed ("he messaged me about two
 hours ago and said that was the case and that he was going to get it
 fixed"); daniel confirms it never landed. Client-visible on the scorecard
@@ -1461,6 +1552,38 @@ than hypothetical.
 **Trail**
 - 2026-08-19 · client · src l10-2026-08-19-it — Steph: larger numbers display wonky on the scorecard; had zoomed in because default type is small. Joe: already reported, believed in flight
 - 2026-08-24 · correction · src session-2026-08-24 — daniel: the fix never landed. Recorded as its own item rather than folded into N28, which has no client witness
+
+### N44 · Screen-review polish batch (2026-08-26)
+
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-26 · upd 2026-08-26*
+
+Effort S. Four fixes from daniel reading real screens rather than a
+transcript — no client ask behind them, all shipped the same session.
+
+1. **To-Dos: the "DONE" divider goes.** An owner's completed rows sat under a
+   grey uppercase `DONE` band while every row already carries a green check
+   and the owner header already counts `1 done`. Three signals for one fact;
+   the band was the weakest and the loudest.
+2. **Headlines: rounded top corners were being painted over.** The owner-group
+   list is `rounded-xl border`, but its first child is a header with its own
+   `bg-zinc-50` — a square background over a rounded parent, which reads as a
+   missing border rather than a covered corner. `overflow-hidden` on the
+   container. *Same shape of bug as N39* — a child ignoring the box its parent
+   drew — and worth checking whenever a tinted header leads a rounded list.
+3. **Scorecard: a real break between groups.** Weekly → Compliance was one
+   lightly tinted row, which does not read as a section change. Now a gap row,
+   a heavy top rule and a banded header. **Kept inside one `<table>`
+   deliberately:** the literal ask was "split the table", but separate tables
+   size their week columns independently and would drift out of alignment
+   across the shared horizontal scroll, so the split is visual and the grid
+   stays one aligned surface.
+4. **Import page widened** `max-w-2xl` → `max-w-6xl`, preview box to `32rem`
+   tall, title column to `40rem`. The dry-run preview (N6) is a four-column
+   table of real rows and was being read through a 672px straw.
+
+**Trail**
+- 2026-08-26 · request · src session-2026-08-26 — daniel, reviewing live screens: drop the redundant Done line; headlines upper rounded border not rendering; cleaner group break between Weekly and Compliance; widen the import modal for preview viewability
+- 2026-08-26 · build · src session-2026-08-26 — all four shipped; 437 tests pass, tsc + next build clean, lint unchanged at its 17-finding baseline (none in touched files)
 
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
@@ -1954,6 +2077,12 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-24 · Q-scorecard-fix · answered — the scorecard large-number fix Joe reported as in flight on 8/19 never landed (daniel); recorded as N43 rather than assumed closed
 - 2026-08-24 · Q-scorecard-categories · answered — scorecard categories already exist as the `group` / "Section" field with grouped rows; invisible in the L10 because `flatList` is forced whenever a speaking order is present. Remaining work is naming + the speaker-order-vs-category decision → N40
 - 2026-08-18 · N1 · in-progress — Steph onboarding walkthrough ran; new-team solid, import decent, add-members not. Leaves `awaiting`. Leftover: admin sees all teams in the sidebar dropdown before P2-7 → `verified`
+- 2026-08-26 · N29 · closed — reconciliation: two-week milestone window shipped 2026-08-24 (`004f22e`); status line had read `not-started` for two days
+- 2026-08-26 · N34 · closed — reconciliation: Home My/Departmental rocks split shipped 2026-08-24 (`004f22e`); same stale-status cause as N29
+- 2026-08-26 · N43 · closed — reconciliation: compact large numbers shipped 2026-08-24 (`004f22e`); same stale-status cause as N29
+- 2026-08-26 · Q-segue-wrap · answered — the speaker round wraps on every stage **except Segue**. Reverses the 2026-08-24 wrap-everywhere call: Segue is once-around and its round-done marker is the point. Never reached prod under the old reading
+- 2026-08-26 · Q-group-naming · answered — the scorecard bucket stays **Group**. Steph says "category" out loud, ninety's export column says "Group Name"; one word across UI, schema and source file wins the tie
+- 2026-08-26 · N44 · closed — screen-review polish batch: Done-divider drop, headlines rounded-corner clip, scorecard group break, import page widened
 
 ## Sources
 

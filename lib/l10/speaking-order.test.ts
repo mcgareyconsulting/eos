@@ -1,6 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  canStepSpeaker,
   clampSpeakerIndex,
   compareBySpeakingOrder,
   currentSpeakerUid,
@@ -113,8 +114,7 @@ describe("stepSpeakerIndex", () => {
     assert.equal(stepSpeakerIndex(order, 99, [], -1), 1);
   });
 
-  // The round is a cycle on every stage, Segue included. This replaces the
-  // old inert-at-the-ends contract — see the note on stepSpeakerIndex.
+  // The round is a cycle on every stage EXCEPT Segue, which passes wrap=false.
   test("cycles past the end of the round in both directions", () => {
     assert.equal(stepSpeakerIndex(order, 2, [], 1), 0);
     assert.equal(stepSpeakerIndex(order, 0, [], -1), 2);
@@ -132,6 +132,51 @@ describe("stepSpeakerIndex", () => {
     // someone who isn't in the room.
     assert.equal(stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], 1), 0);
     assert.equal(stepSpeakerIndex(order, 0, ["u-marcus", "u-elena"], -1), 0);
+  });
+
+  // Segue is once-around: wrap=false makes the round dead-end on purpose, so
+  // "everyone has shared" stays a real signal (daniel, 2026-08-26).
+  test("does not wrap when wrap is false", () => {
+    assert.equal(stepSpeakerIndex(order, 2, [], 1, false), 2);
+    assert.equal(stepSpeakerIndex(order, 0, [], -1, false), 0);
+  });
+
+  test("still steps and still skips absentees inside a non-wrapping round", () => {
+    assert.equal(stepSpeakerIndex(order, 0, [], 1, false), 1);
+    assert.equal(stepSpeakerIndex(order, 0, ["u-marcus"], 1, false), 2);
+  });
+
+  test("stops at the last present person rather than wrapping past an absent tail", () => {
+    // Elena is out, so Marcus is the end of the round — Next must not come
+    // round to Sarah the way the wrapping stages do.
+    assert.equal(stepSpeakerIndex(order, 1, ["u-elena"], 1, false), 1);
+  });
+});
+
+describe("canStepSpeaker", () => {
+  const order = ["u-sarah", "u-marcus", "u-elena"];
+
+  test("is live at both ends of a wrapping round", () => {
+    assert.equal(canStepSpeaker(order, 2, [], 1), true);
+    assert.equal(canStepSpeaker(order, 0, [], -1), true);
+  });
+
+  test("goes inert at the ends of a non-wrapping round", () => {
+    assert.equal(canStepSpeaker(order, 2, [], 1, false), false);
+    assert.equal(canStepSpeaker(order, 0, [], -1, false), false);
+    assert.equal(canStepSpeaker(order, 1, [], 1, false), true);
+  });
+
+  test("goes inert when nobody else is in the room, wrap or not", () => {
+    assert.equal(canStepSpeaker(order, 0, ["u-marcus", "u-elena"], 1), false);
+    assert.equal(
+      canStepSpeaker(order, 0, ["u-marcus", "u-elena"], 1, false),
+      false,
+    );
+  });
+
+  test("is inert on an empty order", () => {
+    assert.equal(canStepSpeaker([], 0, [], 1), false);
   });
 });
 

@@ -58,22 +58,27 @@ export function clampSpeakerIndex(index: number, length: number): number {
 // Steps the pointer, skipping anyone marked absent for this meeting — the
 // whole reason attendance is set during Segue rather than at Conclude.
 //
-// The round is a CYCLE, on every stage including Segue. Past the last person
+// The round is a CYCLE on every stage EXCEPT Segue. Past the last person
 // present the pointer lands back on the first, and Prev mirrors it backwards.
 // Client ask (Ryan, 8/19 L10): "you get to the last speaker, you click next,
 // and it goes back to the beginning ... sometimes we go multiple rounds, and
-// that's much easier than clicking previous a bunch of times." daniel's call
-// on scope: one behaviour across the board, no per-stage exception — Segue
-// still shows its round-done marker, it just no longer dead-ends.
+// that's much easier than clicking previous a bunch of times."
 //
-// This replaces the old inert-at-the-ends contract deliberately. A round with
-// nobody else present still returns `from` unchanged, so the control can never
-// land on someone who is not in the room.
+// Segue is the exception (daniel, 2026-08-26): it is a once-around stage —
+// everyone shares, then the round is done — so wrapping there would erase the
+// only signal that the room has finished going round. Steph, same meeting:
+// "for headlines or for segue, we would only go through once, but ... in
+// discussion for like an issue, we might go around twice." Callers on Segue
+// pass `wrap: false` and the control goes inert at both ends.
+//
+// A round with nobody else present still returns `from` unchanged, so the
+// control can never land on someone who is not in the room.
 export function stepSpeakerIndex(
   order: string[],
   index: number,
   absentUserIds: string[],
   direction: 1 | -1,
+  wrap: boolean = true,
 ): number {
   if (order.length === 0) return 0;
   const absent = new Set(absentUserIds);
@@ -82,10 +87,32 @@ export function stepSpeakerIndex(
 
   // At most one full lap: if nobody else is present we land back on `from`.
   for (let step = 1; step <= n; step++) {
-    const i = (((from + direction * step) % n) + n) % n;
+    const raw = from + direction * step;
+    // Without wrap the round stops at the edge rather than coming round.
+    if (!wrap && (raw < 0 || raw >= n)) return from;
+    const i = ((raw % n) + n) % n;
     if (!absent.has(order[i])) return i;
   }
   return from;
+}
+
+/**
+ * Whether a Prev/Next control should be live. Mirrors stepSpeakerIndex, so a
+ * button is disabled exactly when pressing it would do nothing: at the ends of
+ * a non-wrapping round (Segue), or when nobody else is in the room.
+ */
+export function canStepSpeaker(
+  order: string[],
+  index: number,
+  absentUserIds: string[],
+  direction: 1 | -1,
+  wrap: boolean = true,
+): boolean {
+  if (order.length === 0) return false;
+  return (
+    stepSpeakerIndex(order, index, absentUserIds, direction, wrap) !==
+    clampSpeakerIndex(index, order.length)
+  );
 }
 
 // The index the pointer should rest on when a round starts: the first person

@@ -435,21 +435,38 @@ export function ScorecardGrid({
     );
   };
 
-  const renderGroupHeader = (g: string, count: number) => (
-    <tr key={`group-${g}`} className="bg-zinc-50/80 dark:bg-zinc-950/50">
-      <td
-        colSpan={totalCols}
-        className="py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400"
-      >
-        {/* Keep section label visible while weeks scroll horizontally. */}
-        <div className="sticky left-0 w-max px-4">
-          {g}
-          <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-200/80 px-1.5 text-[10px] font-semibold normal-case tracking-normal text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            {count}
-          </span>
-        </div>
-      </td>
-    </tr>
+  // A group is a break in the table, not a tinted row: Weekly and Compliance
+  // have to read as two separate blocks at a glance (client, 8/26). Rendering
+  // them as separate <table>s would let each size its own week columns and
+  // fall out of alignment, so the split is done inside one table — a full-bleed
+  // banded header with a heavy rule above it, and a gap row before it.
+  const renderGroupHeader = (g: string, count: number, isFirst: boolean) => (
+    <Fragment key={`group-${g}`}>
+      {!isFirst && (
+        <tr aria-hidden className="h-4">
+          <td colSpan={totalCols} className="p-0" />
+        </tr>
+      )}
+      <tr className="bg-zinc-100 dark:bg-zinc-900">
+        <td
+          colSpan={totalCols}
+          className={cn(
+            "border-b border-zinc-300 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:border-zinc-700 dark:text-zinc-200",
+            isFirst
+              ? "border-t border-zinc-300 dark:border-zinc-700"
+              : "border-t-2 border-t-zinc-400 dark:border-t-zinc-600",
+          )}
+        >
+          {/* Keep the group label visible while weeks scroll horizontally. */}
+          <div className="sticky left-0 w-max px-4">
+            {g}
+            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-300/70 px-1.5 text-[10px] font-semibold normal-case tracking-normal text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+              {count}
+            </span>
+          </div>
+        </td>
+      </tr>
+    </Fragment>
   );
 
   return (
@@ -605,8 +622,14 @@ export function ScorecardGrid({
               </tr>
             )}
             {ungrouped.map(renderMetricRow)}
-            {metricGroups.flatMap((g) => [
-              renderGroupHeader(g.name, g.items.length),
+            {metricGroups.flatMap((g, gi) => [
+              // Only the very first block skips the gap + heavy rule: with
+              // ungrouped metrics above, every group is a break from something.
+              renderGroupHeader(
+                g.name,
+                g.items.length,
+                gi === 0 && ungrouped.length === 0,
+              ),
               ...g.items.map(renderMetricRow),
             ])}
           </tbody>

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { initials } from "@/lib/initials";
 import {
+  canStepSpeaker,
   currentSpeakerUid,
   presentOrder,
   stepSpeakerIndex,
@@ -17,6 +18,10 @@ import { setSpeakingIndex } from "../actions";
 // through): the list should read as exactly who is going to speak. The stored
 // `speaking_index` still points into the FULL order, so prev/next go through
 // stepSpeakerIndex, which skips absentees.
+//
+// The round cycles on every stage except Segue, which is once-around — the
+// caller passes `wrap` from the group's active stage, not from the stage the
+// viewer happens to be peeking at, since these buttons drive the room.
 export function SpeakingOrderRail({
   teamId,
   meetingId,
@@ -24,6 +29,7 @@ export function SpeakingOrderRail({
   speakerIndex,
   absentUserIds,
   members,
+  wrap = true,
 }: {
   teamId: string;
   meetingId: string;
@@ -31,6 +37,8 @@ export function SpeakingOrderRail({
   speakerIndex: number;
   absentUserIds: string[];
   members: { user_id: string; full_name: string }[];
+  /** False on Segue: the round dead-ends instead of cycling. */
+  wrap?: boolean;
 }) {
   const [pending, start] = useTransition();
 
@@ -40,6 +48,9 @@ export function SpeakingOrderRail({
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
   const currentUid = currentSpeakerUid(order, speakerIndex, absentUserIds);
   const currentName = currentUid ? (nameById.get(currentUid) ?? "—") : "—";
+
+  const canPrev = canStepSpeaker(order, speakerIndex, absentUserIds, -1, wrap);
+  const canNext = canStepSpeaker(order, speakerIndex, absentUserIds, 1, wrap);
 
   const jumpTo = (uid: string) =>
     start(async () => {
@@ -51,7 +62,7 @@ export function SpeakingOrderRail({
       await setSpeakingIndex(
         teamId,
         meetingId,
-        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction),
+        stepSpeakerIndex(order, speakerIndex, absentUserIds, direction, wrap),
       );
     });
 
@@ -89,7 +100,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(-1)}
-          disabled={pending}
+          disabled={pending || !canPrev}
           className="shrink-0 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           ← Prev
@@ -97,7 +108,7 @@ export function SpeakingOrderRail({
         <button
           type="button"
           onClick={() => step(1)}
-          disabled={pending}
+          disabled={pending || !canNext}
           className="flex-1 rounded-md bg-hpb-green px-2 py-1 text-xs font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40 disabled:opacity-40"
         >
           Next speaker →

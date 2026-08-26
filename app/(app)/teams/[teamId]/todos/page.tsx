@@ -387,23 +387,18 @@ export default async function TodosPage({
                     hideOwner
                   />
                 ))}
-                {g.done.length > 0 && (
-                  <>
-                    <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                      Done
-                    </div>
-                    {g.done.map((t) => (
-                      <TodoListRow
-                        key={t.id}
-                        teamId={tid}
-                        todo={t}
-                        ownerName={g.title}
-                        members={members}
-                        hideOwner
-                      />
-                    ))}
-                  </>
-                )}
+                {/* No "Done" divider: the row's green check already reads as
+                    done, and the owner header above counts them. */}
+                {g.done.map((t) => (
+                  <TodoListRow
+                    key={t.id}
+                    teamId={tid}
+                    todo={t}
+                    ownerName={g.title}
+                    members={members}
+                    hideOwner
+                  />
+                ))}
               </div>
             ))}
           </BoardColumn>

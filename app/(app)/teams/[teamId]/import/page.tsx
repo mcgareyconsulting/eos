@@ -25,7 +25,9 @@ export default async function ImportPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    // Wide on purpose: the dry-run preview is a four-column table of real
+    // rows, and 2xl squeezed titles into two clamped lines (client, 8/26).
+    <div className="mx-auto max-w-6xl space-y-6">
       <header>
         <div className="flex items-center gap-2 text-hpb-blue dark:text-hpb-gold">
           <Upload className="h-5 w-5" />

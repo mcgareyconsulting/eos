@@ -265,8 +265,11 @@ export default async function HeadlinesPage({
         </div>
       ) : (
         <>
+          {/* overflow-hidden: the first child is an owner header with its own
+              background, which otherwise paints square over the rounded top
+              corners and reads as a missing border. */}
           {ownerGroups.length > 0 && (
-            <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
               {ownerGroups.map((group) => (
                 <div key={group.name}>
                   <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">

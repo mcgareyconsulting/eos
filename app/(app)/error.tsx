@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
 // Route-level error boundary for the app shell. Without this, any server
@@ -14,8 +14,38 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [reported, setReported] = useState(false);
+
   useEffect(() => {
     console.error("[app] route error:", error);
+
+    // Also send it somewhere we can actually read. console.error alone lives
+    // and dies in the user's browser: when the client hit this screen on the
+    // Scorecard on 2026-08-19, nothing about it existed on our side. See
+    // app/api/client-error/route.ts.
+    const controller = new AbortController();
+    void fetch("/api/client-error", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        digest: error.digest,
+        message: error.message,
+        stack: error.stack,
+        path: window.location.pathname + window.location.search,
+        // Next stamps the running build onto <html> when deploymentId is
+        // configured (next.config.ts). A mismatch against the serving
+        // revision is the signature of a deploy landing under an open tab.
+        deploymentId: document.documentElement.dataset.dplId,
+      }),
+      signal: controller.signal,
+      keepalive: true,
+    })
+      .then(() => setReported(true))
+      .catch(() => {
+        // The report failing is not worth a second error screen.
+      });
+
+    return () => controller.abort();
   }, [error]);
 
   return (
@@ -34,6 +64,19 @@ export default function AppError({
         >
           Try again
         </button>
+        {/* The digest is the key that joins this screen to the server-side
+            stack in Cloud Logging. Showing it turns "it broke" in a bug
+            report into something we can look up. */}
+        {error.digest ? (
+          <p className="mt-4 select-all font-mono text-[11px] text-zinc-400 dark:text-zinc-600">
+            {error.digest}
+          </p>
+        ) : null}
+        <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-600">
+          {reported
+            ? "This error was reported automatically."
+            : "If it keeps happening, send us this screen."}
+        </p>
       </div>
     </div>
   );

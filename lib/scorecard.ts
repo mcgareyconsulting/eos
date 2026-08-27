@@ -417,9 +417,23 @@ export function hitRate(
   };
 }
 
-/** Periods in the window with no entry at all — the sparse-data signal. */
-export function missingCount(values: (number | null)[]): number {
-  return values.filter((v) => v == null).length;
+/**
+ * Periods in the window with no entry at all — the sparse-data signal.
+ *
+ * A period still in progress is not missing, it is unfinished: nobody can have
+ * posted this week's number on Tuesday. Counting it inflated every measurable's
+ * gap by one for most of the week and read as a data problem the team could do
+ * nothing about (client-reported 2026-08-27).
+ *
+ * `inProgress` is the columns' `isCurrent` flags, positionally aligned with
+ * `values`. Omitted, every period is treated as closed — which is right for
+ * callers looking at a window that has already ended.
+ */
+export function missingCount(
+  values: (number | null)[],
+  inProgress: readonly boolean[] = [],
+): number {
+  return values.filter((v, i) => v == null && !inProgress[i]).length;
 }
 
 /**

@@ -219,6 +219,28 @@ describe("missingCount", () => {
   it("counts all-null array", () => {
     assert.equal(missingCount([null, null, null]), 3);
   });
+
+  // Client-reported 2026-08-27: mid-week, every measurable showed the week in
+  // progress as a gap. Columns are newest-first, so the in-progress period is
+  // index 0.
+  it("does not count the in-progress period as missing", () => {
+    assert.equal(missingCount([null, 5, 3], [true, false, false]), 0);
+  });
+
+  it("still counts closed periods when one is in progress", () => {
+    assert.equal(
+      missingCount([null, null, 3, null], [true, false, false, false]),
+      2,
+    );
+  });
+
+  it("counts an in-progress period that was filled in like any other", () => {
+    assert.equal(missingCount([7, null, 3], [true, false, false]), 1);
+  });
+
+  it("treats every period as closed when no flags are given", () => {
+    assert.equal(missingCount([null, 5, 3]), 1);
+  });
 });
 
 // N43: full-precision millions overflowed the fixed-width scorecard cells and

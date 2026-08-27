@@ -36,6 +36,12 @@ ARG NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN
 # Optional: set only when the project's Firestore DB is named (not "(default)").
 ARG NEXT_PUBLIC_FIREBASE_DATABASE_ID
 
+# Version-skew protection (next.config.ts `deploymentId`). Must be unique per
+# build: Next stamps it onto asset URLs and compares it on navigation, so two
+# different builds sharing an id would defeat the check. cloudbuild.yaml passes
+# ${_TAG}-${BUILD_ID}. Left empty for local builds, which then behave as before.
+ARG DEPLOYMENT_ID
+
 # Fail fast instead of shipping a build that 500s at first sign-in:
 # cloudbuild.yaml defaults every _NEXT_PUBLIC_FIREBASE_* substitution to ""
 # and `docker build` succeeds fine with empty values baked into the client
@@ -63,6 +69,7 @@ ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
     NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID \
     NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=$NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN \
     NEXT_PUBLIC_FIREBASE_DATABASE_ID=$NEXT_PUBLIC_FIREBASE_DATABASE_ID \
+    DEPLOYMENT_ID=$DEPLOYMENT_ID \
     NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm build
@@ -84,7 +91,13 @@ RUN mkdir -p public
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+# Redeclared here so the same --build-arg lands in the runtime stage too:
+# app/api/client-error/route.ts reads DEPLOYMENT_ID at request time to record
+# which build was *serving* alongside the build the browser was running.
+ARG DEPLOYMENT_ID
+
 ENV NODE_ENV=production \
+    DEPLOYMENT_ID=$DEPLOYMENT_ID \
     NEXT_TELEMETRY_DISABLED=1
 
 # Non-root runtime user (Cloud Run best practice; avoids running as root

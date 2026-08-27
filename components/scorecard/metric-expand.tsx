@@ -50,7 +50,11 @@ export function MetricExpand({
     recorded,
     applicable: hitApplies,
   } = hitRate(values, metric.goal, metric.direction);
-  const missing = missingCount(values);
+  // The in-progress period is excluded — see missingCount().
+  const missing = missingCount(
+    values,
+    columns.map((c) => c.isCurrent),
+  );
 
   // "Aug 3" style labels for the chart's x axis — the grid's own column labels
   // are full ranges ("Aug 3 – 9") and would collide at 13 columns.
@@ -95,7 +99,9 @@ export function MetricExpand({
                 missing > 2 ? "text-hpb-brown dark:text-hpb-gold" : "",
               )}
             >
-              {missing === 0 ? "none" : `${missing} periods`}
+              {missing === 0
+                ? "none"
+                : `${missing} ${missing === 1 ? "period" : "periods"}`}
             </span>
           </Fact>
         </dl>

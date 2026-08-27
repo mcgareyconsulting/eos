@@ -54,6 +54,11 @@ steps:
       - --build-arg=NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID}
       - --build-arg=NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN=${_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN}
       - --build-arg=NEXT_PUBLIC_FIREBASE_DATABASE_ID=${_NEXT_PUBLIC_FIREBASE_DATABASE_ID}
+      # Version-skew protection (next.config.ts `deploymentId`). ${BUILD_ID} is
+      # a built-in Cloud Build substitution, always populated and unique per
+      # build — _TAG alone is not safe here, since it defaults to the literal
+      # "manual" and every manual build would then share one deployment id.
+      - --build-arg=DEPLOYMENT_ID=${_TAG}-${BUILD_ID}
       - "."
 
   - id: push

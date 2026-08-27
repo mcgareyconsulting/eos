@@ -1,6 +1,7 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { setMetricGroup } from "./actions";
 
 // Inline editor for a metric's group label. Mirrors ValueCell's click-to-edit
@@ -23,6 +24,7 @@ export function GroupCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(initial ?? "");
+  const [error, setError] = useState(false);
   const [, start] = useTransition();
   const [optimisticGroup, setOptimisticGroup] = useOptimistic(
     initial,
@@ -36,22 +38,27 @@ export function GroupCell({
       <button
         type="button"
         onClick={() => {
+          setError(false);
           setDraft(optimisticGroup ?? "");
           setEditing(true);
         }}
         title={
-          optimisticGroup
-            ? `Group: ${optimisticGroup} — click to change`
-            : "Put this measurable in a group (e.g. Weekly, Compliance)"
+          error
+            ? "Group not saved — click to try again"
+            : optimisticGroup
+              ? `Group: ${optimisticGroup} — click to change`
+              : "Put this measurable in a group (e.g. Weekly, Compliance)"
         }
         className={
           "block text-left text-xs hover:underline " +
-          (optimisticGroup
-            ? "text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            : "text-hpb-blue/70 dark:text-hpb-gold/70 hover:text-hpb-blue dark:hover:text-hpb-gold")
+          (error
+            ? "text-red-600 dark:text-red-400"
+            : optimisticGroup
+              ? "text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              : "text-hpb-blue/70 dark:text-hpb-gold/70 hover:text-hpb-blue dark:hover:text-hpb-gold")
         }
       >
-        {display}
+        {error ? "Not saved" : display}
       </button>
     );
   }
@@ -66,7 +73,16 @@ export function GroupCell({
     setEditing(false);
     start(async () => {
       setOptimisticGroup(next);
-      await setMetricGroup(teamId, metricId, draft);
+      try {
+        await setMetricGroup(teamId, metricId, draft);
+        setError(false);
+      } catch (err) {
+        // Same contract as ValueCell: let Next's redirect/notFound reach the
+        // router, keep every other failure inside this cell instead of letting
+        // it unmount the whole Scorecard.
+        unstable_rethrow(err);
+        setError(true);
+      }
     });
   };
 

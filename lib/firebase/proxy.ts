@@ -11,11 +11,17 @@ export function gateRequest(request: NextRequest): NextResponse {
   // (or curl) with Authorization: Bearer $GOOGLE_TASKS_PULL_SECRET — the
   // route handler enforces the secret; middleware only needs to not bounce
   // to /login before that runs.
+  //
+  // /api/client-error is the error-boundary report sink. It must be public or
+  // it defeats itself: an expired session is one of the failures worth
+  // logging, and gating it would redirect that report to /login — which the
+  // boundary's fetch would follow and read as a successful report.
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
-    pathname === "/api/google/tasks/pull";
+    pathname === "/api/google/tasks/pull" ||
+    pathname === "/api/client-error";
 
   const hasSession = request.cookies.has("__firebase_session");
 

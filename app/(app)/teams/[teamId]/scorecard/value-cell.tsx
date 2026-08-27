@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useOptimistic, useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { setEntry } from "./actions";
 import {
   formatScorecardDraft,
@@ -10,7 +11,32 @@ import {
 } from "@/lib/scorecard";
 import { cn } from "@/lib/utils";
 
+// A rejected *value* (bad input) is self-explanatory once the cell reverts, so
+// it clears itself. A failed *save* must not: the number is not in Firestore,
+// and a message that disappears after four seconds leaves a cell that looks
+// saved and isn't. Only the first kind is on a timer.
 const ERROR_CLEAR_MS = 4000;
+
+type CellError = { message: string; sticky: boolean };
+
+/**
+ * Why a save failed, in the user's terms.
+ *
+ * setEntry() only *returns* `{ ok: false }` for a bad parse — every other
+ * failure throws: a Firestore error, a dropped connection, or a Server Action
+ * ID the running revision doesn't recognise (the deploy-skew case that
+ * next.config.ts `deploymentId` now guards). Those used to escape the
+ * transition and take the whole Scorecard down through app/(app)/error.tsx,
+ * losing whatever had just been typed. Now they stay in the cell.
+ */
+function saveErrorMessage(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  // Next's own wording for an action the current build no longer serves.
+  if (/Server Action/i.test(text)) {
+    return "App was updated — reload the page, then re-enter this.";
+  }
+  return "Not saved — check your connection and try again.";
+}
 
 const fieldClass =
   "w-full min-w-[4.5rem] text-right rounded-md bg-white dark:bg-zinc-900 px-2 py-1.5 tabular-nums ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-hpb-blue dark:focus:ring-hpb-gold";
@@ -34,7 +60,10 @@ export function ValueCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => formatScorecardDraft(initial, unit));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CellError | null>(null);
+  // What was typed when a save failed. Reopening the cell restores it rather
+  // than the stale stored value, so a retry is a click, not a re-type.
+  const [unsavedDraft, setUnsavedDraft] = useState<string | null>(null);
   const [, start] = useTransition();
   const [optimisticValue, setOptimisticValue] = useOptimistic(
     initial,
@@ -42,7 +71,7 @@ export function ValueCell({
   );
 
   useEffect(() => {
-    if (!error) return;
+    if (!error || error.sticky) return;
     const t = window.setTimeout(() => setError(null), ERROR_CLEAR_MS);
     return () => window.clearTimeout(t);
   }, [error]);
@@ -69,7 +98,7 @@ export function ValueCell({
 
   const beginEdit = () => {
     setError(null);
-    setDraft(formatScorecardDraft(optimisticValue, unit));
+    setDraft(unsavedDraft ?? formatScorecardDraft(optimisticValue, unit));
     setEditing(true);
   };
 
@@ -82,7 +111,7 @@ export function ValueCell({
     }
     const parsed = parseScorecardValue(raw, unit);
     if (!parsed.ok) {
-      setError(parsed.error);
+      setError({ message: parsed.error, sticky: false });
       setDraft(previous);
       setEditing(false);
       return;
@@ -91,8 +120,21 @@ export function ValueCell({
     setEditing(false);
     start(async () => {
       setOptimisticValue(parsed.value);
-      const result = await setEntry(teamId, metricId, weekStartDate, raw);
-      if (result && !result.ok) setError(result.error);
+      try {
+        const result = await setEntry(teamId, metricId, weekStartDate, raw);
+        if (result && !result.ok) {
+          setError({ message: result.error, sticky: false });
+          return;
+        }
+        setUnsavedDraft(null);
+      } catch (err) {
+        // redirect() (expired session -> /login) and notFound() (the measurable
+        // was deleted under us) are Next internals that must reach the router,
+        // not be swallowed as a cell error.
+        unstable_rethrow(err);
+        setUnsavedDraft(raw);
+        setError({ message: saveErrorMessage(err), sticky: true });
+      }
     });
   };
 
@@ -101,11 +143,11 @@ export function ValueCell({
       <button
         type="button"
         onClick={beginEdit}
-        title={error ?? (abbreviated ? exact : undefined)}
+        title={error?.message ?? (abbreviated ? exact : undefined)}
         aria-invalid={error ? true : undefined}
         aria-label={
           error
-            ? `${exact}. ${error}`
+            ? `${exact}. ${error.message}`
             : abbreviated
               ? exact
               : undefined
@@ -123,7 +165,7 @@ export function ValueCell({
             role="status"
             className="block text-[10px] font-medium leading-tight text-red-600 dark:text-red-400"
           >
-            {error}
+            {error.message}
           </span>
         ) : null}
       </button>

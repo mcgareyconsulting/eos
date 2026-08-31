@@ -164,6 +164,21 @@ export function ScorecardGrid({
       return next;
     });
 
+  // Which groups are collapsed. Same contract as the row panels above: local,
+  // so a reload comes back fully expanded. Keyed by section key rather than
+  // index, so collapsing "Risk & Compliance" survives a filter that reorders
+  // or removes the groups around it.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    new Set(),
+  );
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   // Visible width inside a group's frame. The expanded trend panel is sized to
   // this and pinned with sticky left-0, so it stays fully in view while the
   // period columns scroll behind it. Measured on the stack rather than on a
@@ -580,6 +595,11 @@ export function ScorecardGrid({
         ) : (
           sections.map((section, si) => {
             const headingId = `${gridId}-group-${si}`;
+            // Only a real group collapses. The unheaded ungrouped block has no
+            // handle to put a chevron on, and hiding it would leave nothing on
+            // screen to bring it back.
+            const collapsible = section.name !== null;
+            const collapsed = collapsible && collapsedGroups.has(section.key);
             return (
               <section
                 key={section.key}
@@ -587,17 +607,26 @@ export function ScorecardGrid({
               >
                 {section.name && (
                   // Outside the scroller, so it never moves horizontally.
-                  <div className="mb-1.5 flex w-max items-center gap-2 border-l-[3px] border-hpb-blue pl-2 dark:border-hpb-gold">
-                    <h3
-                      id={headingId}
-                      className="text-[13px] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200"
+                  <h3 id={headingId} className="mb-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(section.key)}
+                      aria-expanded={!collapsed}
+                      className="flex w-max items-center gap-2 rounded border-l-[3px] border-hpb-blue py-0.5 pl-2 pr-2 text-[13px] font-semibold uppercase tracking-wide text-zinc-700 hover:bg-zinc-100 dark:border-hpb-gold dark:text-zinc-200 dark:hover:bg-zinc-800"
                     >
                       {section.name}
-                    </h3>
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-200 px-1.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                      {section.items.length}
-                    </span>
-                  </div>
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-200 px-1.5 text-[10px] font-semibold normal-case tracking-normal text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        {section.items.length}
+                      </span>
+                      <ChevronRight
+                        aria-hidden
+                        className={cn(
+                          "h-3.5 w-3.5 text-zinc-400 transition-transform",
+                          !collapsed && "rotate-90",
+                        )}
+                      />
+                    </button>
+                  </h3>
                 )}
                 {/* This div is both the group's frame and its scrollport, which
                     is the whole point: the border cannot scroll out from under
@@ -608,7 +637,13 @@ export function ScorecardGrid({
                     they used to get dragged along with it. It also stops a
                     horizontal trackpad swipe triggering browser-back. Vertical
                     chaining is untouched, so the page still scrolls on. */}
-                <div className="overflow-x-auto overscroll-x-none rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                {/* `hidden` rather than unmounting: the frame is its own
+                    scrollport, so keeping it means a group comes back at the
+                    week you left it on instead of snapping to the newest. */}
+                <div
+                  className="overflow-x-auto overscroll-x-none rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+                  hidden={collapsed}
+                >
                   {/* Fixed layout: frozen columns keep their design widths (so
                       sticky offsets stay true) and leftover space spreads
                       evenly across the period columns. Every group carries the

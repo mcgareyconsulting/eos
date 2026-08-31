@@ -199,9 +199,14 @@ export function ScorecardPanel({
         onSortChange={setSort}
         search={search}
         onSearchChange={setSearch}
-        visibleCount={filtered.length}
-        totalCount={intervalMetrics.length}
-        compact={compact}
+        // "order" is the default on both surfaces and means different things:
+        // the team's configured sort_order standalone, owner speaking order in
+        // the L10. Name it after what it actually does here.
+        orderLabel={
+          speakingOrder && speakingOrder.length > 0
+            ? "Speaking order"
+            : "Default order"
+        }
         extra={toolbarExtra}
       />
 
@@ -250,13 +255,16 @@ export function ScorecardPanel({
          * thought the feature was missing; the L10 used to force a flat list
          * here on the assumption the two orderings conflicted.
          *
-         * An explicit sort, filter or search still flattens — regrouping rows
-         * someone deliberately re-sorted would bury what they asked for.
+         * An explicit sort still flattens — regrouping rows someone deliberately
+         * re-sorted would bury what they asked for. Filtering by owner does not:
+         * it subsets the rows without touching their order, so the groups still
+         * hold and the client wants to keep reading them as groups while looking
+         * at one person's measurables (client, 8/31). Status and search still
+         * flatten on the old rule.
          */
         flatList={
           (sort !== "name" && sort !== "order") ||
           status !== "all" ||
-          ownerId !== "" ||
           !!search.trim()
         }
         emptyHint={

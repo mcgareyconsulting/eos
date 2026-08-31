@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,23 +35,51 @@ function FilterSelect({
   children: React.ReactNode;
   className?: string;
 }) {
+  // Chrome treats <select> as keyboard-input-capable, so :focus-visible matches
+  // even for a mouse click and the focus ring stayed lit on the chip you just
+  // used. Dropping focus after a pointer-driven pick clears it; a keyboard pick
+  // keeps focus, and its ring, because that is the only focus indicator here.
+  const pickedByPointer = useRef(false);
+
   return (
-    <div className={cn("relative shrink-0", className)}>
+    // The width class goes on the <select>, not this wrapper: the chevron is
+    // positioned against the wrapper, so a wrapper wider than the select left
+    // the chevron floating in the gap between them.
+    <div className="relative shrink-0">
       <label className="sr-only" htmlFor={id}>
         {label}
       </label>
       <select
         id={id}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onPointerDown={() => {
+          pickedByPointer.current = true;
+        }}
+        onKeyDown={() => {
+          pickedByPointer.current = false;
+        }}
+        onBlur={() => {
+          pickedByPointer.current = false;
+        }}
+        onChange={(e) => {
+          const el = e.currentTarget;
+          onChange(e.target.value);
+          if (pickedByPointer.current) el.blur();
+          pickedByPointer.current = false;
+        }}
         title={label}
         className={cn(
           "h-8 appearance-none rounded-full border py-0 pl-2.5 pr-7 text-xs font-medium",
           "border-zinc-300 bg-white text-zinc-800",
-          "hover:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-hpb-blue/30",
-          "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:ring-hpb-gold/30",
+          // No custom focus ring: a filter that is applied says so with the
+          // blue `active` treatment below, which is the state worth seeing. The
+          // browser's own outline still marks keyboard focus, and the blur
+          // above means it never lingers after a mouse pick.
+          "hover:border-zinc-400",
+          "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100",
           active &&
             "border-hpb-blue/40 bg-hpb-blue/5 text-hpb-blue dark:border-hpb-gold/40 dark:bg-hpb-gold/10 dark:text-hpb-gold",
+          className,
         )}
       >
         {children}
@@ -81,9 +110,7 @@ export function ScorecardFilters({
   onSortChange,
   search,
   onSearchChange,
-  visibleCount,
-  totalCount,
-  compact = false,
+  orderLabel = "Default order",
   extra,
 }: {
   period: ScorecardPeriod;
@@ -98,10 +125,12 @@ export function ScorecardFilters({
   onSortChange: (v: SortOption) => void;
   search: string;
   onSearchChange: (v: string) => void;
-  visibleCount: number;
-  totalCount: number;
-  /** L10: tighter filter defaults (e.g. Default order = speaking order). */
-  compact?: boolean;
+  /**
+   * What the "order" sort means here. In the L10 it walks owner speaking
+   * order, so calling it "Default order" hid the one thing a facilitator
+   * needs to know about the default view.
+   */
+  orderLabel?: string;
   /** Rendered at the end of the filter row (e.g. a quick-add button). */
   extra?: React.ReactNode;
 }) {
@@ -130,7 +159,11 @@ export function ScorecardFilters({
     });
   };
 
-  const defaultSort: SortOption = compact ? "order" : "status";
+  // Must match ScorecardPanel's initial sort. Both surfaces default to "order"
+  // because it is the only sort that keeps the groups; if this drifts, Clear
+  // resets to a sort that flattens them and the row shows Clear on a pristine
+  // load because it thinks a filter is already applied.
+  const defaultSort: SortOption = "order";
 
   const defaults =
     status === "all" &&
@@ -190,7 +223,30 @@ export function ScorecardFilters({
         })}
       </div>
 
-      <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin]">
+      {/* Reads straight across: search, then the filter pills, then Clear.
+          Search used to sit at the far right on `ml-auto`, which split the row
+          into two clumps with a hole between them. The x/y count is not here:
+          it reads beside the "Weekly measurables" heading below, and printing
+          it in both places put the same 2/7 twice within a few pixels. */}
+      <div className="-mx-1 -my-1 flex items-center gap-1.5 overflow-x-auto px-1 py-1 [scrollbar-width:thin]">
+        <div className="relative flex h-8 w-44 shrink-0 items-center sm:w-64">
+          <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-zinc-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search measurables…"
+            className={cn(
+              "h-8 w-full rounded-full border border-zinc-300 bg-white py-0 pl-8 pr-3 text-xs",
+              "dark:border-zinc-700 dark:bg-zinc-900",
+              "focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:focus:ring-hpb-gold/30",
+              search.trim() &&
+                "border-hpb-blue/40 bg-hpb-blue/5 dark:border-hpb-gold/40 dark:bg-hpb-gold/10",
+            )}
+            aria-label="Search measurables"
+          />
+        </div>
+
         {teamLabel && (
           <span
             className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
@@ -256,50 +312,26 @@ export function ScorecardFilters({
           id="sc-sort"
           label="Sort"
           value={sort}
-          active={sort !== "status"}
+          active={sort !== defaultSort}
           onChange={(v) => onSortChange(v as SortOption)}
           className="min-w-[10.5rem]"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {o.value === "order" ? orderLabel : o.label}
             </option>
           ))}
         </FilterSelect>
-
-        <div className="relative ml-auto flex min-w-[10rem] max-w-xs shrink-0 flex-1 items-center sm:min-w-[14rem]">
-          <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-zinc-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search measurables…"
-            className={cn(
-              "h-8 w-full rounded-full border border-zinc-300 bg-white py-0 pl-8 pr-3 text-xs",
-              "dark:border-zinc-700 dark:bg-zinc-900",
-              "focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:focus:ring-hpb-gold/30",
-              search.trim() &&
-                "border-hpb-blue/40 bg-hpb-blue/5 dark:border-hpb-gold/40 dark:bg-hpb-gold/10",
-            )}
-            aria-label="Search measurables"
-          />
-        </div>
-
-        <span className="hidden shrink-0 tabular-nums text-[11px] text-zinc-500 sm:inline dark:text-zinc-400">
-          {visibleCount}
-          {visibleCount !== totalCount ? `/${totalCount}` : ""} measurable
-          {totalCount === 1 ? "" : "s"}
-        </span>
 
         {!defaults && (
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-zinc-300 px-2.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            title="Reset filters"
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-zinc-800 px-3 text-xs font-semibold text-white hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/30 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white dark:focus-visible:ring-hpb-gold/30"
+            title="Reset every filter, sort and search back to their defaults"
           >
             <X className="h-3 w-3" />
-            Clear
+            Clear filters
           </button>
         )}
 

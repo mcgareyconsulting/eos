@@ -1,10 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
-import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
 import {
   orderGroupNames,
   type ScorecardGroup,
@@ -46,10 +45,19 @@ export type ScorecardMember = {
 };
 
 // Fixed left-column widths so sticky offsets stay aligned while weeks scroll.
+//
+// There is no owner column (client, 8/31): the owner reads as a line under the
+// measurable name instead, since an initials avatar bought a 44px column to say
+// what a name says better. Reinstate it only for profile photos, where the face
+// is the point.
+//
+// `title` is sized to its content — the widest measurable name is ~165px and the
+// status pill row needs ~160px intrinsically. It sat at 250 while the avatar
+// column stood to its right and masked the slack; alone, those extra 50px read
+// as an empty leftover column. Longer names still wrap, clamped at two lines.
 const COL = {
   trend: 40,
-  title: 250,
-  owner: 44,
+  title: 200,
   goal: 80,
   avg: 76,
 } as const;
@@ -57,26 +65,18 @@ const COL = {
 const LEFT = {
   trend: 0,
   title: COL.trend,
-  owner: COL.trend + COL.title,
-  goal: COL.trend + COL.title + COL.owner,
-  avg: COL.trend + COL.title + COL.owner + COL.goal,
+  goal: COL.trend + COL.title,
+  avg: COL.trend + COL.title + COL.goal,
 } as const;
 
-const FROZEN_WIDTH = COL.trend + COL.title + COL.owner + COL.goal + COL.avg;
+const FROZEN_WIDTH = COL.trend + COL.title + COL.goal + COL.avg;
 
 /** Count of frozen columns — keep in sync with COL. */
-const FROZEN_COLS = 5;
+const FROZEN_COLS = 4;
 
 // Faint separators between week columns — without them the wide value area
 // reads as loose numbers floating in whitespace.
 const weekDivider = "border-l border-zinc-100 dark:border-zinc-800/60";
-
-function ownerInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return `${parts[0]![0] ?? ""}${parts[parts.length - 1]![0] ?? ""}`.toUpperCase();
-}
 
 /** Sticky cell shell; pixel `left` is applied via style for exact offsets. */
 function stickyCell(extra?: string) {
@@ -126,7 +126,6 @@ export function ScorecardGrid({
   entryByMetricWeek,
   members,
   showDelete = false,
-  showGroupEditor = true,
   groups = [],
   interval = "weekly",
   compact = false,
@@ -143,7 +142,6 @@ export function ScorecardGrid({
   entryByMetricWeek: Map<string, number | null> | Record<string, number | null>;
   members: ScorecardMember[];
   showDelete?: boolean;
-  showGroupEditor?: boolean;
   /** Team's group docs — supply position so Compliance can sit below Weekly. */
   groups?: ScorecardGroup[];
   /** Which period this grid is showing; groups are per-period. */
@@ -153,6 +151,7 @@ export function ScorecardGrid({
   flatList?: boolean;
   emptyHint?: string;
 }) {
+  const gridId = useId();
   const [search, setSearch] = useState("");
   // Which rows have their trend panel open. Local on purpose: a reload
   // collapses everything, same as the rock row.
@@ -165,16 +164,20 @@ export function ScorecardGrid({
       return next;
     });
 
-  // Visible width of the horizontal scroller. The expanded trend panel is
-  // sized to this and pinned with sticky left-0, so it stays fully in view
-  // while the period columns scroll behind it.
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Visible width inside a group's frame. The expanded trend panel is sized to
+  // this and pinned with sticky left-0, so it stays fully in view while the
+  // period columns scroll behind it. Measured on the stack rather than on a
+  // frame because every group is the stack's width; the 2px is the frame's own
+  // left and right borders, which the panel does not get to sit on.
+  const stackRef = useRef<HTMLDivElement>(null);
   const [viewWidth, setViewWidth] = useState<number | null>(null);
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = stackRef.current;
     if (!el) return;
     // ResizeObserver fires once on observe, so no synchronous first measure.
-    const ro = new ResizeObserver(() => setViewWidth(el.clientWidth));
+    const ro = new ResizeObserver(() =>
+      setViewWidth(Math.max(0, el.clientWidth - 2)),
+    );
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -296,15 +299,12 @@ export function ScorecardGrid({
             >
               {m.name}
             </div>
-            {showGroupEditor && (
-              <div className="mt-0.5">
-                <GroupCell
-                  teamId={teamId}
-                  metricId={m.id}
-                  initial={m.group ?? null}
-                />
-              </div>
-            )}
+            <div
+              className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400"
+              title={owner}
+            >
+              {owner}
+            </div>
             <div className="mt-1 flex items-center gap-2">
               <span
                 className={cn(
@@ -327,20 +327,6 @@ export function ScorecardGrid({
                   </span>
                 </>
               )}
-            </div>
-          </td>
-
-          <td
-            className={cn(stickyCell(), "z-10 px-1 py-2.5 align-middle")}
-            style={{ left: LEFT.owner, width: COL.owner, minWidth: COL.owner }}
-          >
-            <div className="flex justify-center">
-              <span
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
-                title={owner}
-              >
-                {ownerInitials(owner === "—" ? m.name : owner)}
-              </span>
             </div>
           </td>
 
@@ -435,38 +421,112 @@ export function ScorecardGrid({
     );
   };
 
-  // A group is a break in the table, not a tinted row: Weekly and Compliance
-  // have to read as two separate blocks at a glance (client, 8/26). Rendering
-  // them as separate <table>s would let each size its own week columns and
-  // fall out of alignment, so the split is done inside one table — a full-bleed
-  // banded header with a heavy rule above it, and a gap row before it.
-  const renderGroupHeader = (g: string, count: number, isFirst: boolean) => (
-    <Fragment key={`group-${g}`}>
-      {!isFirst && (
-        <tr aria-hidden className="h-4">
-          <td colSpan={totalCols} className="p-0" />
-        </tr>
-      )}
-      <tr className="bg-zinc-100 dark:bg-zinc-900">
-        <td
-          colSpan={totalCols}
+  // One group, one table (client, 8/31). A banded header row inside a single
+  // table was too weak a break — Weekly and Compliance have to read as two
+  // separate tables at a glance, so each group is its own <table> under its
+  // own heading, repeating the period header so the block stands alone.
+  //
+  // Alignment across those tables is not left to content: every table is
+  // `table-fixed w-full` inside one min-width stack, so the frozen columns
+  // keep their pixel widths and the period columns split the same remainder.
+  // One scroller wraps the lot, so the whole scorecard side-scrolls as a unit
+  // and the frozen columns stay stuck across every block.
+  const sections = useMemo(() => {
+    const out: { key: string; name: string | null; items: ScorecardMetric[] }[] =
+      [];
+    // Ungrouped rows lead, unheaded — a team with no groups gets exactly the
+    // single table it had before.
+    if (ungrouped.length > 0) {
+      out.push({ key: "__ungrouped__", name: null, items: ungrouped });
+    }
+    for (const g of metricGroups) {
+      out.push({ key: `group:${g.name}`, name: g.name, items: g.items });
+    }
+    return out;
+  }, [ungrouped, metricGroups]);
+
+  const renderHead = () => (
+    <thead>
+      <tr className={cn(headerBg, "text-xs text-zinc-600 dark:text-zinc-400")}>
+        <th
           className={cn(
-            "border-b border-zinc-300 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:border-zinc-700 dark:text-zinc-200",
-            isFirst
-              ? "border-t border-zinc-300 dark:border-zinc-700"
-              : "border-t-2 border-t-zinc-400 dark:border-t-zinc-600",
+            stickyCell(headerBg),
+            "z-40 border-b border-zinc-200 px-1 py-2 font-medium dark:border-zinc-800",
           )}
+          style={{
+            left: LEFT.trend,
+            width: COL.trend,
+            minWidth: COL.trend,
+          }}
+          title="Recent trend vs goal"
         >
-          {/* Keep the group label visible while weeks scroll horizontally. */}
-          <div className="sticky left-0 w-max px-4">
-            {g}
-            <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-300/70 px-1.5 text-[10px] font-semibold normal-case tracking-normal text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
-              {count}
-            </span>
-          </div>
-        </td>
+          <span className="sr-only">Trend</span>
+        </th>
+        <th
+          className={cn(
+            stickyCell(headerBg),
+            "z-40 border-b border-zinc-200 px-3 py-2 text-left font-medium dark:border-zinc-800",
+          )}
+          style={{
+            left: LEFT.title,
+            width: COL.title,
+            minWidth: COL.title,
+            maxWidth: COL.title,
+          }}
+        >
+          Title
+        </th>
+        <th
+          className={cn(
+            stickyCell(headerBg),
+            "z-40 border-b border-zinc-200 px-2 py-2 text-right font-medium dark:border-zinc-800",
+          )}
+          style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
+        >
+          Goal
+        </th>
+        <th
+          className={cn(
+            stickyCell(headerBg),
+            stickyShadow,
+            "z-40 border-b border-zinc-200 px-2 py-2 text-right font-medium dark:border-zinc-800",
+          )}
+          style={{ left: LEFT.avg, width: COL.avg, minWidth: COL.avg }}
+        >
+          Average
+        </th>
+        {columns.map((col) => {
+          const isCurrent = col.isCurrent;
+          return (
+            <th
+              key={col.id}
+              className={cn(
+                "border-b border-zinc-200 px-2 py-2 text-center font-medium tabular-nums dark:border-zinc-800",
+                headerBg,
+                weekDivider,
+                isCurrent && "text-hpb-blue dark:text-hpb-gold",
+              )}
+            >
+              {isCurrent && (
+                <span className="mb-0.5 flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-wide">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
+                  Current
+                </span>
+              )}
+              <span className="block whitespace-nowrap">{col.label}</span>
+            </th>
+          );
+        })}
+        {showDelete && (
+          <th
+            className={cn(
+              "border-b border-zinc-200 w-8 dark:border-zinc-800",
+              headerBg,
+            )}
+          />
+        )}
       </tr>
-    </Fragment>
+    </thead>
   );
 
   return (
@@ -491,149 +551,83 @@ export function ScorecardGrid({
         </div>
       )}
 
+      {/* One scroll container per group, not one for the grid. A border only
+          holds still if it is on the scrollport — anything inside scrolls —
+          so a frame per group means a scrollport per group. They scroll
+          independently on purpose (client, 8/31): a group is read on its own,
+          and pinning them together meant scrolling one moved all the rest.
+          The trade-off is that two groups scrolled to different weeks no
+          longer line up column-for-column. */}
       <div
-        ref={scrollRef}
+        ref={stackRef}
         className={cn(
-          "overflow-x-auto rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900",
-          compact
-            ? "max-h-[min(60vh,28rem)] overflow-y-auto"
-            : "max-h-[min(75vh,40rem)] overflow-y-auto",
+          "space-y-5",
+          // Only the L10 segment is a bounded box, so one segment cannot take
+          // over the meeting page. The standalone tab lets the page scroll:
+          // a 605px scroll box nested in a page that itself only moved 58px
+          // trapped every bit of travel inside the grid, and the bottom of an
+          // expanded trend chart could sit below the fold with the inner box
+          // already at its limit (client, 8/31).
+          compact && "max-h-[min(60vh,28rem)] overflow-y-auto overflow-x-hidden",
         )}
       >
-        {/* Fixed layout: frozen columns keep their design widths (so sticky
-            offsets stay true) and leftover space spreads evenly across the
-            period columns — the grid fills the container with no gaps. The
-            112px floor per period column keeps "Jul 27 – Aug 2" labels from
-            overflowing when many columns force a horizontal scroll. */}
-        <table
-          className="w-full table-fixed border-separate border-spacing-0 text-sm"
-          style={{ minWidth: FROZEN_WIDTH + columns.length * 112 }}
-        >
-          <thead className="sticky top-0 z-30">
-            <tr
-              className={cn(
-                headerBg,
-                "text-xs text-zinc-600 dark:text-zinc-400",
-              )}
-            >
-              <th
-                className={cn(
-                  stickyCell(headerBg),
-                  "z-40 border-b border-zinc-200 px-1 py-2 font-medium dark:border-zinc-800",
-                )}
-                style={{
-                  left: LEFT.trend,
-                  width: COL.trend,
-                  minWidth: COL.trend,
-                }}
-                title="Recent trend vs goal"
+        {sections.length === 0 ? (
+          <div className="rounded-xl border border-zinc-300 bg-white px-4 py-10 text-center text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            {metrics.length === 0
+              ? (emptyHint ?? "No metrics yet.")
+              : (emptyHint ?? "No measurables match your search.")}
+          </div>
+        ) : (
+          sections.map((section, si) => {
+            const headingId = `${gridId}-group-${si}`;
+            return (
+              <section
+                key={section.key}
+                aria-labelledby={section.name ? headingId : undefined}
               >
-                <span className="sr-only">Trend</span>
-              </th>
-              <th
-                className={cn(
-                  stickyCell(headerBg),
-                  "z-40 border-b border-zinc-200 px-3 py-2 text-left font-medium dark:border-zinc-800",
+                {section.name && (
+                  // Outside the scroller, so it never moves horizontally.
+                  <div className="mb-1.5 flex w-max items-center gap-2 border-l-[3px] border-hpb-blue pl-2 dark:border-hpb-gold">
+                    <h3
+                      id={headingId}
+                      className="text-[13px] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200"
+                    >
+                      {section.name}
+                    </h3>
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-200 px-1.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      {section.items.length}
+                    </span>
+                  </div>
                 )}
-                style={{
-                  left: LEFT.title,
-                  width: COL.title,
-                  minWidth: COL.title,
-                  maxWidth: COL.title,
-                }}
-              >
-                Title
-              </th>
-              <th
-                className={cn(
-                  stickyCell(headerBg),
-                  "z-40 border-b border-zinc-200 px-1 py-2 font-medium dark:border-zinc-800",
-                )}
-                style={{
-                  left: LEFT.owner,
-                  width: COL.owner,
-                  minWidth: COL.owner,
-                }}
-              >
-                <span className="sr-only">Owner</span>
-              </th>
-              <th
-                className={cn(
-                  stickyCell(headerBg),
-                  "z-40 border-b border-zinc-200 px-2 py-2 text-right font-medium dark:border-zinc-800",
-                )}
-                style={{ left: LEFT.goal, width: COL.goal, minWidth: COL.goal }}
-              >
-                Goal
-              </th>
-              <th
-                className={cn(
-                  stickyCell(headerBg),
-                  stickyShadow,
-                  "z-40 border-b border-zinc-200 px-2 py-2 text-right font-medium dark:border-zinc-800",
-                )}
-                style={{ left: LEFT.avg, width: COL.avg, minWidth: COL.avg }}
-              >
-                Average
-              </th>
-              {columns.map((col) => {
-                const isCurrent = col.isCurrent;
-                return (
-                  <th
-                    key={col.id}
-                    className={cn(
-                      "border-b border-zinc-200 px-2 py-2 text-center font-medium tabular-nums dark:border-zinc-800",
-                      headerBg,
-                      weekDivider,
-                      isCurrent && "text-hpb-blue dark:text-hpb-gold",
-                    )}
+                {/* This div is both the group's frame and its scrollport, which
+                    is the whole point: the border cannot scroll out from under
+                    the rows because the rows scroll inside it. */}
+                {/* overscroll-x-none suppresses the elastic bounce past either
+                    end. The rubber-band translates the whole scroll content and
+                    the frozen columns are sticky against the scrollport, so
+                    they used to get dragged along with it. It also stops a
+                    horizontal trackpad swipe triggering browser-back. Vertical
+                    chaining is untouched, so the page still scrolls on. */}
+                <div className="overflow-x-auto overscroll-x-none rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                  {/* Fixed layout: frozen columns keep their design widths (so
+                      sticky offsets stay true) and leftover space spreads
+                      evenly across the period columns. Every group carries the
+                      same min-width inside an equal-width frame, so the columns
+                      resolve identically — blocks left at the same scroll
+                      offset line up. The 112px floor keeps "Jul 27 – Aug 2"
+                      from overflowing. */}
+                  <table
+                    className="w-full table-fixed border-separate border-spacing-0 text-sm"
+                    style={{ minWidth: FROZEN_WIDTH + columns.length * 112 }}
                   >
-                    {isCurrent && (
-                      <span className="mb-0.5 flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-wide">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-hpb-blue dark:bg-hpb-gold" />
-                        Current
-                      </span>
-                    )}
-                    <span className="block whitespace-nowrap">{col.label}</span>
-                  </th>
-                );
-              })}
-              {showDelete && (
-                <th
-                  className={cn(
-                    "border-b border-zinc-200 w-8 dark:border-zinc-800",
-                    headerBg,
-                  )}
-                />
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td
-                  colSpan={totalCols}
-                  className="px-4 py-10 text-center text-zinc-500 dark:text-zinc-400"
-                >
-                  {metrics.length === 0
-                    ? (emptyHint ?? "No metrics yet.")
-                    : (emptyHint ?? "No measurables match your search.")}
-                </td>
-              </tr>
-            )}
-            {ungrouped.map(renderMetricRow)}
-            {metricGroups.flatMap((g, gi) => [
-              // Only the very first block skips the gap + heavy rule: with
-              // ungrouped metrics above, every group is a break from something.
-              renderGroupHeader(
-                g.name,
-                g.items.length,
-                gi === 0 && ungrouped.length === 0,
-              ),
-              ...g.items.map(renderMetricRow),
-            ])}
-          </tbody>
-        </table>
+                    {renderHead()}
+                    <tbody>{section.items.map(renderMetricRow)}</tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })
+        )}
       </div>
     </div>
   );

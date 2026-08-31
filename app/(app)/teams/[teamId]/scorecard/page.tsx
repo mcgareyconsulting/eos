@@ -122,7 +122,6 @@ export default async function ScorecardPage({
           entryByMetricWeek={entryRecord}
           members={members}
           showDelete
-          showGroupEditor
           groups={groups}
         />
       </Suspense>

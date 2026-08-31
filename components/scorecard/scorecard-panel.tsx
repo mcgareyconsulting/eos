@@ -38,7 +38,6 @@ export function ScorecardPanel({
   entryByMetricWeek,
   members,
   showDelete = true,
-  showGroupEditor = true,
   groups = [],
   compact = false,
   /** L10: when set, Default order walks owner speaking order (P1-4). */
@@ -57,7 +56,6 @@ export function ScorecardPanel({
   entryByMetricWeek: Record<string, number | null>;
   members: ScorecardMember[];
   showDelete?: boolean;
-  showGroupEditor?: boolean;
   /** Team's scorecard groups; ordering + period for the group headers. */
   groups?: ScorecardGroup[];
   /** L10 segment: weekly-only, no period tabs. */
@@ -68,7 +66,12 @@ export function ScorecardPanel({
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [ownerId, setOwnerId] = useState("");
-  const [sort, setSort] = useState<SortOption>(compact ? "order" : "status");
+  // "order" on both surfaces, because it is the only sort that keeps groups.
+  // Any other sort flattens the grid (see `flatList` below), so defaulting the
+  // Scorecard tab to "status" meant grouping was never visible there without
+  // changing a dropdown first — the feature shipped invisible (client, 8/31).
+  // Off-track-first is still one selection away.
+  const [sort, setSort] = useState<SortOption>("order");
   const [search, setSearch] = useState("");
 
   const entryMap = useMemo(
@@ -234,7 +237,6 @@ export function ScorecardPanel({
         entryByMetricWeek={entryMap}
         members={members}
         showDelete={showDelete}
-        showGroupEditor={showGroupEditor}
         groups={groups}
         interval={period}
         compact={compact}

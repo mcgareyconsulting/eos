@@ -21,6 +21,7 @@ export function AppShell({
   teams,
   isAdmin = false,
   membershipCount = 0,
+  importTeamIds = [],
   children,
 }: {
   user: { email?: string | null };
@@ -30,6 +31,8 @@ export function AppShell({
   isAdmin?: boolean;
   /** Real membership count (may be 0 for admin with god-mode only). */
   membershipCount?: number;
+  /** Teams whose Import page this user may open (leaders + admin god-mode). */
+  importTeamIds?: string[];
   children: React.ReactNode;
 }) {
   const displayName =
@@ -96,7 +99,9 @@ export function AppShell({
               </div>
             )}
 
-            {teams.length > 0 && <TeamNav teams={teams} />}
+            {teams.length > 0 && (
+              <TeamNav teams={teams} importTeamIds={importTeamIds} />
+            )}
           </div>
 
           <div className="border-t border-zinc-300 bg-white px-4 py-3 group-data-[sidebar-collapsed]/shell:px-2 group-data-[sidebar-collapsed]/shell:py-2 dark:border-zinc-800 dark:bg-zinc-900">

@@ -113,7 +113,20 @@ async function recordAuditEvent(
 // LOOP GUARD: audit_log itself is a top-level collection, so it matches this
 // wildcard. Writing an audit row for a write to audit_log would recurse
 // forever — bail out before doing anything else.
+//
+// SECRET GUARD: google_tasks_connections holds per-user Google OAuth
+// refresh/access tokens and oauth_csrf_states holds one-time OAuth secrets.
+// Copying their before/after snapshots would move those secrets into a log
+// that admins can read (firestore.rules) and that keeps them forever
+// (append-only, surviving disconnect). Neither collection is a business
+// record, so skip them entirely.
 // ---------------------------------------------------------------------------
+const AUDIT_EXCLUDED_COLLECTIONS = new Set([
+  "audit_log",
+  "google_tasks_connections",
+  "oauth_csrf_states",
+]);
+
 export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(
   {
     document: "{collection}/{docId}",
@@ -123,7 +136,7 @@ export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(
   },
   async (event) => {
     const { collection } = event.params;
-    if (collection === "audit_log") return;
+    if (AUDIT_EXCLUDED_COLLECTIONS.has(collection)) return;
     await recordAuditEvent(collection, event);
   },
 );

@@ -1,6 +1,6 @@
 import { Upload } from "lucide-react";
 import {
-  requireTeamAccess,
+  requireTeamLeader,
   getTeamMembers,
   getOrgTeams,
   getImportableTeams,
@@ -13,7 +13,8 @@ export default async function ImportPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = await params;
-  const { team } = await requireTeamAccess(teamId);
+  // Import is a leader/admin surface (see importTeamFile) — members 404.
+  const { team } = await requireTeamLeader(teamId);
   const [members, orgTeams, importableTeams] = await Promise.all([
     getTeamMembers(teamId),
     // Department filter matches text in the *file*, so it offers every team

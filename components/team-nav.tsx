@@ -128,7 +128,15 @@ function notifyPreferred() {
  * plus team-scoped nav links. Active team comes from the URL when on a
  * /teams/[id]/… route, otherwise the last chosen team (localStorage).
  */
-export function TeamNav({ teams }: { teams: ShellTeam[] }) {
+export function TeamNav({
+  teams,
+  importTeamIds = [],
+}: {
+  teams: ShellTeam[];
+  /** Teams whose Import page this user may open (leaders + admin god-mode);
+   *  the Import link hides for other teams — the page itself 404s regardless. */
+  importTeamIds?: string[];
+}) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const { teamId: pathTeamId, section: pathSection } = parseTeamRoute(pathname);
@@ -370,7 +378,10 @@ export function TeamNav({ teams }: { teams: ShellTeam[] }) {
       </div>
 
       <div className="space-y-0.5">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter(
+          (item) =>
+            item.section !== "import" || importTeamIds.includes(activeTeam.id),
+        ).map((item) => (
           <NavLink
             key={item.section}
             href={`${teamPath}/${item.section}`}

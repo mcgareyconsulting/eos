@@ -5,6 +5,17 @@ Scope: source code only — Next.js app (server actions, API routes, proxy),
 Dockerfile / cloudbuild / Terraform as code. No live GCP resources were
 inspected or touched.
 
+**Remediation status (2026-09-02):**
+
+| Finding | Decision | Status |
+| --- | --- | --- |
+| H1 audit log captures OAuth tokens | fix | **Fixed** — `google_tasks_connections` + `oauth_csrf_states` excluded from the audit trigger. Deploy note: purge existing `audit_log` rows for those collections. |
+| M1 `issue_votes` client-write desync | fix | **Fixed** — client writes denied in `firestore.rules`; reads unchanged. |
+| M2 `email_verified` not checked | accepted | Won't fix — Google-only sign-in; revisit if another provider is ever enabled. |
+| M3 XLSX zip bomb | low risk (leader/admin-only uploaders after M4) | **Hardened anyway** — one-line `maxOutputLength` cap on inflate. |
+| M4 import member-accessible | fix | **Fixed** — `requireTeamLeader` on page + action; Import nav link hidden for non-leaders. |
+| L1–L4 | open | Unchanged. |
+
 Overall posture is strong: consistent `requireTeamAccess` / `requireTeamLeader`
 / `requireAdmin` guards on every server action, entity/team cross-checks via
 `requireTeamDoc`, default-deny Firestore rules, server-side one-time OAuth CSRF

@@ -202,14 +202,14 @@ service cloud.firestore {
     }
 
     match /issue_votes/{id} {
-      // 3-per-team-per-user limit + count stacking are enforced in the server
-      // action (Firestore transaction); rules just confirm ownership + membership.
-      allow read:   if admin() || isMember(resource.data.team_id);
-      allow create: if request.resource.data.user_id == request.auth.uid
-                    && isMember(request.resource.data.team_id);
-      allow update: if resource.data.user_id == request.auth.uid
-                    && request.resource.data.user_id == request.auth.uid;
-      allow delete: if resource.data.user_id == request.auth.uid;
+      // Server-action only (castVote, Admin SDK): the 3-per-team credit cap
+      // and the denormalized issues.votes counter live in one transaction
+      // there. A client writing these docs directly could desync that
+      // counter — e.g. delete its own vote doc (freeing credits) while
+      // issues.votes keeps the increment, then re-vote for unbounded
+      // inflation — so clients get no write path at all.
+      allow read:  if admin() || isMember(resource.data.team_id);
+      allow write: if false;
     }
 
     // ---------- free-form comments on issues / rocks (P2-5) ----------

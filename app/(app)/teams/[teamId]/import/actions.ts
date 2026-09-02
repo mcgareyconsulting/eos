@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
+import { requireTeamLeader, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizePersonKey } from "@/lib/csv-import";
 import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import {
@@ -128,7 +128,9 @@ export async function importTeamFile(
   formData: FormData,
 ): Promise<ImportActionResult> {
   try {
-    const { db } = await requireTeamAccess(teamId);
+    // Leader-or-admin, matching getImportableTeams: imports bulk-write team
+    // data and (via createOwners) roster rows, which members must not do.
+    const { db } = await requireTeamLeader(teamId);
     const members = await getTeamMembers(teamId);
 
     const kindRaw = String(formData.get("kind") ?? "");

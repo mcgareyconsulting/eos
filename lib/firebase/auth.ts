@@ -44,6 +44,12 @@ export const getUserTeamsFirebase = cache(async () => {
     (d) => d.data().team_id as string,
   );
 
+  // Teams this user leads — drives leader-only surfaces in the shell (e.g.
+  // the Import nav link). Admins bypass this via isAdmin.
+  const leaderTeamIds = membershipsSnap.docs
+    .filter((d) => d.data().role === "leader")
+    .map((d) => d.data().team_id as string);
+
   let teams: { id: string; name: string }[];
 
   if (isAdmin) {
@@ -82,6 +88,7 @@ export const getUserTeamsFirebase = cache(async () => {
     },
     teams,
     membershipTeamIds,
+    leaderTeamIds,
     isAdmin,
     db,
   };

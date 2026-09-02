@@ -10,6 +10,10 @@
 
 import { inflateRawSync } from "node:zlib";
 
+// Generous ceiling for one workbook part (sheet XML / shared strings): far
+// above any real ninety.io export, far below anything that hurts the runtime.
+const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 // ZIP
 // ---------------------------------------------------------------------------
@@ -60,7 +64,23 @@ function readZipFile(buf: Buffer, entry: ZipEntry): string {
   const start = entry.offset + 30 + nameLen + extraLen;
 
   if (entry.method === 0) return buf.toString("utf8", start, start + entry.size);
-  if (entry.method === 8) return inflateRawSync(buf.subarray(start)).toString("utf8");
+  if (entry.method === 8) {
+    // Cap decompressed size: DEFLATE can expand ~1000:1, so an 8 MB upload
+    // could otherwise inflate to gigabytes and OOM the instance (zip bomb,
+    // or just an accidentally huge export).
+    try {
+      return inflateRawSync(buf.subarray(start), {
+        maxOutputLength: MAX_INFLATED_BYTES,
+      }).toString("utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE") {
+        throw new Error(
+          `.xlsx entry ${entry.name} decompresses past ${MAX_INFLATED_BYTES / 1024 / 1024} MB — re-export a smaller file (or CSV).`,
+        );
+      }
+      throw e;
+    }
+  }
   throw new Error(`Unsupported ZIP compression method ${entry.method} in ${entry.name}`);
 }
 

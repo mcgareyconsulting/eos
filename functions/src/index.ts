@@ -25,9 +25,17 @@ export { archiveStaleTodos } from "./archive-stale-todos";
 
 initializeApp();
 
-// Match the Cloud Run region used for the rest of this app's infra
-// (docs/DEPLOY.md), so audit writes stay regionally colocated.
-setGlobalOptions({ region: "us-central1" });
+// us-east1, because that is where the database is. `hpb-eos-prod-db` is a
+// *regional* Firestore instance pinned to us-east1 (permanent — see
+// cutover-plan "Cloud Run goes in us-east1"), and a 2nd-gen Firestore trigger
+// has to be created in its database's region. This read "us-central1" with a
+// comment claiming it matched Cloud Run; Cloud Run is us-east1 too, so the
+// value contradicted its own reason and both audit triggers failed to deploy
+// with a bare "Failed to create function" (2026-09-02).
+//
+// The trial project never caught this: its database is `nam5` multi-region,
+// which already contains us-central1, so the same code deployed there fine.
+setGlobalOptions({ region: "us-east1" });
 
 /** Named DB — never `(default)` on hpb-eos-prod. */
 function auditDb() {

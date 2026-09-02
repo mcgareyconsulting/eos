@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-08-26
+updated: 2026-09-02
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -10,7 +10,7 @@ queue:                        # agent-maintained, set by agreement in session
   # Single cross-workstream queue. `next` is ordered and is the only ordering
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: QW1     # prod == main; the backlog is verification, not shipping
-  next: [F4, N18, F3, N3, N2, N4]
+  next: [F4, N18, F3, N3, N2, N4, F6, F7, F8]  # F6–F8 added 2026-08-31, appended not ranked
   awaiting: [P3-1, N10, F2, B1, P3-5]
 ---
 
@@ -25,7 +25,9 @@ not authorities. Cutover mechanics live in `docs/CUTOVER_CHECKLIST.md` /
 `docs/CUTOVER_PLAN.md`; team-management ops in `docs/TEAM_MGMT_OPS.md`.
 The merged client-feedback priority list is agent-local on the consultant
 machine (`~/.local/share/mcgarey-agents/eos/CLIENT_FEEDBACK_PRIORITY.md`) and
-is a working aid, never an authority.
+is a working aid, never an authority. Raw, un-triaged client feedback lands
+in **Intake** (below, before `Blocked`) and is promoted into a workstream only
+after it has been investigated.
 
 **Deployment truth as of 2026-08-26 — verified against `gcloud`, not against
 this file.** Cloud Run (service `eos`, `hpb-eos-prod`, us-east1) runs revision
@@ -446,6 +448,7 @@ request was resolved (Open question 4).
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-10 — CLIENT_GCP_SETUP expanded with day-2 ops sections; doc now promises monitoring/budget alerts/exports/staging that terraform/ does not implement
 - 2026-07-27 · note · src cutover-plan#status — terraform apply against hpb-eos-prod partial: APIs, runtime SA, AR repo, Cloud Run created; all 8 IAM bindings denied (roles/editor cannot set IAM policy); ask sent as HPB_IAM_REQUEST.md
+- 2026-08-31 · note · src session-2026-08-31 — named by daniel as next-up alongside the docs + security-audit batch (F6–F8). No new infra item filed: "gcp infra" is this item. Still gated on the tier pick and Open question 4.
 
 ### F3 · Trial decommission + credential retirement
 *W0 · not-started · due — · deps F1 · owner daniel · src roadmap-prior#pass-10 · upd 2026-08-10*
@@ -492,6 +495,81 @@ unfixed. M5 is **N23**. Backfill script: `scripts/backfill-archived-at.ts`
 - 2026-08-04 · note · src audit-2026-08-04#fixes-applied — operator TODO recorded: archived_at backfill required before the next Monday sweep matters; rules need a deploy for M4 to take effect
 - 2026-08-10 · note · src F1 — prod ship closed; rules deploy assumed with F1 (spot-check if Monday sweep or tenancy misbehaves)
 - 2026-08-19 · build · src session-2026-08-19 — `scripts/backfill-archived-at.ts` (todos/issues/headlines; dry-run default). Monday sweep 08-17 has already run; still worth applying so the next Monday sees legacy imports. N32 also froze client updates on concluded meeting docs (partial close of (c)).
+
+### F6 · Security audit
+*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-08-31*
+
+Effort M. A deliberate security pass over the app before it goes in front of
+a bank's review, rather than the incidental hardening done so far. Distinct
+from its neighbours and should be sequenced after them: **F3** retires
+specific credentials that must not exist, **F2** turns on the paid Tier-1
+levers once HPB picks a tier, and the 2026-08-04 audit
+(`audit-2026-08-04`) covered PRs #11–#18 only. This is the whole-surface
+sweep neither of those is.
+
+Scope to settle when it starts — at minimum `firestore.rules` against the
+current entity set (the archive/tenancy rules have been edited piecemeal
+across F4, N20 and N45), the sign-in perimeter (`SIGN_IN_ALLOWLIST` and
+`inDomain()` must stay in lockstep — see README), server-action authorization
+(`requireTeamAccess` / `requireTeamDoc` coverage on every mutating action),
+and the audit's unfixed M3/M6–M8/M14 + L-tail. The repo ships a
+`/security-review` skill that reviews a branch diff; that is a starting
+instrument, not the audit.
+
+**Trail**
+- 2026-08-31 · request · src session-2026-08-31 — daniel: security audit, next up with the docs batch
+
+### F7 · Code documentation cleanup
+*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-08-31*
+
+Effort S–M. A pass over in-code comments and contracts. Two concrete inputs
+already observed, both verified this session rather than assumed:
+
+- **Stale and stacked comments.** Iterated UI work leaves comment piles that
+  argue with themselves — `components/scorecard/scorecard-grid.tsx` had three
+  fixes each appending a paragraph to the same block before it was
+  consolidated 2026-08-31, and comments outlived the code they described
+  (a ref named for a scroller that had stopped being one). The scorecard is
+  unlikely to be the only place.
+- **Dead code left behind by feature moves.**
+  `app/(app)/teams/[teamId]/scorecard/group-cell.tsx` and the
+  `setMetricGroup` action are unreferenced since the group editor left the
+  metric row (2026-08-31). Either re-home the control in `MetricExpand` or
+  delete both — but not leave them.
+
+Also in scope: `eslint app components lib` reports **16 pre-existing problems
+(12 errors, 4 warnings)** as of 2026-08-31, none in recently-touched files —
+including an unused `ImportKind` in `lib/team-import.ts` and a
+`react-hooks/set-state-in-effect` error. They are old enough to be invisible,
+which is the problem.
+
+**Trail**
+- 2026-08-31 · request · src session-2026-08-31 — daniel: code documentation cleanup
+- 2026-08-31 · note · src session-2026-08-31 — inputs captured while working the scorecard group/filter batch; lint counts measured, not estimated
+
+### F8 · README + operator docs refresh
+*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-08-31*
+
+Effort S–M. The README plus the `docs/` set, which has grown to fourteen
+files with overlapping authority. One defect is already known and is a live
+trap for every session:
+
+> **`CLAUDE.md` instructs every session to open `docs/ROADMAP.md` "▶ RESUME
+> HERE" at the start of work. That file's own header declares it superseded
+> by `/ROADMAP.md` and says its RESUME HERE section is historical and not
+> maintained.** The project's entry-point instruction points at a document
+> that tells you not to read it. Fix `CLAUDE.md` to name the root roadmap.
+
+Beyond that: confirm the README still describes the real setup (it documents
+the sign-in perimeter and the two-database split, both of which have moved),
+and decide which of `CUTOVER_PLAN` / `CUTOVER_CHECKLIST` / `CLIENT_GCP_SETUP`
+/ `DEPLOY` / `OPERATIONS` / `LOCAL_DEV` / `TEAM_MGMT_OPS` are still live
+runbooks versus finished history — the Sources table at the foot of this file
+already distinguishes authorities from sources and is the model.
+
+**Trail**
+- 2026-08-31 · request · src session-2026-08-31 — daniel: readme + "bunch of docs"
+- 2026-08-31 · note · src session-2026-08-31 — CLAUDE.md → docs/ROADMAP.md pointer contradiction found by reading both files this session
 
 ---
 
@@ -2203,6 +2281,153 @@ tokens + webhook secret in Secret Manager.
 
 ---
 
+## Intake — 2026-09-02 client feedback, awaiting investigation
+
+**Not workstream items yet, and deliberately not in `queue`.** Six reports
+from the 2026-09-02 tracker rows, written up but not triaged: each one still
+needs the defect reproduced, the scope settled, and an effort confirmed
+before it is worth ordering against anything else. **A separate agent picks
+these up.** Promote an item into its workstream (all six are W3 · Product)
+once it has been investigated — moving it is the signal that it is real and
+scoped, and it should carry its trail with it.
+
+Two have already been checked against the code and came back **different from
+what the report says** — read those notes before starting, they invert the
+obvious fix:
+
+- **N48** — the delete works; it is hidden, not missing.
+- **N51** — a refresh is already wired; adding another will not fix it.
+
+### N46 · Create a to-do from an issue, inside the meeting
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort S–M. Steph: "Add the ability to create a 'To Do' from the Issues
+section of the meeting." Solving an issue usually ends in someone owing an
+action, and today that means leaving the segment to file it — so it gets
+written on paper or lost.
+
+The pattern already exists in the opposite direction: `QuickAddIssue`
+(`components/quick-add-issue.tsx`) is passed into the scorecard segment as
+`toolbarExtra` and files an issue with a prefill and the `meetingId`. A
+to-do equivalent on the Issues segment is the mirror of it. Decide whether
+the new to-do carries a link back to the originating issue — cheap now,
+and it is the difference between a list of tasks and a record of what the
+meeting decided.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
+
+### N47 · Issues re-order mid-vote, so you click the wrong one
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort M. Steph: "The dynamic voting / movement of issues is tricky during
+the process, as the issue could move while you are selecting, causing you to
+pick the wrong one. Perhaps it doesn't re-order until all votes have been
+cast?" This is a mis-vote, not an annoyance — the row moves under the cursor
+between decision and click, and the vote lands on someone else's issue.
+
+Her own suggested fix (hold the order until voting closes) needs a definition
+of "all votes cast" that the room can see. **N41** already built exactly that
+denominator: `teamVoteTally()` computes votes available from present members,
+re-basing when someone is marked absent. So the freeze has a natural release
+condition and a natural indicator, both already shipped. Alternative if that
+proves brittle: freeze the order while a vote is in flight and release on the
+voter's own next idle moment — no room-wide gate.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
+
+### N48 · A measurable can be added but not removed — the control is hidden
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort S. Steph: "Can add but cannot remove a measurable." **The capability
+exists and works** — `deleteMetric` (`scorecard/actions.ts:276`) behind a
+typed confirm, with `showDelete` on for the Scorecard tab
+(`scorecard/page.tsx:124`). It is purely undiscoverable, and verified
+2026-09-02 to be hidden three ways at once:
+
+1. It lives in the **last table column**, after all 13 period columns — off
+   the right edge of the viewport until you scroll the grid fully across.
+2. `opacity-0 group-hover:opacity-100` — invisible until that row is hovered.
+3. `text-zinc-300` even once revealed.
+
+So it is off-screen, then invisible, then faint. Fix is a discoverability
+decision, not a build: move it into the row's expanded panel
+(`MetricExpand`), or into a per-row overflow menu in the frozen columns where
+it cannot scroll away. **Note the same question is open for the group editor**
+— `group-cell.tsx` was orphaned by the 2026-08-31 grid rework (see F7) and
+`MetricExpand` is the candidate home for both.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Scorecard
+- 2026-09-02 · note · src session-2026-09-02 — verified present and working; reclassified from missing feature to hidden affordance
+
+### N49 · Say what an Admin can do that others cannot
+*W3 · not-started · due — · deps P2-7 · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort S. Steph: "Would be helpful to know what privs the Admin has that
+others do not." A permissions model nobody can see is one nobody can trust —
+and she is the client's admin, so this blocks her from delegating.
+
+Depends on **P2-7** (members / cross-team privacy / admin role model) because
+the answer has to be true before it is displayed, and P2-7 is where the role
+model is actually settled. Two layers exist and differ: the in-app
+`role: "admin"` Identity Platform custom claim, and consultant/operator
+access at the GCP IAM layer, which bypasses `firestore.rules` entirely. Only
+the first belongs on screen; conflating them would tell the client's admin
+she has powers she does not.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Admin
+
+### N50 · Weekly-focus flag on a to-do, replacing the `**` convention
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort S–M. Jessica: "We currently mark our 'weekly focus' to-do by adding
+two asterisk to the name of the task. Would be nice to have a checkbox for it
+instead." The team invented a text convention to carry state the schema does
+not hold — the clearest possible signal for a real field, and the same shape
+of finding as N40 (groups typed into a label before they were a thing).
+
+Worth settling at design time: is weekly-focus **one per person per week** or
+a free flag? "The weekly focus" implies one, and a flag that can be set on
+nine to-dos carries no information. Also decide what clears it — a to-do
+completed, or the week rolling over. If any existing titles carry `**`, a
+one-time migration should lift them into the field and strip the markers,
+the way `scripts/backfill-scorecard-groups.ts` did for groups.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
+
+### N51 · A new to-do does not appear until refresh
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+
+Effort S–M. Jessica: "When you add a to-do, it does not show up until you
+refresh; would be nice to see it right away so I don't forget and add it
+twice." Duplicate to-dos are the real cost, and they are hard to spot later.
+
+**Do not "fix" this by adding a refresh — one is already there.** Checked
+2026-09-02: `addTodo` calls `revalidatePath` on both the team path and
+`/home` (`todos/actions.ts:93-94`), and `add-todo-modal.tsx:86-88` awaits the
+action, closes, then calls `router.refresh()`. So the obvious explanation is
+wrong and this needs a reproduction before a fix: which surface she adds
+from (To-Dos tab, Home board, or the L10 segment), and whether the row is
+actually absent or merely landed in a column she was not looking at.
+
+The durable answer is probably not refresh plumbing at all. **To-Dos is the
+odd one out:** `useCollection` realtime is wired into Issues
+(`issues-list.tsx`), every meeting segment, and comments — but nothing under
+`todos/`, which is a server component (`todos/page.tsx`) leaning on
+revalidation. Putting To-Dos on the same listener as Issues would make this
+class of report impossible rather than fixing one instance of it, and it is
+what "as live as possible everywhere" in Workstream 0 already asks for.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
+- 2026-09-02 · note · src session-2026-09-02 — revalidatePath + router.refresh both already present; To-Dos is the only entity tab with no realtime listener
+
+---
+
 ## Blocked
 
 - **B1 · Nightly BigQuery batch worker** — blocked-on client
@@ -2326,6 +2551,7 @@ distinct from Trail entries, which carry a layer + src.*
 | tracker-2026-08-03 | Daniel_Tool_Feedback_Tracker.xlsx (client-held; not a repo artifact — verbatim triage retained in docs/ROADMAP.md Pass 14 log; anchors are its row numbers) | Structured client feedback, 22 items, Jenna/Steph/Jessica; re-read 2026-08-10 |
 | l10-2026-08-19-it | (Gemini notes + transcript, client-held — not a repo artifact) | IT Systems & Security L10, 2026-08-19; anchors are its transcript timestamps. N26 / N39 / N40 / N41 / N42 / N29 |
 | l10-2026-08-19-esd | (Gemini notes + transcript, client-held — not a repo artifact) | Enterprise Systems & Data L10, 2026-08-19; anchors are its transcript timestamps. N26 / N34 / N42 |
+| feedback-2026-09-02 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes + Jessica Teichman feedback dated 2026-09-02; anchors are the reporter + area. N46–N51 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
 

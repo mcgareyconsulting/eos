@@ -47,6 +47,7 @@ type TodoDoc = {
   completed_at: { toDate: () => Date } | boolean | null;
   archived_at?: { toDate: () => Date } | boolean | null;
   visibility: "team" | "private";
+  weekly_focus?: boolean;
   source_rock_id: string | null;
 };
 
@@ -83,6 +84,7 @@ function toListItem(t: TodoDoc): TodoListItem {
     due_date: t.due_date,
     completed: !!t.completed_at,
     visibility: t.visibility === "private" ? "private" : "team",
+    weekly_focus: t.weekly_focus === true,
   };
 }
 

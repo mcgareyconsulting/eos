@@ -11,6 +11,7 @@ export function VoteButton({
   count,
   myCount,
   myRemaining,
+  disabled = false,
 }: {
   teamId: string;
   issueId: string;
@@ -20,6 +21,11 @@ export function VoteButton({
   myCount: number;
   /** How many of your credits are still unspent. */
   myRemaining: number;
+  /**
+   * Voting window is closed (N47). The server rejects the write too — this is
+   * the explanation, not the guard.
+   */
+  disabled?: boolean;
 }) {
   const [, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +35,7 @@ export function VoteButton({
   );
 
   function cast(delta: 1 | -1) {
+    if (disabled) return;
     if (delta === 1 && optimistic.myRemaining <= 0) return;
     if (delta === -1 && optimistic.myCount <= 0) return;
     start(async () => {
@@ -46,14 +53,19 @@ export function VoteButton({
     });
   }
 
-  const cantAdd = optimistic.myRemaining <= 0;
-  const cantSub = optimistic.myCount <= 0;
-  const addTitle = cantAdd
+  const cantAdd = disabled || optimistic.myRemaining <= 0;
+  const cantSub = disabled || optimistic.myCount <= 0;
+  const closedTitle = "Voting is closed — start the vote to cast credits";
+  const addTitle = disabled
+    ? closedTitle
+    : cantAdd
     ? `Out of credits (${MAX_VOTES_PER_TEAM} per person). Remove a vote first.`
     : `Add one of your credits (${optimistic.myRemaining} left)`;
-  const subTitle = cantSub
-    ? "You have no credits on this issue"
-    : "Remove one of your credits from this issue";
+  const subTitle = disabled
+    ? closedTitle
+    : cantSub
+      ? "You have no credits on this issue"
+      : "Remove one of your credits from this issue";
 
   return (
     <div className="flex flex-col items-center gap-0.5">

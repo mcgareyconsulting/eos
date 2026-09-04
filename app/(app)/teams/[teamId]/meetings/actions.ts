@@ -393,6 +393,38 @@ export async function setDiscussingIssue(
     .update({ current_issue_id: issueId });
 }
 
+/**
+ * Open or close the room's voting window (N47).
+ *
+ * Lives on the meeting doc next to `current_issue_id`, for the same reason: it
+ * is room state, not viewer state. Everyone's Issues segment is already
+ * subscribed to this document, so opening the vote lands on every screen at
+ * once and there is no way for two people to disagree about whether voting is
+ * live.
+ *
+ * This replaces the earlier implicit hold, which released when
+ * `teamVoteTally` said every credit was spent. That release was only reachable
+ * if attendance was accurate — one person marked present but not in the room
+ * would hold the list frozen for the rest of the hour. An explicit window has
+ * no such dependency: the facilitator closes it, and the list sorts.
+ *
+ * Not leader-gated, matching `setDiscussingIssue`: whoever is running the
+ * Issues hour drives this, and that is not always the person the team doc
+ * calls leader.
+ */
+export async function setVotingOpen(
+  teamId: string,
+  meetingId: string,
+  open: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "meetings", meetingId, teamId);
+  await db
+    .collection("meetings")
+    .doc(meetingId)
+    .update({ voting_open: open });
+}
+
 // Group-transport action — ending the meeting is a facilitator control
 // (Finish), leader/admin-gated the same as advanceSegment/startMeeting.
 export async function endMeeting(teamId: string, meetingId: string) {

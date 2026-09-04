@@ -156,13 +156,35 @@ export async function castVote(
     const issueRef = db.collection("issues").doc(issueId);
 
     // Reads first (Firestore transaction rule). Also reads the issue itself
-    // so we can verify it belongs to this team before voting on it.
-    const [voteSnap, issueSnap] = await Promise.all([
+    // so we can verify it belongs to this team before voting on it, and the
+    // team's live meeting to check the voting window is open.
+    const [voteSnap, issueSnap, liveSnap] = await Promise.all([
       tx.get(voteRef),
       tx.get(issueRef),
+      tx.get(
+        db
+          .collection("meetings")
+          .where("team_id", "==", teamId)
+          .where("ended_at", "==", null)
+          .limit(1),
+      ),
     ]);
     if (!issueSnap.exists || issueSnap.data()?.team_id !== teamId) {
       throw new Error("Issue not found");
+    }
+
+    // The vote window is the rule, not a UI convenience (N47). Checked inside
+    // the transaction so closing the vote and casting one cannot interleave.
+    //
+    // Voting exists only inside an L10 — `VoteButton` renders on the meeting's
+    // Issues segment and nowhere else — so "no live meeting" is not a
+    // permissive case to fall through, it is a stale tab.
+    const votingOpen =
+      !liveSnap.empty && liveSnap.docs[0].data()?.voting_open === true;
+    if (!votingOpen) {
+      throw new Error(
+        "Voting isn't open. Start the vote from the Issues segment first.",
+      );
     }
     const currentCount = voteSnap.exists
       ? Number(voteSnap.data()?.count ?? 0)

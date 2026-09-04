@@ -11,6 +11,7 @@ import {
   voteCredits,
   voteCreditsSummary,
   type RankableIssue,
+  applyHeldOrder,
 } from "./issues";
 
 // These rules are shared by the Issues tab and the in-meeting Issues segment.
@@ -307,5 +308,70 @@ describe("isArchivedIssue", () => {
   // rendered Active and vanished on hydration. One rule, permissive, both ends.
   test("the legacy `archived` boolean still counts", () => {
     assert.equal(isArchivedIssue({ archived: true, archived_at: null }), true);
+  });
+});
+
+describe("applyHeldOrder (N47 vote freeze)", () => {
+  const mk = (id: string, votes: number) => ({ id, votes, status: "open" as const });
+
+  test("with no hold, behaves exactly like rankShortTerm", () => {
+    const issues = [mk("a", 1), mk("b", 5), mk("c", 3)];
+    assert.deepEqual(
+      applyHeldOrder(issues, null).map((i) => i.id),
+      rankShortTerm(issues).map((i) => i.id),
+    );
+  });
+
+  test("keeps the held order even when votes would re-rank the list", () => {
+    // The whole point: 'a' overtakes on votes but must not move under a cursor.
+    const held = ["a", "b", "c"];
+    const after = [mk("a", 99), mk("b", 1), mk("c", 2)];
+    assert.deepEqual(applyHeldOrder(after, held).map((i) => i.id), ["a", "b", "c"]);
+    // Sanity: unheld, the same input really would re-order.
+    assert.deepEqual(rankShortTerm(after).map((i) => i.id), ["a", "c", "b"]);
+  });
+
+  test("appends issues that arrive during the hold instead of inserting them", () => {
+    const held = ["a", "b"];
+    const after = [mk("a", 1), mk("b", 1), mk("new", 50)];
+    // 'new' has the most votes but must not push a/b down mid-vote.
+    assert.deepEqual(applyHeldOrder(after, held).map((i) => i.id), ["a", "b", "new"]);
+  });
+
+  test("orders multiple new arrivals among themselves", () => {
+    const after = [mk("a", 1), mk("n1", 2), mk("n2", 9)];
+    assert.deepEqual(
+      applyHeldOrder(after, ["a"]).map((i) => i.id),
+      ["a", "n2", "n1"],
+    );
+  });
+
+  test("still pins the discussing issue to the top during a hold", () => {
+    const after = [mk("a", 1), mk("b", 1), mk("c", 1)];
+    assert.deepEqual(
+      applyHeldOrder(after, ["a", "b", "c"], "c").map((i) => i.id),
+      ["c", "a", "b"],
+    );
+  });
+
+  test("is a no-op when the discussing issue is already first", () => {
+    const after = [mk("a", 1), mk("b", 1)];
+    assert.deepEqual(
+      applyHeldOrder(after, ["a", "b"], "a").map((i) => i.id),
+      ["a", "b"],
+    );
+  });
+
+  test("ignores held ids whose issue is gone, leaving no gap", () => {
+    const after = [mk("a", 1), mk("c", 1)];
+    assert.deepEqual(
+      applyHeldOrder(after, ["a", "b", "c"]).map((i) => i.id),
+      ["a", "c"],
+    );
+  });
+
+  test("handles an empty hold list as 'hold everything that arrives'", () => {
+    const after = [mk("a", 1), mk("b", 9)];
+    assert.deepEqual(applyHeldOrder(after, []).map((i) => i.id), ["b", "a"]);
   });
 });

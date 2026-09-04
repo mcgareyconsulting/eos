@@ -22,6 +22,7 @@ export function EditTodoDrawer({
     owner_id: string | null;
     due_date: string | null;
     visibility: "team" | "private";
+    weekly_focus?: boolean;
   };
   members: Member[];
 }) {
@@ -40,6 +41,7 @@ export function EditTodoDrawer({
   const [visibility, setVisibility] = useState<"team" | "private">(
     todo.visibility,
   );
+  const [weeklyFocus, setWeeklyFocus] = useState(!!todo.weekly_focus);
 
   useEffect(() => {
     if (!open) return;
@@ -48,6 +50,7 @@ export function EditTodoDrawer({
     setOwnerId(todo.owner_id ?? members[0]?.user_id ?? "");
     setDue(todo.due_date ?? "");
     setVisibility(todo.visibility);
+    setWeeklyFocus(!!todo.weekly_focus);
     setError(null);
   }, [open, todo, members]);
 
@@ -72,6 +75,7 @@ export function EditTodoDrawer({
     fd.set("owner_id", ownerId);
     fd.set("due_date", due);
     fd.set("visibility", visibility);
+    if (weeklyFocus) fd.set("weekly_focus", "on");
     start(async () => {
       try {
         setError(null);
@@ -179,6 +183,24 @@ export function EditTodoDrawer({
                     className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                   />
                 </Field>
+
+                <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                  <input
+                    type="checkbox"
+                    checked={weeklyFocus}
+                    onChange={(e) => setWeeklyFocus(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                      Weekly focus
+                    </span>
+                    <span className="block text-[11px] text-zinc-500">
+                      Shows a “Weekly” pill on the row. Replaces marking the
+                      title with <code>**</code>.
+                    </span>
+                  </span>
+                </label>
 
                 {error && (
                   <p className="text-xs text-red-600 dark:text-red-400">

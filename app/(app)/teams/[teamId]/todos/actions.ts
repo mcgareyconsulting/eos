@@ -58,6 +58,9 @@ export async function addTodo(teamId: string, formData: FormData) {
   // To-Dos form); null for to-dos created outside a meeting.
   const source_meeting_id =
     String(formData.get("source_meeting_id") ?? "").trim() || null;
+  // N50: weekly focus. A free flag — see lib/weekly-focus.ts for why it is not
+  // one-per-person, and for the L10-to-L10 week it belongs to.
+  const weekly_focus = formData.get("weekly_focus") === "on";
 
   if (!title) throw new Error("Title required");
 
@@ -70,6 +73,7 @@ export async function addTodo(teamId: string, formData: FormData) {
     completed_at: null,
     archived_at: null,
     visibility,
+    weekly_focus,
     source_issue_id: null,
     source_meeting_id,
     source_rock_id: null,
@@ -202,6 +206,7 @@ export async function updateTodoMeta(
     due_date,
     description,
     visibility,
+    weekly_focus: formData.get("weekly_focus") === "on",
   });
 
   const taskId = await upsertTaskForTodo(
@@ -217,6 +222,29 @@ export async function updateTodoMeta(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
   revalidatePath(pathFor(teamId));
+  revalidatePath("/home");
+}
+
+/**
+ * Toggle a to-do's weekly-focus flag (N50).
+ *
+ * Its own narrow action rather than a trip through `updateTodoMeta`: the pill
+ * in the row is a one-click control, and routing it through the full meta
+ * update would make an unrelated field (say a description someone is mid-edit
+ * on elsewhere) part of the write. Google Tasks is deliberately not mirrored —
+ * weekly focus is an EOS concept with no counterpart in a Task, and pushing it
+ * into the title is how the `**` convention started.
+ */
+export async function toggleWeeklyFocus(
+  teamId: string,
+  todoId: string,
+  next: boolean,
+) {
+  const { db } = await requireTeamAccess(teamId);
+  await requireTeamDoc(db, "todos", todoId, teamId);
+  await db.collection("todos").doc(todoId).update({ weekly_focus: next });
+  revalidatePath(pathFor(teamId));
+  revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath("/home");
 }
 

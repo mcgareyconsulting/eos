@@ -42,6 +42,7 @@ export function AddTodoModal({
   const [due, setDue] = useState(daysFromNow(7));
   const [visibility, setVisibility] = useState<"team" | "private">("team");
   const [description, setDescription] = useState("");
+  const [weeklyFocus, setWeeklyFocus] = useState(false);
 
   function resetForOpen() {
     setTitle("");
@@ -49,6 +50,7 @@ export function AddTodoModal({
     setDue(daysFromNow(7));
     setVisibility("team");
     setDescription("");
+    setWeeklyFocus(false);
     setError(null);
   }
 
@@ -78,6 +80,7 @@ export function AddTodoModal({
     fd.set("due_date", due);
     fd.set("visibility", meetingId ? "team" : visibility);
     fd.set("description", description);
+    if (weeklyFocus) fd.set("weekly_focus", "on");
     if (meetingId) fd.set("source_meeting_id", meetingId);
 
     start(async () => {
@@ -213,6 +216,24 @@ export function AddTodoModal({
                   rows={3}
                   className="dark:bg-zinc-950"
                 />
+              </label>
+
+              <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <input
+                  type="checkbox"
+                  checked={weeklyFocus}
+                  onChange={(e) => setWeeklyFocus(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Weekly focus
+                  </span>
+                  <span className="block text-[11px] text-zinc-500">
+                    Shows a “Weekly” pill on the row. Replaces marking the title
+                    with <code>**</code>.
+                  </span>
+                </span>
               </label>
 
               {error && (

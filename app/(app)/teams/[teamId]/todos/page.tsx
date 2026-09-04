@@ -16,6 +16,7 @@ type TodoDoc = {
   completed_at: { toMillis?: () => number } | null;
   archived_at?: { toMillis?: () => number } | null;
   visibility: "team" | "private";
+  weekly_focus?: boolean;
   source_issue_id: string | null;
   source_meeting_id: string | null;
   source_rock_id: string | null;
@@ -86,6 +87,7 @@ export default async function TodosPage({
       completed_at: toMillis(t.completed_at),
       archived_at: toMillis(t.archived_at),
       visibility,
+      weekly_focus: t.weekly_focus === true,
       source_rock_id: t.source_rock_id ?? null,
     });
   }

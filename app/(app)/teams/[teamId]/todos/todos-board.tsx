@@ -64,6 +64,7 @@ export type TodoBoardDoc = {
   completed_at: unknown;
   archived_at: unknown;
   visibility: "team" | "private";
+  weekly_focus?: boolean;
   source_rock_id: string | null;
 };
 
@@ -285,6 +286,7 @@ export function TodosBoard({
         due_date: t.due_date ?? null,
         completed: !!t.completed_at,
         visibility: t.visibility === "private" ? "private" : "team",
+        weekly_focus: t.weekly_focus === true,
         archived,
         closed_on: formatClosedOn(t.archived_at),
       });

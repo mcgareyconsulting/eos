@@ -58,6 +58,8 @@ type MeetingDoc = {
   current_segment: Segment;
   segment_started_at: Timestamp | null;
   current_issue_id?: string | null;
+  /** N47 — the room's voting window for the Issues segment. */
+  voting_open?: boolean;
   notes: string | null;
   absent_user_ids?: string[];
   speaking_order?: string[];
@@ -99,6 +101,8 @@ export default async function MeetingDetailPage({
 
   const members = await getTeamMembers(tid);
   const absentUserIds = m.absent_user_ids ?? [];
+  // N47 — the room's voting window, hydrating the Issues segment's first paint.
+  const votingOpen = m.voting_open === true;
 
   // Meetings started before the speaking order shipped have no stored order;
   // reconciling against the roster gives them the alphabetical fallback rather
@@ -432,6 +436,7 @@ export default async function MeetingDetailPage({
               meetingId={mid}
               segment={viewSegment}
               currentIssueId={m.current_issue_id ?? null}
+              votingOpen={votingOpen}
               members={members}
               absentUserIds={absentUserIds}
               speakingOrder={speakingOrder}
@@ -490,6 +495,7 @@ async function SegmentContent({
   meetingId,
   segment,
   currentIssueId,
+  votingOpen,
   members,
   absentUserIds,
   speakingOrder,
@@ -502,6 +508,7 @@ async function SegmentContent({
   meetingId: string;
   segment: AgendaToolType;
   currentIssueId: string | null;
+  votingOpen: boolean;
   members: { user_id: string; full_name: string }[];
   absentUserIds: string[];
   speakingOrder: string[];
@@ -737,6 +744,7 @@ async function SegmentContent({
         completed_at: x.completed_at ? true : null,
         archived_at: x.archived_at ? true : null,
         visibility: x.visibility ?? "team",
+        weekly_focus: x.weekly_focus === true,
         source_rock_id: x.source_rock_id ?? null,
       };
     });
@@ -797,6 +805,7 @@ async function SegmentContent({
         initialVotes={initialVotes}
         initialCurrentIssueId={currentIssueId}
         initialAbsentUserIds={absentUserIds}
+        initialVotingOpen={votingOpen}
         members={members}
       />
     );

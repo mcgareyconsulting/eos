@@ -2056,6 +2056,182 @@ may not be the parity that was asked for.
 - 2026-09-04 · request · src session-2026-09-04 — daniel, with a ninety Directory screenshot: match content/columns, keep our styling
 - 2026-09-04 · finding · src session-2026-09-04 — 4 of 6 columns are available today (avatar, first, last, teams); Role access is ambiguous under a per-team role model (P2-7) and Status does not exist (N38)
 
+### N46 · Create a to-do from an issue, inside the meeting
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+
+Effort S–M. Steph: "Add the ability to create a 'To Do' from the Issues
+section of the meeting." Solving an issue usually ends in someone owing an
+action, and today that means leaving the segment to file it — so it gets
+written on paper or lost.
+
+The pattern already exists in the opposite direction: `QuickAddIssue`
+(`components/quick-add-issue.tsx`) is passed into the scorecard segment as
+`toolbarExtra` and files an issue with a prefill and the `meetingId`. A
+to-do equivalent on the Issues segment is the mirror of it. Decide whether
+the new to-do carries a link back to the originating issue — cheap now,
+and it is the difference between a list of tasks and a record of what the
+meeting decided.
+
+**Built 2026-09-04 as a per-row, issue-linked control, then simplified the same
+day.** daniel: *"remove the create to-do from being linked to the issue. Just
+create a straight create to-do global button from the issues L10. Issues already
+have owners, it is likely that the use case is assigning some partial issue task
+via a To-Do."*
+
+That is a scoping correction, not a preference. The first cut modelled the
+to-do as a **child of one issue** — prefilled from its title, stamped with
+`source_issue_id`. The real use is the opposite shape: an issue already carries
+an owner, and what comes out of discussing it is often work for *someone else*,
+or a slice of something larger. Binding each to-do to a single issue would have
+encoded a parent/child relationship the room does not actually work in, and
+every later feature reading `source_issue_id` would have inherited that wrong
+model.
+
+So it is a plain **Add to-do** button in the Issues segment header, beside the
+existing *Drop to Issues*. It still stamps `source_meeting_id`, so the to-do is
+attributable to the L10 it came out of — which is what G1 (recap attribution)
+reads, and enough to answer "what did this meeting decide" without claiming a
+link that is not real.
+
+`source_issue_id` is back to being written as `null` by every caller. The field
+stays on the schema, unused, as it was before.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
+- 2026-09-04 · build · src session-2026-09-04 — first cut: per-row control, title seeded from the issue, `source_issue_id` stamped and verified to resolve back to the originating issue
+- 2026-09-04 · decision · src session-2026-09-04 — daniel: drop the issue link; issues already have owners and the real use is assigning a slice of the work, not creating a child of one issue. Per-row control and `sourceIssueId` plumbing reverted rather than left dormant, so nothing implies a relationship the app does not model
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in a real meeting**: a single **Add to-do** button in the segment header, zero per-row controls, `source_issue_id` back to `null` on every write
+
+### N47 · Issues re-order mid-vote, so you click the wrong one
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+
+Effort M. Steph: "The dynamic voting / movement of issues is tricky during
+the process, as the issue could move while you are selecting, causing you to
+pick the wrong one. Perhaps it doesn't re-order until all votes have been
+cast?" This is a mis-vote, not an annoyance — the row moves under the cursor
+between decision and click, and the vote lands on someone else's issue.
+
+**Decided (daniel, 2026-09-02): hold the order until all votes are cast** —
+Steph's own fix. The denominator is not a new problem: **N41** already built
+it, and `teamVoteTally()` computes votes available from present members and
+re-bases when someone is marked absent. So the freeze gets its release
+condition and its room-visible indicator from something already shipped, and
+`TeamVoteTallyBadge` is the natural place to say the list is held.
+
+Two alternatives were considered and are **not** the plan — recorded so they
+are not re-argued: freezing only while one voter's own vote is in flight (no
+room-wide gate, but everyone sees a slightly different order), and never
+auto-resorting behind an "apply new order" pill (most predictable, but another
+control in an already crowded segment header).
+
+**The one thing the decision does not settle: a stuck room.** The release
+condition is reachable only if attendance is accurate, so one person who is
+absent but not *marked* absent holds the order frozen for everyone, for the
+rest of the hour. Build needs a manual release — a leader-side "sort now",
+or the freeze lapsing when the room advances stage.
+
+**Built 2026-09-04, then reworked the same day.** The first build held the
+order implicitly and released when N41's tally said every credit was spent.
+daniel replaced that with an **explicit vote window**: *"let's create a start
+vote, stop vote button. So votes can only be placed while 'vote' is active in
+the l10. Once this is closed, then we sort the issues back out."* That is the
+better design, and it retires the one hole the first version had to work
+around — the implicit release was only reachable if attendance was accurate, so
+a person marked present but not in the room would freeze the list for the rest
+of the hour. An explicit window has no such dependency.
+
+`voting_open` lives on the **meeting doc**, next to `current_issue_id`, for the
+same reason: it is room state, not viewer state. Every Issues segment is already
+subscribed to that document, so opening the vote lands on every screen at once
+and two people cannot disagree about whether voting is live.
+
+The window now does three things at once, which is why it reads as one control
+rather than three: votes are **only accepted while it is open**, the row order
+is **held** while it is open (`applyHeldOrder`), and closing it **sorts by
+votes** — which is the entire point of having voted.
+
+**The gate is enforced server-side, inside the vote transaction.** `castVote`
+reads the team's live meeting alongside the vote and issue docs and rejects
+when the window is shut, so closing the vote and casting one cannot interleave.
+The disabled `+`/`−` controls are the explanation, not the guard. Voting exists
+only inside an L10 — `VoteButton` renders on the meeting's Issues segment and
+nowhere else — so "no live meeting" is treated as a stale tab, not as a
+permissive case to fall through.
+
+Three ordering rules survive from the first build, each pinned by a test:
+issues arriving mid-vote are **appended, not inserted** (inserting by rank would
+move every row beneath them — the exact harm); the **discussing pin still
+wins**, because marking an issue as discussing is a deliberate room-wide act
+with everyone looking at it, not a side effect of a private vote; and held ids
+whose issue has gone are skipped rather than leaving a gap.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
+- 2026-09-02 · decision · src session-2026-09-02 — daniel: hold order until all votes cast, off N41's existing denominator; needs a manual release for the unmarked-absentee case
+- 2026-09-04 · build · src session-2026-09-04 — first cut: `applyHeldOrder` + 8 tests, released off N41's tally with a manual "Sort now" escape
+- 2026-09-04 · decision · src session-2026-09-04 — daniel: replace the implicit hold with an explicit **Start vote / Stop vote** window; votes only accepted while open. Retires the unmarked-absentee hole rather than mitigating it with an escape hatch
+- 2026-09-04 · build · src session-2026-09-04 — `voting_open` on the meeting doc, `setVotingOpen` action, server-side gate inside the `castVote` transaction, `VoteButton` disabled state. `teamVoteTally` stays as the on-screen chip but no longer drives release
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in a real meeting**: closed by default with all 6 vote controls disabled reading "Voting is closed — start the vote to cast credits"; **Start vote** flipped the button to *Stop vote*, showed *Order held* and enabled the controls; voting the **bottom** issue registered (1 of 18) and the row **stayed in position 3**; **Stop vote** sorted it to first, re-disabled all 6 controls and cleared the indicator. Meeting deleted without concluding; vote and tally reverted
+- 2026-09-04 · open · src session-2026-09-04 — the **server-side** rejection in `castVote` is reasoned and typechecked but **not exercised end-to-end**: the client correctly refuses to call the action while the window is shut, and the live subscription makes a genuinely stale tab hard to simulate from the browser. The case it exists for is exactly that stale tab
+
+### N50 · Weekly-focus flag on a to-do, replacing the `**` convention
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+
+Effort S–M. Jessica: "We currently mark our 'weekly focus' to-do by adding
+two asterisk to the name of the task. Would be nice to have a checkbox for it
+instead." The team invented a text convention to carry state the schema does
+not hold — the clearest possible signal for a real field, and the same shape
+of finding as N40 (groups typed into a label before they were a thing).
+
+**Decided (daniel, 2026-09-02): a free flag, any number.** The "one per person
+per week" reading was argued and rejected: `**` is a free convention today —
+nothing stops anyone marking three tasks — so a field that silently unmarks
+their first one would be the app overruling a working habit on its way to
+replacing it. Ship the field that matches the behaviour, and let the client
+tell us it wants a limit.
+
+**Consequence to design around, not away:** a free flag has no built-in
+scarcity, so nothing stops it degrading into a second priority field. The
+weight has to come from presentation — a distinct mark on the row and a way to
+see the flagged set — rather than from the schema.
+
+**Still open:** what clears it — completion, or the week rolling over. A free
+flag makes this sharper, not softer: with no cap, nothing ever forces a stale
+flag off a to-do that has sat there for a month.
+
+If any existing titles carry `**`, a one-time migration should lift them into
+the field and strip the markers, the way `scripts/backfill-scorecard-groups.ts`
+did for groups.
+
+**Built 2026-09-04.** `weekly_focus` on the to-do, surfaced as a gold **WEEKLY**
+pill on the row (daniel: "probably just adds a 'Weekly' pill in the to-do row"),
+with a star toggle in the row's hover cluster and a checkbox in both the add
+modal and the edit drawer. `toggleWeeklyFocus` is its own narrow action so the
+pill stays one click and no unrelated field rides along on the write.
+
+**Not mirrored to Google Tasks, deliberately** — weekly focus is an EOS concept
+with no counterpart in a Task, and pushing it into the title is exactly how the
+`**` convention started.
+
+**The week is L10-to-L10** (daniel, 2026-09-04): "if the L10 is Wednesday,
+Wednesday to Wednesday is the week." Nothing reads a week boundary yet — the
+flag persists until cleared, matching what `**` does today — but that sentence
+is why `lib/weekly-focus.ts` does not reach for the Monday sweep's boundary.
+**They are different weeks and must not be conflated**, which is the trap
+waiting for whoever implements auto-clear.
+
+`scripts/backfill-weekly-focus.ts` (`pnpm backfill:focus`) lifts the marker into
+the field and strips it from the title. Dry-run by default, idempotent, and it
+walks **archived** rows too. **Not applied anywhere yet** — awaiting a decision
+on when to run it against prod.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
+- 2026-09-02 · decision · src session-2026-09-02 — daniel: free flag, any number; one-per-week rejected as the app overruling a working habit. Clearing rule still open
+- 2026-09-04 · finding · src session-2026-09-04 — **the convention is live in real data**, seen incidentally while verifying N51 on the ES team: three to-dos carry the marker — "** Finish first draft of CreditLens approval report in BQ" (Jessica), "**Compile list of items for post-conversion related to CL" (Cora), and an archived "**Incorporate Technology Committee feedback on AI / Wrap board presentation" (Steph). So the migration is not hypothetical, it has rows; note the marker appears both with and without a trailing space, and **archived** to-dos carry it too — a backfill that only walks active rows would miss some. Three reporters, not one, which also supports the free-flag reading
+- 2026-09-04 · build · src session-2026-09-04 — `lib/weekly-focus.ts` + 14 tests, `weekly_focus` plumbed through both to-do surfaces and the L10 segment, backfill registered as `pnpm backfill:focus`
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox**: the star toggle set the flag and the gold WEEKLY pill rendered on the row. Backfill dry run on the ES team found exactly the 3 marked rows — including the **archived** one, confirming a backfill limited to active rows would have missed it — across both spellings (`** Title` and `**Title`). Toggle reverted; migration deliberately left unapplied
+
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
 
@@ -2463,68 +2639,18 @@ tokens + webhook secret in Secret Manager.
 from the 2026-09-02 tracker rows (**N52** arrived later than the first six). **N48** and **N51** were investigated,
 scoped and built on 2026-09-02 and have left for Workstream 3 — both landed
 where the pre-check said they would, on the *opposite* side of the obvious
-fix in each case. **Five remain**, each still needing the defect reproduced,
-the scope settled, and an effort confirmed before it is worth ordering
-against anything else. Promote an item into its workstream (all five are
-W3 · Product) once it has been investigated — moving it is the signal that
+fix in each case. **Two remain** — N49 and N52 — each still needing its scope
+settled before it is worth ordering against anything else. Promote an item into
+its workstream (both are W3 · Product) once it has been investigated — moving it is the signal that
 it is real and scoped, and it should carry its trail with it.
 
-**N47 and N50 now carry a settled design decision** (daniel, 2026-09-02) and
-no longer need one — read it before scoping either. **N49** stays blocked on
-P2-7 and should not be started ahead of it. **N52 is the one to read first** —
+**N46, N47 and N50 were built and verified 2026-09-04** and have left for
+Workstream 3. **N49** stays blocked on P2-7 and should not be started ahead of
+it. **N52** is parked by daniel (2026-09-04) — deferring it does not change the
+security posture, since Google remains the only sign-in provider, but the audit
+**M2** tripwire stays set for whenever it is picked up. **N52 is the one to read first** —
 it reopens a question closed on an inference, and it un-accepts a security
 finding that was accepted only while Google stays the sole sign-in provider.
-
-### N46 · Create a to-do from an issue, inside the meeting
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
-
-Effort S–M. Steph: "Add the ability to create a 'To Do' from the Issues
-section of the meeting." Solving an issue usually ends in someone owing an
-action, and today that means leaving the segment to file it — so it gets
-written on paper or lost.
-
-The pattern already exists in the opposite direction: `QuickAddIssue`
-(`components/quick-add-issue.tsx`) is passed into the scorecard segment as
-`toolbarExtra` and files an issue with a prefill and the `meetingId`. A
-to-do equivalent on the Issues segment is the mirror of it. Decide whether
-the new to-do carries a link back to the originating issue — cheap now,
-and it is the difference between a list of tasks and a record of what the
-meeting decided.
-
-**Trail**
-- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
-
-### N47 · Issues re-order mid-vote, so you click the wrong one
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
-
-Effort M. Steph: "The dynamic voting / movement of issues is tricky during
-the process, as the issue could move while you are selecting, causing you to
-pick the wrong one. Perhaps it doesn't re-order until all votes have been
-cast?" This is a mis-vote, not an annoyance — the row moves under the cursor
-between decision and click, and the vote lands on someone else's issue.
-
-**Decided (daniel, 2026-09-02): hold the order until all votes are cast** —
-Steph's own fix. The denominator is not a new problem: **N41** already built
-it, and `teamVoteTally()` computes votes available from present members and
-re-bases when someone is marked absent. So the freeze gets its release
-condition and its room-visible indicator from something already shipped, and
-`TeamVoteTallyBadge` is the natural place to say the list is held.
-
-Two alternatives were considered and are **not** the plan — recorded so they
-are not re-argued: freezing only while one voter's own vote is in flight (no
-room-wide gate, but everyone sees a slightly different order), and never
-auto-resorting behind an "apply new order" pill (most predictable, but another
-control in an already crowded segment header).
-
-**The one thing the decision does not settle: a stuck room.** The release
-condition is reachable only if attendance is accurate, so one person who is
-absent but not *marked* absent holds the order frozen for everyone, for the
-rest of the hour. Build needs a manual release — a leader-side "sort now",
-or the freeze lapsing when the room advances stage.
-
-**Trail**
-- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
-- 2026-09-02 · decision · src session-2026-09-02 — daniel: hold order until all votes cast, off N41's existing denominator; needs a manual release for the unmarked-absentee case
 
 ### N52 · SSO vs. Google login — investigate the identity provider
 *W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
@@ -2607,40 +2733,6 @@ she has powers she does not.
 
 **Trail**
 - 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Admin
-
-### N50 · Weekly-focus flag on a to-do, replacing the `**` convention
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
-
-Effort S–M. Jessica: "We currently mark our 'weekly focus' to-do by adding
-two asterisk to the name of the task. Would be nice to have a checkbox for it
-instead." The team invented a text convention to carry state the schema does
-not hold — the clearest possible signal for a real field, and the same shape
-of finding as N40 (groups typed into a label before they were a thing).
-
-**Decided (daniel, 2026-09-02): a free flag, any number.** The "one per person
-per week" reading was argued and rejected: `**` is a free convention today —
-nothing stops anyone marking three tasks — so a field that silently unmarks
-their first one would be the app overruling a working habit on its way to
-replacing it. Ship the field that matches the behaviour, and let the client
-tell us it wants a limit.
-
-**Consequence to design around, not away:** a free flag has no built-in
-scarcity, so nothing stops it degrading into a second priority field. The
-weight has to come from presentation — a distinct mark on the row and a way to
-see the flagged set — rather than from the schema.
-
-**Still open:** what clears it — completion, or the week rolling over. A free
-flag makes this sharper, not softer: with no cap, nothing ever forces a stale
-flag off a to-do that has sat there for a month.
-
-If any existing titles carry `**`, a one-time migration should lift them into
-the field and strip the markers, the way `scripts/backfill-scorecard-groups.ts`
-did for groups.
-
-**Trail**
-- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
-- 2026-09-02 · decision · src session-2026-09-02 — daniel: free flag, any number; one-per-week rejected as the app overruling a working habit. Clearing rule still open
-- 2026-09-04 · finding · src session-2026-09-04 — **the convention is live in real data**, seen incidentally while verifying N51 on the ES team: three to-dos carry the marker — "** Finish first draft of CreditLens approval report in BQ" (Jessica), "**Compile list of items for post-conversion related to CL" (Cora), and an archived "**Incorporate Technology Committee feedback on AI / Wrap board presentation" (Steph). So the migration is not hypothetical, it has rows; note the marker appears both with and without a trailing space, and **archived** to-dos carry it too — a backfill that only walks active rows would miss some. Three reporters, not one, which also supports the free-flag reading
 
 ---
 

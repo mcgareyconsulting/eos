@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Trash2, Megaphone, Pencil, User, AlertCircle } from "lucide-react";
+import {
+  Trash2,
+  Megaphone,
+  Pencil,
+  User,
+  AlertCircle,
+  Lock,
+  Play,
+  Square,
+} from "lucide-react";
 import {
   collection,
   doc,
@@ -17,6 +26,7 @@ import {
   PRIORITY_LABEL,
   STATUS_BADGE,
   STATUS_LABEL,
+  applyHeldOrder,
   rankLongTerm,
   rankShortTerm,
   splitIssuesByTerm,
@@ -37,8 +47,9 @@ import { IssueFormModal } from "../../issues/issue-form-modal";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
-import { setDiscussingIssue } from "../actions";
+import { setDiscussingIssue, setVotingOpen } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { AddTodoModal } from "../../todos/add-todo-modal";
 import { ownerLabel } from "@/lib/user-name";
 
 type IssueDoc = {
@@ -74,6 +85,7 @@ export function SegmentIssues({
   initialVotes,
   initialCurrentIssueId,
   initialAbsentUserIds,
+  initialVotingOpen,
   members,
 }: {
   teamId: string;
@@ -83,6 +95,7 @@ export function SegmentIssues({
   initialVotes: VoteDoc[];
   initialCurrentIssueId: string | null;
   initialAbsentUserIds: string[];
+  initialVotingOpen: boolean;
   members: Member[];
 }) {
   const db = getClientDb();
@@ -92,6 +105,11 @@ export function SegmentIssues({
   // are gone".
   const [showArchived, setShowArchived] = useState(false);
   const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
+  // N47 — the vote hold, driven by the room's voting window (below).
+  const [hold, setHold] = useState<{ on: boolean; ids: string[] | null }>({
+    on: false,
+    ids: null,
+  });
 
   const issuesQuery = useMemo(
     () => fsQuery(collection(db, "issues"), where("team_id", "==", teamId)),
@@ -117,9 +135,11 @@ export function SegmentIssues({
   const meetingLive = useDoc<{
     current_issue_id?: string | null;
     absent_user_ids?: string[] | null;
+    voting_open?: boolean | null;
   }>(meetingRef, {
     current_issue_id: initialCurrentIssueId,
     absent_user_ids: initialAbsentUserIds,
+    voting_open: initialVotingOpen,
   });
   const discussingId = meetingLive.current_issue_id ?? null;
   // Same subscription the discuss pointer rides, so marking someone absent
@@ -142,7 +162,24 @@ export function SegmentIssues({
 
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
   const { short, long } = splitIssuesByTerm(issues);
-  const rankedShort = rankShortTerm(short, discussingId);
+
+  // N47: while the vote is open the row order is held, so a teammate's vote
+  // cannot re-sort the list between someone's decision and their click — the
+  // mis-vote Steph reported. Closing the vote releases it and the list sorts
+  // by votes, which is the whole point of having voted.
+  const votingOpen = meetingLive.voting_open === true;
+  const shouldHold = votingOpen && !showArchived && tab === "short";
+  // Adjusting state during render (not in an effect) is the documented React
+  // pattern for "derive from a change" — and it captures the order at the
+  // instant the hold begins, which an effect would do one paint too late.
+  if (shouldHold !== hold.on) {
+    setHold({
+      on: shouldHold,
+      ids: shouldHold ? rankShortTerm(short, discussingId).map((i) => i.id) : null,
+    });
+  }
+
+  const rankedShort = applyHeldOrder(short, hold.on ? hold.ids : null, discussingId);
   const rankedLong = rankLongTerm(long);
   const activeList = tab === "short" ? rankedShort : rankedLong;
   // Archived is one flat list — short/long is a working distinction for live
@@ -188,6 +225,51 @@ export function SegmentIssues({
                 issues={issues}
                 presentVoterCount={presentVoterCount}
               />
+              <form
+                action={setVotingOpen.bind(
+                  null,
+                  teamId,
+                  meetingId,
+                  !votingOpen,
+                )}
+              >
+                <button
+                  type="submit"
+                  aria-pressed={votingOpen}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition " +
+                    (votingOpen
+                      ? "bg-hpb-blue text-white hover:brightness-110"
+                      : "border border-hpb-blue/40 text-hpb-blue hover:bg-hpb-blue/5 dark:text-hpb-gold dark:border-hpb-gold/40 dark:hover:bg-hpb-gold/5")
+                  }
+                  title={
+                    votingOpen
+                      ? "Close voting and sort the issues by votes"
+                      : "Open voting — the list is held still while the room votes"
+                  }
+                >
+                  {votingOpen ? (
+                    <>
+                      <Square className="h-3 w-3" aria-hidden />
+                      Stop vote
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-3 w-3" aria-hidden />
+                      Start vote
+                    </>
+                  )}
+                </button>
+              </form>
+              {votingOpen && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-zinc-500"
+                  title="Rows stay put while the room votes, so an issue can't move between your decision and your click. Stopping the vote sorts them by votes."
+                >
+                  <Lock className="h-3 w-3" aria-hidden />
+                  Order held
+                </span>
+              )}
             </>
           )}
           {!showArchived && tab === "long" && (
@@ -200,6 +282,22 @@ export function SegmentIssues({
             onChange={setShowArchived}
             activeCount={issues.length}
             archivedCount={archivedIssues.length}
+          />
+          {/*
+            N46 (Steph): "Add the ability to create a 'To Do' from the Issues
+            section of the meeting." A plain segment-level control, not a
+            per-issue one (daniel, 2026-09-04): issues already carry an owner,
+            and the real use is assigning someone a piece of the work while the
+            issue itself stays open — which is a to-do about the discussion,
+            not a child record of one issue.
+          */}
+          <AddTodoModal
+            teamId={teamId}
+            members={members}
+            defaultOwnerId={userId}
+            meetingId={meetingId}
+            buttonLabel="Add to-do"
+            compact
           />
           <QuickAddIssue teamId={teamId} meetingId={meetingId} />
         </div>
@@ -255,6 +353,7 @@ export function SegmentIssues({
                   count={i.votes ?? 0}
                   myCount={myVoteByIssue.get(i.id) ?? 0}
                   myRemaining={myVotesRemaining}
+                  disabled={!votingOpen}
                 />
               )}
               <div className="min-w-0 flex-1">

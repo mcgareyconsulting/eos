@@ -139,6 +139,55 @@ export function rankShortTerm<T extends RankableIssue>(
   });
 }
 
+/**
+ * Apply a held row order (N47).
+ *
+ * Steph: "The dynamic voting / movement of issues is tricky during the process,
+ * as the issue could move while you are selecting, causing you to pick the
+ * wrong one." That is a **mis-vote**, not an annoyance — `rankShortTerm` sorts
+ * by vote total, the segment is subscribed live, so a teammate's vote re-sorts
+ * the list between your decision and your click and the vote lands on someone
+ * else's issue.
+ *
+ * `heldIds` is the order captured when the hold began; null means no hold and
+ * this is just `rankShortTerm`. Two rules make the hold survive a live list:
+ *
+ * 1. **Issues that appear during the hold are appended, not inserted.** One
+ *    dropped in from another segment mid-vote must still be reachable, but
+ *    inserting it by rank would move every row below it — the exact thing the
+ *    hold exists to prevent.
+ * 2. **The discussing pin still wins.** Someone marking an issue as discussing
+ *    is a deliberate, room-wide act with the whole room looking at it, not a
+ *    side effect of a private vote. Freezing that would make the pin silently
+ *    fail during the one hour it is for.
+ *
+ * Issues that vanish during the hold simply drop out; ids in `heldIds` with no
+ * matching issue are ignored rather than leaving a gap.
+ */
+export function applyHeldOrder<T extends RankableIssue>(
+  issues: T[],
+  heldIds: string[] | null,
+  discussingId?: string | null,
+): T[] {
+  if (!heldIds) return rankShortTerm(issues, discussingId);
+
+  const rank = new Map(heldIds.map((id, i) => [id, i]));
+  const held: T[] = [];
+  const fresh: T[] = [];
+  for (const issue of issues) {
+    if (rank.has(issue.id)) held.push(issue);
+    else fresh.push(issue);
+  }
+  held.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+
+  // New arrivals keep a sensible order among themselves, below the held block.
+  const ordered = [...held, ...rankShortTerm(fresh, null)];
+  if (!discussingId) return ordered;
+  const idx = ordered.findIndex((i) => i.id === discussingId);
+  if (idx <= 0) return ordered;
+  return [ordered[idx], ...ordered.slice(0, idx), ...ordered.slice(idx + 1)];
+}
+
 // Long-term issues aren't votable, so they fall back to the priority gate,
 // then status. Callers append their own stable tiebreak (e.g. created_at).
 export function rankLongTerm<T extends RankableIssue>(issues: T[]): T[] {

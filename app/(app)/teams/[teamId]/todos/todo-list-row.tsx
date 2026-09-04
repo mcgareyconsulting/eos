@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, Lock, Trash2 } from "lucide-react";
+import { Archive, Lock, Star, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatDateShort } from "@/lib/dates";
@@ -10,7 +10,7 @@ import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoDrawer } from "./edit-todo-drawer";
-import { deleteTodo, setTodoArchived } from "./actions";
+import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
 
 export type TodoListItem = {
   id: string;
@@ -20,6 +20,8 @@ export type TodoListItem = {
   due_date: string | null;
   completed: boolean;
   visibility: "team" | "private";
+  /** N50 — replaces the `**` title convention. */
+  weekly_focus?: boolean;
   archived?: boolean;
   /** Local mm/dd/yyyy when archived (from archived_at). */
   closed_on?: string | null;
@@ -50,6 +52,12 @@ export function TodoListRow({
     teamId,
     todo.id,
     !todo.archived,
+  );
+  const toggleFocus = toggleWeeklyFocus.bind(
+    null,
+    teamId,
+    todo.id,
+    !todo.weekly_focus,
   );
   // Restore label/body breaks lost in ninety xlsx exports (e.g. "Analytical"
   // glued onto the paragraph) so whitespace-pre-wrap can render them.
@@ -101,6 +109,19 @@ export function TodoListRow({
           >
             {todo.title}
           </span>
+          {todo.weekly_focus && (
+            <span
+              // `align-middle` + `leading-none`, not the `translate-y-px` the
+              // Lock icon beside it uses: an icon has no baseline so a nudge
+              // works there, but this pill's 10px uppercase text sets its own
+              // baseline and lands low against the 14px title. Centring on the
+              // parent's midline is stable at any title size.
+              className="ml-1.5 inline-flex items-center rounded-full bg-hpb-gold/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase leading-none tracking-wide text-hpb-brown ring-1 ring-inset ring-hpb-gold/40 dark:bg-hpb-gold/10 dark:text-hpb-gold"
+              title="Weekly focus — the one to move this week"
+            >
+              Weekly
+            </span>
+          )}
           {todo.visibility === "private" && (
             <span
               className="ml-1.5 inline-flex translate-y-px items-center text-zinc-400"
@@ -136,6 +157,35 @@ export function TodoListRow({
           className="flex shrink-0 items-center gap-0.5"
           onClick={(e) => e.stopPropagation()}
         >
+          {!archived && (
+            <form action={toggleFocus}>
+              <button
+                type="submit"
+                aria-pressed={!!todo.weekly_focus}
+                className={cn(
+                  "rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                  todo.weekly_focus
+                    ? "text-hpb-gold"
+                    : "text-zinc-300 opacity-0 hover:text-hpb-gold group-hover:opacity-100 dark:text-zinc-600",
+                )}
+                aria-label={
+                  todo.weekly_focus
+                    ? "Remove weekly focus"
+                    : "Mark as weekly focus"
+                }
+                title={
+                  todo.weekly_focus
+                    ? "Remove weekly focus"
+                    : "Mark as this week's focus"
+                }
+              >
+                <Star
+                  className="h-4 w-4"
+                  fill={todo.weekly_focus ? "currentColor" : "none"}
+                />
+              </button>
+            </form>
+          )}
           {!archived && (
             <EditTodoDrawer teamId={teamId} todo={todo} members={members} />
           )}

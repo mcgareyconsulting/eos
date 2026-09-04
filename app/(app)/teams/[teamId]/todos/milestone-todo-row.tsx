@@ -58,7 +58,8 @@ export function MilestoneTodoRow({
 
         <div
           className={cn(
-            "w-14 shrink-0 pt-0.5 text-right text-xs font-semibold tabular-nums",
+            // Matches TodoListRow's due column — see the note there.
+            "w-14 shrink-0 pt-1 text-right text-xs font-semibold tabular-nums",
             dueToneClass(milestone.due_date, milestone.completed),
           )}
         >

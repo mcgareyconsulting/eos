@@ -139,13 +139,19 @@ export function TodoListRow({
         </button>
 
         {!hideOwner && (
-          <div className="w-28 shrink-0 pt-0.5 text-right text-xs text-zinc-600 dark:text-zinc-400">
+          <div className="w-28 shrink-0 pt-1 text-right text-xs text-zinc-600 dark:text-zinc-400">
             {ownerName}
           </div>
         )}
         <div
           className={cn(
-            "w-14 shrink-0 pt-0.5 text-right text-xs font-semibold tabular-nums",
+            // pt-1, not pt-0.5: the row is `items-start` so a wrapped title
+            // keeps this column on the first line, which means this box has to
+            // centre itself against that line rather than inherit centring. The
+            // title (py-0.5 + 20px line) and the icon buttons (p-1 + 16px icon)
+            // are both 24px tall, centre 12; 12px text on 2px padding centres at
+            // 10 and reads 2px high against every icon beside it.
+            "w-14 shrink-0 pt-1 text-right text-xs font-semibold tabular-nums",
             archived
               ? "text-zinc-400 dark:text-zinc-500"
               : dueToneClass(todo.due_date, todo.completed),

@@ -8,6 +8,7 @@ import { formatDateOnly, formatDateShort } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
+import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoDrawer } from "./edit-todo-drawer";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
@@ -109,19 +110,7 @@ export function TodoListRow({
           >
             {todo.title}
           </span>
-          {todo.weekly_focus && (
-            <span
-              // `align-middle` + `leading-none`, not the `translate-y-px` the
-              // Lock icon beside it uses: an icon has no baseline so a nudge
-              // works there, but this pill's 10px uppercase text sets its own
-              // baseline and lands low against the 14px title. Centring on the
-              // parent's midline is stable at any title size.
-              className="ml-1.5 inline-flex items-center rounded-full bg-hpb-gold/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase leading-none tracking-wide text-hpb-brown ring-1 ring-inset ring-hpb-gold/40 dark:bg-hpb-gold/10 dark:text-hpb-gold"
-              title="Weekly focus — the one to move this week"
-            >
-              Weekly
-            </span>
-          )}
+          {todo.weekly_focus && <WeeklyFocusPill className="ml-1.5" />}
           {todo.visibility === "private" && (
             <span
               className="ml-1.5 inline-flex translate-y-px items-center text-zinc-400"

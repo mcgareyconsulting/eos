@@ -40,6 +40,7 @@ import {
   type HomeMetricListItem,
 } from "./home-metrics-list";
 import { BoardColumn } from "@/components/board-column";
+import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { cn } from "@/lib/utils";
 
 type TodoRow = {
@@ -51,6 +52,8 @@ type TodoRow = {
   visibility: string;
   completed_at: string | null;
   source_rock_id: string | null;
+  /** N50 — already carried by the `...data` spread; typed so it can render. */
+  weekly_focus?: boolean;
 };
 
 type RockRow = {
@@ -592,6 +595,7 @@ function TodoRowLink({ todo }: { todo: TodoRow }) {
         <span className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
           {todo.title}
         </span>
+        {todo.weekly_focus ? <WeeklyFocusPill /> : null}
       </div>
       <span
         className={cn(

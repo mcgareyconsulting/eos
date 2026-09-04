@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-02
+updated: 2026-09-04
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -1880,6 +1880,182 @@ consolidated into `lib/headlines.ts` for the same reason.
 - 2026-08-26 · decision · src session-2026-08-26 — daniel: fix restore semantics, then ship the L10 archived views
 - 2026-08-26 · build · src session-2026-08-26 — issues/to-dos restore clears the sweepable field; one predicate per entity in lib. 456 tests pass, tsc + build clean, lint at baseline
 
+### N48 · Measurable delete was hidden, not missing
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+
+Effort S. Steph: "Can add but cannot remove a measurable." The capability had
+shipped and worked the whole time — `deleteMetric` behind a typed confirm,
+`showDelete` on for the Scorecard tab. It was hidden three ways at once: it
+lived in a **trailing table column**, after all 13 period columns, so it sat
+off the right edge until you scrolled the grid fully across; then
+`opacity-0 group-hover:opacity-100`, invisible until its row was hovered; then
+`text-zinc-300` once revealed. Off-screen, then invisible, then faint.
+
+**Both row controls now live in `MetricExpand`**, the drop-down panel under an
+expanded row, in a manage bar under the trend chart: a labelled
+`Delete measurable` button (border, red text, no hover-to-reveal) and the group
+editor. The expand chevron is in the **frozen** first column and never scrolls
+away, so anything reachable from that panel is reachable, full stop — which is
+the property the trailing column never had. Its label moved from "Show trend"
+to "Show details" to match what it now opens.
+
+**The group editor came along, answering the open half of the report.**
+`GroupCell` was orphaned by the 2026-08-31 grid rework (F7) — the component
+survived, its column did not — so since N40 shipped groups, the only way to
+group a measurable was the Add form. It is the same question as delete
+("change this row"), so it gets the same home.
+
+`showDelete` → **`showManage`** across the scorecard surface: the prop now
+gates group editing too, and a name that describes half of what it does is how
+the next reader gets it wrong. The L10 passes `showManage={false}` unchanged —
+a meeting reads the scorecard, it does not restructure it.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Scorecard
+- 2026-09-02 · note · src session-2026-09-02 — verified present and working; reclassified from missing feature to hidden affordance
+- 2026-09-02 · finding · src session-2026-09-02 — there is still **no edit-measurable action at all**: `scorecard/actions.ts` has add / delete / setMetricGroup and no `updateMetric`, so a typo in a name, goal, unit or owner can only be fixed by deleting the measurable and its history and re-adding it. Not in Steph's report and not built here. Worth its own item
+- 2026-09-02 · build · src session-2026-09-02 — manage bar in `MetricExpand`; trailing delete column removed (`totalCols` no longer varies); `GroupCell` re-homed; `showDelete` → `showManage`. 460 tests pass, tsc + build clean, lint at baseline
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox** (ES team, signed in). Expanding a row shows the manage bar: `GROUP + Group` (the re-homed editor, correct unset state) and a bordered, labelled **Delete measurable** — no hover-to-reveal, no horizontal scroll, and the table now ends at the last period column with no trailing cell. Exactly **one** delete button exists in the DOM at a time (only the expanded row's), so the control does not leak across rows. Full delete path exercised end-to-end on a **self-created** measurable: the confirm names the row ("Delete \"ZZ-CLAUDE-TEST N48 delete probe\"? … including its logged history"), which the old generic "Delete this metric?" did not, and the row was gone afterward (6→5). `window.confirm` was stubbed for the click rather than fired — a native dialog freezes browser automation
+- 2026-09-04 · open · src session-2026-09-04 — the L10 negative case (`showManage={false}` ⇒ no manage bar) is **verified by construction, not clicked**: the only meeting available was concluded, and it renders the post-meeting summary rather than live segments. Reaching a live segment means starting a meeting, which sets the team's meeting pointer and whose conclude path sweeps *existing* to-dos — a wider blast radius than the check is worth unattended. The guarantee is a single boolean threaded through three typechecked hops (`segment-scorecard` → grid `manage={showManage ? … : undefined}` → `{manage && …}`)
+
+### N51 · To-Dos tab was the only entity tab with no realtime listener
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+
+Effort S–M. Jessica: "When you add a to-do, it does not show up until you
+refresh; would be nice to see it right away so I don't forget and add it
+twice." Duplicate to-dos were the real cost.
+
+**The obvious fix was the wrong one and adding it would have changed nothing.**
+`addTodo` already calls `revalidatePath` on both the team path and `/home`, and
+`add-todo-modal.tsx` already awaits the action, closes, then calls
+`router.refresh()`. Two refreshes were in place before the report was written.
+
+What was actually singular about this surface: **To-Dos was the only entity tab
+with no realtime listener.** Issues, every meeting segment, comments — all
+subscribe. To-Dos was a server component leaning entirely on revalidation, so
+it inherited every way revalidation can lose a race (a slow Google Tasks mirror
+awaited *inside* the same action, a second tab, a teammate adding during an
+L10) with no second chance to repaint. The in-meeting To-Dos segment, one
+directory over, has been live the whole time — which is why the report names
+the tab and not the meeting.
+
+So this adds no third refresh. `todos-board.tsx` puts the tab on **the same two
+subscriptions `segment-todos.tsx` already runs** — team-visible, plus the
+viewer's own private rows, merged; the `todos` rule rejects a list query unless
+it can prove every result is readable, so the split is not optional. Deliberately
+identical, so the two surfaces cannot drift into disagreeing about what a to-do
+is. `page.tsx` keeps auth, the Google pull, and the first paint, and projects
+Timestamps to millis to cross the RSC boundary; it still drops other people's
+private rows **server-side**, so private titles stay out of the serialized
+payload where view-source would reach them. The Active/Archived counts moved
+onto the live lists too — a stale "Active (7)" beside a list of 8 is the same
+bug wearing a hat.
+
+`?archived=` and `?owner=` stay server-read: they are navigational, the controls
+that set them already push a URL, and the server has already validated the owner
+against the roster.
+
+**Trail**
+- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
+- 2026-09-02 · note · src session-2026-09-02 — revalidatePath + router.refresh both already present; To-Dos is the only entity tab with no realtime listener
+- 2026-09-02 · decision · src session-2026-09-02 — daniel: fix the class, not the instance — port the segment-todos subscription rather than add refresh plumbing
+- 2026-09-02 · build · src session-2026-09-02 — `todos-board.tsx` (client, live) + `todos/page.tsx` reduced to fetch/project/hand-off. 460 tests pass, tsc + build clean, lint at baseline
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox** (ES team, signed in). Tested with an **out-of-band write**, not the Add modal: adding through the UI proves nothing here, since `AddTodoModal` still calls `router.refresh()` and the row would appear on the old code too. A to-do written straight to Firestore appeared with zero browser interaction — Active 8→9, column (8)·5 open→(9)·6 open, owner card "3 done"→"1 open · 3 done". Archiving it out-of-band moved it back (Active 9→8, Archived 2→3); deleting it out-of-band dropped it from the Archived view (3→2). Both tab counts move live, which is the part that changed. `formatClosedOn` rendered "Closed 9/4/2026" off a **live Firestore Timestamp**, exercising the one type-juggling risk in the port (live Timestamp vs the server's millis projection). Sandbox left at its baseline
+
+### N53 · Edit a measurable — name, unit, goal, owner, interval
+*W3 · built · due — · deps N48 · owner daniel · src session-2026-09-04 · upd 2026-09-04*
+
+Effort S–M. Asked for directly (daniel, 2026-09-04) off the finding logged on
+**N48**: there was **no way to change a measurable at all.** `addMetric`,
+`deleteMetric` and `setMetricGroup` were the entire surface, so fixing a typo
+in a name — or a wrong unit, goal or owner — meant deleting the measurable
+**and every value ever logged against it** and starting over. On a scorecard
+that is the whole point of the page, that is a data-loss trap wearing the
+costume of a missing feature.
+
+`updateMetric` + `EditMetricModal`, reached from an **Edit measurable** button
+beside Delete in the row's expand panel (the manage bar N48 built). The form is
+deliberately the same as Add, field for field, because a measurable that can be
+*created* in a shape it cannot be *edited* back into is its own trap.
+
+**Group is deliberately absent from the form.** `setMetricGroup` owns that
+field and the rule that rides with it; the inline group editor sits a few
+pixels to the left in the same bar. Two controls writing one field is how that
+rule gets forgotten on one of them.
+
+**The interval/group rule is mirrored, not re-derived.** A defined group owns
+its period, so `updateMetric` forces a grouped measurable's interval to its
+group's — the same correction `setMetricGroup` already makes. The form disables
+the field and names the group; the server call is the actual guard. Free-text
+group labels have no group doc and therefore own no period, so those keep a
+freely editable interval — matching `setMetricGroup` exactly.
+
+**A real bug this closed on the way past.** Seeding the edit form from the
+display formatters would have silently corrupted goals. `formatValue` is lossy
+by design — it rounds currency to whole dollars and compacts above 100k — so a
+goal of `1234.56` renders as `$1,235` and `2,500,000` as `$2.5M`. Seeding from
+those either fails to parse on save or, worse, parses cleanly to a **different
+number**: open the form to fix a typo in the name, save, and the goal has
+quietly changed. `formatGoalInput` in `lib/scorecard.ts` is the real inverse of
+`parseScorecardValue`, pinned by 14 round-trip tests plus one that asserts the
+display formatter is *not* substitutable.
+
+**Trail**
+- 2026-09-04 · request · src session-2026-09-04 — daniel: "add an edit measurable button next to delete on expand so user can change name/desc"
+- 2026-09-04 · note · src session-2026-09-04 — measurables have **no description field** (name, unit, goal, direction, owner_id, group, interval, sort_order is the whole schema), so "desc" was read as the descriptive attributes. A real description field is a separate decision — it needs a display home, and the grid has no room for one
+- 2026-09-04 · finding · src session-2026-09-04 — the lossy-formatter seeding trap, closed before it shipped rather than after; see above
+- 2026-09-04 · build · src session-2026-09-04 — `updateMetric`, `EditMetricModal`, `formatGoalInput` + tests. 476 tests pass, tsc + build clean, lint at baseline
+- 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox** on a self-created measurable: form seeds `1234.56` while the grid behind it shows `>= $1,235`; renaming and saving left the stored goal at `1234.56` (checked in Firestore, not just in the UI); interval free when ungrouped or free-labelled, and **disabled at `monthly` naming the group** once assigned to a defined monthly group. Probe metric and group deleted; sandbox back to 5 metrics / 0 groups
+
+### N54 · Directory as a person-per-row table (ninety parity)
+*W3 · not-started · due — · deps N38, P2-7 · owner daniel · src session-2026-09-04 · upd 2026-09-04*
+
+Effort M. daniel, with a ninety screenshot: "we want our directory view to
+match the content/columns in this table, obviously keeping our good styling."
+
+**This is a structural inversion, not a column change.** Today's directory
+(`OrgDirectoryPanel`, reached via Members → All teams) is **team-grouped**: a
+card per team with its roster inside, so a person on three teams appears three
+times and there is no row that *is* that person. Ninety's is one row per
+**person**, with teams as a cell on that row. Every column below is downstream
+of that flip; doing the columns without it just relabels the cards.
+
+**What our data already supports.** User docs carry `first_name`, `last_name`,
+`email` and `picture` (`lib/firebase/auth.ts`, `lib/user-name.ts`) — so the
+avatar and the split name columns are close to free, and no name-splitting
+heuristic is needed. Teams-per-person is the existing `team_members` map read
+in the other direction. Note the scorecard grid deliberately dropped its
+avatar column ("reinstate it only for profile photos, where the face is the
+point") — a people directory is exactly that case, so avatars belong here.
+
+**Two columns are not free, and both are decisions rather than work:**
+
+1. **Role access.** Ninety shows one role per person (Owner / Manager /
+   Managee). Ours is **per team** — `team_members.role` is leader-or-member,
+   so someone can be a leader on Ops and a member on Finance, and a single
+   cell cannot say that truthfully. Orthogonal again is the org-wide
+   Identity Platform `role: "admin"` claim. Rendering one value would either
+   flatten a real distinction or invent a hierarchy we do not have. This is
+   **P2-7's** question and should not be answered ad hoc in a table cell —
+   the same trap **N49** flags: showing a permissions model that is not true.
+2. **Status (Active / Inactive) + the invite action.** We have no
+   deactivated state at all — that is **N38**, `not-started` and itself
+   blocked on P2-7. Until it exists the column can only ever read "Active",
+   which is a column that says nothing.
+
+**Not applicable:** the licenses banner ("95 licenses, 0 unassigned") is
+ninety's seat billing; we have no seat model.
+
+**Suggested shape given the above:** build the person-per-row table with
+avatar / first / last / email / teams now, and leave Role and Status out
+rather than shipping a cell that lies — they slot in when P2-7 and N38 land.
+Worth confirming before building, since a table missing two of its six columns
+may not be the parity that was asked for.
+
+**Trail**
+- 2026-09-04 · request · src session-2026-09-04 — daniel, with a ninety Directory screenshot: match content/columns, keep our styling
+- 2026-09-04 · finding · src session-2026-09-04 — 4 of 6 columns are available today (avatar, first, last, teams); Role access is ambiguous under a per-team role model (P2-7) and Status does not exist (N38)
+
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
 
@@ -2283,20 +2459,21 @@ tokens + webhook secret in Secret Manager.
 
 ## Intake — 2026-09-02 client feedback, awaiting investigation
 
-**Not workstream items yet, and deliberately not in `queue`.** Six reports
-from the 2026-09-02 tracker rows, written up but not triaged: each one still
-needs the defect reproduced, the scope settled, and an effort confirmed
-before it is worth ordering against anything else. **A separate agent picks
-these up.** Promote an item into its workstream (all six are W3 · Product)
-once it has been investigated — moving it is the signal that it is real and
-scoped, and it should carry its trail with it.
+**Not workstream items yet, and deliberately not in `queue`.** Seven reports
+from the 2026-09-02 tracker rows (**N52** arrived later than the first six). **N48** and **N51** were investigated,
+scoped and built on 2026-09-02 and have left for Workstream 3 — both landed
+where the pre-check said they would, on the *opposite* side of the obvious
+fix in each case. **Five remain**, each still needing the defect reproduced,
+the scope settled, and an effort confirmed before it is worth ordering
+against anything else. Promote an item into its workstream (all five are
+W3 · Product) once it has been investigated — moving it is the signal that
+it is real and scoped, and it should carry its trail with it.
 
-Two have already been checked against the code and came back **different from
-what the report says** — read those notes before starting, they invert the
-obvious fix:
-
-- **N48** — the delete works; it is hidden, not missing.
-- **N51** — a refresh is already wired; adding another will not fix it.
+**N47 and N50 now carry a settled design decision** (daniel, 2026-09-02) and
+no longer need one — read it before scoping either. **N49** stays blocked on
+P2-7 and should not be started ahead of it. **N52 is the one to read first** —
+it reopens a question closed on an inference, and it un-accepts a security
+finding that was accepted only while Google stays the sole sign-in provider.
 
 ### N46 · Create a to-do from an issue, inside the meeting
 *W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
@@ -2326,41 +2503,92 @@ pick the wrong one. Perhaps it doesn't re-order until all votes have been
 cast?" This is a mis-vote, not an annoyance — the row moves under the cursor
 between decision and click, and the vote lands on someone else's issue.
 
-Her own suggested fix (hold the order until voting closes) needs a definition
-of "all votes cast" that the room can see. **N41** already built exactly that
-denominator: `teamVoteTally()` computes votes available from present members,
-re-basing when someone is marked absent. So the freeze has a natural release
-condition and a natural indicator, both already shipped. Alternative if that
-proves brittle: freeze the order while a vote is in flight and release on the
-voter's own next idle moment — no room-wide gate.
+**Decided (daniel, 2026-09-02): hold the order until all votes are cast** —
+Steph's own fix. The denominator is not a new problem: **N41** already built
+it, and `teamVoteTally()` computes votes available from present members and
+re-bases when someone is marked absent. So the freeze gets its release
+condition and its room-visible indicator from something already shipped, and
+`TeamVoteTallyBadge` is the natural place to say the list is held.
+
+Two alternatives were considered and are **not** the plan — recorded so they
+are not re-argued: freezing only while one voter's own vote is in flight (no
+room-wide gate, but everyone sees a slightly different order), and never
+auto-resorting behind an "apply new order" pill (most predictable, but another
+control in an already crowded segment header).
+
+**The one thing the decision does not settle: a stuck room.** The release
+condition is reachable only if attendance is accurate, so one person who is
+absent but not *marked* absent holds the order frozen for everyone, for the
+rest of the hour. Build needs a manual release — a leader-side "sort now",
+or the freeze lapsing when the room advances stage.
 
 **Trail**
 - 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Meetings
+- 2026-09-02 · decision · src session-2026-09-02 — daniel: hold order until all votes cast, off N41's existing denominator; needs a manual release for the unmarked-absentee case
 
-### N48 · A measurable can be added but not removed — the control is hidden
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
+### N52 · SSO vs. Google login — investigate the identity provider
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
 
-Effort S. Steph: "Can add but cannot remove a measurable." **The capability
-exists and works** — `deleteMetric` (`scorecard/actions.ts:276`) behind a
-typed confirm, with `showDelete` on for the Scorecard tab
-(`scorecard/page.tsx:124`). It is purely undiscoverable, and verified
-2026-09-02 to be hidden three ways at once:
+Effort S to answer, S–M to build. Steph: "Let's investigate setting up SSO
+vs. just Google Login." The ask is an investigation, so the deliverable is a
+recommendation, not a change.
 
-1. It lives in the **last table column**, after all 13 period columns — off
-   the right edge of the viewport until you scroll the grid fully across.
-2. `opacity-0 group-hover:opacity-100` — invisible until that row is hovered.
-3. `text-zinc-300` even once revealed.
+**There may be no "vs." here.** If HPB is a Google Workspace shop, Google
+sign-in restricted to `highplainsbank.com` **is** SSO — federated through the
+bank's own identity, with the bank's MFA and offboarding, no separate
+password. `docs/CLIENT_GCP_SETUP.md` §3 already says exactly that. So the first
+move is to establish whether Steph is asking for something she already has, or
+whether the bank's identity **of record** is not Workspace at all. Do not build
+anything before that sentence has an answer.
 
-So it is off-screen, then invisible, then faint. Fix is a discoverability
-decision, not a build: move it into the row's expanded panel
-(`MetricExpand`), or into a per-row overflow menu in the frozen columns where
-it cannot scroll away. **Note the same question is open for the group editor**
-— `group-cell.tsx` was orphaned by the 2026-08-31 grid rework (see F7) and
-`MetricExpand` is the candidate home for both.
+**The prior answer to this question was an inference, not an answer.**
+`Q-sso` (2026-07-13) retired the identity-provider risk on the grounds that
+"heavy Google Workspace integration asks confirm HPB is a Workspace shop" —
+i.e. they asked for Google Tasks and Calendar features, therefore they must be
+a Workspace shop. That is a reasonable guess and it is not testimony.
+`docs/CLIENT_GCP_SETUP.md` §3 contains an explicit checklist item asking HPB to
+confirm **Workspace vs. Microsoft 365 / Entra ID (or Okta)**, and **no answer
+to it is recorded anywhere in this repo.** Steph is asking us the question we
+asked them and never got back. Treat `Q-sso` as reopened rather than settled.
+
+**This request un-accepts an accepted security finding.** The 2026-08-31 audit
+filed **M2** — the sign-in perimeter never checks `email_verified` — and on
+2026-09-02 it was formally **accepted / won't-fix** with the reason *"Google-only
+sign-in; revisit if another provider is ever enabled."* Enabling another
+provider is precisely what is now on the table, so the condition that made M2
+acceptable is the condition being removed. Verified in code 2026-09-04:
+`createSession()` (`lib/firebase/session.ts`) gates only on
+`isEmailAllowed(allowlist, decoded.email)`, and `inDomain()` (`firestore.rules`)
+matches the email string alone — neither reads `email_verified`. Add a SAML/OIDC
+provider without fixing M2 first and an attacker registers an **unverified**
+`anything@highplainsbank.com` through the new IdP and receives a session plus
+in-domain reads: the org directory, every team name and roster, every user
+email. **M2's fix is two lines and must land before or with any provider
+change, never after it.**
+
+**Adjacent coupling nobody has drawn a line between yet: P1-7.** Google Tasks
+two-way sync shipped, and it assumes every user has a connectable **Google**
+account. If HPB federates through Entra or Okta instead, that premise weakens —
+the Tasks feature does not stop working, but "connect your Google account"
+becomes a second, separate login for a user whose bank identity is not Google.
+That is a product question, not just an auth one, and it should be answered in
+the same breath. The reverse coupling already bit once: the Tasks connector
+reuses Firebase's OAuth client, which took down all trial sign-in.
+
+**Mechanics, if federation is the answer.** SAML/OIDC needs Identity Platform
+(GCIP) rather than bare Firebase Auth; `identitytoolkit.googleapis.com` is
+already enabled and custom claims are already in use, so the `role: "admin"`
+claim survives either way. Quoted to the client at ~$0.015 per active
+user/month. Note the auth layer has **no Terraform at all** — `terraform/` has
+no identity-provider resources, so provider config is console-managed and
+undocumented; a provider change is invisible to infra-as-code and matters to
+**F2** and to the cutover.
 
 **Trail**
-- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Scorecard
-- 2026-09-02 · note · src session-2026-09-02 — verified present and working; reclassified from missing feature to hidden affordance
+- 2026-09-02 · request · src feedback-2026-09-02 — Steph Benes, Authentication
+- 2026-09-04 · finding · src session-2026-09-04 — `Q-sso`'s 2026-07-13 close was inferred from the Workspace integration asks, not answered; the `CLIENT_GCP_SETUP` §3 question to HPB has no recorded reply
+- 2026-09-04 · finding · src session-2026-09-04 — this reopens audit **M2**, accepted 2026-09-02 explicitly conditional on Google being the only provider; confirmed unfixed in `session.ts` and `firestore.rules`
+- 2026-09-04 · finding · src session-2026-09-04 — P1-7 Google Tasks sync assumes Google identities; a non-Google IdP makes it a second login rather than a broken feature
 
 ### N49 · Say what an Admin can do that others cannot
 *W3 · not-started · due — · deps P2-7 · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
@@ -2389,42 +2617,30 @@ instead." The team invented a text convention to carry state the schema does
 not hold — the clearest possible signal for a real field, and the same shape
 of finding as N40 (groups typed into a label before they were a thing).
 
-Worth settling at design time: is weekly-focus **one per person per week** or
-a free flag? "The weekly focus" implies one, and a flag that can be set on
-nine to-dos carries no information. Also decide what clears it — a to-do
-completed, or the week rolling over. If any existing titles carry `**`, a
-one-time migration should lift them into the field and strip the markers,
-the way `scripts/backfill-scorecard-groups.ts` did for groups.
+**Decided (daniel, 2026-09-02): a free flag, any number.** The "one per person
+per week" reading was argued and rejected: `**` is a free convention today —
+nothing stops anyone marking three tasks — so a field that silently unmarks
+their first one would be the app overruling a working habit on its way to
+replacing it. Ship the field that matches the behaviour, and let the client
+tell us it wants a limit.
+
+**Consequence to design around, not away:** a free flag has no built-in
+scarcity, so nothing stops it degrading into a second priority field. The
+weight has to come from presentation — a distinct mark on the row and a way to
+see the flagged set — rather than from the schema.
+
+**Still open:** what clears it — completion, or the week rolling over. A free
+flag makes this sharper, not softer: with no cap, nothing ever forces a stale
+flag off a to-do that has sat there for a month.
+
+If any existing titles carry `**`, a one-time migration should lift them into
+the field and strip the markers, the way `scripts/backfill-scorecard-groups.ts`
+did for groups.
 
 **Trail**
 - 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
-
-### N51 · A new to-do does not appear until refresh
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
-
-Effort S–M. Jessica: "When you add a to-do, it does not show up until you
-refresh; would be nice to see it right away so I don't forget and add it
-twice." Duplicate to-dos are the real cost, and they are hard to spot later.
-
-**Do not "fix" this by adding a refresh — one is already there.** Checked
-2026-09-02: `addTodo` calls `revalidatePath` on both the team path and
-`/home` (`todos/actions.ts:93-94`), and `add-todo-modal.tsx:86-88` awaits the
-action, closes, then calls `router.refresh()`. So the obvious explanation is
-wrong and this needs a reproduction before a fix: which surface she adds
-from (To-Dos tab, Home board, or the L10 segment), and whether the row is
-actually absent or merely landed in a column she was not looking at.
-
-The durable answer is probably not refresh plumbing at all. **To-Dos is the
-odd one out:** `useCollection` realtime is wired into Issues
-(`issues-list.tsx`), every meeting segment, and comments — but nothing under
-`todos/`, which is a server component (`todos/page.tsx`) leaning on
-revalidation. Putting To-Dos on the same listener as Issues would make this
-class of report impossible rather than fixing one instance of it, and it is
-what "as live as possible everywhere" in Workstream 0 already asks for.
-
-**Trail**
-- 2026-09-02 · request · src feedback-2026-09-02 — Jessica Teichman, To-Dos
-- 2026-09-02 · note · src session-2026-09-02 — revalidatePath + router.refresh both already present; To-Dos is the only entity tab with no realtime listener
+- 2026-09-02 · decision · src session-2026-09-02 — daniel: free flag, any number; one-per-week rejected as the app overruling a working habit. Clearing rule still open
+- 2026-09-04 · finding · src session-2026-09-04 — **the convention is live in real data**, seen incidentally while verifying N51 on the ES team: three to-dos carry the marker — "** Finish first draft of CreditLens approval report in BQ" (Jessica), "**Compile list of items for post-conversion related to CL" (Cora), and an archived "**Incorporate Technology Committee feedback on AI / Wrap board presentation" (Steph). So the migration is not hypothetical, it has rows; note the marker appears both with and without a trailing space, and **archived** to-dos carry it too — a backfill that only walks active rows would miss some. Three reporters, not one, which also supports the free-flag reading
 
 ---
 
@@ -2451,6 +2667,18 @@ what "as live as possible everywhere" in Workstream 0 already asks for.
 | Leadership team to be created (company rocks live there) | N4 | 2026-08-18 |
 
 ## Open questions
+
+0. **A measurable whose interval disagrees with its group's is invisible on
+   every tab — silently.** Reproduced 2026-09-04 while verifying N53: set a
+   metric to `interval: weekly` with a group whose doc says `monthly`, and the
+   Weekly tab **counts it (6) but renders 5**, while Monthly shows 0. No error,
+   no placeholder — the row is simply gone, and the count is the only evidence
+   anything is missing. `setMetricGroup` and now `updateMetric` both prevent
+   this on the paths they own, so it is not reachable through the UI today; it
+   is reachable through the **CSV importer** and any direct write. Two things
+   to decide: whether the grid should render orphaned-group metrics in a
+   fallback section rather than dropping them, and whether the importer
+   enforces the same rule. **Answers:** daniel.
 
 1. **Vote-credit reset at meeting conclude** — shipped 2026-07-29 as a
    semantics change (credits rank one meeting's Issues hour; between
@@ -2534,6 +2762,8 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-08-26 · Q-l10-archived-toggle · answered — local state, resets when the segment unmounts. URL state was ruled out: the meeting page owns four params already, one `?archived=` is ambiguous across segments, and N27's auto re-attach (`router.replace`) would wipe it mid-meeting
 - 2026-08-26 · Q-board-column · answered — one `components/board-column.tsx` replaces `HomeColumn` + `BoardColumn`. Scroll stays a prop rather than a winner: Home's independent columns should scroll, the To-Dos page should scroll as one so its columns can't drift under the reader
 - 2026-08-26 · SHIP2 · void — opened and retired the same day. The ship it demanded had already run many times; prod was on `eos-00070-pjg`/`1d7624b`, not the `98bb30b` this file claimed. Caught by daniel, not by the audit
+- 2026-09-02 · Q-vote-freeze · answered — N47 freezes the issue order until all votes are cast (Steph's own fix), released off N41's `teamVoteTally()` denominator rather than a new one. Per-voter freeze and a manual "apply new order" pill both rejected. Leaves one hole to build around: an unmarked absentee holds the freeze for the whole room
+- 2026-09-02 · Q-weekly-focus · answered — N50's weekly-focus is a **free flag, any number**, not one per person per week: `**` is already unlimited, and a field that silently unmarks someone's first to-do would overrule a working habit on its way to replacing it. What clears the flag is still open
 - 2026-08-26 · Q-deploy-truth · answered — deployment state is never read from this file. `gcloud run services describe eos --project hpb-eos-prod --region us-east1` is the authority; the rules check is a diff of the live ruleset source against `firestore.rules`, not a timestamp comparison
 
 ## Sources
@@ -2551,7 +2781,7 @@ distinct from Trail entries, which carry a layer + src.*
 | tracker-2026-08-03 | Daniel_Tool_Feedback_Tracker.xlsx (client-held; not a repo artifact — verbatim triage retained in docs/ROADMAP.md Pass 14 log; anchors are its row numbers) | Structured client feedback, 22 items, Jenna/Steph/Jessica; re-read 2026-08-10 |
 | l10-2026-08-19-it | (Gemini notes + transcript, client-held — not a repo artifact) | IT Systems & Security L10, 2026-08-19; anchors are its transcript timestamps. N26 / N39 / N40 / N41 / N42 / N29 |
 | l10-2026-08-19-esd | (Gemini notes + transcript, client-held — not a repo artifact) | Enterprise Systems & Data L10, 2026-08-19; anchors are its transcript timestamps. N26 / N34 / N42 |
-| feedback-2026-09-02 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes + Jessica Teichman feedback dated 2026-09-02; anchors are the reporter + area. N46–N51 |
+| feedback-2026-09-02 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes + Jessica Teichman feedback dated 2026-09-02; anchors are the reporter + area. N46–N52 (N52 arrived 2026-09-04) |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
 

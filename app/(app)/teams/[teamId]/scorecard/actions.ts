@@ -84,6 +84,99 @@ export async function addMetric(teamId: string, formData: FormData) {
   revalidatePath(pathFor(teamId));
 }
 
+/**
+ * Edit an existing measurable's name, interval, unit, goal and owner.
+ *
+ * N48 follow-on. Until this existed there was **no way to change a measurable
+ * at all** — `addMetric` / `deleteMetric` / `setMetricGroup` were the whole
+ * surface, so fixing a typo in a name meant deleting the measurable *and every
+ * value ever logged against it* and starting over. Validation is deliberately
+ * the same shape as `addMetric`; the two must accept exactly the same things,
+ * or a measurable becomes uneditable the moment the rules drift.
+ *
+ * **`group` is not editable here on purpose.** `setMetricGroup` owns that
+ * field, including the rule that a group owns its period, and two writers for
+ * one field is how that rule gets forgotten on one of the paths. The inline
+ * group editor in the row's expand panel stays the way to change it.
+ *
+ * What this *does* have to respect is the other half of that rule: if the
+ * measurable already sits in a defined group, the group's period wins over
+ * whatever interval the form submits. Otherwise editing a grouped weekly
+ * measurable and picking "Monthly" would strand it — rendered under neither
+ * its own interval nor its group's, exactly the disappearance `setMetricGroup`
+ * exists to prevent. The form disables the field and says so; this is the
+ * enforcement.
+ */
+export async function updateMetric(
+  teamId: string,
+  metricId: string,
+  formData: FormData,
+) {
+  const { uid, db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
+  const current = snap.data() ?? {};
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Name required");
+
+  const unitRaw = String(formData.get("unit") ?? "number");
+  const directionRaw = String(formData.get("direction") ?? "gte");
+  const goalRaw = String(formData.get("goal") ?? "").trim();
+  const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const intervalRaw = String(formData.get("interval") ?? "weekly");
+
+  const unit: ScorecardUnit = isScorecardUnit(unitRaw) ? unitRaw : "number";
+  const direction: Direction =
+    unit === "yesno"
+      ? "eq"
+      : DIRECTIONS.includes(directionRaw as Direction)
+        ? (directionRaw as Direction)
+        : "gte";
+  const parsedGoal =
+    goalRaw === ""
+      ? { ok: true as const, value: null }
+      : parseScorecardValue(goalRaw, unit);
+  if (!parsedGoal.ok) {
+    throw new Error(
+      unit === "yesno"
+        ? "Goal must be Yes or No"
+        : unit === "time"
+          ? "Goal must be a time (h:mm)"
+          : "Goal must be a number",
+    );
+  }
+
+  let interval: MetricInterval = (
+    SCORECARD_PERIODS as readonly string[]
+  ).includes(intervalRaw)
+    ? (intervalRaw as MetricInterval)
+    : "weekly";
+
+  // A defined group owns its period — see the note above.
+  const group = current.group ?? null;
+  if (group) {
+    const groups = await loadGroups(db, teamId);
+    const match = groups.find(
+      (g) => groupNameKey(g.name) === groupNameKey(String(group)),
+    );
+    if (match) interval = match.interval;
+  }
+
+  await db.collection("scorecard_metrics").doc(metricId).set(
+    {
+      name,
+      unit,
+      goal: parsedGoal.value,
+      direction,
+      owner_id,
+      interval,
+    },
+    { merge: true },
+  );
+
+  revalidatePath(pathFor(teamId));
+}
+
 // Renames/clears a metric's section. Kept as its own action (rather than a
 // general metric-update) to match the narrow, single-purpose action style
 // already used by setEntry.

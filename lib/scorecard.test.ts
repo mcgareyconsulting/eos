@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   average,
   formatGoal,
+  formatGoalInput,
   formatScorecardDraft,
   formatValue,
   formatValueExact,
@@ -347,5 +348,68 @@ describe("bucketMetricsByGroup (N40)", () => {
     const grouped = bucketMetricsByGroup(rows);
     assert.deepEqual(grouped.ungrouped.map((m) => m.id), ["x", "y"]);
     assert.deepEqual(grouped.groups, []);
+  });
+});
+
+describe("formatGoalInput", () => {
+  // The pair that matters: whatever the edit form is seeded with must parse
+  // back to the number it came from. Without this, editing a measurable's
+  // name silently rewrites its goal (N48 follow-on).
+  const roundTrips: [number | null, string][] = [
+    [null, "number"],
+    [0, "number"],
+    [42, "number"],
+    [-7, "number"],
+    [1234.56, "currency"],
+    [1500, "currency"],
+    [2_500_000, "currency"],
+    [12.5, "percent"],
+    [90, "percent"],
+    [1, "yesno"],
+    [0, "yesno"],
+    [90, "time"],
+    [0, "time"],
+    [605, "time"],
+  ];
+
+  for (const [value, unit] of roundTrips) {
+    it(`round-trips ${value} as ${unit}`, () => {
+      const seeded = formatGoalInput(value, unit);
+      const parsed = parseScorecardValue(seeded, unit);
+      assert.equal(parsed.ok, true);
+      if (parsed.ok) assert.equal(parsed.value, value);
+    });
+  }
+
+  it("is not substitutable by the lossy display formatter", () => {
+    // Asserted as behaviour, not as literal strings, so a future formatting
+    // tweak can't quietly make this pass while the hazard returns.
+
+    // 1. Above the compaction threshold the display string does not parse
+    //    back at all ("$2.5M").
+    const big = 2_500_000;
+    const bigDisplay = formatValue(big, "currency");
+    const bigReparsed = parseScorecardValue(bigDisplay, "currency");
+    assert.equal(
+      bigReparsed.ok && bigReparsed.value === big,
+      false,
+      `display string ${bigDisplay} must not be usable as an edit seed`,
+    );
+    assert.equal(formatGoalInput(big, "currency"), "2500000");
+
+    // 2. The quieter failure: a fractional currency goal rounds in display,
+    //    so seeding from it parses cleanly to the WRONG number — the goal
+    //    changes just because someone opened the form to fix a typo.
+    const frac = 1234.56;
+    const fracDisplay = formatValue(frac, "currency");
+    const fracReparsed = parseScorecardValue(fracDisplay, "currency");
+    assert.equal(fracReparsed.ok, true);
+    if (fracReparsed.ok) assert.notEqual(fracReparsed.value, frac);
+    assert.equal(formatGoalInput(frac, "currency"), "1234.56");
+  });
+
+  it("renders an empty goal as an empty field, not a dash", () => {
+    assert.equal(formatGoalInput(null, "number"), "");
+    assert.equal(formatValue(null, "number"), "\u2014");
   });
 });

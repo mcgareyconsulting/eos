@@ -157,7 +157,7 @@ export function SegmentScorecard({
       metrics={sorted}
       entryByMetricWeek={entryRecord}
       members={members}
-      showDelete={false}
+      showManage={false}
       groups={groups}
       compact
       speakingOrder={speakingOrder}

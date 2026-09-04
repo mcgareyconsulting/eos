@@ -121,7 +121,7 @@ export default async function ScorecardPage({
           metrics={metrics}
           entryByMetricWeek={entryRecord}
           members={members}
-          showDelete
+          showManage
           groups={groups}
         />
       </Suspense>

@@ -47,6 +47,34 @@ function parseClockToMinutes(s: string): number | null {
   return Number(time[1]) * 60 + Number(time[2]);
 }
 
+/**
+ * Inverse of `parseScorecardValue` for seeding an edit form: a stored goal
+ * rendered back into the exact notation the input accepts.
+ *
+ * **Not a display formatter, and `formatValue` is not a substitute.** The
+ * display formatters are deliberately lossy — they round currency to whole
+ * dollars, insert thousands separators, and compact anything large ("$1.5K").
+ * Seeding an edit field from those either fails to parse on save ("$1.5K") or,
+ * worse, parses to a *different* number than the one stored: a goal of 1234.56
+ * displays as "$1,235" and would silently save as 1235. This emits bare,
+ * full-precision values and lets the field's own $ / % adornments carry the
+ * unit, so opening the form and saving it untouched is a no-op.
+ */
+export function formatGoalInput(
+  goal: number | null | undefined,
+  unit: string,
+): string {
+  if (goal == null) return "";
+  if (unit === "yesno") {
+    if (goal === 1) return "Yes";
+    if (goal === 0) return "No";
+    return "";
+  }
+  if (unit === "time") return formatMinutes(goal);
+  if (!Number.isFinite(goal)) return "";
+  return String(goal);
+}
+
 /** "$1,234", "12.5%", "(400)" → number. Not yes/no or h:mm. */
 function parseDecoratedNumber(s: string): number | null {
   const negativeParens = /^\(.*\)$/.test(s);

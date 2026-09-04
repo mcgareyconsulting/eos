@@ -37,7 +37,7 @@ export function ScorecardPanel({
   metrics,
   entryByMetricWeek,
   members,
-  showDelete = true,
+  showManage = true,
   groups = [],
   compact = false,
   /** L10: when set, Default order walks owner speaking order (P1-4). */
@@ -55,7 +55,7 @@ export function ScorecardPanel({
   metrics: ScorecardMetric[];
   entryByMetricWeek: Record<string, number | null>;
   members: ScorecardMember[];
-  showDelete?: boolean;
+  showManage?: boolean;
   /** Team's scorecard groups; ordering + period for the group headers. */
   groups?: ScorecardGroup[];
   /** L10 segment: weekly-only, no period tabs. */
@@ -241,7 +241,7 @@ export function ScorecardPanel({
         metrics={filtered}
         entryByMetricWeek={entryMap}
         members={members}
-        showDelete={showDelete}
+        showManage={showManage}
         groups={groups}
         interval={period}
         compact={compact}

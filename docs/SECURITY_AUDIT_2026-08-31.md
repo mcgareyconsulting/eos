@@ -11,7 +11,7 @@ inspected or touched.
 | --- | --- | --- |
 | H1 audit log captures OAuth tokens | fix | **Fixed** — `google_tasks_connections` + `oauth_csrf_states` excluded from the audit trigger. Deploy note: purge existing `audit_log` rows for those collections. |
 | M1 `issue_votes` client-write desync | fix | **Fixed** — client writes denied in `firestore.rules`; reads unchanged. |
-| M2 `email_verified` not checked | accepted | Won't fix — Google-only sign-in; revisit if another provider is ever enabled. |
+| M2 `email_verified` not checked | accepted → **reopened 2026-09-04** | Was won't-fix on the condition that Google stays the only provider. That condition is now in question: client feedback 2026-09-02 (Steph, Authentication) asks us to investigate SSO vs. Google login → roadmap **N52**. If any provider is added, this must be fixed **before or with** it, not after. |
 | M3 XLSX zip bomb | low risk (leader/admin-only uploaders after M4) | **Hardened anyway** — one-line `maxOutputLength` cap on inflate. |
 | M4 import member-accessible | fix | **Fixed** — `requireTeamLeader` on page + action; Import nav link hidden for non-leaders. |
 | L1–L4 | open | Unchanged. |

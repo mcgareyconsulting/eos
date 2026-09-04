@@ -1,14 +1,13 @@
 "use client";
 
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronRight, Search, Trash2 } from "lucide-react";
-import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
+import { ChevronRight, Search } from "lucide-react";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import {
+  groupNameKey,
   orderGroupNames,
   type ScorecardGroup,
 } from "@/lib/scorecard-groups";
-import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
 import {
   average,
   formatGoal,
@@ -125,7 +124,7 @@ export function ScorecardGrid({
   metrics,
   entryByMetricWeek,
   members,
-  showDelete = false,
+  showManage = false,
   groups = [],
   interval = "weekly",
   compact = false,
@@ -141,7 +140,8 @@ export function ScorecardGrid({
   metrics: ScorecardMetric[];
   entryByMetricWeek: Map<string, number | null> | Record<string, number | null>;
   members: ScorecardMember[];
-  showDelete?: boolean;
+  /** Row manage controls (group + delete), shown inside the expand panel. */
+  showManage?: boolean;
   /** Team's group docs — supply position so Compliance can sit below Weekly. */
   groups?: ScorecardGroup[];
   /** Which period this grid is showing; groups are per-period. */
@@ -231,11 +231,20 @@ export function ScorecardGrid({
     [filtered, flatList, groups, interval],
   );
 
+  // The period a metric's group owns, or null when it is ungrouped or carries
+  // a free-text label with no group doc behind it. Free labels don't own a
+  // period, so those metrics keep a freely editable interval.
+  const groupIntervalFor = (name: string | null | undefined) => {
+    const key = groupNameKey(name);
+    if (!key) return null;
+    return groups.find((g) => groupNameKey(g.name) === key)?.interval ?? null;
+  };
+
   const stickyShadow =
     "shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] dark:shadow-[2px_0_6px_-2px_rgba(0,0,0,0.35)]";
 
   const headerBg = "bg-zinc-50 dark:bg-zinc-950";
-  const totalCols = FROZEN_COLS + columns.length + (showDelete ? 1 : 0);
+  const totalCols = FROZEN_COLS + columns.length;
 
   const renderMetricRow = (m: ScorecardMetric) => {
     const values = columns.map((c) => entryMap.get(`${m.id}__${c.id}`) ?? null);
@@ -279,8 +288,12 @@ export function ScorecardGrid({
                 type="button"
                 onClick={() => toggleOpen(m.id)}
                 aria-expanded={open}
-                aria-label={open ? "Hide trend" : "Show trend"}
-                title={`Show ${columns.length}-period trend`}
+                aria-label={open ? "Hide details" : "Show details"}
+                title={
+                  showManage
+                    ? `${columns.length}-period trend, group and delete`
+                    : `Show ${columns.length}-period trend`
+                }
                 className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
               >
                 <ChevronRight
@@ -399,22 +412,6 @@ export function ScorecardGrid({
             );
           })}
 
-          {showDelete && (
-            <td className="px-2 py-2 text-right">
-              <ConfirmSubmitForm
-                action={deleteMetric.bind(null, teamId, m.id)}
-                confirmMessage="Delete this metric? This will remove it from the scorecard, including its logged history. This can't be undone."
-              >
-                <button
-                  type="submit"
-                  className="text-zinc-300 opacity-0 group-hover:opacity-100 dark:text-zinc-600 hover:text-red-600"
-                  aria-label="Delete metric"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </ConfirmSubmitForm>
-            </td>
-          )}
         </tr>
         {open && (
           <tr className="bg-hpb-blue/[0.03]">
@@ -425,6 +422,17 @@ export function ScorecardGrid({
                   ownerName={owner}
                   columns={columns}
                   values={values}
+                  manage={
+                    showManage
+                      ? {
+                          teamId,
+                          group: m.group ?? null,
+                          metric: m,
+                          members,
+                          groupInterval: groupIntervalFor(m.group),
+                        }
+                      : undefined
+                  }
                   // The p-3 gutter around the card costs 24px of the pinned width.
                   panelWidth={viewWidth ? viewWidth - 24 : undefined}
                 />
@@ -532,14 +540,6 @@ export function ScorecardGrid({
             </th>
           );
         })}
-        {showDelete && (
-          <th
-            className={cn(
-              "border-b border-zinc-200 w-8 dark:border-zinc-800",
-              headerBg,
-            )}
-          />
-        )}
       </tr>
     </thead>
   );

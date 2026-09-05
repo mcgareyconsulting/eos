@@ -4,9 +4,7 @@ import { useEffect } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Centered read-only detail dialog. The recap sheet (recap-modal.tsx) slides
-// in from the right because it's a long document; this is for a single item's
-// at-a-glance card, so it sits centered.
+// Centered read-only detail dialog for a single item's at-a-glance card.
 //
 // size: md = compact (issues); lg = roomier (rocks with milestones + description)
 // banner: optional full-width strip above the padded body (rock status banner).

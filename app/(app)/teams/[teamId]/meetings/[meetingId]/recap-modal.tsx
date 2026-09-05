@@ -92,7 +92,7 @@ export function RecapModal({
       if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
-    // Lock the page scroll while the sheet is open — wheel events were
+    // Lock the page scroll while the modal is open — wheel events were
     // scrolling the meeting page behind the overlay.
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -114,7 +114,7 @@ export function RecapModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/40"
         onClick={close}
@@ -124,11 +124,13 @@ export function RecapModal({
         role="dialog"
         aria-modal="true"
         aria-label={recapTitle}
-        className="absolute right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl border-l border-zinc-300 dark:border-zinc-800 flex flex-col"
+        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-300 dark:border-zinc-800">
+        <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <div>
-            <h2 className="text-base font-semibold">{recapTitle}</h2>
+            <h2 className="text-base font-semibold tracking-tight">
+              {recapTitle}
+            </h2>
             {meetingMinutes != null && (
               <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
                 {meetingMinutes} min meeting
@@ -145,12 +147,12 @@ export function RecapModal({
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
           {/* Finishing the meeting opens this recap for everyone right away
               — including an attendee who hadn't gotten to Conclude's rating
               form yet. Rather than make them close the recap to find it
               again, offer it right here so nobody's un-submitted rating gets
-              stranded behind this sheet. */}
+              stranded behind this modal. */}
           {myRating == null && (
             <section className="rounded-lg border-2 border-hpb-blue/30 bg-hpb-blue/5 dark:bg-hpb-blue/10 p-4">
               <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
@@ -284,7 +286,7 @@ export function RecapModal({
           </Section>
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-zinc-300 dark:border-zinc-800 px-5 py-3">
+        <footer className="flex items-center justify-end gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <button
             type="button"
             onClick={close}
@@ -300,7 +302,7 @@ export function RecapModal({
 
 // Thin wrapper mirroring ConcludeReview's MeetingRatingWidget: submits via
 // the same server action and refreshes so the "Meeting Rating" section below
-// (and Conclude, behind this sheet) both pick up the new rating.
+// (and Conclude, behind this modal) both pick up the new rating.
 function RecapRatingForm({
   teamId,
   meetingId,

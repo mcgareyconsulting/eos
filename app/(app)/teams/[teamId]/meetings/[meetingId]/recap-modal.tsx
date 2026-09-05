@@ -124,7 +124,7 @@ export function RecapModal({
         role="dialog"
         aria-modal="true"
         aria-label={recapTitle}
-        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
       >
         <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <div>

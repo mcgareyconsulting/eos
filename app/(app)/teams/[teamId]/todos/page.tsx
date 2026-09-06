@@ -6,21 +6,7 @@ import {
   type RockBoardDoc,
   type TodoBoardDoc,
 } from "./todos-board";
-
-type TodoDoc = {
-  team_id: string;
-  title: string;
-  description: string | null;
-  owner_id: string | null;
-  due_date: string | null;
-  completed_at: { toMillis?: () => number } | null;
-  archived_at?: { toMillis?: () => number } | null;
-  visibility: "team" | "private";
-  weekly_focus?: boolean;
-  source_issue_id: string | null;
-  source_meeting_id: string | null;
-  source_rock_id: string | null;
-};
+import { type TodoDoc } from "@/lib/firestore-types";
 
 /** Admin-SDK Timestamp → millis, so the value can cross the RSC boundary. */
 function toMillis(v: { toMillis?: () => number } | null | undefined) {

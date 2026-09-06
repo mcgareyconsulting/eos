@@ -4,7 +4,6 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
-import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
@@ -17,23 +16,12 @@ import { deleteHeadline, setHeadlineArchived } from "./actions";
 import { AddHeadlineModal } from "./add-headline-modal";
 import { HeadlineDiscussedCheckbox } from "./headline-checkbox";
 import { HeadlineEditButton } from "./headline-edit-modal";
+import {
+  type HeadlineDoc as HeadlineDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
-type HeadlineDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  body: string | null;
-  kind: "customer" | "employee" | "cascading" | "general";
-  created_by: string | null;
-  target_team_ids: string[];
-  created_at: Timestamp | null;
-  discussed?: boolean;
-  archived_at?: Timestamp | null;
-  /** Org-wide cascade from outside this team — show, don't delete. */
-  broadcast?: boolean;
-  from_label?: string | null;
-  source_owner_name?: string | null;
-};
+type HeadlineDoc = WithId<HeadlineDocRecord>;
 
 const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
   customer: "Customer",

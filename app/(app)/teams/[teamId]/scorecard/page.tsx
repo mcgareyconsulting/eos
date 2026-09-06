@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { loadScorecardGroups } from "@/lib/firebase/scorecard-groups";
-import { parseWeekRange, type GoalDirection } from "@/lib/scorecard";
+import { parseWeekRange } from "@/lib/scorecard";
 import {
   entriesToRecord,
   loadScorecardEntries,
@@ -14,18 +14,7 @@ import {
 } from "@/lib/scorecard-periods";
 import { AddMetricModal } from "./add-metric-modal";
 import { ManageGroupsButton } from "./manage-groups";
-
-type MetricDoc = {
-  team_id: string;
-  name: string;
-  unit: "number" | "currency" | "percent" | "yesno" | "time";
-  goal: number | null;
-  direction: GoalDirection;
-  owner_id: string | null;
-  sort_order: number;
-  group?: string | null;
-  interval?: string | null;
-};
+import { type ScorecardMetricDoc as MetricDoc } from "@/lib/firestore-types";
 
 export default async function ScorecardPage({
   params,

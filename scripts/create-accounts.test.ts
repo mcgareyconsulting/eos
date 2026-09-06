@@ -7,42 +7,42 @@ import { parsePerson } from "./create-accounts";
 
 describe("parsePerson", () => {
   test("reads `Full Name <email>`", () => {
-    assert.deepEqual(parsePerson("Cora Ravenkamp <cora.ravenkamp@highplainsbank.com>"), {
-      name: "Cora Ravenkamp",
-      email: "cora.ravenkamp@highplainsbank.com",
+    assert.deepEqual(parsePerson("Casey Nolan <casey.nolan@highplainsbank.com>"), {
+      name: "Casey Nolan",
+      email: "casey.nolan@highplainsbank.com",
     });
   });
 
   test("tolerates the trailing comma from a pasted recipient list", () => {
-    assert.deepEqual(parsePerson("Jessica Teichman <jessica.teichman@highplainsbank.com>,"), {
-      name: "Jessica Teichman",
-      email: "jessica.teichman@highplainsbank.com",
+    assert.deepEqual(parsePerson("Jamie Torres <jamie.torres@highplainsbank.com>,"), {
+      name: "Jamie Torres",
+      email: "jamie.torres@highplainsbank.com",
     });
   });
 
   test("strips quotes around a display name", () => {
-    assert.deepEqual(parsePerson('"Benes, Stephanie" <stephanie.benes@highplainsbank.com>'), {
-      name: "Benes, Stephanie",
-      email: "stephanie.benes@highplainsbank.com",
+    assert.deepEqual(parsePerson('"Reyes, Samantha" <samantha.reyes@highplainsbank.com>'), {
+      name: "Reyes, Samantha",
+      email: "samantha.reyes@highplainsbank.com",
     });
   });
 
   test("accepts a bare address", () => {
-    assert.deepEqual(parsePerson("joe.creighton@highplainsbank.com"), {
+    assert.deepEqual(parsePerson("jordan.ellis@highplainsbank.com"), {
       name: null,
-      email: "joe.creighton@highplainsbank.com",
+      email: "jordan.ellis@highplainsbank.com",
     });
   });
 
   test("lowercases the address but preserves the name's case", () => {
-    assert.deepEqual(parsePerson("Steph Benes <Stephanie.Benes@HighPlainsBank.com>"), {
-      name: "Steph Benes",
-      email: "stephanie.benes@highplainsbank.com",
+    assert.deepEqual(parsePerson("Sam Reyes <Samantha.Reyes@HighPlainsBank.com>"), {
+      name: "Sam Reyes",
+      email: "samantha.reyes@highplainsbank.com",
     });
   });
 
   test("rejects anything without an address", () => {
-    assert.equal(parsePerson("Cora Ravenkamp"), null);
+    assert.equal(parsePerson("Casey Nolan"), null);
     assert.equal(parsePerson(""), null);
     assert.equal(parsePerson("   "), null);
   });

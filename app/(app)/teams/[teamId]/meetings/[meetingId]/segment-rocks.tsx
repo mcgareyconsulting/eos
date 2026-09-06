@@ -173,9 +173,9 @@ export function SegmentRocks({
 
   // Active and archived as two lists, not one filtered by a flag: the speaking
   // order, department grouping and counts below all read `rocks`, and only the
-  // active set belongs in them (N24). Archived rocks are reachable in-meeting
-  // via the toggle — the client asked for the view in both modes on 2026-08-12,
-  // which retired the old "archived belongs to the Rocks tab" rule.
+  // active set belongs in them. Archived rocks are reachable in-meeting via
+  // the toggle, which retired the old "archived belongs to the Rocks tab"
+  // rule.
   const dedupe = (home: RockDoc[], shared: RockDoc[]) => {
     const seen = new Set(home.map((r) => r.id));
     return [...home, ...shared.filter((r) => !seen.has(r.id))];
@@ -200,7 +200,7 @@ export function SegmentRocks({
       ),
     [homeRocks, sharedRocksLive, teamId],
   );
-  // Resets on unmount, by design (N24) — Active is the room's default.
+  // Resets on unmount, by design — Active is the room's default.
   const [showArchived, setShowArchived] = useState(false);
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so

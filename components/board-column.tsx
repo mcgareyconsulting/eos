@@ -2,10 +2,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * A titled card of rows — the shared board column behind Home and the To-Dos
- * tab (N24/N22).
+ * tab.
  *
  * These were two components, `HomeColumn` and `BoardColumn`, copied from one
- * another and already diverged by the time the 2026-08-26 audit found them:
+ * another and had already diverged by the time they were reconciled:
  * one scrolled internally and took `flush`, the other deliberately did not
  * scroll and took `meta`. Both behaviours were right for their surface, which
  * is why this takes props rather than picking a winner — the drift was having

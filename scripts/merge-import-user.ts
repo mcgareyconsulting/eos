@@ -1,6 +1,6 @@
 // Merge a CSV-import placeholder uid into a real Google Auth uid on one team.
 //
-// Typical case: import created `import-steph-benes` for owner "Steph Benes";
+// Typical case: import created `import-sam-reyes` for owner "Sam Reyes";
 // the person later signed in with Google under a different uid. Both sit on
 // the roster → double name in speaking order; imported rocks/todos/issues
 // stay stuck on the placeholder.
@@ -9,7 +9,7 @@
 //
 // Usage:
 //   pnpm tsx scripts/merge-import-user.ts \
-//     --from import-steph-benes \
+//     --from import-sam-reyes \
 //     --to feBGEk83HEd1fssMOQsnbUweThG3 \
 //     --team VSI5aSuR45v55WKqthA5 \
 //     --database hpb-eos-prod-db

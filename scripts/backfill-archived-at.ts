@@ -1,4 +1,4 @@
-// F4 — stamp `archived_at: null` on todos / issues / headlines that were
+// Stamp `archived_at: null` on todos / issues / headlines that were
 // imported before 2026-08-04 without the field. Firestore `== null` does
 // not match a missing field, so the Monday sweep skips those docs until
 // this runs.

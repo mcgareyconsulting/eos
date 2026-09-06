@@ -171,7 +171,7 @@ export function formatGoal(
 
 /**
  * Above this magnitude, counts and currency render compactly ($2.3M, not
- * $2,300,000). N43: scorecard cells are `min-w-[4.5rem]`, so a full-precision
+ * $2,300,000). Scorecard cells are `min-w-[4.5rem]`, so a full-precision
  * million overflows its column and pushes the whole grid — which is
  * `overflow-x-auto` — into a horizontal scroll. Client-reported 8/19.
  *
@@ -335,7 +335,7 @@ export type SortOption =
 
 export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   // Standalone: configured sort_order. L10 (with speakingOrder): owner
-  // speaking sequence so the walk matches Segue/Rocks (P1-4).
+  // speaking sequence so the walk matches Segue/Rocks.
   { value: "order", label: "Default order" },
   { value: "status", label: "Status (off-track first)" },
   { value: "name", label: "Name A–Z" },
@@ -471,7 +471,7 @@ export function missingCount(
  * The incoming order is the sort the caller already applied — speaking order
  * in the L10 — and bucketing never reorders within a group, so each group
  * renders its own speaking round. That is what lets grouping and speaking
- * order compose instead of competing (N40).
+ * order compose instead of competing.
  *
  * Group order comes from `orderNames` when the caller has group docs —
  * position first, so Compliance can sit below Weekly — and falls back to

@@ -18,7 +18,7 @@ function pathFor(teamId: string) {
 }
 
 /**
- * Durable L10 speaking order on the team (P1-5). Leaders only (or org admin).
+ * Durable L10 speaking order on the team. Leaders only (or org admin).
  * Must be a full permutation of the current roster.
  */
 export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {

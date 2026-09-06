@@ -6,7 +6,7 @@ import { daysUntil } from "@/lib/dates";
 // page's Archived tab, its milestones are done too — even if the milestone
 // todo itself was never explicitly completed. Without this, an old rock's
 // stale milestones (e.g. a May due date) keep showing up as "due soon" or
-// overdue forever (roadmap Pass 18 #12, Cora).
+// overdue forever.
 
 export type MilestoneParentRock = {
   status?: string | null;
@@ -33,11 +33,10 @@ export function isMilestoneHiddenByRock(
 /**
  * How far ahead a milestone has to be due before it stops being a reminder.
  *
- * N29: surfacing every open milestone turned the To-Dos page into an
- * inventory — daniel, driving it live, called it "a broken page ... they're
- * just vomit at the top of the to-dos page, so you got to scroll to the
- * bottom", and Joe asked for "just a drop down that showed upcoming
- * milestones in the next two weeks". Two weeks is also already this app's
+ * Surfacing every open milestone turns the To-Dos page into an inventory:
+ * the milestones stack up above the list and push the actual to-dos off
+ * screen. Only milestones coming due soon are reminders; the rest belong on
+ * the rock they hang off. Two weeks is also already this app's
  * urgency threshold — it is where `dueToneClass` turns amber — so the
  * reminder window and the colour that marks it agree.
  */

@@ -1,5 +1,5 @@
-// Constrained markdown subset for description/body fields (P3-2). The client
-// asked for three things — bold, bullets, hyperlinks — so that is exactly what
+// Constrained markdown subset for description/body fields. Three things are
+// supported — bold, bullets, hyperlinks — so that is exactly what
 // this grammar accepts; anything else stays literal text.
 //
 // Why a parser instead of an HTML editor: descriptions keep living in the same
@@ -7,7 +7,7 @@
 // second format to read, and nothing downstream (BigQuery batch, Google Tasks
 // notes, CSV export) has to learn HTML. The renderer builds React elements
 // from this AST — never `dangerouslySetInnerHTML` — which is the property the
-// 2026-08-04 audit relied on when it cleared the comment linkifier.
+// a prior security review relied on when it cleared the comment linkifier.
 //
 // Backward compatibility rule: text with no markers must parse to exactly the
 // paragraphs it already was. Single newlines are therefore *kept inside*

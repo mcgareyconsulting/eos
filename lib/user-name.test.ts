@@ -34,7 +34,7 @@ describe("userDisplayName", () => {
     );
   });
 
-  // The N4 regression: user docs have no `full_name`, so a shared-rock owner
+  // The shared-rock regression: user docs have no `full_name`, so a shared-rock owner
   // resolved to "" and the section rendered "Shared by —".
   test("ignores a stray full_name field and reports empty", () => {
     assert.equal(userDisplayName({ full_name: "Joe Ramirez" } as never), "");
@@ -63,11 +63,11 @@ describe("userDisplayName", () => {
 // department rock carries shared ownership. That is a state, not missing data.
 
 describe("ownerLabel", () => {
-  const roster: Record<string, string> = { steph: "Stephanie Benes" };
+  const roster: Record<string, string> = { sam: "Samantha Reyes" };
   const nameOf = (id: string) => roster[id];
 
   test("resolves a member", () => {
-    assert.equal(ownerLabel("steph", nameOf), "Stephanie Benes");
+    assert.equal(ownerLabel("sam", nameOf), "Samantha Reyes");
   });
 
   test("null / undefined / empty owner reads as No Owner", () => {

@@ -1,18 +1,17 @@
 // The weekly-focus flag on a to-do, and the `**` title convention it replaces.
 //
-// N50 (Jessica): "We currently mark our 'weekly focus' to-do by adding two
-// asterisk to the name of the task. Would be nice to have a checkbox for it
-// instead." The team invented a text convention to carry state the schema did
-// not hold — the same finding shape as N40, where groups were typed into a
-// label before they were a thing.
+// Teams marked a weekly-focus to-do by prefixing its title with two asterisks
+// — a text convention carrying state the schema did not hold, the same shape
+// as scorecard groups being typed into a label before they were a real thing.
+// This promotes it to a field.
 //
-// **A free flag, any number** (daniel, 2026-09-02). One-per-person-per-week was
-// argued and rejected: `**` is unlimited today, so a field that silently
-// unmarked someone's first to-do would be the app overruling a working habit on
-// its way to replacing it.
+// **A free flag, any number.** One-per-person-per-week was argued and
+// rejected: `**` is unlimited today, so a field that silently unmarked
+// someone's first to-do would be the app overruling a working habit on its way
+// to replacing it.
 //
-// **The week is L10-to-L10, not a calendar week** (daniel, 2026-09-04): "if the
-// L10 is Wednesday, Wednesday to Wednesday is the week." Nothing here reads a
+// **The week is L10-to-L10, not a calendar week.** If the L10 falls on a
+// Wednesday, Wednesday to Wednesday is the week. Nothing here reads a
 // week boundary yet — the flag persists until someone clears it, exactly like
 // `**` does today — but that sentence is why this file does not reach for the
 // Monday sweep's boundary. They are different weeks and must not be conflated.
@@ -20,8 +19,8 @@
 /**
  * Leading `**` marker, with or without a trailing space.
  *
- * Both spellings are live in client data (seen 2026-09-04): "** Finish first
- * draft…" and "**Compile list of items…". Anchored to the start because that is
+ * Both spellings occur in live data: "** Finish first draft…" and
+ * "**Compile list of items…". Anchored to the start because that is
  * where every observed instance sits, and because a `**` mid-title is far more
  * likely to be emphasis than a focus marker.
  */

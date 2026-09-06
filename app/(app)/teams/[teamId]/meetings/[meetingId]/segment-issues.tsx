@@ -100,12 +100,12 @@ export function SegmentIssues({
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
-  // Resets when the segment unmounts, by design (N24): Active is the right
+  // Resets when the segment unmounts, by design: Active is the right
   // default for a room, and a remembered Archived view reads as "the issues
   // are gone".
   const [showArchived, setShowArchived] = useState(false);
   const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
-  // N47 — the vote hold, driven by the room's voting window (below).
+  // The vote hold, driven by the room's voting window (below).
   const [hold, setHold] = useState<{ on: boolean; ids: string[] | null }>({
     on: false,
     ids: null,
@@ -153,7 +153,7 @@ export function SegmentIssues({
     voteCredits(votes);
 
   // `issues` stays the ACTIVE list and is the only thing derived meeting state
-  // reads (N24). Swapping it for the archived list when the toggle flips is
+  // reads. Swapping it for the archived list when the toggle flips is
   // the obvious one-liner and it is wrong: the vote tally below counts votes
   // across whatever it is handed, so an archived issue's old votes would land
   // in "all votes in" and nothing would look broken.
@@ -163,10 +163,10 @@ export function SegmentIssues({
   // Short-term is what the Issues hour works; long-term is parked on its own tab.
   const { short, long } = splitIssuesByTerm(issues);
 
-  // N47: while the vote is open the row order is held, so a teammate's vote
-  // cannot re-sort the list between someone's decision and their click — the
-  // mis-vote Steph reported. Closing the vote releases it and the list sorts
-  // by votes, which is the whole point of having voted.
+  // While the vote is open the row order is held, so a teammate's vote cannot
+  // re-sort the list between someone's decision and their click and turn it
+  // into a mis-vote. Closing the vote releases it and the list sorts by votes,
+  // which is the whole point of having voted.
   const votingOpen = meetingLive.voting_open === true;
   const shouldHold = votingOpen && !showArchived && tab === "short";
   // Adjusting state during render (not in an effect) is the documented React
@@ -284,10 +284,9 @@ export function SegmentIssues({
             archivedCount={archivedIssues.length}
           />
           {/*
-            N46 (Steph): "Add the ability to create a 'To Do' from the Issues
-            section of the meeting." A plain segment-level control, not a
-            per-issue one (daniel, 2026-09-04): issues already carry an owner,
-            and the real use is assigning someone a piece of the work while the
+            Creating a to-do from the Issues segment is a plain segment-level
+            control, not a per-issue one: issues already carry an owner, and
+            the real use is assigning someone a piece of the work while the
             issue itself stays open — which is a to-do about the discussion,
             not a child record of one issue.
           */}

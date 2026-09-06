@@ -69,7 +69,7 @@ export function SegmentScorecard({
   /** Seeded from the server so group order never flashes alphabetical. */
   initialGroups: ScorecardGroup[];
   members: Member[];
-  /** Meeting/team speaking order — drives Default order (P1-4). */
+  /** Meeting/team speaking order — drives Default order. */
   speakingOrder?: string[];
   absentUserIds?: string[];
 }) {

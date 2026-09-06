@@ -1,7 +1,7 @@
 /**
  * Cloud Functions for Firebase (2nd gen).
  *
- * 1) Audit log capture — DECIDED (docs/ROADMAP.md): server-side Firestore
+ * 1) Audit log capture: server-side Firestore
  *    triggers so nothing bypasses the log. Deploy only after triggers are
  *    pointed at the named database (see OPERATIONS / CUTOVER).
  *

@@ -77,7 +77,7 @@ function buildInputs(
   }
 
   if (kind === "rocks") {
-    // Ninety ships rocks + milestones as one workbook; take both (N6).
+    // Ninety ships rocks + milestones as one workbook; take both.
     const { rocks, milestones, sheets } = rocksWorkbookFromBytes(buf, filename);
     return {
       inputs: {
@@ -156,7 +156,7 @@ export async function importTeamFile(
 
     // Unmatched owners import as No Owner by default — losing rows silently is
     // worse than importing them unassigned. SKIP_ROWS opts back out; picking a
-    // member parks them on that member instead (N6).
+    // member parks them on that member instead.
     const unmatchedOwner = fallbackRaw === SKIP_ROWS ? "skip" : "no-owner";
 
     let fallbackOwnerId: string | null = null;

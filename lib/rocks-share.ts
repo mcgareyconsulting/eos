@@ -1,7 +1,7 @@
-// Cross-team rock share (N4). A rock has one parent `team_id` and optional
+// Cross-team rock share. A rock has one parent `team_id` and optional
 // `shared_team_ids`. Guest teams see it at the bottom of their Rocks list
 // grouped as "Shared by {First Last}" of the person owner — not the source
-// team name (Pass 21).
+// team name.
 
 export type ShareableRock = {
   team_id: string;
@@ -58,8 +58,8 @@ export function groupSharedRocksByOwner<T extends ShareableRock>(
  * May `uid` move this rock's status while viewing `teamId`?
  *
  * True on the rock's own team (normal case), and for the rock's person owner
- * on a team it has been shared into — so Steph can update her rock from the
- * guest team's list or L10 without switching teams. Everyone else on a guest
+ * on a team it has been shared into — so an owner can update their rock from
+ * the guest team's list or L10 without switching teams. Everyone else on a guest
  * team sees it read-only, and structural edits (title, archive, delete,
  * milestones, re-share) always stay on the parent team.
  *

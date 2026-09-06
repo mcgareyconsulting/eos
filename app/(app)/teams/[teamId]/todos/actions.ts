@@ -58,7 +58,7 @@ export async function addTodo(teamId: string, formData: FormData) {
   // To-Dos form); null for to-dos created outside a meeting.
   const source_meeting_id =
     String(formData.get("source_meeting_id") ?? "").trim() || null;
-  // N50: weekly focus. A free flag — see lib/weekly-focus.ts for why it is not
+  // Weekly focus. A free flag — see lib/weekly-focus.ts for why it is not
   // one-per-person, and for the L10-to-L10 week it belongs to.
   const weekly_focus = formData.get("weekly_focus") === "on";
 
@@ -226,7 +226,7 @@ export async function updateTodoMeta(
 }
 
 /**
- * Toggle a to-do's weekly-focus flag (N50).
+ * Toggle a to-do's weekly-focus flag.
  *
  * Its own narrow action rather than a trip through `updateTodoMeta`: the pill
  * in the row is a one-click control, and routing it through the full meta

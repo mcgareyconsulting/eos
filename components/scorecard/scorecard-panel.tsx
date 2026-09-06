@@ -40,7 +40,7 @@ export function ScorecardPanel({
   showManage = true,
   groups = [],
   compact = false,
-  /** L10: when set, Default order walks owner speaking order (P1-4). */
+  /** L10: when set, Default order walks owner speaking order. */
   speakingOrder,
   /** L10: absentees sort after present owners (same as Rocks). */
   absentUserIds,
@@ -247,19 +247,18 @@ export function ScorecardPanel({
         compact={compact}
         hideLocalSearch
         /*
-         * Grouping and speaking order compose rather than compete (N40).
+         * Grouping and speaking order compose rather than compete.
          * Rows arrive already sorted — by speaking order in the L10 — and the
          * grid buckets them in that order, so each group renders its own
          * speaking round: Weekly in speaker order, then Compliance in speaker
-         * order. This is how the client's previous tool worked and why Steph
-         * thought the feature was missing; the L10 used to force a flat list
-         * here on the assumption the two orderings conflicted.
+         * order. This matches the tool teams came from; the L10 used to force
+         * a flat list here on the assumption the two orderings conflicted,
+         * which made the grouping look absent.
          *
          * An explicit sort still flattens — regrouping rows someone deliberately
          * re-sorted would bury what they asked for. Filtering by owner does not:
          * it subsets the rows without touching their order, so the groups still
-         * hold and the client wants to keep reading them as groups while looking
-         * at one person's measurables (client, 8/31). Status and search still
+         * hold while reading one person's measurables. Status and search still
          * flatten on the old rule.
          */
         flatList={

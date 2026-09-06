@@ -78,7 +78,7 @@ function statusRank(s: IssueStatus | null | undefined): number {
  * Is this issue archived?
  *
  * One definition for every surface. There were three, and two of them
- * disagreed on the same page (found 2026-08-26): the Issues tab's server
+ * disagreed on the same page: the Issues tab's server
  * render used `archived_at != null` while its own live client filter also
  * honoured a legacy `archived` boolean — so a doc carrying only the boolean
  * rendered as Active and then vanished on hydration. The L10 segment had
@@ -140,11 +140,11 @@ export function rankShortTerm<T extends RankableIssue>(
 }
 
 /**
- * Apply a held row order (N47).
+ * Apply a held row order.
  *
- * Steph: "The dynamic voting / movement of issues is tricky during the process,
- * as the issue could move while you are selecting, causing you to pick the
- * wrong one." That is a **mis-vote**, not an annoyance — `rankShortTerm` sorts
+ * Live re-sorting during voting is a correctness problem, not an annoyance: an
+ * issue can move while someone is selecting it, so the click lands on the
+ * wrong row. That is a **mis-vote** — `rankShortTerm` sorts
  * by vote total, the segment is subscribed live, so a teammate's vote re-sorts
  * the list between your decision and your click and the vote lands on someone
  * else's issue.
@@ -219,10 +219,9 @@ export function voteCredits(
 /**
  * Room-wide vote tally for the L10 Issues header.
  *
- * Client ask (Steph, 8/19 L10): "we always ask everyone if they voted ... it
- * might be cool to just tally up if the available votes have been exhausted
- * or not, because then you don't have to confirm that everybody has submitted
- * their three votes."
+ * Without a tally the room has to poll each person out loud to find out
+ * whether everyone has voted. Showing cast-vs-available answers that on
+ * screen, so no one has to confirm that everybody submitted their three votes.
  *
  * Cast comes from the team totals denormalized on each issue, so this needs no
  * read of other people's `issue_votes` (which no client subscribes to).

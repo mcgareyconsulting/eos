@@ -5,7 +5,7 @@
 // There is NO `full_name` field on the document — `full_name` only exists on
 // the in-memory TeamMember shape that getTeamMembers() derives. Reading
 // `data.full_name` off a raw snapshot silently yields undefined, which is how
-// the N4 "Shared by —" bug happened: shared-rock owners sit on the parent
+// the "Shared by —" bug happened: shared-rock owners sit on the parent
 // team, so they miss the roster lookup and fall through to this path.
 
 export type UserDocData = {

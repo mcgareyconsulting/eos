@@ -50,7 +50,7 @@ describe("normalizeHeadlineKind", () => {
   });
 });
 
-// N6: ninety exports rocks + milestones as one two-sheet workbook. The Import
+// Ninety exports rocks + milestones as one two-sheet workbook. The Import
 // page used to read only the rocks sheet, silently dropping the milestones.
 
 const sheet = (name: string, rows: string[][]) => ({ name, rows });
@@ -117,7 +117,7 @@ describe("rocksWorkbookFromBytes", () => {
   });
 });
 
-// N6 finding 4: a departed employee's rows must still import — with No Owner
+// A departed employee's rows must still import — with No Owner
 // and the old name kept where a human will see it, not skipped silently.
 
 describe("withUnmatchedOwnerNote", () => {
@@ -156,7 +156,7 @@ describe("withUnmatchedOwnerNote", () => {
   });
 });
 
-// N6 finding 2: the dry run has to show what will land, row by row — but a
+// The dry run has to show what will land, row by row — but a
 // 5k-row export must not become a payload the browser swallows whole.
 
 describe("PreviewCollector", () => {

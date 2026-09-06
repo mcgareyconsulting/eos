@@ -1,15 +1,15 @@
 # Future nightly BigQuery batch worker (Firestore -> BigQuery consolidation
-# warehouse). See docs/ROADMAP.md "Chosen direction - nightly batch worker
+# warehouse). See "Chosen direction - nightly batch worker
 # (DECIDED)" and "RESUME HERE" item 4.
 #
 # STATUS: BLOCKED on client BigQuery conventions (dataset naming, region,
 # partitioning standards, PII handling, retention, reader access — see
-# ROADMAP "Schema mapping: BLOCKED on client"). Nothing in this file is
+# schema mapping is BLOCKED on the client). Nothing in this file is
 # active; it's a skeleton to fill in once those conventions arrive, so the
 # shape of the eventual change is visible for review now rather than a
 # surprise later.
 #
-# Decided design (from ROADMAP, to preserve once unblocked):
+# Decided design (to preserve once unblocked):
 #   - Run cadence: nightly (decoupled from analytics grain, which is mostly
 #     weekly - cost delta nightly-vs-weekly is noise at this scale).
 #   - Date-partitioned append, not overwrite: each run appends current state
@@ -17,8 +17,8 @@
 #   - Collections to mirror: organizations, users, teams, team_members,
 #     rocks + milestones, todos, issues, headlines, scorecard metrics/values,
 #     meetings, plus the append-only `audit_log` collection (see the
-#     separate onWrite-trigger audit log work, ROADMAP item 2 - independent
-#     of this worker). Skip ephemeral presence/segment-cursor state.
+#     separate onWrite-trigger audit log work, independent of this worker).
+#     Skip ephemeral presence/segment-cursor state.
 #   - Per-table shape: stable scalar columns + `snapshot_date` partition +
 #     a `raw` JSON column to absorb schema drift.
 #   - Mechanics: Cloud Scheduler -> Cloud Run job -> BigQuery load jobs,

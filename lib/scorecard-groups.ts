@@ -7,7 +7,7 @@
 // Weekly, which is backwards: Compliance IS a weekly group, it just doesn't
 // take precedence over the ordinary weekly measurables. Alphabetical order
 // can't express that, so a group became a thing you create — with a name, a
-// period, and a position you choose (N40, daniel 2026-08-24).
+// period, and a position you choose.
 //
 // Metrics still carry `group` as the group's NAME rather than an id, which is
 // what the importer already writes (ninety's "Group Name" column) and what the

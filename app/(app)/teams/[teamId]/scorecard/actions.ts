@@ -87,7 +87,7 @@ export async function addMetric(teamId: string, formData: FormData) {
 /**
  * Edit an existing measurable's name, interval, unit, goal and owner.
  *
- * N48 follow-on. Until this existed there was **no way to change a measurable
+ * Until this existed there was **no way to change a measurable
  * at all** — `addMetric` / `deleteMetric` / `setMetricGroup` were the whole
  * surface, so fixing a typo in a name meant deleting the measurable *and every
  * value ever logged against it* and starting over. Validation is deliberately

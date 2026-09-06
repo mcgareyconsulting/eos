@@ -173,7 +173,7 @@ export async function castVote(
       throw new Error("Issue not found");
     }
 
-    // The vote window is the rule, not a UI convenience (N47). Checked inside
+    // The vote window is the rule, not a UI convenience. Checked inside
     // the transaction so closing the vote and casting one cannot interleave.
     //
     // Voting exists only inside an L10 — `VoteButton` renders on the meeting's
@@ -273,7 +273,7 @@ export async function setIssueType(
 export async function deleteIssue(teamId: string, issueId: string) {
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  // Cascade: issue + votes + comments (P2-5 entity_comments)
+  // Cascade: issue + votes + comments (entity_comments)
   const [votes, comments] = await Promise.all([
     db.collection("issue_votes").where("issue_id", "==", issueId).get(),
     db

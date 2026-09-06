@@ -14,10 +14,10 @@ describe("parseAllowlist", () => {
   });
 
   test("splits domains from exact emails", () => {
-    const list = parseAllowlist("@highplainsbank.com, daniel@mcgareyconsulting.com");
+    const list = parseAllowlist("@highplainsbank.com, consultant@example.com");
     assert.deepEqual(list, {
       domains: ["highplainsbank.com"],
-      emails: ["daniel@mcgareyconsulting.com"],
+      emails: ["consultant@example.com"],
     });
   });
 
@@ -31,17 +31,17 @@ describe("parseAllowlist", () => {
 });
 
 describe("isEmailAllowed", () => {
-  const list = parseAllowlist("@highplainsbank.com, daniel@mcgareyconsulting.com");
+  const list = parseAllowlist("@highplainsbank.com, consultant@example.com");
 
   test("null allowlist allows everyone", () => {
     assert.equal(isEmailAllowed(null, "anyone@example.com"), true);
   });
 
   test("allows the domain and the exact email, case-insensitively", () => {
-    assert.equal(isEmailAllowed(list, "steph.benes@highplainsbank.com"), true);
-    assert.equal(isEmailAllowed(list, "Steph.Benes@HighPlainsBank.com"), true);
-    assert.equal(isEmailAllowed(list, "daniel@mcgareyconsulting.com"), true);
-    assert.equal(isEmailAllowed(list, "Daniel@McGareyConsulting.com"), true);
+    assert.equal(isEmailAllowed(list, "sam.reyes@highplainsbank.com"), true);
+    assert.equal(isEmailAllowed(list, "Sam.Reyes@HighPlainsBank.com"), true);
+    assert.equal(isEmailAllowed(list, "consultant@example.com"), true);
+    assert.equal(isEmailAllowed(list, "Consultant@Example.com"), true);
   });
 
   test("rejects everything else", () => {

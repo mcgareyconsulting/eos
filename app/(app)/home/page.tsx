@@ -52,7 +52,7 @@ type TodoRow = {
   visibility: string;
   completed_at: string | null;
   source_rock_id: string | null;
-  /** N50 — already carried by the `...data` spread; typed so it can render. */
+  /** Already carried by the `...data` spread; typed so it can render. */
   weekly_focus?: boolean;
 };
 
@@ -537,11 +537,12 @@ export default async function HomePage() {
             ))}
           </BoardColumn>
 
-          {/* N34: "My Rocks" and "Departmental Rocks" read as two lists, not
-              one mixed one — Cora couldn't tell which rocks were actually
-              hers. Split by rock_type, so a department rock she owns still
-              sits with the department's. Either section is dropped entirely
-              when empty rather than showing an empty-state twice. */}
+          {/* "My Rocks" and "Departmental Rocks" read as two lists, not one
+              mixed one — otherwise a viewer can't tell which rocks are
+              actually theirs. Split by rock_type, so a department rock the
+              viewer owns still sits with the department's. Either section is
+              dropped entirely when empty rather than showing an empty-state
+              twice. */}
           <div className="space-y-4">
             {myRocks.length > 0 && (
               <BoardColumn scroll title="My Rocks" count={myRocks.length} flush>

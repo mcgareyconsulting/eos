@@ -22,7 +22,7 @@ import {
  * Order is the whole reason this exists. A group used to be a free-text label
  * sorted alphabetically, which put Compliance above Weekly — backwards,
  * because Compliance is a weekly group that shouldn't outrank the ordinary
- * weekly measurables. Position is chosen here instead of inferred (N40).
+ * weekly measurables. Position is chosen here instead of inferred.
  */
 export function ManageGroupsButton({
   teamId,

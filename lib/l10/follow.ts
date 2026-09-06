@@ -1,6 +1,6 @@
-// Follow-the-leader for the live L10 (N27).
+// Follow-the-leader for the live L10.
 //
-// The room's model, decided 2026-08-26 after the 8/12 L10:
+// The room's model:
 //
 //   attached (default) — no `?view=`. The group's stage is your stage; when
 //                        the leader advances, your content comes with it.

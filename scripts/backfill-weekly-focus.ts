@@ -1,4 +1,4 @@
-// One-time migration for N50: lift the `**` title convention into the
+// One-time migration: lift the `**` title convention into the
 // `weekly_focus` field and strip the marker from the title.
 //
 // Modelled on scripts/backfill-scorecard-groups.ts — the same shape of change

@@ -201,7 +201,7 @@ function MeetingRatingWidget({
 }) {
   const router = useRouter();
 
-  // Concluded + already rated: the form is the hole (N32). First write
+  // Concluded + already rated: the form is the hole. First write
   // after Finish is still allowed so recap catch-up works.
   if (readOnly && myRating) {
     return (

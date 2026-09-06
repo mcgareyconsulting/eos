@@ -58,7 +58,7 @@ type MeetingDoc = {
   current_segment: Segment;
   segment_started_at: Timestamp | null;
   current_issue_id?: string | null;
-  /** N47 — the room's voting window for the Issues segment. */
+  /** The room's voting window for the Issues segment. */
   voting_open?: boolean;
   notes: string | null;
   absent_user_ids?: string[];
@@ -89,7 +89,7 @@ export default async function MeetingDetailPage({
   const scorecardWeekRange = parseWeekRange(weeksParam);
   const scorecardPeriod = parseScorecardPeriod(periodParam);
   const { uid, db, team, isAdmin, membershipRole } = await requireTeamAccess(tid);
-  // Pass 18 #9: only a team leader (or org admin, god-mode bypass) may drive
+  // Only a team leader (or org admin, god-mode bypass) may drive
   // the shared L10 transport — advance/rewind segments, Finish. Members keep
   // peeking + catch-up; MeetingRail hides the transport controls when this
   // is false. Mirrors the server-side gate in meetings/actions.ts.
@@ -101,7 +101,7 @@ export default async function MeetingDetailPage({
 
   const members = await getTeamMembers(tid);
   const absentUserIds = m.absent_user_ids ?? [];
-  // N47 — the room's voting window, hydrating the Issues segment's first paint.
+  // The room's voting window, hydrating the Issues segment's first paint.
   const votingOpen = m.voting_open === true;
 
   // Meetings started before the speaking order shipped have no stored order;

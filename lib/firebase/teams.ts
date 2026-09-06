@@ -172,7 +172,7 @@ export type DirectoryTeam = {
  */
 export type OrgAdmin = { uid: string; name: string; email: string | null };
 
-/** Soft directory: every in-domain user may read team names (P2-7). */
+/** Soft directory: every in-domain user may read team names. */
 export const getOrgTeams = cache(
   async (): Promise<{ id: string; name: string }[]> => {
     const { db } = await requireFirebaseUser();

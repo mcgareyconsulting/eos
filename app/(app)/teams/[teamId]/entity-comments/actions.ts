@@ -17,7 +17,7 @@ function parentCollection(type: CommentEntityType): "issues" | "rocks" {
  * markdown subset as description fields (see lib/rich-text.ts) — bold,
  * bullets, links — and is stored verbatim as plain text; rendering, and the
  * https/mailto href allowlist, happen at read time. Binary attachments are
- * still out of scope; a link to a Doc is the substitute (N10).
+ * still out of scope; a link to a Doc is the substitute.
  */
 export async function addEntityComment(
   teamId: string,

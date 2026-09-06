@@ -24,7 +24,7 @@ export type KindStats = {
  * One row as the importer actually read it — resolved owner, the fields that
  * decide where it lands, and what would happen to it. Preview used to show
  * only the filename and a write count, which told nobody whether the mapping
- * was right (N6 finding 2 / Jessica's dry-run ask).
+ * was right. The dry run has to show what will land, row by row.
  */
 export type PreviewRow = {
   kind: ImportKind;

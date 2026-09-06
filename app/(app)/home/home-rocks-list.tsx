@@ -22,7 +22,7 @@ export type HomeRockListItem = {
   team_id: string;
   href: string;
   /**
-   * Both needed by the My/Departmental split (N34) — a legacy rock with no
+   * Both needed by the My/Departmental split — a legacy rock with no
    * owner counts as departmental, so owner_id is not optional here.
    */
   owner_id: string | null;

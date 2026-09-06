@@ -9,10 +9,10 @@
 // lib/firebase/session.ts, driven by this parser.
 //
 // Format (SIGN_IN_ALLOWLIST env var): comma-separated entries.
-//   "@highplainsbank.com, daniel@mcgareyconsulting.com"
+//   "@highplainsbank.com, consultant@example.com"
 // Entries starting with "@" allow the whole domain; anything else is an
 // exact email. Matching is case-insensitive. Unset/empty = open sign-in
-// (the trial's historical behavior) — restriction is opt-in per deployment.
+// — restriction is opt-in per deployment.
 
 export type Allowlist = {
   domains: string[]; // without the leading "@", lowercase

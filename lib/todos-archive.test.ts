@@ -301,9 +301,6 @@ describe("selectHeadlinesDiscussedBeforeWeek", () => {
   // Broadcast copies used to be held back here. They are not any more: a
   // cascaded headline is fanned out one doc per team, so closing this team's
   // copy after they have shared it leaves every other team's queue alone.
-  // Client ask, 8/19 L10 — "each team will have that in their queue to
-  // share ... when they mark it off, it's setting the status that it was
-  // shared with a team, not that it's not available to share anymore."
   test("a broadcast copy archives like any other once discussed", () => {
     const ids = selectHeadlinesDiscussedBeforeWeek(
       [

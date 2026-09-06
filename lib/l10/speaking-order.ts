@@ -60,16 +60,14 @@ export function clampSpeakerIndex(index: number, length: number): number {
 //
 // The round is a CYCLE on every stage EXCEPT Segue. Past the last person
 // present the pointer lands back on the first, and Prev mirrors it backwards.
-// Client ask (Ryan, 8/19 L10): "you get to the last speaker, you click next,
-// and it goes back to the beginning ... sometimes we go multiple rounds, and
-// that's much easier than clicking previous a bunch of times."
+// A discussion stage can go around more than once, so Next past the last
+// speaker returns to the first rather than dead-ending and forcing a run of
+// Prev clicks back to the top.
 //
-// Segue is the exception (daniel, 2026-08-26): it is a once-around stage —
-// everyone shares, then the round is done — so wrapping there would erase the
-// only signal that the room has finished going round. Steph, same meeting:
-// "for headlines or for segue, we would only go through once, but ... in
-// discussion for like an issue, we might go around twice." Callers on Segue
-// pass `wrap: false` and the control goes inert at both ends.
+// Segue is the exception: it is a once-around stage — everyone shares, then
+// the round is done — so wrapping there would erase the only signal that the
+// room has finished going round. Callers on Segue pass `wrap: false` and the
+// control goes inert at both ends.
 //
 // A round with nobody else present still returns `from` unchanged, so the
 // control can never land on someone who is not in the room.

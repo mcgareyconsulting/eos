@@ -66,7 +66,7 @@ describe("parseSharedStrings", () => {
 });
 
 describe("parseSheetXml", () => {
-  const shared = ["Owner", "Steph Benes", "Link text"];
+  const shared = ["Owner", "Sam Reyes", "Link text"];
   const dateStyles = [false, false, true]; // style index 2 formats as a date
 
   test("keeps an empty self-closing cell in its own column", () => {
@@ -82,7 +82,7 @@ describe("parseSheetXml", () => {
       shared,
       dateStyles,
     );
-    assert.deepEqual(rows, [["Steph Benes", "", "Link text"]]);
+    assert.deepEqual(rows, [["Sam Reyes", "", "Link text"]]);
   });
 
   test("converts date-styled numbers and leaves plain numbers alone", () => {
@@ -102,7 +102,7 @@ describe("parseSheetXml", () => {
       shared,
       dateStyles,
     );
-    assert.deepEqual(rows, [["Owner", "", "", "Steph Benes"]]);
+    assert.deepEqual(rows, [["Owner", "", "", "Sam Reyes"]]);
   });
 
   // Namespace prefixes are legal OOXML and exporters disagree: ninety writes
@@ -116,7 +116,7 @@ describe("parseSheetXml", () => {
       shared,
       dateStyles,
     );
-    assert.deepEqual(rows, [["Owner", "Steph Benes"]]);
+    assert.deepEqual(rows, [["Owner", "Sam Reyes"]]);
   });
 
   test("reads prefixed inline strings and self-closing cells", () => {
@@ -126,7 +126,7 @@ describe("parseSheetXml", () => {
       shared,
       dateStyles,
     );
-    assert.deepEqual(rows, [["Hello", "", "Steph Benes"]]);
+    assert.deepEqual(rows, [["Hello", "", "Sam Reyes"]]);
   });
 });
 

@@ -13,8 +13,8 @@
 // is set. It's an empty record waiting for the person to sign in with Google.
 //
 // Usage:
-//   pnpm accounts:create "Cora Ravenkamp <cora@bank.com>" "Jane Doe <jane@bank.com>"
-//   pnpm accounts:create --dry-run "Cora Ravenkamp <cora@bank.com>"
+//   pnpm accounts:create "Casey Nolan <casey@bank.com>" "Jane Doe <jane@bank.com>"
+//   pnpm accounts:create --dry-run "Casey Nolan <casey@bank.com>"
 //
 // Options:
 //   --dry-run        Report what would happen. Creates nothing.
@@ -76,7 +76,7 @@ async function main() {
   if (people.length === 0) {
     console.error(
       'Nothing to do — pass one or more people:\n' +
-        '  pnpm accounts:create "Cora Ravenkamp <cora.ravenkamp@highplainsbank.com>"',
+        '  pnpm accounts:create "Casey Nolan <casey.nolan@highplainsbank.com>"',
     );
     process.exit(1);
   }

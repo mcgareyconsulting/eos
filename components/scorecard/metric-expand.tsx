@@ -29,16 +29,16 @@ import { TrendChart } from "./trend-chart";
  * inside a full-width <td colSpan>, so it spans the frozen columns and the
  * period columns.
  *
- * The manage bar is here rather than in the row itself (N48). Delete used to
+ * The manage bar is here rather than in the row itself. Delete used to
  * live in a trailing table column and was hidden three ways at once: past all
  * 13 period columns so it sat off the right edge until you scrolled the grid
  * fully across, then `opacity-0` until its row was hovered, then `text-zinc-300`
- * once revealed. Steph reported the capability as missing; it had shipped and
- * worked all along. The expand chevron is in the frozen first column and never
+ * once revealed — hidden well enough that the capability read as missing even
+ * though it worked. The expand chevron is in the frozen first column and never
  * scrolls away, so anything reachable from this panel is reachable, full stop.
  *
- * The group editor moves in with it. `GroupCell` was orphaned by the 2026-08-31
- * grid rework — the component survived, its column did not — leaving the only
+ * The group editor moves in with it. `GroupCell` was orphaned by a later grid
+ * rework — the component survived, its column did not — leaving the only
  * way to regroup a measurable the Add form. Both controls belong to the same
  * question ("change this row"), so they share the same home.
  */

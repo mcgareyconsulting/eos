@@ -12,7 +12,7 @@ export function AdvanceButton({
   current,
   advanceAction,
   endAction,
-  // Pass 18 #9: this drives the shared group stage (advance/end), so it's
+  // This drives the shared group stage (advance/end), so it's
   // leader/admin-only — same gate as the rail's Back/Next/Finish. Currently
   // unused (superseded by the rail transport, see docs/L10_GAPS.md), but
   // kept in sync so it can't reopen group transport to members if it's ever

@@ -85,7 +85,7 @@ export type TeamImportOptions = {
    *   "skip"     — drop the row.
    *
    * Defaults to "no-owner": losing rows silently is worse than importing them
-   * unassigned, and an unowned row is visible and fixable in the app (N6).
+   * unassigned, and an unowned row is visible and fixable in the app.
    */
   unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
@@ -133,7 +133,7 @@ export function tableFromBytes(
  * Ninety exports Rocks and their Milestones as one two-sheet .xlsx. The CLI
  * has always taken both (`--rocks --milestones` on the same path); the Import
  * page used to read only the rocks sheet, so the milestone half was silently
- * dropped (N6). Read both in one pass.
+ * dropped. Read both in one pass.
  *
  * A CSV/TSV holds a single table, so it yields rocks only. The milestone sheet
  * must be a *different* sheet than the one chosen for rocks — a lone
@@ -428,7 +428,7 @@ export class OwnerResolver {
 /**
  * Keep an unmatched Owner name with the row it came from. The client's case is
  * a departed employee: the rows still have to import, but "who used to own
- * this" must not silently vanish (N6).
+ * this" must not silently vanish.
  */
 export function withUnmatchedOwnerNote(
   description: string | null | undefined,
@@ -490,7 +490,7 @@ function createdAtFrom(row: Record<string, string>, headers: string[]) {
 /**
  * archived_at for a NEW imported row. Archived rows previously landed with
  * `archived_at: null` — i.e. "Include archived rows" resurrected finished work
- * as live work, the opposite of what the checkbox says (N6 finding 6). An
+ * as live work, the opposite of what the checkbox says. An
  * archived row now carries its Archived Date, falling back to import time when
  * the export has the flag but no parseable date.
  *
@@ -617,8 +617,7 @@ async function importScorecard(
     const sampleValues = weekColumns.map((c) => row[c.header] ?? "");
     const unit = inferUnit(parsed.unit, sampleValues);
 
-    // Same No Owner contract as rocks / todos / issues / headlines (N6
-    // finding 4): a name that matches nobody must not silently drop the
+    // Same No Owner contract as rocks / todos / issues / headlines: a name that matches nobody must not silently drop the
     // measurable — it imports unowned with the original name kept in the
     // description. This matters more here than elsewhere, because a dropped
     // scorecard row takes its whole history of week values with it.
@@ -664,7 +663,7 @@ async function importScorecard(
       // weekly periods, so this is right for the data we can read — but a
       // monthly or quarterly measurable imports into the wrong interval tab
       // and has to be corrected on the Scorecard tab. Called out on the
-      // Import page rather than guessed at (N6 finding 7).
+      // Import page rather than guessed at.
       interval: "weekly",
       description,
       sort_order: i,
@@ -691,7 +690,7 @@ async function importScorecard(
 
     // Scorecard is the only kind that writes two collections, so the preview
     // says how much history rides along with each measurable — otherwise the
-    // write count reads as wrong against the row count (N6 findings 2 + 7).
+    // write count reads as wrong against the row count.
     const group = cell(row, table.headers, "Group Name", "Group", "Section");
     const groupName = normalizeGroupName(group);
     if (groupName) {
@@ -817,7 +816,7 @@ async function importRocks(
 
     // Rocks had no archived filter at all, while the Import page told users
     // archived rows are skipped by default — true for every other kind but
-    // not this one (N6 finding 6).
+    // not this one.
     if (!ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({

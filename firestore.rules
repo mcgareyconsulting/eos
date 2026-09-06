@@ -115,7 +115,7 @@ service cloud.firestore {
     // shared_team_ids may read (up to 8 shares; index checks below). Writes
     // stay on the home team only — edit status/share from the parent team.
     // Share-down is allowed: the writer does not have to sit on the guest
-    // team (N4 — Leadership rock shared into ESD).
+    // team (a rock shared from its parent team into another).
     function listSharedToMe(data) {
       let ids = data.get('shared_team_ids', []);
       return ids is list && (
@@ -212,7 +212,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ---------- free-form comments on issues / rocks (P2-5) ----------
+    // ---------- free-form comments on issues / rocks ----------
     // Writes go through server actions (admin SDK); client rules cover live
     // reads + defense-in-depth if a client write path is added later.
     match /entity_comments/{id} {
@@ -264,7 +264,7 @@ service cloud.firestore {
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
       allow read, delete: if admin() || isMember(resource.data.team_id);
-      // Concluded meetings are frozen for client writes (N32). Notes,
+      // Concluded meetings are frozen for client writes. Notes,
       // attendance, and segment state go through the Admin SDK, which
       // bypasses this; the conclude lock for those lives in the server
       // actions. Clients cannot reopen or rewrite a finished meeting.
@@ -282,7 +282,7 @@ service cloud.firestore {
       // Conclude segment; clients only read aggregates via server
       // components, so no client write path is needed. Collection name kept
       // as `effectiveness_scores` for path stability (rules + audit trigger).
-      // Conclude-lock (N32: no rewrite after ended_at) is enforced in
+      // Conclude-lock (no rewrite after ended_at) is enforced in
       // rateMeeting — Admin SDK bypasses these rules.
       match /effectiveness_scores/{scoreId} {
         allow read:  if admin() || isMember(meetingTeam());

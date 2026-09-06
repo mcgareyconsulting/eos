@@ -89,7 +89,7 @@ export function MeetingRail({
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
   initialAbsentUserIds: string[];
-  /** Pass 18 #9: team leader or org admin — the only viewers who may drive
+  /** Team leader or org admin — the only viewers who may drive
    *  the shared transport (Back/Next/Finish below). Everyone else keeps
    *  peek (?view=) and the "Group is on X — Catch up" pill; the server
    *  actions enforce this independently, so hiding the buttons here is a
@@ -185,8 +185,8 @@ export function MeetingRail({
   const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
   const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
 
-  // Followers ARE carried forward when someone drives the stage (N27, client
-  // ask 2026-08-12). The old rule was the reverse — nobody was force-navigated,
+  // Followers ARE carried forward when someone drives the stage. The old
+  // rule was the reverse — nobody was force-navigated,
   // on the grounds that being pulled mid-read is jarring — and the room's
   // verdict was that hunting for a Catch up pill every stage is worse. The
   // mid-read concern is answered by keeping the opt-out: peek at any stage and
@@ -202,7 +202,7 @@ export function MeetingRail({
     }
   }, [ended, initialEnded, router, pathname]);
 
-  // Follow the leader (N27). Default state is attached: no `?view=` means this
+  // Follow the leader. Default state is attached: no `?view=` means this
   // viewer tracks the group's stage, so when the leader advances we pull their
   // content over instead of stranding them on a stale stage behind a pill.
   //
@@ -231,7 +231,7 @@ export function MeetingRail({
     router.refresh();
   }, [following, ended, activeSegment, viewSegment, router]);
 
-  // Auto re-attach (N27). A detached viewer whose stage the group has since
+  // Auto re-attach. A detached viewer whose stage the group has since
   // arrived at is indistinguishable from an attached one — same stage, no
   // pill — and the flag only shows itself by stranding them one stage later.
   // Drop it. `replace`, not `push`: this happens without them asking, and a
@@ -542,7 +542,7 @@ export function MeetingRail({
           )}
         </nav>
 
-        {/* Transport — drives the shared stage. Pass 18 #9: leader/admin
+        {/* Transport — drives the shared stage. Leader/admin
             only. Members still get peek + catch-up above/below; this block
             (and Finish) is the group-moving part, so it's hidden rather
             than shown-disabled — there's nothing for a member to do here. */}

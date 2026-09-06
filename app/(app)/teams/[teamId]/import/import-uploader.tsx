@@ -2,9 +2,7 @@
 
 import {
   useCallback,
-  useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
   useTransition,
@@ -67,13 +65,6 @@ const KINDS: {
   },
 ];
 
-function findStephanie(members: MemberOption[]): string {
-  const hit = members.find((m) =>
-    /stephanie\s+benes/i.test(m.full_name ?? ""),
-  );
-  return hit?.user_id ?? "";
-}
-
 export function ImportUploader({
   teamId,
   teamName,
@@ -100,34 +91,20 @@ export function ImportUploader({
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
   // Multi-department exports carry a ninety Team/Department column. Default to
   // the team whose Import page this is — the old hardcoded "Enterprise Systems
-  // & Data" silently filtered every other team's upload down to nothing (N6).
+  // & Data" silently filtered every other team's upload down to nothing.
   const [rockTeam, setRockTeam] = useState(teamName);
   // Escape hatch: the file's Department values don't always match app team
   // names, so "Other…" reveals a text box rather than trapping the user.
   const [rockTeamCustom, setRockTeamCustom] = useState(false);
-  const defaultStephId = useMemo(() => findStephanie(members), [members]);
+  // One empty row so the mapping is visible without having to hunt for "Add
+  // alias"; export spellings vary per team, so nothing is pre-filled.
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
-    { csvName: "Steph Benes", memberId: findStephanie(members) },
+    { csvName: "", memberId: "" },
   ]);
   const [result, setResult] = useState<ImportActionResult | null>(null);
   const [pending, startTransition] = useTransition();
 
   const expected = EXPECTED_HEADERS[kind];
-
-  // Fill Steph → Stephanie once members are available.
-  useEffect(() => {
-    if (!defaultStephId) return;
-    setAliases((prev) => {
-      const idx = prev.findIndex(
-        (a) => a.csvName.trim().toLowerCase() === "steph benes",
-      );
-      if (idx < 0) return prev;
-      if (prev[idx].memberId) return prev;
-      const next = [...prev];
-      next[idx] = { ...next[idx], memberId: defaultStephId };
-      return next;
-    });
-  }, [defaultStephId]);
 
   const onPick = useCallback((f: File | null | undefined) => {
     setResult(null);
@@ -383,7 +360,7 @@ export function ImportUploader({
           </div>
           <p className="text-xs text-zinc-500">
             Map a name from the spreadsheet to a team member (e.g.{" "}
-            <em>Steph Benes</em> → <em>Stephanie Benes</em>).
+            <em>J. Doe</em> → <em>Jane Doe</em>).
           </p>
           <div className="space-y-2">
             {aliases.map((row, i) => (

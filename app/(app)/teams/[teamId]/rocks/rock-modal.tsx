@@ -212,7 +212,7 @@ export function RockModal({
     return ids.filter((id) => id && id !== teamId);
   });
   const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
-  // P2-6: due is a create-mode suggestion only. An existing rock with a
+  // Due is a create-mode suggestion only. An existing rock with a
   // cleared due date stays empty — never re-seed end-of-quarter on edit.
   const [due, setDue] = useState(rock ? (rock.due_date ?? "") : defaultDue);
 

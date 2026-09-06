@@ -244,7 +244,7 @@ describe("missingCount", () => {
   });
 });
 
-// N43: full-precision millions overflowed the fixed-width scorecard cells and
+// Full-precision millions overflowed the fixed-width scorecard cells and
 // pushed the whole grid into a horizontal scroll.
 describe("formatValue — large numbers (N43)", () => {
   it("abbreviates currency and counts at or above 100k", () => {
@@ -298,7 +298,7 @@ describe("formatValueExact", () => {
   });
 });
 
-// N40: in the L10, rows arrive pre-sorted by speaking order. Grouping must
+// In the L10, rows arrive pre-sorted by speaking order. Grouping must
 // bucket them without reordering, so each group is its own speaking round.
 describe("bucketMetricsByGroup (N40)", () => {
   const inSpeakingOrder = [
@@ -354,7 +354,7 @@ describe("bucketMetricsByGroup (N40)", () => {
 describe("formatGoalInput", () => {
   // The pair that matters: whatever the edit form is seeded with must parse
   // back to the number it came from. Without this, editing a measurable's
-  // name silently rewrites its goal (N48 follow-on).
+  // name silently rewrites its goal.
   const roundTrips: [number | null, string][] = [
     [null, "number"],
     [0, "number"],

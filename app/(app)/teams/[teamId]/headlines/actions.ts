@@ -37,7 +37,7 @@ export async function addHeadline(teamId: string, formData: FormData) {
     kind,
     created_by: uid,
     target_team_ids: [],
-    // Meeting hygiene (P2-3): discuss in L10, then archive only checked-off.
+    // Meeting hygiene: discuss in L10, then archive only checked-off.
     discussed: false,
     discussed_at: null,
     archived_at: null,
@@ -101,10 +101,10 @@ export async function deleteHeadline(teamId: string, headlineId: string) {
  * doc PER TEAM (`importDocId("headline", teamId, …)`), so "discussed" is
  * already a per-team fact — checking it off closes the item for this team's
  * queue and cannot touch anyone else's copy or the source. That is exactly
- * the EOS cycle the client described (Steph, 8/19 L10): "once we've talked
- * about it to our team we like to mark it off so that it doesn't show up
- * again ... each team will have that in their queue to share." Editing and
- * deleting stay blocked — those would rewrite the org's message.
+ * the EOS headline cycle: a team talks about the item, then marks it off so
+ * it stops resurfacing in that team's queue, while every other team still has
+ * its own copy to share. Editing and deleting stay blocked — those would
+ * rewrite the org's message.
  */
 export async function setHeadlineDiscussed(
   teamId: string,

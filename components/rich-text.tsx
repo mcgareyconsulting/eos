@@ -2,10 +2,10 @@ import { Fragment } from "react";
 import { parseRichText, type BlockNode, type InlineNode } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 
-// Read-side renderer for description/body fields (P3-2). Builds React elements
+// Read-side renderer for description/body fields. Builds React elements
 // from the AST in lib/rich-text.ts — no `dangerouslySetInnerHTML` anywhere, so
 // there is no HTML sink to sanitize and the XSS posture matches the comment
-// linkifier the 2026-08-04 audit cleared. Every href goes through safeHref()
+// linkifier a prior security review cleared. Every href goes through safeHref()
 // during parsing; anything else stays literal text.
 //
 // No "use client": server components (Headlines tab) and client components

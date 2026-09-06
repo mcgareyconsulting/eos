@@ -29,7 +29,7 @@ function toMillis(v: { toMillis?: () => number } | null | undefined) {
 
 /**
  * To-Dos tab. Fetches the first paint and hands off to `TodosBoard`, which
- * holds the live subscription (N51) — see its header for why realtime, not
+ * holds the live subscription — see its header for why realtime, not
  * more revalidation, is the fix.
  *
  * `?archived=` and `?owner=` stay server-read: they are navigational, the

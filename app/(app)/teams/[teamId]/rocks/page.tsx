@@ -109,7 +109,7 @@ export default async function RocksPage({
 
   // Fetch rocks, todos (milestones), and status history in parallel.
   // Status comments live in rock_status_updates (append-only); they were
-  // written on save but never rendered — P0-5 / Jenna P14-3.
+  // written on save but never rendered until this fetch existed.
   const [rocksSnap, sharedSnap, todosSnap, statusSnap] = await Promise.all([
     db.collection("rocks").where("team_id", "==", teamId).get(),
     db
@@ -139,7 +139,7 @@ export default async function RocksPage({
       rock_type: (x.rock_type as string | null) ?? null,
       shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       // archived_at is a Firestore Timestamp — pass millis, the raw class
-      // instance can't cross into the client RockRow (audit M5 / N23).
+      // instance can't cross into the client RockRow.
       archived_at: archivedAtMillis(x.archived_at),
     };
   });

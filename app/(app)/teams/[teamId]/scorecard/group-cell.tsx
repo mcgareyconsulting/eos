@@ -8,10 +8,10 @@ import { setMetricGroup } from "./actions";
 // pattern so group assignment feels consistent with the week-cell editing
 // already on this page.
 //
-// "Group" in the UI and `group` in the data — the same word ninety uses in
-// its exports ("Group Name"), and the word the client uses out loud. It shipped
-// briefly as "Section", which is why Steph asked for a feature that already
-// existed (N40). The unset state reads "+ Group" rather than a grey noun,
+// "Group" in the UI and `group` in the data — the same word ninety uses in its
+// exports ("Group Name"), and the word teams use out loud. It shipped briefly
+// as "Section", which made an existing feature unrecognizable to the people
+// looking for it. The unset state reads "+ Group" rather than a grey noun,
 // which looked like a status rather than something clickable.
 export function GroupCell({
   teamId,

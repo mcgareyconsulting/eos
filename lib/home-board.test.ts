@@ -101,9 +101,9 @@ describe("shouldShowHomeRock", () => {
     );
   });
 
-  test("shows department rock owned by a person (Steph model)", () => {
-    // Team/department priority with Joe accountable — still a department rock
-    // for the home board when I'm on that team.
+  test("shows department rock owned by a person", () => {
+    // Team/department priority with a person accountable — still a department
+    // rock for the home board when the viewer is on that team.
     assert.equal(
       shouldShowHomeRock(
         rock({
@@ -250,11 +250,11 @@ describe("byDueDateAsc", () => {
 
 describe("splitHomeRocksByType (N34)", () => {
   const rocks = [
-    { id: "a", owner_id: "u-cora", rock_type: "individual" },
-    { id: "b", owner_id: "u-cora", rock_type: "department" },
+    { id: "a", owner_id: "u-casey", rock_type: "individual" },
+    { id: "b", owner_id: "u-casey", rock_type: "department" },
     { id: "c", owner_id: "u-joe", rock_type: null },
     { id: "d", owner_id: "u-joe", rock_type: "company" },
-    { id: "e", owner_id: "u-cora", rock_type: "team" },
+    { id: "e", owner_id: "u-casey", rock_type: "team" },
   ];
 
   test("department and company rocks form the departmental section", () => {
@@ -270,7 +270,7 @@ describe("splitHomeRocksByType (N34)", () => {
   });
 
   test("a department rock the viewer owns is still departmental", () => {
-    // Rock "b" is owned by Cora and still belongs to the department — the
+    // Rock "b" is owned by the viewer and still belongs to the department — the
     // split is by kind, not by who happens to own it.
     const { departmental } = splitHomeRocksByType(rocks);
     assert.ok(departmental.some((r) => r.id === "b"));

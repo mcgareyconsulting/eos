@@ -1,4 +1,4 @@
-// N40 — create `scorecard_groups` docs for group names that already exist as
+// Create `scorecard_groups` docs for group names that already exist as
 // free text on `scorecard_metrics`.
 //
 // Metrics have carried a `group` string since the first import; the group DOC
@@ -6,7 +6,7 @@
 // written on 2026-08-24. Without a doc, a name is treated as an unmanaged
 // label and sorts alphabetically after the defined groups — so a team
 // imported before that date shows Compliance ABOVE Weekly, which is the exact
-// thing N40 set out to fix. This closes that gap without a re-import.
+// thing managed groups set out to fix. This closes that gap without a re-import.
 //
 // Order: groups are numbered by each metric's `sort_order`, so the sequence
 // matches the order the measurables were imported in — the same first-seen

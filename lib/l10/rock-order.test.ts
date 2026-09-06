@@ -6,7 +6,7 @@ import {
   sortRocksForSection,
 } from "./rock-order";
 
-// Pass 18 #17 — Department rocks first in L10: the leading Department
+// Department rocks first in L10: the leading Department
 // section must always precede the per-owner speaking-order walk, and "now
 // speaking" must never land on that section (it has no single speaker).
 
@@ -68,7 +68,7 @@ describe("groupRocksForL10", () => {
 
   test("department-typed rocks land in Department even with a personal owner", () => {
     // rock_type === "department" pulls a rock into the Department section even
-    // when a person is accountable (Steph: team rock still has a person owner).
+    // when a person is accountable — a team rock still has a person owner.
     const rocks = [
       rock("r-dept-owned", { owner_id: "u-marcus", rock_type: "department" }),
       rock("r-personal", { owner_id: "u-marcus" }),

@@ -1,6 +1,5 @@
-# Tier 1 optional security levers (~$40-75/mo total per docs/ROADMAP.md
-# Pass 10, "Security levers menu" — verify ballparks before quoting to the
-# client, GCP pricing changes). Each is gated on its own boolean variable
+# Tier 1 optional security levers (~$40-75/mo total — verify ballparks before
+# quoting, GCP pricing changes). Each is gated on its own boolean variable
 # (variables.tf) and defaults OFF; the MVP deploy does not require any of
 # them. Tier 0 (least-privilege SAs, no exported keys, Secret Manager,
 # default-deny Firestore rules, domain-restricted auth) is already the
@@ -9,8 +8,8 @@
 # ---------------------------------------------------------------------------
 # Lever 1: Cloud Armor (WAF / DDoS / IP allowlisting)
 # Ballpark: ~$5/mo per policy + ~$1/rule/mo + per-request eval cost
-# (docs/ROADMAP.md Pass 10 rolls this into the ~$40-75/mo Tier 1 total,
-# alongside the load balancer itself).
+# (rolled into the ~$40-75/mo Tier 1 total, alongside the load balancer
+# itself).
 #
 # SCOPE NOTE: Cloud Armor policies only attach to an external HTTPS Load
 # Balancer's backend service, not directly to a Cloud Run service. Wiring
@@ -61,7 +60,7 @@ resource "google_compute_security_policy" "waf" {
 # ---------------------------------------------------------------------------
 # Lever 2: CMEK (customer-managed encryption keys)
 # Ballpark: ~$0.06/key/mo (Cloud KMS key version) + $0.03/10k crypto
-# operations — rounding error next to the LB/Armor cost, per ROADMAP Pass 10.
+# operations — rounding error next to the LB/Armor cost.
 #
 # Where CMEK applies in this footprint:
 #   - Artifact Registry: wired below via `kms_key_name` on the repository
@@ -140,8 +139,8 @@ resource "google_kms_crypto_key_iam_member" "artifact_registry_cmek" {
 # Lever 3: Firestore point-in-time recovery (PITR)
 # Ballpark: PITR retains ~7 days of change history; roughly adds the cost of
 # a few extra days of storage on top of normal Firestore storage billing —
-# per ROADMAP Pass 10, verify exact multiplier against current Firestore
-# pricing before quoting.
+# verify the exact multiplier against current Firestore pricing before
+# quoting.
 #
 # CAVEAT: the "(default)" Firestore database already exists (created via the
 # Firebase console when the MVP was stood up) and is not created by this
@@ -192,8 +191,8 @@ resource "null_resource" "firestore_pitr" {
 # Lever 4: Data Access audit logs (Firestore/Datastore API)
 # Ballpark: no separate GCP fee for enabling the log category itself, but the
 # resulting Cloud Logging ingestion + storage volume (DATA_READ especially,
-# on a read-heavy app) can be nontrivial — per ROADMAP Pass 10, verify actual
-# volume via a short trial before committing to a number.
+# on a read-heavy app) can be nontrivial — verify actual volume via a short
+# trial before committing to a number.
 resource "google_project_iam_audit_config" "firestore_data_access" {
   count = var.enable_data_access_logs ? 1 : 0
 
@@ -210,7 +209,7 @@ resource "google_project_iam_audit_config" "firestore_data_access" {
 
 # ---------------------------------------------------------------------------
 # Tier 2 (comment-only): VPC Service Controls
-# $0 direct GCP cost (real cost is the ops/design effort), per ROADMAP Pass
+# $0 direct GCP cost (real cost is the ops/design effort), per the Tier 2
 # 10 — "Tier 2 (quote on request)". VPC-SC is an org-level Access Context
 # Manager construct (a security perimeter around APIs like Firestore/BigQuery
 # to block data exfiltration), not a per-project Terraform resource you'd
@@ -224,6 +223,6 @@ resource "google_project_iam_audit_config" "firestore_data_access" {
 #     can break legitimate cross-project access, including this app's own
 #     Cloud Build → Cloud Run → Firestore path.
 # Recommend scoping as its own follow-up engagement once BigQuery
-# conventions land (see docs/ROADMAP.md "RESUME HERE"), not bundled into
+# conventions land, not bundled into
 # this skeleton. No variable/resource for this lever is defined in this
 # module.

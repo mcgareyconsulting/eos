@@ -21,7 +21,7 @@ export type TodoListItem = {
   due_date: string | null;
   completed: boolean;
   visibility: "team" | "private";
-  /** N50 — replaces the `**` title convention. */
+  /** Replaces the `**` title convention. */
   weekly_focus?: boolean;
   archived?: boolean;
   /** Local mm/dd/yyyy when archived (from archived_at). */

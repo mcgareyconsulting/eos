@@ -1,4 +1,4 @@
-// L10 Rocks segment ordering — Pass 18 #17 ("Department rocks first").
+// L10 Rocks segment ordering — Department rocks first.
 //
 // The walk has two tiers:
 //   1. A single leading Department section — company/department-typed rocks

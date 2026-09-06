@@ -135,7 +135,7 @@ describe("stepSpeakerIndex", () => {
   });
 
   // Segue is once-around: wrap=false makes the round dead-end on purpose, so
-  // "everyone has shared" stays a real signal (daniel, 2026-08-26).
+  // "everyone has shared" stays a real signal.
   test("does not wrap when wrap is false", () => {
     assert.equal(stepSpeakerIndex(order, 2, [], 1, false), 2);
     assert.equal(stepSpeakerIndex(order, 0, [], -1, false), 0);

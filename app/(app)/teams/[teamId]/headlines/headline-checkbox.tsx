@@ -9,8 +9,8 @@ import { setHeadlineDiscussed } from "./actions";
  * Every headline is checkable, org-wide cascades included. A cascaded message
  * is fanned out as one doc per team, so this closes the item for THIS team's
  * queue and cannot touch another team's copy or the source — which is the EOS
- * cycle the client runs (Steph, 8/19 L10): share it to your team, then mark it
- * off so it stops coming back. The read-only rule that used to disable this
+ * headline cycle: share it to your team, then mark it off so it stops coming
+ * back. The read-only rule that used to disable this
  * still applies to the headline's *text* — editing and deleting a broadcast
  * copy remain blocked, in the UI and in the server action.
  */

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The "Weekly" pill (N50) — one definition, because it renders on three
+ * The "Weekly" pill — one definition, because it renders on three
  * surfaces with different layouts and a second copy is how the To-Dos tab and
  * Home end up disagreeing about what a weekly focus looks like. Same reasoning
  * that consolidated `BoardColumn` and `EntityViewTabs`.

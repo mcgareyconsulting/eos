@@ -323,7 +323,7 @@ export function SegmentTodos({
     absentUserIds,
   );
 
-  // Resets on unmount, by design (N24) — Active is the room's default.
+  // Resets on unmount, by design — Active is the room's default.
   const [showArchived, setShowArchived] = useState(false);
   const allRawTodos = [...teamTodos, ...myTodos];
   const allTodos = allRawTodos.filter((t) => !t.archived_at);
@@ -335,16 +335,15 @@ export function SegmentTodos({
     (t) => t.archived_at && !t.source_rock_id,
   );
   // Pure to-dos only in owner cards. Milestones surface in their own section
-  // (P0-4 / P14-4) — same idea as standalone To-Dos; still editable under
+  // — same idea as standalone To-Dos; still editable under
   // Rocks. Milestones whose parent rock is done/cancelled/archived are
   // dropped, same as the standalone Milestones column.
   //
-  // N29: unlike the standalone tab this stays TEAM-wide rather than scoping
-  // to the viewer — Jessica, on this surface specifically: "in this view I
-  // would say it's better to see everyone's milestone, so if you know
-  // something's coming up for someone else you can push them on it if you
-  // think they're not ready." What it does share is the two-week window, so
-  // the section reads as what the room needs to chase this fortnight.
+  // Unlike the standalone tab this stays TEAM-wide rather than scoping to the
+  // viewer: in the meeting, seeing everyone's milestones is the point — it is
+  // how the room notices something coming up for someone else and pushes on
+  // it. What it does share is the two-week window, so the section reads as
+  // what the room needs to chase this fortnight.
   const pureTodos = allTodos.filter((t) => !t.source_rock_id);
   const openMilestones: MilestoneTodoItem[] = allTodos
     .filter(
@@ -406,7 +405,7 @@ export function SegmentTodos({
         />
       </div>
 
-      {/* N29: two columns, matching the standalone To-Dos page — and
+      {/* Two columns, matching the standalone To-Dos page — and
           to-dos FIRST. Stacked, the milestone block sat on top and
           pushed the actual to-dos below the fold ("just vomit at the
           top of the to-dos page, so you got to scroll to the bottom").

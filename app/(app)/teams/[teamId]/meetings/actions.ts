@@ -394,7 +394,7 @@ export async function setDiscussingIssue(
 }
 
 /**
- * Open or close the room's voting window (N47).
+ * Open or close the room's voting window.
  *
  * Lives on the meeting doc next to `current_issue_id`, for the same reason: it
  * is room state, not viewer state. Everyone's Issues segment is already

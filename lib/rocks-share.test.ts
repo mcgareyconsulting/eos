@@ -11,7 +11,7 @@ describe("isSharedIntoTeam", () => {
   test("false for the parent team even if listed", () => {
     assert.equal(
       isSharedIntoTeam(
-        { team_id: "esd", owner_id: "joe", shared_team_ids: ["esd", "it"] },
+        { team_id: "esd", owner_id: "jordan", shared_team_ids: ["esd", "it"] },
         "esd",
       ),
       false,
@@ -21,7 +21,7 @@ describe("isSharedIntoTeam", () => {
   test("true when this team is a guest", () => {
     assert.equal(
       isSharedIntoTeam(
-        { team_id: "esd", owner_id: "joe", shared_team_ids: ["it"] },
+        { team_id: "esd", owner_id: "jordan", shared_team_ids: ["it"] },
         "it",
       ),
       true,
@@ -31,7 +31,7 @@ describe("isSharedIntoTeam", () => {
   test("false when not in the share list", () => {
     assert.equal(
       isSharedIntoTeam(
-        { team_id: "esd", owner_id: "joe", shared_team_ids: ["it"] },
+        { team_id: "esd", owner_id: "jordan", shared_team_ids: ["it"] },
         "lead",
       ),
       false,
@@ -41,29 +41,29 @@ describe("isSharedIntoTeam", () => {
 
 describe("sharedBySectionTitle", () => {
   test("uses the person owner, not a team name", () => {
-    assert.equal(sharedBySectionTitle("Steph Benes"), "Shared by Steph Benes");
+    assert.equal(sharedBySectionTitle("Sam Reyes"), "Shared by Sam Reyes");
   });
 });
 
 describe("groupSharedRocksByOwner", () => {
   test("groups at the bottom by owner first+last", () => {
     const rocks = [
-      { team_id: "esd", owner_id: "joe", title: "A", shared_team_ids: ["it"] },
-      { team_id: "esd", owner_id: "steph", title: "B", shared_team_ids: ["it"] },
-      { team_id: "esd", owner_id: "joe", title: "C", shared_team_ids: ["it"] },
+      { team_id: "esd", owner_id: "jordan", title: "A", shared_team_ids: ["it"] },
+      { team_id: "esd", owner_id: "sam", title: "B", shared_team_ids: ["it"] },
+      { team_id: "esd", owner_id: "jordan", title: "C", shared_team_ids: ["it"] },
     ];
     const names: Record<string, string> = {
-      joe: "Joe Creighton",
-      steph: "Steph Benes",
+      jordan: "Jordan Ellis",
+      sam: "Sam Reyes",
     };
     const groups = groupSharedRocksByOwner(
       rocks,
       (id) => (id ? names[id] ?? "—" : "—"),
     );
     assert.equal(groups.length, 2);
-    assert.equal(groups[0].title, "Shared by Joe Creighton");
+    assert.equal(groups[0].title, "Shared by Jordan Ellis");
     assert.equal(groups[0].rocks.length, 2);
-    assert.equal(groups[1].title, "Shared by Steph Benes");
+    assert.equal(groups[1].title, "Shared by Sam Reyes");
     assert.equal(groups[1].rocks.length, 1);
   });
 });
@@ -71,21 +71,21 @@ describe("groupSharedRocksByOwner", () => {
 describe("canSetRockStatus", () => {
   const rock = {
     team_id: "esd",
-    owner_id: "steph",
+    owner_id: "sam",
     shared_team_ids: ["transformation"],
   };
 
   test("anyone on the rock's own team", () => {
-    assert.equal(canSetRockStatus(rock, "esd", "steph"), true);
-    assert.equal(canSetRockStatus(rock, "esd", "joe"), true);
+    assert.equal(canSetRockStatus(rock, "esd", "sam"), true);
+    assert.equal(canSetRockStatus(rock, "esd", "jordan"), true);
   });
 
   test("the owner, from a team it is shared into", () => {
-    assert.equal(canSetRockStatus(rock, "transformation", "steph"), true);
+    assert.equal(canSetRockStatus(rock, "transformation", "sam"), true);
   });
 
   test("not other members of the guest team", () => {
-    assert.equal(canSetRockStatus(rock, "transformation", "joe"), false);
+    assert.equal(canSetRockStatus(rock, "transformation", "jordan"), false);
   });
 
   test("not a signed-out / unknown viewer", () => {
@@ -93,17 +93,17 @@ describe("canSetRockStatus", () => {
   });
 
   test("not a team the rock was never shared into", () => {
-    assert.equal(canSetRockStatus(rock, "leadership", "steph"), false);
+    assert.equal(canSetRockStatus(rock, "leadership", "sam"), false);
   });
 
   test("an ownerless rock is never writable from a guest team", () => {
     assert.equal(
-      canSetRockStatus({ ...rock, owner_id: null }, "transformation", "steph"),
+      canSetRockStatus({ ...rock, owner_id: null }, "transformation", "sam"),
       false,
     );
     // …but still writable from its own team (department rocks have no owner).
     assert.equal(
-      canSetRockStatus({ ...rock, owner_id: null }, "esd", "steph"),
+      canSetRockStatus({ ...rock, owner_id: null }, "esd", "sam"),
       true,
     );
   });
@@ -111,9 +111,9 @@ describe("canSetRockStatus", () => {
   test("tolerates a missing shared_team_ids field", () => {
     assert.equal(
       canSetRockStatus(
-        { team_id: "esd", owner_id: "steph" },
+        { team_id: "esd", owner_id: "sam" },
         "transformation",
-        "steph",
+        "sam",
       ),
       false,
     );

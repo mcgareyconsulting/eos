@@ -167,11 +167,10 @@ export function byDueDateAsc<T extends { due_date: string | null }>(
  * Split the Home rocks column into the viewer's own rocks and the
  * department/company ones.
  *
- * N34, Cora on 2026-08-19 reviewing her own Home board: "it's got all of the
- * rocks but it also includes the two departmental ones ... I like seeing the
- * departmental rocks, but I would like them to be in their own section, to be
- * like *my rocks* and *the departmental rocks*. Because at first I was
- * looking at it like, what rocks am I on here?"
+ * One undifferentiated list answers the wrong question. A viewer scanning it
+ * cannot tell at a glance which rocks are theirs and which belong to the
+ * department — both are worth showing, but as two labelled sections rather
+ * than one pile.
  *
  * Split by kind, not by who the viewer is: a department rock the viewer
  * happens to own is still the department's rock, and that is the distinction

@@ -11,7 +11,7 @@ import {
 } from "@/lib/rich-text-toolbar";
 import { cn } from "@/lib/utils";
 
-// Write side of P3-2. Deliberately a textarea with a toolbar rather than a
+// Write side of the constrained markdown subset. Deliberately a textarea with a toolbar rather than a
 // WYSIWYG surface: the stored value stays the same plain string it always was,
 // so there is no HTML to sanitize, no second format to read, and no migration.
 // The toolbar inserts the markers lib/rich-text.ts understands; Preview shows

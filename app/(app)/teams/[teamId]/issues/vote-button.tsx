@@ -22,7 +22,7 @@ export function VoteButton({
   /** How many of your credits are still unspent. */
   myRemaining: number;
   /**
-   * Voting window is closed (N47). The server rejects the write too — this is
+   * Voting window is closed. The server rejects the write too — this is
    * the explanation, not the guard.
    */
   disabled?: boolean;

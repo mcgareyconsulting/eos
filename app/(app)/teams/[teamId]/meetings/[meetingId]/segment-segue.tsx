@@ -117,7 +117,7 @@ export function SegmentSegue({
         teamId,
         meetingId,
         // Segue is once-around: the round dead-ends rather than cycling,
-        // so "everyone has shared" stays a real signal (N42, 2026-08-26).
+        // so "everyone has shared" stays a real signal.
         stepSpeakerIndex(order, index, absentUserIds, direction, false),
       );
     });

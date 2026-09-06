@@ -29,8 +29,8 @@ import { TodoListRow, type TodoListItem } from "./todo-list-row";
 /**
  * The To-Dos tab, live.
  *
- * N51 (Jessica): "when you add a to-do, it does not show up until you refresh
- * ... so I don't forget and add it twice." The obvious reading — that a
+ * Reported symptom: a newly added to-do did not appear until the page was
+ * refreshed, with the risk of adding it twice. The obvious reading — that a
  * refresh is missing — is wrong: `addTodo` already revalidates both this path
  * and /home, and `AddTodoModal` already awaits the action and calls
  * `router.refresh()`. What was actually singular about this surface is that it
@@ -302,7 +302,7 @@ export function TodosBoard({
       : list.filter((t) => t.owner_id === ownerFilter);
   const todos = scoped(showArchived ? archivedTodos : activeTodos);
 
-  // N29: this column is a REMINDER, not an inventory. Two rules —
+  // This column is a REMINDER, not an inventory. Two rules —
   //  1. only what is due inside the two-week window (overdue included), and
   //  2. with no explicit owner filter, only the viewer's own.
   // Before this, every open milestone on the team rendered here and pushed

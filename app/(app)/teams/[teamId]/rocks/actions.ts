@@ -16,7 +16,7 @@ function pathFor(teamId: string) {
  * Fetch a rock for a status write made from `teamId`.
  *
  * Normally the rock must live on that team. The one exception is a rock shared
- * into the team (N4): its **person owner** can move its status from the guest
+ * into the team: its **person owner** can move its status from the guest
  * team's list or L10 without switching teams. Everyone else on the guest team
  * sees it read-only, and every structural edit (title, archive, delete,
  * milestones, re-share) still belongs to the parent team.
@@ -270,7 +270,7 @@ function parseRockFields(formData: FormData, uid: string) {
   return {
     title,
     quarter,
-    // P2-6: due is optional and stays null when cleared. The modal prefills
+    // Due is optional and stays null when cleared. The modal prefills
     // end-of-quarter as a suggestion; it must never be re-forced here.
     due_date: String(formData.get("due_date") ?? "").trim() || null,
     description: String(formData.get("description") ?? "").trim() || null,
@@ -311,7 +311,7 @@ function parseSharedTeamIds(
 async function allowedShareTeamIds(db: Firestore): Promise<Set<string>> {
   // Share-down: a parent-team member may share into any org team, not only
   // teams they sit on. Leadership → ESD is the case that failed when the
-  // picker was membership-only (N4 Pass 20/21).
+  // picker was membership-only.
   const snap = await db.collection("teams").get();
   return new Set(snap.docs.map((d) => d.id));
 }

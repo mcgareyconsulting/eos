@@ -147,7 +147,7 @@ function isActiveDiscussedHeadline(
   // Broadcast copies used to be excluded here. They are not any more: a
   // cascaded headline is fanned out one doc per team, so archiving this
   // team's copy after they discuss it is a per-team act and leaves every
-  // other team's queue untouched. Client ask, 8/19 L10.
+  // other team's queue untouched.
   if (h.discussed !== true) return false;
   if (
     h.discussed_at == null ||

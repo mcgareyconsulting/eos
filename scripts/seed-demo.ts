@@ -768,7 +768,7 @@ async function main() {
     absent_user_ids: [],
   });
   // One rating doc per attendee, keyed by the rater's uid — each person
-  // rates THE MEETING 1-10 (ROADMAP item 9), not their teammates.
+  // rates THE MEETING 1-10, not their teammates.
   const allMemberIds = [uid, ...SYNTHETIC_MEMBERS.map((m) => m.id)];
   const SCORE_CYCLE = [8, 9, 7, 9, 8, 8, 9, 7];
   let s = 0;

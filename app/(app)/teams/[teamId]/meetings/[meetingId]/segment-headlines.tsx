@@ -87,10 +87,10 @@ export function SegmentHeadlines({
   const headlines = useCollection<HeadlineDoc>(q, initialHeadlines);
 
   // `active` feeds the segment's own grouping and ordering; `archived` is a
-  // separate list so nothing derived reads the wrong one (N24).
+  // separate list so nothing derived reads the wrong one.
   const active = headlines.filter((h) => !isArchivedHeadline(h));
   const archived = headlines.filter(isArchivedHeadline);
-  // Resets on unmount, by design (N24) — Active is the room's default.
+  // Resets on unmount, by design — Active is the room's default.
   const [showArchived, setShowArchived] = useState(false);
   // Undiscussed first (still need airtime), then discussed, then by recency.
   const byDiscussedThenRecency = (a: HeadlineDoc, b: HeadlineDoc) => {

@@ -1,8 +1,8 @@
 // Reassign all EOS data from one uid to another (real Auth, or orphaned
 // Firestore-only identity after Auth was deleted).
 //
-// Typical case: consultant switched Google accounts
-//   mcgareyconsulting@gmail.com  →  daniel@mcgareyconsulting.com
+// Typical case: someone switched Google accounts
+//   old.address@example.com  →  new.address@example.com
 // Private to-dos (and every other owner_id) stay on the old uid, so the new
 // login cannot see them. This script rewrites ownership + memberships.
 //
@@ -15,7 +15,7 @@
 // Usage (Auth deleted for old email — preferred):
 //   pnpm tsx scripts/reassign-user.ts \
 //     --from-uid OLD_UID_FROM_FIRESTORE \
-//     --to-email daniel@mcgareyconsulting.com \
+//     --to-email NEW_EMAIL \
 //     --database hpb-eos-sandbox-db
 //
 // Usage (both still in Auth):

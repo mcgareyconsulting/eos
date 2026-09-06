@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Integrations live under Settings / profile (P3-4). Keep this path so old
+// Integrations live under Settings / profile. Keep this path so old
 // bookmarks and docs land in the right place; preserve OAuth status query.
 export default async function IntegrationsRedirectPage({
   searchParams,

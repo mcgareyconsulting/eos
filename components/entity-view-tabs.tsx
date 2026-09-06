@@ -66,17 +66,17 @@ export function EntityViewTabs({
 }
 
 /**
- * The same control, driven by local state instead of the URL (N24, L10 half).
+ * The same control, driven by local state instead of the URL.
  *
  * The meeting page cannot use the navigational version: it already owns
  * `?view=`, `?recap=1`, `?weeks=` and `?period=`, one `?archived=` would be
- * ambiguous across four segments, and — since N27 — an auto re-attach does
+ * ambiguous across four segments, and — with follow-the-leader — an auto re-attach does
  * `router.replace(pathname)`, which would silently reset a viewer's Archived
  * view back to Active mid-meeting. Local state also costs nothing to read:
  * every segment already subscribes to the team's whole collection and filters
  * archived rows in memory, so the rows are on the client either way.
  *
- * Resets when the segment unmounts, by design (daniel, 2026-08-26) — Active is
+ * Resets when the segment unmounts, by design — Active is
  * the right default for a room, and a remembered Archived view would read as
  * "the team's issues vanished".
  */

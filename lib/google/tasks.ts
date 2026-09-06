@@ -24,7 +24,7 @@
 // small org; for a multi-tenant/prod hardening pass move tokens to Secret
 // Manager and grant the runtime SA roles/secretmanager.secretAccessor.
 
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { richTextToPlain } from "@/lib/rich-text";
 
@@ -88,12 +88,17 @@ export function googleOAuthConfigured(): boolean {
   return clientCreds() !== null;
 }
 
-function connectionRef(uid: string) {
-  return getAdminDb().collection("google_tasks_connections").doc(uid);
+// `db` defaults to the real admin Firestore; tests pass a fake so
+// connection state is inspectable/controllable without an emulator.
+function connectionRef(uid: string, db: Firestore = getAdminDb()) {
+  return db.collection("google_tasks_connections").doc(uid);
 }
 
-async function getConnection(uid: string): Promise<Connection | null> {
-  const snap = await connectionRef(uid).get();
+async function getConnection(
+  uid: string,
+  db: Firestore = getAdminDb(),
+): Promise<Connection | null> {
+  const snap = await connectionRef(uid, db).get();
   const data = snap.data() as Connection | undefined;
   return data?.refresh_token ? data : null;
 }
@@ -233,6 +238,7 @@ export async function consumeOAuthState(
 async function refreshAccessToken(
   uid: string,
   refreshToken: string,
+  db: Firestore = getAdminDb(),
 ): Promise<string> {
   const creds = clientCreds();
   if (!creds) throw new Error("Google OAuth not configured");
@@ -250,7 +256,7 @@ async function refreshAccessToken(
     throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
-  await connectionRef(uid).set(
+  await connectionRef(uid, db).set(
     {
       access_token: json.access_token,
       access_token_expiry: Date.now() + json.expires_in * 1000,
@@ -285,30 +291,32 @@ async function tasksFetch(
 // refreshing/creating as needed. Returns null when they haven't connected.
 async function getAuthContext(
   ownerUid: string,
+  db: Firestore = getAdminDb(),
 ): Promise<{ token: string; tasklistId: string } | null> {
   // Short-circuit before any Firestore read when the connector isn't even
   // configured — keeps the to-do write path free of overhead everywhere the
   // integration is off (prod, emulator, unconfigured trials).
   if (!googleOAuthConfigured()) return null;
 
-  const conn = await getConnection(ownerUid);
+  const conn = await getConnection(ownerUid, db);
   if (!conn) return null;
 
   let token = conn.access_token ?? null;
   const expiry = conn.access_token_expiry ?? 0;
   // Refresh a minute early to avoid mid-call expiry.
   if (!token || Date.now() > expiry - 60_000) {
-    token = await refreshAccessToken(ownerUid, conn.refresh_token);
+    token = await refreshAccessToken(ownerUid, conn.refresh_token, db);
   }
 
   const tasklistId =
-    conn.tasklist_id ?? (await ensureTaskList(ownerUid, token));
+    conn.tasklist_id ?? (await ensureTaskList(ownerUid, token, db));
   return { token, tasklistId };
 }
 
 async function ensureTaskList(
   uid: string,
   accessToken: string,
+  db: Firestore = getAdminDb(),
 ): Promise<string> {
   const listing = await tasksFetch("/users/@me/lists", accessToken);
   const items = (listing.items ?? []) as { id: string; title: string }[];
@@ -321,7 +329,7 @@ async function ensureTaskList(
     });
     id = created.id as string;
   }
-  await connectionRef(uid).set(
+  await connectionRef(uid, db).set(
     { tasklist_id: id, updated_at: FieldValue.serverTimestamp() },
     { merge: true },
   );
@@ -344,26 +352,35 @@ export type TodoMirror = {
 // Callers pass the *complete* current to-do state (title, notes, due, status)
 // so a PATCH can't accidentally revert an unspecified field (e.g. reopen a
 // completed task on a title-only edit).
+// Builds the Google Tasks request body for a to-do mirror (title/status/notes
+// /due mapping). Extracted verbatim from upsertTaskForTodo so it can be unit
+// tested on its own — no behavior change.
+export function buildTaskBody(todo: TodoMirror): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    title: todo.title,
+    status: todo.completed ? "completed" : "needsAction",
+  };
+  // Descriptions may carry the markdown subset from lib/rich-text.ts.
+  // Google Tasks notes are plain text, so flatten markers rather than
+  // shipping "**bold**" into the owner's task list.
+  if (todo.notes) body.notes = richTextToPlain(todo.notes) || todo.notes;
+  // Tasks API stores only the date portion of `due` (RFC 3339).
+  if (todo.dueDate) body.due = `${todo.dueDate}T00:00:00.000Z`;
+  return body;
+}
+
 export async function upsertTaskForTodo(
   ownerUid: string,
   todo: TodoMirror,
   existingTaskId?: string | null,
+  db: Firestore = getAdminDb(),
 ): Promise<string | null> {
   if (!ownerUid) return null;
   try {
-    const auth = await getAuthContext(ownerUid);
+    const auth = await getAuthContext(ownerUid, db);
     if (!auth) return null;
 
-    const body: Record<string, unknown> = {
-      title: todo.title,
-      status: todo.completed ? "completed" : "needsAction",
-    };
-    // Descriptions may carry the markdown subset from lib/rich-text.ts.
-    // Google Tasks notes are plain text, so flatten markers rather than
-    // shipping "**bold**" into the owner's task list.
-    if (todo.notes) body.notes = richTextToPlain(todo.notes) || todo.notes;
-    // Tasks API stores only the date portion of `due` (RFC 3339).
-    if (todo.dueDate) body.due = `${todo.dueDate}T00:00:00.000Z`;
+    const body = buildTaskBody(todo);
 
     const result = existingTaskId
       ? await tasksFetch(
@@ -485,10 +502,11 @@ async function listTasklistTasks(
  */
 export async function pullCompletionsForOwner(
   ownerUid: string,
+  db: Firestore = getAdminDb(),
 ): Promise<{ updated: number }> {
   if (!ownerUid || !googleOAuthConfigured()) return { updated: 0 };
   try {
-    const auth = await getAuthContext(ownerUid);
+    const auth = await getAuthContext(ownerUid, db);
     if (!auth) return { updated: 0 };
 
     const googleTasks = await listTasklistTasks(auth.tasklistId, auth.token);
@@ -496,14 +514,13 @@ export async function pullCompletionsForOwner(
       .filter((t) => t.status === "completed")
       .map((t) => t.id);
     if (completedIds.length === 0) {
-      await connectionRef(ownerUid).set(
+      await connectionRef(ownerUid, db).set(
         { last_pull_at_ms: Date.now(), updated_at: FieldValue.serverTimestamp() },
         { merge: true },
       );
       return { updated: 0 };
     }
 
-    const db = getAdminDb();
     // Match by google_task_id (single-field equality). Chunk in case a
     // user has many completed mirrors — Firestore `in` caps at 30.
     const candidates: TodoPullCandidate[] = [];
@@ -549,7 +566,7 @@ export async function pullCompletionsForOwner(
       updated += 1;
     }
 
-    await connectionRef(ownerUid).set(
+    await connectionRef(ownerUid, db).set(
       { last_pull_at_ms: Date.now(), updated_at: FieldValue.serverTimestamp() },
       { merge: true },
     );

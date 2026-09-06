@@ -96,12 +96,14 @@ export function IssueFormModal({
     setOpen(true);
   }
 
-  // When controlled edit opens, sync fields from the issue.
-  useEffect(() => {
-    if (!open) return;
-    if (issue) hydrateFromProps();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-hydrate when open/issue id flips
-  }, [open, issue?.id]);
+  // When controlled edit opens, sync fields from the issue. Render-time, so
+  // the fields are populated on the same paint the modal appears.
+  const editKey = open && issue ? issue.id : null;
+  const [hydratedFor, setHydratedFor] = useState<string | null>(editKey);
+  if (editKey !== hydratedFor) {
+    setHydratedFor(editKey);
+    if (editKey) hydrateFromProps();
+  }
 
   useEffect(() => {
     if (!open) return;

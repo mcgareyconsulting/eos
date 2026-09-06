@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useAuthUid } from "@/lib/firebase/use-collection";
 
@@ -18,10 +18,10 @@ import { useAuthUid } from "@/lib/firebase/use-collection";
 export function LiveAuthBanner() {
   const uid = useAuthUid();
   // Avoid a flash on first paint while Firebase restores from persistence.
+  // Adjusted during render rather than in an effect: once auth has reported
+  // at all, the banner is allowed to decide, and it stays decided.
   const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    if (uid !== undefined) setSettled(true);
-  }, [uid]);
+  if (!settled && uid !== undefined) setSettled(true);
 
   if (!settled || uid) return null;
 

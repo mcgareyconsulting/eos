@@ -45,10 +45,14 @@ export function useScorecardEntries(
   );
 
   // Keep SSR hydration in sync when the parent re-fetches (e.g. week range).
-  useEffect(() => {
+  // Render-time re-seed, keyed on the id set + window: an effect here would
+  // paint one frame of stale entries before correcting itself.
+  const seedKey = `${idsKey}|${oldestWeek}`;
+  const [seededKey, setSeededKey] = useState(seedKey);
+  if (seedKey !== seededKey) {
+    setSeededKey(seedKey);
     setEntries(initial);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-seed when the id set / window changes
-  }, [idsKey, oldestWeek]);
+  }
 
   useEffect(() => {
     if (!uid || sortedIds.length === 0 || !oldestWeek) return;

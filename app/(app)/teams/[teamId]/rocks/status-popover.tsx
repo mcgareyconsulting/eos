@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 import { setRockStatus } from "./actions";
 import {
   STATUSES,
@@ -105,11 +106,7 @@ export function StatusPopover({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState<PanelCoords | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useHydrated();
 
   const radioName = `rock-status-${rockId}`;
 

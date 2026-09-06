@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -110,7 +109,7 @@ function writePreferredTeamId(teamId: string) {
   }
 }
 
-let preferredListeners = new Set<() => void>();
+const preferredListeners = new Set<() => void>();
 
 function subscribePreferred(cb: () => void) {
   preferredListeners.add(cb);
@@ -157,11 +156,10 @@ export function TeamNav({
     () => fallbackId,
   );
 
-  const isMember = useCallback(
-    (id: string | null | undefined): id is string =>
-      Boolean(id && membershipKey.split(",").includes(id)),
-    [membershipKey],
-  );
+  // Plain functions: the React Compiler memoizes them, and a manual
+  // useCallback here defeated it (its deps could not be preserved).
+  const isMember = (id: string | null | undefined): id is string =>
+    Boolean(id && membershipKey.split(",").includes(id));
 
   // URL wins when it points at a team the user belongs to.
   const activeId = isMember(pathTeamId)
@@ -170,12 +168,19 @@ export function TeamNav({
   const activeTeam = sorted.find((t) => t.id === activeId) ?? sorted[0] ?? null;
 
   // Keep preference aligned when navigating into a team via home links etc.
+  // Tests membership against `membershipKey` rather than `isMember` so the
+  // effect depends only on primitives and re-runs when membership changes,
+  // not on every render.
   useEffect(() => {
-    if (isMember(pathTeamId) && pathTeamId !== preferredId) {
+    if (
+      pathTeamId &&
+      pathTeamId !== preferredId &&
+      membershipKey.split(",").includes(pathTeamId)
+    ) {
       writePreferredTeamId(pathTeamId);
       notifyPreferred();
     }
-  }, [pathTeamId, preferredId, isMember]);
+  }, [pathTeamId, preferredId, membershipKey]);
 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -192,11 +197,17 @@ export function TeamNav({
     null,
   );
 
+  // The flyout only exists while the collapsed menu is open. Clearing it at
+  // render keeps the layout effect to placement alone.
+  const flyoutActive = open && collapsed;
+  const [prevFlyoutActive, setPrevFlyoutActive] = useState(flyoutActive);
+  if (flyoutActive !== prevFlyoutActive) {
+    setPrevFlyoutActive(flyoutActive);
+    if (!flyoutActive) setFlyout(null);
+  }
+
   useLayoutEffect(() => {
-    if (!open || !collapsed) {
-      setFlyout(null);
-      return;
-    }
+    if (!flyoutActive) return;
     const place = () => {
       const rect = railRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -216,7 +227,7 @@ export function TeamNav({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, collapsed]);
+  }, [flyoutActive]);
 
   useEffect(() => {
     if (!open) return;
@@ -234,21 +245,18 @@ export function TeamNav({
     };
   }, [open]);
 
-  const selectTeam = useCallback(
-    (teamId: string) => {
-      if (!isMember(teamId)) return;
-      writePreferredTeamId(teamId);
-      notifyPreferred();
-      setOpen(false);
+  const selectTeam = (teamId: string) => {
+    if (!isMember(teamId)) return;
+    writePreferredTeamId(teamId);
+    notifyPreferred();
+    setOpen(false);
 
-      if (pathTeamId) {
-        // Stay in the same section on the other team.
-        router.push(pathForTeam(teamId, pathSection, pathname));
-      }
-      // On /home or /settings, only the nav target team changes.
-    },
-    [isMember, pathSection, pathTeamId, pathname, router],
-  );
+    if (pathTeamId) {
+      // Stay in the same section on the other team.
+      router.push(pathForTeam(teamId, pathSection, pathname));
+    }
+    // On /home or /settings, only the nav target team changes.
+  };
 
   if (!activeTeam) return null;
 

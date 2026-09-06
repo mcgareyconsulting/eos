@@ -43,16 +43,23 @@ export function EditTodoDrawer({
   );
   const [weeklyFocus, setWeeklyFocus] = useState(!!todo.weekly_focus);
 
-  useEffect(() => {
-    if (!open) return;
-    setTitle(todo.title);
-    setDescription(normalizeDescription(todo.description));
-    setOwnerId(todo.owner_id ?? members[0]?.user_id ?? "");
-    setDue(todo.due_date ?? "");
-    setVisibility(todo.visibility);
-    setWeeklyFocus(!!todo.weekly_focus);
-    setError(null);
-  }, [open, todo, members]);
+  // Seed the form when the drawer opens, and again if the to-do it is editing
+  // is swapped while open. Render-time (not in an effect) so the fields are
+  // right on the same paint the drawer appears.
+  const seedSource = open ? todo : null;
+  const [seededFrom, setSeededFrom] = useState<typeof seedSource>(seedSource);
+  if (seedSource !== seededFrom) {
+    setSeededFrom(seedSource);
+    if (seedSource) {
+      setTitle(seedSource.title);
+      setDescription(normalizeDescription(seedSource.description));
+      setOwnerId(seedSource.owner_id ?? members[0]?.user_id ?? "");
+      setDue(seedSource.due_date ?? "");
+      setVisibility(seedSource.visibility);
+      setWeeklyFocus(!!seedSource.weekly_focus);
+      setError(null);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;

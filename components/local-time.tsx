@@ -1,18 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-
-// Detects "hydrated on the client" without effect-driven state: the server
-// snapshot is false, the client snapshot is true, so the first client render
-// after hydration flips exactly once.
-const emptySubscribe = () => () => {};
-function useHydrated(): boolean {
-  return useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  );
-}
+import { useHydrated } from "@/lib/use-hydrated";
 
 // Client-local timestamp text. The server runs in UTC (no TZ set in Cloud
 // Run), so anything formatted server-side shows the wrong wall-clock time to

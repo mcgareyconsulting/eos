@@ -199,24 +199,3 @@ export function oldestPeriodStart(
   const cols = buildScorecardColumns(interval, undefined, weekRange, from);
   return cols[cols.length - 1]?.id ?? periodStartFor(interval, from);
 }
-
-/** @deprecated use oldestPeriodStart — kept name for page call sites. */
-export function weekStartsToLoad(
-  interval: MetricInterval,
-  weekRange: number,
-  from: Date = new Date(),
-): string[] {
-  return buildScorecardColumns(interval, undefined, weekRange, from).map(
-    (c) => c.id,
-  );
-}
-
-/** Weeks of history to request — for weekly only; non-weekly uses period starts. */
-export function weeksToLoadForPeriod(
-  period: ScorecardPeriod,
-  weekRange: number,
-): number {
-  if (period === "weekly") return weekRange;
-  // Non-weekly: caller should use oldestPeriodStart / weekStartsToLoad.
-  return weekRange;
-}

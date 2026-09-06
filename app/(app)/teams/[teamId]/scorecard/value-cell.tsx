@@ -144,7 +144,6 @@ export function ValueCell({
         type="button"
         onClick={beginEdit}
         title={error?.message ?? (abbreviated ? exact : undefined)}
-        aria-invalid={error ? true : undefined}
         aria-label={
           error
             ? `${exact}. ${error.message}`

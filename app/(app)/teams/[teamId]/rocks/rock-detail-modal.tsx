@@ -105,7 +105,7 @@ export function RockDetailTrigger({
  * Full rock record: status banner, header, meta band, milestones with
  * progress, status history, and comments.
  */
-export function RockDetailModal({
+function RockDetailModal({
   teamId,
   userId,
   members,

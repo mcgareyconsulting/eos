@@ -50,12 +50,6 @@ export function addDays(d: Date, days: number): Date {
   return out;
 }
 
-// "2026-05-18" or Date → "5/18"
-export function formatWeekLabel(d: string | Date): string {
-  const date = typeof d === "string" ? new Date(d + "T00:00:00") : d;
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
 const SHORT_MONTHS = [
   "Jan",
   "Feb",
@@ -87,11 +81,6 @@ export function formatWeekRange(weekStart: string | Date): string {
   return `${left} – ${right}`;
 }
 
-// Year of a week-start Monday (for column-group headers).
-export function weekYear(weekStart: string | Date): number {
-  return parseLocalDate(weekStart).getFullYear();
-}
-
 // "2026-05-18" → "5/18/2026" (or whatever the browser's locale format is).
 // Parses with a local-midnight anchor so a date-only string never rolls back
 // a day west of UTC (`new Date("2026-05-18")` parses as UTC midnight, which
@@ -104,7 +93,7 @@ export function formatDateOnly(d: string): string {
 // `new Date("YYYY-MM-DD")` for due-date comparisons — UTC midnight shifts a
 // day west of the Atlantic. (Not the same as csv-import's parseDateOnly,
 // which normalizes free-text → YYYY-MM-DD string.)
-export function toLocalDate(d: string | Date): Date {
+function toLocalDate(d: string | Date): Date {
   if (d instanceof Date) {
     const out = new Date(d);
     out.setHours(0, 0, 0, 0);
@@ -113,33 +102,9 @@ export function toLocalDate(d: string | Date): Date {
   return new Date(d + "T00:00:00");
 }
 
-// True when `due` is on or before today + `withinDays` (inclusive).
-// Missing due dates never count as "due soon".
-export function isDueWithinDays(
-  due: string | null | undefined,
-  withinDays: number,
-  from: Date = new Date(),
-): boolean {
-  if (!due) return false;
-  const dueDate = toLocalDate(due);
-  const end = toLocalDate(from);
-  end.setDate(end.getDate() + withinDays);
-  return dueDate.getTime() <= end.getTime();
-}
-
 // Today + N days as YYYY-MM-DD (local). Used for to-do default due dates.
 export function daysFromNow(days: number, from: Date = new Date()): string {
   return toDateString(addDays(toLocalDate(from), days));
-}
-
-export function durationMinutes(
-  startedAt: string,
-  endedAt: string | null,
-): number {
-  if (!endedAt) return 0;
-  return Math.round(
-    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60000,
-  );
 }
 
 // Whole days from `from` to `due`; negative when overdue. The shared basis for

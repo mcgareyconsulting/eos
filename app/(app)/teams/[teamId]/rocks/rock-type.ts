@@ -8,7 +8,7 @@
 //   - legacy: owner_id null (pre person-always model)
 // A department/team rock still has a **person** owner_id.
 
-export const ROCK_TYPES = ["company", "department", "individual"] as const;
+const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
 
 export const ROCK_TYPE_LABELS: Record<RockType, string> = {
@@ -42,21 +42,6 @@ export const ROCK_TYPE_STYLES: Record<RockType, string> = {
     "bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 ring-zinc-200 dark:ring-zinc-700",
 };
 
-// Sort priority within a section: company, then department, then individual.
-export const ROCK_TYPE_ORDER: readonly RockType[] = [
-  "company",
-  "department",
-  "individual",
-];
-
-/**
- * @deprecated Legacy form sentinel when owner_id was null for "team" rocks.
- * New creates always use a person owner_id.
- */
-export const DEPARTMENT_OWNER_VALUE = "team";
-/** @deprecated Use DEPARTMENT_OWNER_VALUE */
-export const TEAM_OWNER_VALUE = DEPARTMENT_OWNER_VALUE;
-
 export function isRockType(v: string): v is RockType {
   return (ROCK_TYPES as readonly string[]).includes(v);
 }
@@ -67,15 +52,10 @@ export function normalizeRockType(v: string | null | undefined): RockType {
 }
 
 /** Legacy docs only: no person owner_id. */
-export function isSharedDepartmentOwner(
+function isSharedDepartmentOwner(
   ownerId: string | null | undefined,
 ): boolean {
   return ownerId == null || ownerId === "";
-}
-
-/** @deprecated Use isSharedDepartmentOwner */
-export function isTeamRock(ownerId: string | null | undefined): boolean {
-  return isSharedDepartmentOwner(ownerId);
 }
 
 /**

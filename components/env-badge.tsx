@@ -23,7 +23,7 @@ function tone(): Tone {
   return t in TONES ? (t as Tone) : "amber";
 }
 
-export function envLabel(): string | null {
+function envLabel(): string | null {
   return process.env.ENV_LABEL?.trim() || null;
 }
 

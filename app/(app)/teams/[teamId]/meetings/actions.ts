@@ -14,7 +14,6 @@ import {
   normalizeSegment,
 } from "@/lib/l10/segments";
 import {
-  agendaIncludesSegment,
   defaultL10Items,
   firstAgendaSegment,
   nextInAgenda,
@@ -279,42 +278,6 @@ export async function advanceSegment(
     });
   });
 
-  revalidatePath(detailPath(teamId, meetingId));
-}
-
-// Same class of control as advanceSegment (writes the shared current_segment
-// directly rather than stepping it) — leader/admin-gated for the same
-// reason, even though nothing currently calls this (the rail peeks locally
-// instead; see docs/L10_GAPS.md).
-export async function jumpToSegment(
-  teamId: string,
-  meetingId: string,
-  target: Segment,
-) {
-  if (target === "done") {
-    throw new Error("Invalid segment");
-  }
-  const { db } = await requireTeamLeader(teamId);
-  const snap = await requireTeamDoc(db, "meetings", meetingId, teamId);
-  const agenda = resolveMeetingAgenda(snap.data() as {
-    agenda_id?: string | null;
-    agenda_name?: string | null;
-    agenda_items?: unknown;
-  });
-  if (!agendaIncludesSegment(agenda.agenda_items, target)) {
-    throw new Error("Segment is not on this meeting's agenda");
-  }
-  await db
-    .collection("meetings")
-    .doc(meetingId)
-    .update({
-      current_segment: target,
-      segment_started_at: FieldValue.serverTimestamp(),
-      speaking_index: firstPresentIndex(
-        (snap.data()?.speaking_order as string[]) ?? [],
-        (snap.data()?.absent_user_ids as string[]) ?? [],
-      ),
-    });
   revalidatePath(detailPath(teamId, meetingId));
 }
 

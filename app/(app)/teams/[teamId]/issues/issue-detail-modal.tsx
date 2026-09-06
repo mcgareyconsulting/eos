@@ -73,7 +73,7 @@ export function IssueDetailTrigger({
   );
 }
 
-export function IssueDetailModal({
+function IssueDetailModal({
   issue,
   ownerName,
   teamId,

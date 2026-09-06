@@ -75,7 +75,8 @@ async function main() {
     args.role === "admin"
       ? { ...existing, role: "admin" }
       : (() => {
-          const { role: _drop, ...rest } = existing as {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { role, ...rest } = existing as {
             role?: string;
             [k: string]: unknown;
           };

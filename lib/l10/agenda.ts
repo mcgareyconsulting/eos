@@ -42,7 +42,7 @@ export type AgendaOption = {
 const MAX_ITEM_SECONDS = 8 * 60 * 60;
 const MIN_ITEM_SECONDS = 60;
 
-export function isAgendaToolType(
+function isAgendaToolType(
   s: string | null | undefined,
 ): s is AgendaToolType {
   return !!s && (AGENDA_TOOL_TYPES as readonly string[]).includes(s);
@@ -123,10 +123,6 @@ export function resolveBuiltInAgenda(
     agenda_name: preset.name,
     agenda_items: preset.items(),
   };
-}
-
-export function isBuiltInAgendaId(id: string | null | undefined): boolean {
-  return !!id && BUILT_IN_AGENDAS.some((p) => p.id === id);
 }
 
 /**
@@ -240,7 +236,7 @@ export function firstAgendaSegment(
   return agendaSegmentList(items)[0] ?? "segue";
 }
 
-export function lastAgendaSegment(
+function lastAgendaSegment(
   items: readonly AgendaItem[],
 ): AgendaToolType | null {
   const order = agendaSegmentList(items);

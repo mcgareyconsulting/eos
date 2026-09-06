@@ -126,54 +126,6 @@ export async function toggleTodo(
   revalidatePath("/home");
 }
 
-export async function updateTodoTitle(
-  teamId: string,
-  todoId: string,
-  title: string,
-) {
-  const trimmed = title.trim();
-  if (!trimmed) throw new Error("Title required");
-  const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  await db.collection("todos").doc(todoId).update({ title: trimmed });
-
-  const taskId = await upsertTaskForTodo(
-    ownerUidOf(data),
-    mirrorFrom(data, { title: trimmed }),
-    data.google_task_id,
-  );
-  if (taskId && taskId !== data.google_task_id) {
-    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
-  }
-  revalidatePath(pathFor(teamId));
-}
-
-export async function updateTodoDescription(
-  teamId: string,
-  todoId: string,
-  description: string,
-) {
-  const trimmed = description.trim();
-  const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  await db
-    .collection("todos")
-    .doc(todoId)
-    .update({ description: trimmed || null });
-
-  const taskId = await upsertTaskForTodo(
-    ownerUidOf(data),
-    mirrorFrom(data, { notes: trimmed || null }),
-    data.google_task_id,
-  );
-  if (taskId && taskId !== data.google_task_id) {
-    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
-  }
-  revalidatePath(pathFor(teamId));
-}
-
 // Full meta edit from the To-Dos tab drawer (list is view-first). Title
 // required; empty description clears to null. Mirrors to Google Tasks using
 // the (possibly new) owner.

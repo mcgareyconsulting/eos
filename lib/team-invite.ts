@@ -8,7 +8,7 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
 import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
 
-export function isValidEmail(email: string): boolean {
+function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 

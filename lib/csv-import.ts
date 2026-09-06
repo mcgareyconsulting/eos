@@ -129,7 +129,7 @@ export function toTable(rows: string[][]): CsvTable {
   return { headers, rows: out };
 }
 
-export function headerKey(header: string): string {
+function headerKey(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
@@ -488,7 +488,7 @@ export function slugify(raw: string, max = 40): string {
 // doc ids so re-running an import updates rows in place instead of duplicating
 // them. Not a security hash; collisions across a team's few hundred rows are
 // not a practical concern.
-export function stableHash(input: string): string {
+function stableHash(input: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { entityAddButtonClass } from "@/components/entity-page-header";
@@ -53,10 +53,10 @@ export function IssueFormModal({
   const isEdit = !!issue;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
-  const setOpen = (next: boolean) => {
+  const setOpen = useCallback((next: boolean) => {
     onOpenChange?.(next);
     if (controlledOpen === undefined) setUncontrolledOpen(next);
-  };
+  }, [controlledOpen, onOpenChange]);
 
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +112,7 @@ export function IssueFormModal({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, setOpen]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -191,12 +191,3 @@ export async function archiveHeadlinesDiscussedDuringMeeting(
   revalidateHeadlines(teamId);
   return ids.size;
 }
-
-/** @deprecated Prefer archiveHeadlinesDiscussedDuringMeeting (windowed). */
-export async function archiveDiscussedHeadlines(
-  teamId: string,
-  meetingId?: string,
-): Promise<number> {
-  if (!meetingId) return 0;
-  return archiveHeadlinesDiscussedDuringMeeting(teamId, meetingId);
-}

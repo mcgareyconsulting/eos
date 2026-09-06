@@ -58,10 +58,6 @@ export function prevSegment(s: Segment): Segment {
   return SEGMENTS[Math.max(i - 1, 0)];
 }
 
-export function isActiveSegment(s: Segment): boolean {
-  return s !== "done";
-}
-
 export function isSegment(s: string | null | undefined): s is Segment {
   return !!s && (SEGMENTS as readonly string[]).includes(s);
 }

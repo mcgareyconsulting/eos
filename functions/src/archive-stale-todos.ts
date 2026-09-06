@@ -14,7 +14,7 @@ import {
   selectIssuesClosedBeforeWeek,
   selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
-} from "./todos-archive";
+} from "../../lib/todos-archive";
 
 const TIME_ZONE = "America/Chicago";
 const BATCH_SIZE = 400;

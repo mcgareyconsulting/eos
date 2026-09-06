@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Self-contained Cloud Functions package: has its own tsconfig/deps and
     // lib/ is tsc build output — not part of the Next.js app's lint surface.
     "functions/**",
+    // Agent worktrees and other assistant-local state (gitignored).
+    ".claude/**",
   ]),
 ]);
 

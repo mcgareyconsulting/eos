@@ -217,7 +217,10 @@ export const getImportableTeams = cache(
   ): Promise<{ id: string; name: string }[]> => {
     const { uid, isAdmin, db } = await (deps.user ?? requireFirebaseUser)();
 
-    if (isAdmin) return getOrgTeams(deps);
+    // Only forward `deps` when a test injected one: React's cache() keys on
+    // argument identity, so passing the default `{}` would defeat the
+    // per-request memo on getOrgTeams for every production call.
+    if (isAdmin) return deps.user ? getOrgTeams(deps) : getOrgTeams();
 
     const memberships = await db
       .collection("team_members")

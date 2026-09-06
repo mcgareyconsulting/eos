@@ -31,10 +31,7 @@ import {
   rankShortTerm,
   splitIssuesByTerm,
   voteCredits,
-  type IssuePriority,
   isArchivedIssue,
-  type IssueStatus,
-  type IssueType,
 } from "@/lib/issues";
 import { VoteButton } from "../../issues/vote-button";
 import {
@@ -51,20 +48,12 @@ import { setDiscussingIssue, setVotingOpen } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { ownerLabel } from "@/lib/user-name";
+import {
+  type IssueDoc as IssueDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
-type IssueDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  description: string | null;
-  owner_id: string | null;
-  priority: IssuePriority | null;
-  votes: number;
-  type: IssueType;
-  status: IssueStatus;
-  archived?: boolean;
-  archived_at?: unknown;
-};
+type IssueDoc = WithId<IssueDocRecord>;
 
 type VoteDoc = {
   id: string;

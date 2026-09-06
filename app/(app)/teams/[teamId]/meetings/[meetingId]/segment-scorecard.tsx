@@ -11,7 +11,7 @@ import {
   type ScorecardGroup,
 } from "@/lib/scorecard-groups";
 import { QuickAddIssue } from "@/components/quick-add-issue";
-import type { GoalDirection, WeekRange } from "@/lib/scorecard";
+import type { WeekRange } from "@/lib/scorecard";
 import {
   buildScorecardColumns,
   oldestPeriodStart,
@@ -21,22 +21,12 @@ import {
   compareBySpeakingOrder,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import {
+  type ScorecardMetricDoc as ScorecardMetricDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
-type MetricDoc = {
-  id: string;
-  team_id: string;
-  name: string;
-  unit: "number" | "currency" | "percent" | "yesno" | "time";
-  goal: number | null;
-  direction: GoalDirection;
-  owner_id: string | null;
-  sort_order: number;
-  // Optional section label — see scorecard/page.tsx. Missing on metrics
-  // created before grouping existed, and on the SSR-serialized
-  // `initialMetrics` until the realtime listener below replaces it.
-  group?: string | null;
-  interval?: string | null;
-};
+type MetricDoc = WithId<ScorecardMetricDocRecord>;
 
 type EntryDoc = {
   id: string;

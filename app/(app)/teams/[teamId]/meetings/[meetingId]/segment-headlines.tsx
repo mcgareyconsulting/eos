@@ -25,6 +25,10 @@ import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
 import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import {
+  type HeadlineDoc as HeadlineDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
 // created_at arrives as a Firestore Timestamp from onSnapshot, but as a
 // plain millis number when pre-rendered on the server (RSC boundary can't
@@ -40,19 +44,15 @@ function tsMs(t: MaybeTimestamp): number | null {
   return typeof t.toMillis === "function" ? t.toMillis() : null;
 }
 
-export type HeadlineDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  body: string | null;
-  kind: "customer" | "employee" | "cascading" | "general";
-  created_by: string | null;
+// created_at / archived_at diverge from the stored doc here on purpose: a
+// live Timestamp can't cross the RSC boundary, so the server's prefetched
+// props send millis numbers instead — this segment merges both sources, so
+// its HeadlineDoc has to accept either.
+export type HeadlineDoc = WithId<
+  Omit<HeadlineDocRecord, "created_at" | "archived_at">
+> & {
   created_at: MaybeTimestamp;
-  discussed?: boolean;
   archived_at?: MaybeTimestamp;
-  broadcast?: boolean;
-  from_label?: string | null;
-  source_owner_name?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };

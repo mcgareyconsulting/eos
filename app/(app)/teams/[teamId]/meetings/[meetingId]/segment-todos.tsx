@@ -33,32 +33,36 @@ import {
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import {
+  type RockDoc as RockDocRecord,
+  type TodoDoc as TodoDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
 // description is included so L10 rows mirror the To-Dos tab expand/edit UX.
-// archived_at may be missing on legacy docs (treat as active).
-type TodoDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  description?: string | null;
-  owner_id: string | null;
-  due_date: string | null;
-  completed_at: { toDate: () => Date } | boolean | null;
-  archived_at?: { toDate: () => Date } | boolean | null;
-  visibility: "team" | "private";
-  weekly_focus?: boolean;
-  source_rock_id: string | null;
+// archived_at may be missing on legacy docs (treat as active), and is also a
+// boolean rather than a Timestamp once it crosses the RSC boundary.
+type TodoDoc = WithId<
+  Pick<
+    TodoDocRecord,
+    | "team_id"
+    | "title"
+    | "description"
+    | "owner_id"
+    | "due_date"
+    | "visibility"
+    | "weekly_focus"
+    | "source_rock_id"
+  >
+> & {
+  completed_at: TodoDocRecord["completed_at"] | boolean;
+  archived_at?: TodoDocRecord["archived_at"] | boolean;
 };
 
 type Member = { user_id: string; full_name: string };
 
-type RockDoc = {
-  id: string;
-  title?: string;
-  status?: string;
-  archived_at?: unknown;
-};
+type RockDoc = WithId<Pick<RockDocRecord, "title" | "status" | "archived_at">>;
 
 type TodoGroup = {
   key: string;

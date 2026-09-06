@@ -23,32 +23,11 @@ import {
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
-
-type RockDoc = {
-  team_id: string;
-  title: string;
-  owner_id: string | null;
-  quarter: string;
-  due_date: string | null;
-  status: string;
-  description: string | null;
-  rock_type: string | null;
-  shared_team_ids?: string[] | null;
-  archived_at?: unknown;
-};
-
-type TodoDoc = {
-  team_id: string;
-  title: string;
-  owner_id: string | null;
-  due_date: string | null;
-  completed_at: { toDate: () => Date } | null;
-  visibility: "team" | "private";
-  source_issue_id: string | null;
-  source_meeting_id: string | null;
-  source_rock_id: string | null;
-  description: string | null;
-};
+import {
+  type RockDoc,
+  type TodoDoc,
+  type WithId,
+} from "@/lib/firestore-types";
 
 const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
 
@@ -341,7 +320,7 @@ export default async function RocksPage({
   // All view: Department section first (shared ownership + Level=Department
   // rocks, even when a person is accountable), then members A–Z, then owners
   // no longer on the roster. L10 matches (see segment-rocks.tsx).
-  type RockWithId = { id: string } & RockDoc;
+  type RockWithId = WithId<RockDoc>;
   type RockGroup = {
     key: string;
     title: string;

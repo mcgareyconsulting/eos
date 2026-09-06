@@ -24,30 +24,22 @@ import {
   rankLongTerm,
   rankShortTerm,
   splitIssuesByTerm,
-  type IssuePriority,
   type IssueStatus,
-  type IssueType,
 } from "@/lib/issues";
 import { IssueDetailTrigger } from "./issue-detail-modal";
 import { IssueFormModal } from "./issue-form-modal";
 import { MoveIssueTermButton } from "./move-term-button";
 import { deleteIssue, setIssueArchived } from "./actions";
 import { ownerLabel } from "@/lib/user-name";
+import {
+  type IssueDoc as IssueDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
-export type IssueDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  description: string | null;
-  owner_id: string | null;
-  priority: IssuePriority | null;
-  votes: number;
-  type: IssueType;
-  status: IssueStatus;
-  archived?: boolean;
+export type IssueDoc = WithId<IssueDocRecord> & {
+  // Display-only date computed server-side when the issue is archived — not
+  // itself a stored field, so it isn't part of the shared IssueDoc.
   closed_on?: string | null;
-  /** Live client docs may carry Firestore Timestamp. */
-  archived_at?: unknown;
 };
 
 type Member = { user_id: string; full_name: string };

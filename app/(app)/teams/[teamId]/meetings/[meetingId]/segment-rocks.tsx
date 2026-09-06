@@ -25,38 +25,24 @@ import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import { ownerLabel } from "@/lib/user-name";
+import {
+  type RockDoc as RockDocRecord,
+  type TodoDoc as TodoDocRecord,
+  type WithId,
+} from "@/lib/firestore-types";
 
-type RockDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  owner_id: string | null;
-  quarter: string;
-  due_date: string | null;
-  status: string;
-  description: string | null;
-  rock_type: string | null;
-  // Teams this rock is shared with. Must flow through to RockRow — the edit
-  // modal seeds its share picker from it, and saving without it wipes the
-  // field on the rock doc.
-  shared_team_ids?: string[] | null;
-  // Timestamp from onSnapshot, absent from the server prefetch (which
-  // filters archived rocks out entirely). Only ever read as truthy.
-  archived_at?: unknown;
-};
+type RockDoc = WithId<RockDocRecord>;
 
 // completed_at is a Firestore Timestamp from onSnapshot but a plain boolean
 // when pre-rendered on the server (Timestamps can't cross the RSC boundary).
 // We only ever read it as truthy/falsy here, so either works.
-type TodoDoc = {
-  id: string;
-  team_id: string;
-  title: string;
-  owner_id: string | null;
-  due_date: string | null;
-  completed_at: { toDate: () => Date } | boolean | null;
-  source_rock_id: string | null;
-  description: string | null;
+type TodoDoc = WithId<
+  Pick<
+    TodoDocRecord,
+    "team_id" | "title" | "owner_id" | "due_date" | "source_rock_id" | "description"
+  >
+> & {
+  completed_at: TodoDocRecord["completed_at"] | boolean;
 };
 
 // created_at is a Firestore Timestamp over onSnapshot; toMillis() is the only

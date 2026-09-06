@@ -4,7 +4,7 @@
     "target": "es2022",
     "lib": ["es2022"],
     "outDir": "lib",
-    "rootDir": "src",
+    "rootDir": "..",
     "sourceMap": true,
     "strict": true,
     "noImplicitReturns": true,
@@ -15,5 +15,5 @@
     "resolveJsonModule": true
   },
   "compileOnSave": true,
-  "include": ["src"]
+  "include": ["src/**/*", "../lib/todos-archive.ts"]
 }

@@ -1,9 +1,4 @@
-# APIs required for the current MVP footprint (Cloud Run + Firestore + Auth)
-# plus the near-term additions this roadmap already anticipates: the
-# audit-log onWrite trigger (cloudfunctions/eventarc) and the future nightly
-# BigQuery batch worker (cloudscheduler).
-# secretmanager/iam are included as Tier-0 foundation (least-privilege SAs,
-# no exported keys, secrets out of env vars).
+# Required APIs for MVP and near-term planned additions. See README.md "Required APIs".
 
 locals {
   required_apis = [

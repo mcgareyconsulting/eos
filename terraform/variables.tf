@@ -61,9 +61,7 @@ variable "grant_cloudbuild_deploy_permissions" {
   default     = false
 }
 
-# --- Optional security levers (Tier 1, see terraform/levers.tf). ---
-# --- All default OFF; the app runs fine without ---
-# --- any of them. Flip on per the bank's security review requirements. ---
+# Tier 1 optional security levers (all default OFF). See levers.tf and README.md.
 
 variable "enable_cloud_armor" {
   description = "Provision a Cloud Armor security policy (WAF/DDoS). Requires a Load Balancer in front of Cloud Run — see levers.tf for scope notes. Ballpark ~$5-10/mo policy + LB cost (~$18-25/mo)."

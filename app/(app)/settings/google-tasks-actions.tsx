@@ -6,7 +6,14 @@ import { Loader2, Unplug } from "lucide-react";
 import { disconnectGoogleTasks } from "./actions";
 import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
 
-export function GoogleTasksActions({ connected }: { connected: boolean }) {
+export function GoogleTasksActions({
+  connected,
+  revoked = false,
+}: {
+  connected: boolean;
+  /** Google rejected the stored token — the Connect button is the fix. */
+  revoked?: boolean;
+}) {
   const router = useRouter();
   const [disconnectPending, startDisconnect] = useTransition();
 
@@ -14,7 +21,8 @@ export function GoogleTasksActions({ connected }: { connected: boolean }) {
 
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2">
-      <SyncGoogleTasksButton connected={connected} configured />
+      {/* A sync would be a no-op while revoked; Reconnect above is the action. */}
+      {!revoked && <SyncGoogleTasksButton connected={connected} configured />}
       <button
         type="button"
         disabled={disconnectPending}

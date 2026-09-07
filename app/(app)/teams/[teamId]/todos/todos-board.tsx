@@ -188,7 +188,7 @@ export function TodosBoard({
   ownerFilter: string;
   members: Member[];
   speakingOrder: string[];
-  tasksStatus: { configured: boolean; connected: boolean };
+  tasksStatus: { configured: boolean; connected: boolean; revoked: boolean };
   initialTodos: TodoBoardDoc[];
   initialRocks: RockBoardDoc[];
 }) {
@@ -349,6 +349,7 @@ export function TodosBoard({
           <SyncGoogleTasksButton
             configured={tasksStatus.configured}
             connected={tasksStatus.connected}
+            revoked={tasksStatus.revoked}
             showHint={false}
           />
         }

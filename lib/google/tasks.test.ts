@@ -11,6 +11,8 @@ import {
   pullCompletionsForOwner,
   saveOAuthState,
   consumeOAuthState,
+  getTasksStatus,
+  saveConnection,
 } from "./tasks";
 
 const ENV_KEYS = [
@@ -219,7 +221,7 @@ describe("upsertTaskForTodo — token refresh", () => {
     assert.equal(conn.data()?.access_token, "at-new");
   });
 
-  test("a failed refresh makes no Tasks API call and upsert reports null (never throws)", async () => {
+  test("a 400 refresh marks the connection revoked, makes no Tasks API call, and reports null (never throws)", async () => {
     process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
     const db = new FakeFirestore();
@@ -242,10 +244,65 @@ describe("upsertTaskForTodo — token refresh", () => {
     assert.equal(id, null);
     assert.equal(calls.length, 1, "no Tasks call attempted, and no retry of the refresh itself");
 
-    // The module does not clear/flag the connection on a failed refresh — it
-    // just leaves the (still-expired) token in place for the next attempt.
+    // invalid_grant is permanent: the doc is flagged so the UI can ask for a
+    // reconnect instead of reporting a healthy connection forever.
     const conn = await db.collection("google_tasks_connections").doc("u1").get();
+    assert.equal(conn.data()?.status, "revoked");
+    assert.equal(typeof conn.data()?.revoked_at_ms, "number");
+    // Tokens are left in place — only a reconnect replaces them.
     assert.equal(conn.data()?.access_token, "at-old");
+  });
+
+  test("a 500 refresh is treated as transient and does not mark the connection revoked", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token: "rt",
+      access_token: "at-old",
+      access_token_expiry: Date.now() - 1000,
+      tasklist_id: "list-1",
+    });
+    const { fn, calls } = fetchQueue([{ status: 500, body: { error: "backend" } }]);
+    globalThis.fetch = fn;
+
+    const id = await upsertTaskForTodo(
+      "u1",
+      { title: "Ship it", completed: false },
+      null,
+      db.asFirestore(),
+    );
+
+    assert.equal(id, null);
+    assert.equal(calls.length, 1);
+    const conn = await db.collection("google_tasks_connections").doc("u1").get();
+    assert.equal(conn.data()?.status, undefined, "a Google outage must not disable the connector");
+  });
+
+  test("a revoked connection makes zero fetch calls", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token: "rt",
+      access_token: "at-valid",
+      access_token_expiry: Date.now() + 10 * 60 * 1000,
+      tasklist_id: "list-1",
+      status: "revoked",
+      revoked_at_ms: Date.now(),
+    });
+    const { fn, calls } = fetchQueue([]);
+    globalThis.fetch = fn;
+
+    const id = await upsertTaskForTodo(
+      "u1",
+      { title: "Ship it", completed: false },
+      null,
+      db.asFirestore(),
+    );
+
+    assert.equal(id, null);
+    assert.equal(calls.length, 0, "not even the cached token is used while revoked");
   });
 
   test("not connected (no stored connection) is a no-op, never calls fetch", async () => {
@@ -436,6 +493,104 @@ describe("pullCompletionsForOwner", () => {
     const result = await pullCompletionsForOwner("owner-1", db.asFirestore());
     assert.equal(result.updated, 0);
     assert.equal(calls.length, 0);
+  });
+
+  test("a revoked connection is a no-op and makes zero fetch calls", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "owner-1", {
+      refresh_token: "rt",
+      access_token: "at-valid",
+      access_token_expiry: Date.now() + 60 * 60 * 1000,
+      tasklist_id: "list-1",
+      status: "revoked",
+      revoked_at_ms: Date.now(),
+    });
+    const { fn, calls } = fetchQueue([]);
+    globalThis.fetch = fn;
+
+    const result = await pullCompletionsForOwner("owner-1", db.asFirestore());
+    assert.equal(result.updated, 0);
+    assert.equal(calls.length, 0);
+  });
+});
+
+// --- getTasksStatus / reconnect ---------------------------------------------
+
+describe("getTasksStatus", () => {
+  test("reports revoked for a flagged connection", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token: "rt",
+      connected_email: "a@example.com",
+      status: "revoked",
+      revoked_at_ms: 1234,
+    });
+
+    const status = await getTasksStatus("u1", db.asFirestore());
+    assert.equal(status.configured, true);
+    assert.equal(status.connected, true, "tokens are still stored");
+    assert.equal(status.revoked, true);
+    assert.equal(status.revokedAtMs, 1234);
+  });
+
+  test("a healthy connection is not revoked", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    seedConnection(db, "u1");
+
+    const status = await getTasksStatus("u1", db.asFirestore());
+    assert.equal(status.revoked, false);
+    assert.equal(status.revokedAtMs, null);
+  });
+});
+
+describe("saveConnection", () => {
+  test("a reconnect clears the revoked flag and syncing resumes", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token: "old-rt",
+      access_token: "at-old",
+      access_token_expiry: Date.now() - 1000,
+      tasklist_id: "list-1",
+      status: "revoked",
+      revoked_at_ms: Date.now(),
+    });
+
+    await saveConnection(
+      {
+        refreshToken: "new-rt",
+        accessToken: "at-new",
+        expiresInSec: 3600,
+        uid: "u1",
+        email: "a@example.com",
+      },
+      db.asFirestore(),
+    );
+
+    const status = await getTasksStatus("u1", db.asFirestore());
+    assert.equal(status.revoked, false);
+    assert.equal(status.revokedAtMs, null);
+
+    const { fn, calls } = fetchQueue([
+      { status: 200, body: { items: [{ id: "list-2", title: "EOS · L10 To-Dos" }] } },
+      { status: 200, body: { id: "gtask-1" } },
+    ]);
+    globalThis.fetch = fn;
+    const id = await upsertTaskForTodo(
+      "u1",
+      { title: "Ship it", completed: false },
+      null,
+      db.asFirestore(),
+    );
+    assert.equal(id, "gtask-1");
+    assert.equal(calls.length, 2, "list lookup + create; the fresh token needs no refresh");
   });
 });
 

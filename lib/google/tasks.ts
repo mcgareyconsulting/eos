@@ -74,7 +74,17 @@ type Connection = {
   connected_by_uid?: string | null;
   connected_email?: string | null;
   last_pull_at_ms?: number | null;
+  // "revoked" once Google rejected the stored refresh token for good (the
+  // user un-authorized the app, signed out everywhere, or the grant expired).
+  // Sync stays off until a reconnect rewrites this doc.
+  status?: string | null;
+  revoked_at_ms?: number | null;
 };
+
+/** A stored connection whose refresh token Google has permanently rejected. */
+function isRevoked(conn: Connection | null | undefined): boolean {
+  return conn?.status === "revoked";
+}
 
 function clientCreds(): { clientId: string; clientSecret: string } | null {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
@@ -103,10 +113,19 @@ async function getConnection(
   return data?.refresh_token ? data : null;
 }
 
-/** Connection status for the given EOS user (no secrets returned). */
-export async function getTasksStatus(uid: string): Promise<{
+/**
+ * Connection status for the given EOS user (no secrets returned).
+ * `revoked` means tokens are still stored but Google rejected them — the UI
+ * must offer a reconnect rather than claiming the integration is healthy.
+ */
+export async function getTasksStatus(
+  uid: string,
+  db: Firestore = getAdminDb(),
+): Promise<{
   configured: boolean;
   connected: boolean;
+  revoked: boolean;
+  revokedAtMs: number | null;
   email: string | null;
   lastPullAtMs: number | null;
 }> {
@@ -115,14 +134,19 @@ export async function getTasksStatus(uid: string): Promise<{
     return {
       configured: false,
       connected: false,
+      revoked: false,
+      revokedAtMs: null,
       email: null,
       lastPullAtMs: null,
     };
   }
-  const conn = await getConnection(uid).catch(() => null);
+  const conn = await getConnection(uid, db).catch(() => null);
   return {
     configured: true,
     connected: !!conn,
+    revoked: isRevoked(conn),
+    revokedAtMs:
+      typeof conn?.revoked_at_ms === "number" ? conn.revoked_at_ms : null,
     email: conn?.connected_email ?? null,
     lastPullAtMs:
       typeof conn?.last_pull_at_ms === "number" ? conn.last_pull_at_ms : null,
@@ -161,14 +185,17 @@ export async function exchangeCodeForTokens(
 }
 
 /** Persist a freshly-authorized connection for this EOS user. */
-export async function saveConnection(params: {
-  refreshToken: string;
-  accessToken: string;
-  expiresInSec: number;
-  uid: string;
-  email: string | null;
-}): Promise<void> {
-  await connectionRef(params.uid).set(
+export async function saveConnection(
+  params: {
+    refreshToken: string;
+    accessToken: string;
+    expiresInSec: number;
+    uid: string;
+    email: string | null;
+  },
+  db: Firestore = getAdminDb(),
+): Promise<void> {
+  await connectionRef(params.uid, db).set(
     {
       refresh_token: params.refreshToken,
       access_token: params.accessToken,
@@ -178,6 +205,9 @@ export async function saveConnection(params: {
       // Clear any prior tasklist — a reconnect may use a different Google
       // account, so the old list id is not valid for the new tokens.
       tasklist_id: null,
+      // A fresh grant clears any earlier revocation, so sync resumes.
+      status: "active",
+      revoked_at_ms: null,
       updated_at: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -185,8 +215,11 @@ export async function saveConnection(params: {
 }
 
 /** Drop this user's Google Tasks connection (tokens + cached tasklist). */
-export async function clearConnection(uid: string): Promise<void> {
-  await connectionRef(uid).delete();
+export async function clearConnection(
+  uid: string,
+  db: Firestore = getAdminDb(),
+): Promise<void> {
+  await connectionRef(uid, db).delete();
 }
 
 // --- OAuth CSRF state (server-side) ---------------------------------------
@@ -258,7 +291,24 @@ async function refreshAccessToken(
     }),
   });
   if (!res.ok) {
-    throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
+    const body = await res.text();
+    // 400/401 from the token endpoint is Google saying this grant is gone
+    // (invalid_grant / invalid_client) — retrying can never fix it, so flag
+    // the connection and let the UI ask for a reconnect. 5xx and network
+    // errors are transient and must NOT flip the flag.
+    if (res.status === 400 || res.status === 401) {
+      await connectionRef(uid, db)
+        .set(
+          {
+            status: "revoked",
+            revoked_at_ms: Date.now(),
+            updated_at: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        )
+        .catch(() => undefined);
+    }
+    throw new Error(`Token refresh failed: ${res.status} ${body}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in: number };
   await connectionRef(uid, db).set(
@@ -305,6 +355,9 @@ async function getAuthContext(
 
   const conn = await getConnection(ownerUid, db);
   if (!conn) return null;
+  // Tokens are dead until the user reconnects — don't spend a refresh (or a
+  // Tasks call) proving it on every to-do write.
+  if (isRevoked(conn)) return null;
 
   let token = conn.access_token ?? null;
   const expiry = conn.access_token_expiry ?? 0;
@@ -598,6 +651,9 @@ export async function pullCompletionsForAllConnected(): Promise<{
     for (const doc of snap.docs) {
       const data = doc.data() as Connection;
       if (!data.refresh_token) continue;
+      // A revoked grant can't be pulled from; skip it instead of burning a
+      // failed refresh per sweep.
+      if (isRevoked(data)) continue;
       users += 1;
       const result = await pullCompletionsForOwner(doc.id);
       updated += result.updated;

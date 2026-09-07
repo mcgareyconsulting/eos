@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { syncGoogleTasksNow } from "@/app/(app)/settings/actions";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 export function SyncGoogleTasksButton({
   connected,
   configured = true,
+  revoked = false,
   className,
   showHint = true,
 }: {
@@ -22,6 +23,8 @@ export function SyncGoogleTasksButton({
   connected: boolean;
   /** GOOGLE_OAUTH_* present on this deployment. */
   configured?: boolean;
+  /** Google rejected the stored token — syncing is off until a reconnect. */
+  revoked?: boolean;
   className?: string;
   showHint?: boolean;
 }) {
@@ -31,6 +34,24 @@ export function SyncGoogleTasksButton({
 
   if (!configured) {
     return null;
+  }
+
+  // Tokens are stored but dead: syncing would silently do nothing, so send
+  // the user to Settings to reconnect instead of offering a no-op button.
+  if (revoked) {
+    return (
+      <Link
+        href="/settings"
+        className={cn(
+          "inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-300 px-3 text-sm text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950",
+          className,
+        )}
+        title="Google Tasks access expired — reconnect in Settings to resume syncing"
+      >
+        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+        Reconnect Tasks
+      </Link>
+    );
   }
 
   if (!connected) {

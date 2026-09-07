@@ -89,6 +89,20 @@ export default async function SettingsPage({
                   / _SECRET (and GOOGLE_OAUTH_REDIRECT_URI in prod) on the Cloud
                   Run service
                 </span>
+              ) : status.connected && status.revoked ? (
+                <span className="inline-flex flex-col gap-1 text-amber-600 dark:text-amber-400 sm:flex-row sm:items-center sm:gap-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Reconnect needed — Google revoked access
+                    {status.email ? ` for ${status.email}` : ""}, so nothing is
+                    syncing
+                  </span>
+                  {status.revokedAtMs != null && (
+                    <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                      · since {new Date(status.revokedAtMs).toLocaleString()}
+                    </span>
+                  )}
+                </span>
               ) : status.connected ? (
                 <span className="inline-flex flex-col gap-1 text-hpb-green sm:flex-row sm:items-center sm:gap-1.5">
                   <span className="inline-flex items-center gap-1.5">
@@ -109,7 +123,10 @@ export default async function SettingsPage({
                 </span>
               )}
             </div>
-            <GoogleTasksActions connected={status.configured && status.connected} />
+            <GoogleTasksActions
+              connected={status.configured && status.connected}
+              revoked={status.revoked}
+            />
           </div>
 
           {status.configured && (
@@ -118,7 +135,7 @@ export default async function SettingsPage({
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
             >
               <ExternalLink className="h-4 w-4" />
-              {status.connected ? "Reconnect" : "Connect"}
+              {status.connected || status.revoked ? "Reconnect" : "Connect"}
             </a>
           )}
         </div>

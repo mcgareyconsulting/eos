@@ -99,7 +99,7 @@ export function googleOAuthConfigured(): boolean {
 }
 
 // `db` defaults to the real admin Firestore; tests pass a fake so
-// connection state is inspectable/controllable without an emulator.
+// connection state is inspectable/controllable without any Firestore at all.
 function connectionRef(uid: string, db: Firestore = getAdminDb()) {
   return db.collection("google_tasks_connections").doc(uid);
 }
@@ -350,7 +350,7 @@ async function getAuthContext(
 ): Promise<{ token: string; tasklistId: string } | null> {
   // Short-circuit before any Firestore read when the connector isn't even
   // configured — keeps the to-do write path free of overhead everywhere the
-  // integration is off (prod, emulator, unconfigured trials).
+  // integration is off (prod, sandbox, unconfigured trials).
   if (!googleOAuthConfigured()) return null;
 
   const conn = await getConnection(ownerUid, db);

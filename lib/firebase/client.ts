@@ -1,20 +1,6 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import {
-  connectAuthEmulator,
-  getAuth,
-  GoogleAuthProvider,
-  type Auth,
-} from "firebase/auth";
-import {
-  connectFirestoreEmulator,
-  getFirestore,
-  type Firestore,
-} from "firebase/firestore";
-
-// Local-only: when NEXT_PUBLIC_FIREBASE_USE_EMULATOR=true the client SDK talks
-// to the Firebase emulators instead of a real project — no cloud credentials
-// needed. See docs/LOCAL_DEV.md. Never set this in production.
-const USE_EMULATOR = process.env.NEXT_PUBLIC_FIREBASE_USE_EMULATOR === "true";
+import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
 function getClientApp(): FirebaseApp {
   if (getApps().length) return getApp();
@@ -29,30 +15,17 @@ function getClientApp(): FirebaseApp {
   });
 }
 
-let authEmulatorConnected = false;
 export function getClientAuth(): Auth {
-  const auth = getAuth(getClientApp());
-  if (USE_EMULATOR && !authEmulatorConnected) {
-    authEmulatorConnected = true;
-    connectAuthEmulator(auth, "http://127.0.0.1:9099", {
-      disableWarnings: true,
-    });
-  }
-  return auth;
+  return getAuth(getClientApp());
 }
 
-let firestoreEmulatorConnected = false;
 export function getClientDb(): Firestore {
   const app = getClientApp();
-  // Prod uses a *named* database (e.g. "hpb-eos-prod-db"); local/emulator leaves
-  // this unset and talks to "(default)". Same var drives the Admin SDK.
+  // Each deployment targets a *named* database (e.g. "hpb-eos-prod-db",
+  // "hpb-eos-sandbox-db"); unset talks to "(default)". Same var drives the
+  // Admin SDK.
   const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
-  const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
-  if (USE_EMULATOR && !firestoreEmulatorConnected) {
-    firestoreEmulatorConnected = true;
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  }
-  return db;
+  return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
 
 // Google provider for the sign-in popup.

@@ -23,7 +23,6 @@
 *.p12
 *service-account*.json
 .firebase/
-.emulator-data/
 .claude/
 
 # --- Local state, scratch work, editor/OS cruft --------------------------

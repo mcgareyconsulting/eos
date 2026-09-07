@@ -16,10 +16,10 @@ A self-hosted alternative to ninety.io for running [EOS](https://www.eosworldwid
 
 ## Setup
 
-> **Just want to run it locally?** The fastest path needs **no cloud project at
-> all** — see **[docs/LOCAL_DEV.md](docs/LOCAL_DEV.md)**, which runs Firebase Auth
-> + Firestore in local emulators. The steps below configure a **real** Firebase
-> project (for staging/production / a deployed demo).
+> **Just want to run it locally?** `pnpm dev` runs against the **sandbox
+> Firestore database** in the same Firebase project as production — a real
+> project, a separate database. The steps below are that setup; a deployed
+> environment differs only in which database id it points at.
 
 ### 1. Install deps
 
@@ -35,9 +35,9 @@ This app uses a single Firebase project for Firestore + Auth.
 2. **Authentication → Sign-in method →** enable **Google** and set "Restrict by domain" to `highplainsbank.com`. App access is HPB SSO only — no external allowlist (see [Security](#security)).
 3. **Project Settings → General → Your apps → Web app** — copy the config values.
 4. Copy `.env.example` to `.env.local`, then fill in the `NEXT_PUBLIC_FIREBASE_*`
-   values. `.env.example` **ships in emulator mode**, so for a real project set
-   `NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false` and delete the two `*_EMULATOR_HOST`
-   lines (see the comments in the file).
+   values from that web app config. Leave
+   `NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-sandbox-db` as it ships — that is
+   the sandbox database, and prod's id is never set in a dev env file.
 
 ```bash
 cp .env.example .env.local
@@ -105,7 +105,7 @@ rolling (GCP project, IAM access, sign-in domain, security tier), send them
 
 **Directory vs data:** `teams`, `team_members`, and `users` are readable org-wide (soft directory). Rocks, issues, todos, headlines, scorecard, meetings, etc. require **team membership** or the **admin** claim — mirrored by `requireTeamAccess()` / `requireTeamLeader()` / `requireAdmin()` on the server.
 
-The **sign-in perimeter** is the server-enforced `SIGN_IN_ALLOWLIST` checked in `createSession()` (`lib/firebase/session.ts`): a comma-separated list of allowed domains (`@highplainsbank.com`) and exact emails (the consultant's account, for the duration of the engagement). Accounts outside it are refused a session — the client-side `hd` hint and the provider's domain restriction are not used for enforcement, since neither can express "domain plus one account". Unset, sign-in is open (emulator/trial). As defense-in-depth, the broad org/user/team reads in `firestore.rules` (`inDomain()`) mirror the same perimeter — keep the two in lockstep. Admin in-app is the Identity Platform `role: "admin"` custom claim. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login.
+The **sign-in perimeter** is the server-enforced `SIGN_IN_ALLOWLIST` checked in `createSession()` (`lib/firebase/session.ts`): a comma-separated list of allowed domains (`@highplainsbank.com`) and exact emails (the consultant's account, for the duration of the engagement). Accounts outside it are refused a session — the client-side `hd` hint and the provider's domain restriction are not used for enforcement, since neither can express "domain plus one account". Unset, sign-in is open (sandbox/trial). As defense-in-depth, the broad org/user/team reads in `firestore.rules` (`inDomain()`) mirror the same perimeter — keep the two in lockstep. Admin in-app is the Identity Platform `role: "admin"` custom claim. Consultant / operator administration happens at the **GCP IAM + Admin SDK layer** (HPB-granted), which bypasses these rules and needs no app login.
 
 ## Project structure
 

@@ -66,7 +66,6 @@ next-env.d.ts
 # firebase
 .firebase
 *-debug.log
-/.emulator-data
 
 # terraform
 terraform/.terraform/

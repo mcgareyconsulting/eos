@@ -109,34 +109,14 @@ async function main() {
     process.env.GCLOUD_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
     "(unset — ADC will pick default)";
-  const authEmulator = process.env.FIREBASE_AUTH_EMULATOR_HOST;
-  const firestoreEmulator = process.env.FIRESTORE_EMULATOR_HOST;
-  const useEmulatorFlag = process.env.NEXT_PUBLIC_FIREBASE_USE_EMULATOR;
 
   console.log(`\nEnvironment (reassign-user)`);
   console.log(`  projectId              : ${projectId}`);
   console.log(`  NEXT_PUBLIC_FIREBASE_DATABASE_ID (env default): ${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || "(unset)"}`);
   console.log(`  --database             : ${databaseId || "(default / env)"}`);
-  console.log(`  FIREBASE_AUTH_EMULATOR_HOST : ${authEmulator || "(unset — live Auth)"}`);
-  console.log(`  FIRESTORE_EMULATOR_HOST     : ${firestoreEmulator || "(unset — live Firestore)"}`);
-  console.log(`  NEXT_PUBLIC_FIREBASE_USE_EMULATOR : ${useEmulatorFlag ?? "(unset)"}`);
   console.log(
     `  credentials            : ${process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? "FIREBASE_SERVICE_ACCOUNT_JSON" : "Application Default Credentials"}`,
   );
-
-  if (authEmulator || firestoreEmulator || useEmulatorFlag === "true") {
-    console.error(
-      "\n*** Emulator / demo mode is active in this shell's env. ***\n" +
-        "Auth lookups will hit the local emulator (or demo project), not hpb-eos-prod.\n" +
-        "Fix for this command only:\n" +
-        "  unset FIREBASE_AUTH_EMULATOR_HOST FIRESTORE_EMULATOR_HOST\n" +
-        "  # and use a .env that points at the real project, e.g.:\n" +
-        "  NEXT_PUBLIC_FIREBASE_USE_EMULATOR=false\n" +
-        "  NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod\n" +
-        "Or pass a real project via SA JSON for hpb-eos-prod.\n",
-    );
-    process.exit(1);
-  }
 
   if (
     typeof projectId === "string" &&

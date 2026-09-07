@@ -16,7 +16,6 @@
 **/*.p12
 **/*service-account*.json
 **/.firebase
-.emulator-data
 .claude
 scratch
 .scratch*

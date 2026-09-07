@@ -224,7 +224,6 @@ async function attachAccount(
   writer: Writer,
 ): Promise<Member> {
   const auth = getAdminAuth();
-  const onAuthEmulator = !!process.env.FIREBASE_AUTH_EMULATOR_HOST;
 
   let uid = account;
   let user: import("firebase-admin/auth").UserRecord | null = null;
@@ -234,11 +233,7 @@ async function attachAccount(
       : await auth.getUser(account);
     uid = user.uid;
   } catch {
-    if (account.includes("@") && onAuthEmulator) {
-      user = await auth.createUser({ email: account, emailVerified: true });
-      uid = user.uid;
-      console.log(`Created emulator auth user for "${account}".`);
-    } else if (account.includes("@")) {
+    if (account.includes("@")) {
       console.error(
         `No Firebase Auth user for "${account}" — sign in to the app once, then re-run.\n` +
           `  (Or pass the uid directly if you know it.)`,
@@ -278,10 +273,7 @@ async function main() {
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
   console.log(
-    `\nProject: ${projectId ?? "(from credentials)"}   Database: ${databaseId || "(default)"}` +
-      (process.env.FIRESTORE_EMULATOR_HOST
-        ? `   [EMULATOR ${process.env.FIRESTORE_EMULATOR_HOST}]`
-        : ""),
+    `\nProject: ${projectId ?? "(from credentials)"}   Database: ${databaseId || "(default)"}`,
   );
 
   const db = getAdminDb();

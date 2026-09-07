@@ -3,6 +3,11 @@ import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTasksStatus, pullCompletionsForOwner } from "@/lib/google/tasks";
 import { SignOutButton } from "@/components/sign-out-button";
 import { GoogleTasksActions } from "./google-tasks-actions";
+import { LocalTime } from "@/components/local-time";
+
+// Server renders in UTC; timestamps are formatted client-side in the viewer's
+// locale and timezone.
+const DATE_TIME: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "short" };
 
 // Per-user profile + integrations. Google Tasks is two-way on completion:
 // EOS → Google on write; Google → EOS via pull (this page, To-Dos, Sync now,
@@ -99,7 +104,8 @@ export default async function SettingsPage({
                   </span>
                   {status.revokedAtMs != null && (
                     <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
-                      · since {new Date(status.revokedAtMs).toLocaleString()}
+                      · since{" "}
+                      <LocalTime ms={status.revokedAtMs} options={DATE_TIME} />
                     </span>
                   )}
                 </span>
@@ -112,7 +118,7 @@ export default async function SettingsPage({
                   {status.lastPullAtMs != null && (
                     <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
                       · last sync{" "}
-                      {new Date(status.lastPullAtMs).toLocaleString()}
+                      <LocalTime ms={status.lastPullAtMs} options={DATE_TIME} />
                     </span>
                   )}
                 </span>

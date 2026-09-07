@@ -20,9 +20,8 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
-import { AddHeadlineModal } from "../../headlines/add-headline-modal";
+import { HeadlineFormModal } from "../../headlines/headline-form-modal";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
-import { HeadlineEditButton } from "../../headlines/headline-edit-modal";
 import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import {
@@ -172,7 +171,8 @@ export function SegmentHeadlines({
         </div>
         {!readOnly && (
           <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
-            <HeadlineEditButton
+            <HeadlineFormModal
+              mode="edit"
               teamId={teamId}
               headline={{
                 id: h.id,
@@ -208,7 +208,7 @@ export function SegmentHeadlines({
           activeCount={active.length}
           archivedCount={archived.length}
         />
-        <AddHeadlineModal teamId={teamId} compact />
+        <HeadlineFormModal mode="create" teamId={teamId} compact />
         <QuickAddIssue
           teamId={teamId}
           prefill="From headline: "

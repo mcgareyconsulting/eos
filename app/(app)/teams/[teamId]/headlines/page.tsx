@@ -13,9 +13,8 @@ import {
   splitCascadingSection,
 } from "@/lib/headlines";
 import { deleteHeadline, setHeadlineArchived } from "./actions";
-import { AddHeadlineModal } from "./add-headline-modal";
+import { HeadlineFormModal } from "./headline-form-modal";
 import { HeadlineDiscussedCheckbox } from "./headline-checkbox";
-import { HeadlineEditButton } from "./headline-edit-modal";
 import {
   type HeadlineDoc as HeadlineDocRecord,
   type WithId,
@@ -168,7 +167,8 @@ export default async function HeadlinesPage({
             message for whoever cascaded it. */}
         <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
           {!readOnly && (
-            <HeadlineEditButton
+            <HeadlineFormModal
+              mode="edit"
               teamId={teamId}
               headline={{
                 id: h.id,
@@ -229,7 +229,7 @@ export default async function HeadlinesPage({
             owner={ownerFilter !== "all" ? ownerFilter : undefined}
           />
         }
-        add={<AddHeadlineModal teamId={teamId} />}
+        add={<HeadlineFormModal mode="create" teamId={teamId} />}
       />
 
       {showArchived ? (

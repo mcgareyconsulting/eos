@@ -1,18 +1,61 @@
-# Trims what `gcloud builds submit` tars and uploads as build source. When
-# this file exists gcloud uses it INSTEAD of its default (which is .git +
-# .gitignore patterns) — so the include line below keeps honoring .gitignore,
-# and the rest catches what .gitignore misses.
-.gcloudignore
+# Upload gate: what `gcloud builds submit` tars up and sends to Cloud Build as
+# the build source. This file is the secrecy authority for the pipeline —
+# anything that must never leave a developer machine is listed here, tracked or
+# not. .dockerignore is the narrower image-content gate downstream of it.
+
+# Never uploaded: git history, and the ignore files themselves.
 .git
+.gitignore
+.gcloudignore
+
+# Inherit the repo's own ignore rules, so a path gitignored for secrecy is also
+# never uploaded. Everything below stands on its own and does not depend on
+# .gitignore keeping it — .gitignore's patterns are also mostly root-anchored,
+# which leaves nested copies (functions/node_modules/, ...) riding along.
 #!include:.gitignore
 
-# .gitignore's /node_modules pattern is root-anchored, so the functions
-# package's own dependency tree (plus its build output) was riding along in
-# every upload — the bulk of the ~80 MB / 6k files.
+# --- Secrets and local credentials --------------------------------------
+# .env.example is the committed template and carries no values.
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*service-account*.json
+.firebase/
+.emulator-data/
+.claude/
+
+# --- Local state, scratch work, editor/OS cruft --------------------------
+scratch/
+.scratch*
+coverage/
+*.tsbuildinfo
+*-debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+
+# --- Dependency trees and build output (reinstalled/rebuilt in the image) -
+# .gitignore's /node_modules is root-anchored, so the functions package's own
+# tree and build output need naming here — they were the bulk of the upload.
+node_modules/
+.next/
+out/
+build/
 functions/node_modules/
 functions/lib/
 
-# Not consumed by the Docker build.
-docs/
+# --- Infrastructure state -------------------------------------------------
+# tfstate, tfvars and tfplan carry resource attributes (including Cloud Run
+# env vars) in the clear, and no Terraform file is read by the Docker build.
 terraform/
+
+# --- Prose and binaries not consumed by the Docker build ------------------
+docs/
 *.md
+*.pdf

@@ -113,7 +113,7 @@ async function recordAuditEvent(
 // ---------------------------------------------------------------------------
 // Top-level collections: {collection}/{docId}
 //
-// Covers organizations, users, teams, team_members, team_join_requests,
+// Covers organizations, users, teams, team_members,
 // rocks, rock_status_updates, todos, issues, issue_votes, headlines,
 // scorecard_metrics, scorecard_entries, meetings, and any future top-level
 // collection — nothing to add here as the schema grows.

@@ -48,8 +48,8 @@ Templates with the exact expected headers live in
 [`scripts/csv-templates/`](../scripts/csv-templates) — hand those to a client
 who doesn't have an export, or use them to sanity-check the importer.
 
-> **Which project am I writing to?** The script reads `.env.local`, exactly like
-> `pnpm seed` — so if that file points at `hpb-eos-prod`, an unqualified import
+> **Which project am I writing to?** The script reads `.env.local` — so if that
+> file points at `hpb-eos-prod`, an unqualified import
 > goes to **production**. Pass `--project` (and `--database`) to target
 > something else without editing `.env.local`; the run prints the project and
 > database it resolved before it touches anything. Always `--dry-run` first.

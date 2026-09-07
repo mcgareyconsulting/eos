@@ -11,18 +11,16 @@
     "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "emulators": "firebase emulators:start --only auth,firestore --project demo-hpb-eos",
     "emulators:all": "npm --prefix functions run build && firebase emulators:start --only auth,firestore,functions --project demo-hpb-eos",
-    "seed": "tsx scripts/seed-demo.ts",
-    "reset": "tsx scripts/reset-demo.ts",
     "team:info": "tsx scripts/team-info.ts",
     "import:csv": "tsx scripts/import-csv.ts",
-    "backfill:groups": "tsx scripts/backfill-scorecard-groups.ts",
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",
+    "member:set-role": "tsx scripts/set-member-role.ts",
     "user:reassign": "tsx scripts/reassign-user.ts",
+    "user:merge": "tsx scripts/merge-import-user.ts",
     "db:copy": "tsx scripts/copy-db.ts",
-    "ship": "bash scripts/deploy.sh",
-    "backfill:focus": "tsx scripts/backfill-weekly-focus.ts"
+    "ship": "bash scripts/deploy.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

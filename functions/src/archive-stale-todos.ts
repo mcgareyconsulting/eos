@@ -64,8 +64,8 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
   const weekStartMs = mondayMidnightMsInTimeZone(TIME_ZONE, now);
 
   // Scan only un-archived docs so the sweep doesn't re-read the forever-
-  // growing archive. Every creation path (server actions, seed-demo,
-  // import) should write an explicit `archived_at: null`, which this equality
+  // growing archive. Every creation path (server actions, CSV import) should
+  // write an explicit `archived_at: null`, which this equality
   // filter requires — Firestore `== null` does NOT match docs missing the
   // field. Legacy rocks without `archived_at` need a one-time backfill to
   // `archived_at: null` before they are covered by the sweep.

@@ -30,8 +30,8 @@ export const requireFirebaseUser = cache(async () => {
 // `membershipTeamIds` is always the real roster rows for this user (even when
 // admin), so Directory can distinguish "on this team" vs "admin access only".
 //
-// Teamless non-admins stay in the app shell (Directory is visible); they are
-// no longer forced through a self-serve /join request list.
+// Teamless non-admins stay in the app shell (Directory is visible); membership
+// is invite-only, so there is no self-serve request flow to send them to.
 export const getUserTeamsFirebase = cache(async () => {
   const { uid, name, email, picture, isAdmin, db } = await requireFirebaseUser();
 

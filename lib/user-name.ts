@@ -1,7 +1,7 @@
 // Display name for a `/users` doc.
 //
 // User docs are written with `display_name` / `first_name` / `last_name` /
-// `email` (see lib/team-invite.ts, scripts/import-csv.ts, scripts/seed-demo.ts).
+// `email` (see lib/team-invite.ts, scripts/import-csv.ts).
 // There is NO `full_name` field on the document — `full_name` only exists on
 // the in-memory TeamMember shape that getTeamMembers() derives. Reading
 // `data.full_name` off a raw snapshot silently yields undefined, which is how

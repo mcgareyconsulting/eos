@@ -38,7 +38,10 @@ class FakeDocRef {
     this.store.write(this.path, next);
   }
   async update(data: DocData) {
-    const existing = this.store.raw(this.path) ?? {};
+    // Real Firestore rejects update() on a missing doc (NOT_FOUND); mirror
+    // that so a test can't pass on a path that would fail in production.
+    const existing = this.store.raw(this.path);
+    if (!existing) throw new Error(`fake-firestore: update() on missing doc ${this.path}`);
     this.store.write(this.path, { ...existing, ...data });
   }
   async delete() {

@@ -9,6 +9,8 @@ import {
   buildTaskBody,
   upsertTaskForTodo,
   pullCompletionsForOwner,
+  saveOAuthState,
+  consumeOAuthState,
 } from "./tasks";
 
 const ENV_KEYS = [
@@ -378,6 +380,40 @@ describe("pullCompletionsForOwner", () => {
     );
   });
 
+  test("falls back to completing by google_task_id alone when nothing matches by owner (reassigned todo)", async () => {
+    // The id is the join key this app created; a to-do reassigned to another
+    // person still gets completed when its Google task is, as long as no
+    // owner-matched candidate took precedence.
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    seedConnection(db, "owner-1");
+    db.seed("todos", "t-reassigned", {
+      google_task_id: "g1",
+      owner_id: "someone-else",
+      completed_at: null,
+    });
+    db.seed("todos", "t-reassigned-already-done", {
+      google_task_id: "g2",
+      owner_id: "someone-else",
+      completed_at: { seconds: 1 },
+    });
+
+    globalThis.fetch = fetchQueue([
+      tasklistResponse([
+        { id: "g1", status: "completed" },
+        { id: "g2", status: "completed" },
+      ]),
+    ]).fn;
+
+    const result = await pullCompletionsForOwner("owner-1", db.asFirestore());
+    assert.equal(result.updated, 1);
+    const reassigned = await db.collection("todos").doc("t-reassigned").get();
+    assert.ok(reassigned.data()?.completed_at, "completed via the id-only fallback");
+    const alreadyDone = await db.collection("todos").doc("t-reassigned-already-done").get();
+    assert.deepEqual(alreadyDone.data()?.completed_at, { seconds: 1 }, "never re-completes");
+  });
+
   test("no completed Google tasks updates nothing but still records last_pull_at_ms", async () => {
     process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
     process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
@@ -403,3 +439,42 @@ describe("pullCompletionsForOwner", () => {
   });
 });
 
+
+// --- OAuth CSRF state ---------------------------------------------------------
+//
+// The state token is the CSRF guard on the connect → callback round trip. It
+// must be single-use, bound to the user who started the flow, and expire.
+
+describe("consumeOAuthState", () => {
+  test("valid state is accepted exactly once", async () => {
+    const db = new FakeFirestore();
+    await saveOAuthState("s1", "u1", db.asFirestore());
+    assert.equal(await consumeOAuthState("s1", "u1", db.asFirestore()), true);
+    assert.equal(
+      await consumeOAuthState("s1", "u1", db.asFirestore()),
+      false,
+      "second use of the same state is rejected",
+    );
+  });
+
+  test("state started by one user cannot be consumed by another, and is burned on the attempt", async () => {
+    const db = new FakeFirestore();
+    await saveOAuthState("s1", "u1", db.asFirestore());
+    assert.equal(await consumeOAuthState("s1", "attacker", db.asFirestore()), false);
+    // Deleted before the uid check, so the real user can't use it afterwards
+    // either — a mismatched attempt invalidates the flow rather than leaving a
+    // live token behind.
+    assert.equal(await consumeOAuthState("s1", "u1", db.asFirestore()), false);
+  });
+
+  test("expired state is rejected", async () => {
+    const db = new FakeFirestore();
+    db.seed("oauth_csrf_states", "s1", { uid: "u1", expires_at_ms: Date.now() - 1 });
+    assert.equal(await consumeOAuthState("s1", "u1", db.asFirestore()), false);
+  });
+
+  test("unknown state is rejected", async () => {
+    const db = new FakeFirestore();
+    assert.equal(await consumeOAuthState("nope", "u1", db.asFirestore()), false);
+  });
+});

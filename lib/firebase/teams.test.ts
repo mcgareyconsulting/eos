@@ -319,10 +319,12 @@ describe("getOrgDirectory", () => {
   test("groups members by team, leaders first, alpha within role", async () => {
     const db = new FakeFirestore();
     seedTeam(db, "t1", "Leadership");
+    // The leader sorts AFTER the member alphabetically, so this only passes
+    // if role ordering is applied before the name sort.
     seedMembership(db, "t1", "u1", "member");
     seedMembership(db, "t1", "u2", "leader");
-    db.seed("users", "u1", { display_name: "Zoe" });
-    db.seed("users", "u2", { display_name: "Amir" });
+    db.seed("users", "u1", { display_name: "Amir" });
+    db.seed("users", "u2", { display_name: "Zoe" });
 
     const directory = await getOrgDirectory({
       user: fakeUser({ uid: "u1", isAdmin: false, db }),
@@ -331,7 +333,7 @@ describe("getOrgDirectory", () => {
     assert.ok(team);
     assert.deepEqual(
       team!.members.map((m) => m.full_name),
-      ["Amir", "Zoe"],
+      ["Zoe", "Amir"],
     );
     assert.equal(team!.members[0].role, "leader");
   });

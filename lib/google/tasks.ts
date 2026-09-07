@@ -199,13 +199,17 @@ export async function clearConnection(uid: string): Promise<void> {
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-function oauthStateRef(state: string) {
-  return getAdminDb().collection("oauth_csrf_states").doc(state);
+function oauthStateRef(state: string, db: Firestore = getAdminDb()) {
+  return db.collection("oauth_csrf_states").doc(state);
 }
 
 /** Persist a one-time OAuth CSRF state for this uid. */
-export async function saveOAuthState(state: string, uid: string): Promise<void> {
-  await oauthStateRef(state).set({
+export async function saveOAuthState(
+  state: string,
+  uid: string,
+  db: Firestore = getAdminDb(),
+): Promise<void> {
+  await oauthStateRef(state, db).set({
     uid,
     created_at: FieldValue.serverTimestamp(),
     expires_at_ms: Date.now() + OAUTH_STATE_TTL_MS,
@@ -220,8 +224,9 @@ export async function saveOAuthState(state: string, uid: string): Promise<void> 
 export async function consumeOAuthState(
   state: string,
   uid: string,
+  db: Firestore = getAdminDb(),
 ): Promise<boolean> {
-  const ref = oauthStateRef(state);
+  const ref = oauthStateRef(state, db);
   const snap = await ref.get();
   if (!snap.exists) return false;
   const data = snap.data() as { uid?: string; expires_at_ms?: number };

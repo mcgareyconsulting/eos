@@ -4,13 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X } from "lucide-react";
 import { normalizeDescription } from "@/lib/csv-import";
-import { RichTextEditor } from "@/components/rich-text-editor";
 import { updateTodoMeta } from "./actions";
 import { Button, IconButton } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useDismissOnEscape } from "@/components/ui/modal";
-
-type Member = { user_id: string; full_name: string };
+import { TodoFormFields, type Member } from "./todo-form-fields";
 
 export function EditTodoDrawer({
   teamId,
@@ -126,85 +123,22 @@ export function EditTodoDrawer({
               className="flex flex-1 flex-col overflow-y-auto"
             >
               <div className="space-y-4 px-5 py-4">
-                <Field label="Title" required>
-                  <Input
-                    autoFocus
-                    ring
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </Field>
-
-                <Field label="Description">
-                  <RichTextEditor
-                    value={description}
-                    onChange={setDescription}
-                    placeholder="Notes or context"
-                    rows={4}
-                  />
-                </Field>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Owner">
-                    <select
-                      value={ownerId}
-                      onChange={(e) => setOwnerId(e.target.value)}
-                      className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                    >
-                      {members.map((m) => (
-                        <option key={m.user_id} value={m.user_id}>
-                          {m.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Visibility">
-                    <select
-                      value={visibility}
-                      onChange={(e) =>
-                        setVisibility(e.target.value as "team" | "private")
-                      }
-                      className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                    >
-                      <option value="team">Team</option>
-                      <option value="private">Private</option>
-                    </select>
-                  </Field>
-                </div>
-
-                <Field label="Due date">
-                  <input
-                    type="date"
-                    value={due}
-                    onChange={(e) => setDue(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                  />
-                </Field>
-
-                <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                  <input
-                    type="checkbox"
-                    checked={weeklyFocus}
-                    onChange={(e) => setWeeklyFocus(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Weekly focus
-                    </span>
-                    <span className="block text-[11px] text-zinc-500">
-                      Shows a “Weekly” pill on the row. Replaces marking the
-                      title with <code>**</code>.
-                    </span>
-                  </span>
-                </label>
-
-                {error && (
-                  <p className="text-xs text-red-600 dark:text-red-400">
-                    {error}
-                  </p>
-                )}
+                <TodoFormFields
+                  members={members}
+                  title={title}
+                  onTitleChange={setTitle}
+                  description={description}
+                  onDescriptionChange={setDescription}
+                  ownerId={ownerId}
+                  onOwnerChange={setOwnerId}
+                  due={due}
+                  onDueChange={setDue}
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  weeklyFocus={weeklyFocus}
+                  onWeeklyFocusChange={setWeeklyFocus}
+                  error={error}
+                />
               </div>
 
               <footer className="mt-auto flex items-center justify-end gap-2 border-t border-zinc-300 px-5 py-3 dark:border-zinc-800">
@@ -224,25 +158,5 @@ export function EditTodoDrawer({
         </div>
       )}
     </>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-        {label}
-        {required && <span className="text-red-500"> *</span>}
-      </span>
-      {children}
-    </label>
   );
 }

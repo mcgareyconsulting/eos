@@ -1,3 +1,11 @@
+// The presentation half of the due-date pair: Tailwind classes only.
+//
+// Deliberately not folded into lib/dates.ts. Nothing is duplicated across the
+// two — both urgency reads here call that file's `daysUntil` rather than
+// redoing the arithmetic — and keeping them apart is what lets lib/dates.ts
+// stay pure date math, with no styling and no `cn`, so it can be imported and
+// tested without dragging Tailwind along.
+
 import { daysUntil } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 

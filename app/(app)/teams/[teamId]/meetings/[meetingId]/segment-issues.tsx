@@ -42,6 +42,7 @@ import { StatusActions } from "../../issues/status-actions";
 import { IssueDetailTrigger } from "../../issues/issue-detail-modal";
 import { IssueFormModal } from "../../issues/issue-form-modal";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
@@ -90,10 +91,7 @@ export function SegmentIssues({
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
-  // Resets when the segment unmounts, by design: Active is the right
-  // default for a room, and a remembered Archived view reads as "the issues
-  // are gone".
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useArchivedToggle();
   const [editingIssue, setEditingIssue] = useState<IssueDoc | null>(null);
   // The vote hold, driven by the room's voting window (below).
   const [hold, setHold] = useState<{ on: boolean; ids: string[] | null }>({

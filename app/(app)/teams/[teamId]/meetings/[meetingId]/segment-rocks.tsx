@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
 import { Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { initials } from "@/lib/initials";
 import {
   currentSpeakerUid,
   reconcileSpeakingOrder,
@@ -23,8 +22,9 @@ import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { QuickAddIssue } from "@/components/quick-add-issue";
-import { ownerLabel } from "@/lib/user-name";
+import { initials, ownerLabel } from "@/lib/user-name";
 import {
   type RockDoc as RockDocRecord,
   type TodoDoc as TodoDocRecord,
@@ -187,8 +187,7 @@ export function SegmentRocks({
       ),
     [homeRocks, sharedRocksLive, teamId],
   );
-  // Resets on unmount, by design — Active is the room's default.
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useArchivedToggle();
 
   // Attendance + speaking rotation live on the meeting doc. Subscribe so
   // marking someone absent / advancing the floor reorders/dims sections live.

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
 import { EntityComments } from "@/components/entity-comments";
 import { RichText } from "@/components/rich-text";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,

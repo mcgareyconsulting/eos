@@ -6,7 +6,7 @@ import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
 import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
 import { TeamNav, type ShellTeam } from "@/components/team-nav";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 
 type Profile = {
   full_name: string;

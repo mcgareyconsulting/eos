@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Megaphone, Trash2 } from "lucide-react";
 import {
   collection,
@@ -20,6 +20,7 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { HeadlineFormModal } from "../../headlines/headline-form-modal";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { LocalTime } from "@/components/local-time";
@@ -91,8 +92,7 @@ export function SegmentHeadlines({
   // separate list so nothing derived reads the wrong one.
   const active = headlines.filter((h) => !isArchivedHeadline(h));
   const archived = headlines.filter(isArchivedHeadline);
-  // Resets on unmount, by design — Active is the room's default.
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useArchivedToggle();
   // Undiscussed first (still need airtime), then discussed, then by recency.
   const byDiscussedThenRecency = (a: HeadlineDoc, b: HeadlineDoc) => {
     const ad = a.discussed === true ? 1 : 0;

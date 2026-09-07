@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Flag } from "lucide-react";
 import {
   collection,
@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
@@ -31,6 +31,7 @@ import {
   type MilestoneTodoItem,
 } from "../../todos/milestone-todo-row";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { QuickAddIssue } from "@/components/quick-add-issue";
 import {
@@ -328,8 +329,7 @@ export function SegmentTodos({
     absentUserIds,
   );
 
-  // Resets on unmount, by design — Active is the room's default.
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useArchivedToggle();
   const allRawTodos = [...teamTodos, ...myTodos];
   const allTodos = allRawTodos.filter((t) => !t.archived_at);
   // Archived pure to-dos, kept as their own list so nothing derived (counts,

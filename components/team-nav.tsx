@@ -23,7 +23,7 @@ import {
   Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 import {
   setSidebarCollapsed,
   useSidebarCollapsed,

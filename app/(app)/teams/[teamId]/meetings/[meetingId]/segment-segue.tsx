@@ -5,7 +5,7 @@ import { doc } from "firebase/firestore";
 import { ChevronDown, ChevronUp, UserCheck, UserX } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useDoc } from "@/lib/firebase/use-collection";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 import {
   currentSpeakerUid,
   presentOrder,

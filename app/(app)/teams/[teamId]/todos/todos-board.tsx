@@ -15,13 +15,12 @@ import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
 import { SyncGoogleTasksButton } from "@/components/sync-google-tasks-button";
-import { initials } from "@/lib/initials";
 import {
   MILESTONE_REMINDER_DAYS,
   isMilestoneDueSoon,
   isMilestoneHiddenByRock,
 } from "@/lib/milestone-visibility";
-import { ownerLabel } from "@/lib/user-name";
+import { initials, ownerLabel } from "@/lib/user-name";
 import { AddTodoModal } from "./add-todo-modal";
 import { MilestoneTodoRow, type MilestoneTodoItem } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";

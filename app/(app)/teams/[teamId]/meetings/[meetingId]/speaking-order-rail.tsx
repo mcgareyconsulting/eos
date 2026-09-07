@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { initials } from "@/lib/initials";
+import { initials } from "@/lib/user-name";
 import {
   canStepSpeaker,
   currentSpeakerUid,

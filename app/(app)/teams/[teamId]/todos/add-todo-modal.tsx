@@ -6,12 +6,9 @@ import { Plus } from "lucide-react";
 import { entityAddButtonClass } from "@/components/entity-page-header";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
-import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
 import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
-
-type Member = { user_id: string; full_name: string };
+import { TodoFormFields, type Member } from "./todo-form-fields";
 
 /**
  * "Add to-do" button + modal. Same pattern as scorecard Add measurable.
@@ -108,101 +105,23 @@ export function AddTodoModal({
         <ModalHeader title="Add to-do" onClose={() => setOpen(false)} />
 
         <ModalBody as="form" onSubmit={submit}>
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Title
-            </span>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="To-do (one line)"
-              required
-              autoFocus
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Owner
-              </span>
-              <Select
-                value={ownerId}
-                onChange={(e) => setOwnerId(e.target.value)}
-              >
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    {m.full_name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Due date
-              </span>
-              <Input
-                type="date"
-                value={due}
-                onChange={(e) => setDue(e.target.value)}
-                size="sm"
-              />
-            </label>
-          </div>
-
-          {!meetingId && (
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Visibility
-              </span>
-              <Select
-                value={visibility}
-                onChange={(e) =>
-                  setVisibility(e.target.value as "team" | "private")
-                }
-              >
-                <option value="team">Team</option>
-                <option value="private">Private</option>
-              </Select>
-            </label>
-          )}
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Notes{" "}
-              <span className="font-normal text-zinc-400">(optional)</span>
-            </span>
-            <RichTextEditor
-              value={description}
-              onChange={setDescription}
-              placeholder="Add notes or context"
-              rows={3}
-              className="dark:bg-zinc-950"
-            />
-          </label>
-
-          <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <input
-              type="checkbox"
-              checked={weeklyFocus}
-              onChange={(e) => setWeeklyFocus(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
-            />
-            <span className="min-w-0">
-              <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                Weekly focus
-              </span>
-              <span className="block text-[11px] text-zinc-500">
-                Shows a “Weekly” pill on the row. Replaces marking the title
-                with <code>**</code>.
-              </span>
-            </span>
-          </label>
-
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+          <TodoFormFields
+            members={members}
+            title={title}
+            onTitleChange={setTitle}
+            description={description}
+            onDescriptionChange={setDescription}
+            ownerId={ownerId}
+            onOwnerChange={setOwnerId}
+            due={due}
+            onDueChange={setDue}
+            showVisibility={!meetingId}
+            visibility={visibility}
+            onVisibilityChange={setVisibility}
+            weeklyFocus={weeklyFocus}
+            onWeeklyFocusChange={setWeeklyFocus}
+            error={error}
+          />
 
           <ModalFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>

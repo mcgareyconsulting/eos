@@ -3,7 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
-import { EditMetricModal } from "@/app/(app)/teams/[teamId]/scorecard/edit-metric-modal";
+import { MetricFormModal } from "@/app/(app)/teams/[teamId]/scorecard/metric-form-modal";
 import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
 import { cn } from "@/lib/utils";
 import {
@@ -176,7 +176,8 @@ export function MetricExpand({
               initial={manage.group}
             />
             <div className="ml-auto flex items-center gap-2">
-              <EditMetricModal
+              <MetricFormModal
+                mode="edit"
                 teamId={manage.teamId}
                 metric={manage.metric}
                 members={manage.members}

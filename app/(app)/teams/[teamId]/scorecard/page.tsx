@@ -12,7 +12,7 @@ import {
   oldestPeriodStart,
   parseScorecardPeriod,
 } from "@/lib/scorecard-periods";
-import { AddMetricModal } from "./add-metric-modal";
+import { MetricFormModal } from "./metric-form-modal";
 import { ManageGroupsButton } from "./manage-groups";
 import { type ScorecardMetricDoc as MetricDoc } from "@/lib/firestore-types";
 
@@ -86,7 +86,8 @@ export default async function ScorecardPage({
             groups={groups}
             activePeriod={period}
           />
-          <AddMetricModal
+          <MetricFormModal
+            mode="create"
             teamId={tid}
             members={members}
             defaultOwnerId={uid}

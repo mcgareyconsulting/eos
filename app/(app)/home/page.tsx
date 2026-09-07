@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
+import type { Firestore } from "firebase-admin/firestore";
 import { formatDateShort } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { chunkForInQuery } from "@/lib/firestore-in";
+import {
+  loadMilestonesForRocks,
+  loadTeamsById,
+  loadUsersById,
+} from "@/lib/firebase/queries";
 import {
   byDueDateAsc,
   homeRockPillKind,
@@ -81,6 +87,24 @@ type MetricRow = {
   interval: MetricInterval;
 };
 
+// Adds a display name for every id that resolves to a named user doc.
+// Unnamed and missing docs are left out of the map so each call site keeps
+// its own fallback ("You", the team name, "Unknown owner", "—").
+async function hydrateNames(
+  db: Firestore,
+  ids: string[],
+  nameByUserId: Map<string, string>,
+) {
+  for (const [id, data] of await loadUsersById(db, ids)) {
+    const name =
+      (data.display_name as string) ||
+      [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
+      (data.email as string) ||
+      "";
+    if (name) nameByUserId.set(id, name);
+  }
+}
+
 export default async function HomePage() {
   const { user, teams, membershipTeamIds, isAdmin, db } =
     await getUserTeamsFirebase();
@@ -149,21 +173,7 @@ export default async function HomePage() {
   memberUids.add(user.id);
 
   const nameByUserId = new Map<string, string>();
-  if (memberUids.size > 0) {
-    const userDocs = await db.getAll(
-      ...[...memberUids].map((id) => db.collection("users").doc(id)),
-    );
-    for (const d of userDocs) {
-      if (!d.exists) continue;
-      const data = d.data() ?? {};
-      const name =
-        (data.display_name as string) ||
-        [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
-        (data.email as string) ||
-        "";
-      if (name) nameByUserId.set(d.id, name);
-    }
-  }
+  await hydrateNames(db, [...memberUids], nameByUserId);
 
   const todos = todoSnaps
     .flatMap((snap) =>
@@ -231,22 +241,11 @@ export default async function HomePage() {
       }
     }
     // Hydrate any newly discovered rock owners.
-    const needNames = [...memberUids].filter((id) => !nameByUserId.has(id));
-    if (needNames.length > 0) {
-      const more = await db.getAll(
-        ...needNames.map((id) => db.collection("users").doc(id)),
-      );
-      for (const d of more) {
-        if (!d.exists) continue;
-        const data = d.data() ?? {};
-        const name =
-          (data.display_name as string) ||
-          [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
-          (data.email as string) ||
-          "";
-        if (name) nameByUserId.set(d.id, name);
-      }
-    }
+    await hydrateNames(
+      db,
+      [...memberUids].filter((id) => !nameByUserId.has(id)),
+      nameByUserId,
+    );
   }
 
   // Team names: membership teams + any parent team on a rock we show.
@@ -254,16 +253,8 @@ export default async function HomePage() {
   const unknownTeamIds = [...rockById.values()]
     .map((r) => r.team_id)
     .filter((id) => id && !teamNameById.has(id));
-  if (unknownTeamIds.length > 0) {
-    const teamDocs = await db.getAll(
-      ...[...new Set(unknownTeamIds)].map((id) =>
-        db.collection("teams").doc(id),
-      ),
-    );
-    for (const d of teamDocs) {
-      if (!d.exists) continue;
-      teamNameById.set(d.id, (d.data()?.name as string) ?? "Team");
-    }
+  for (const [id, data] of await loadTeamsById(db, unknownTeamIds)) {
+    teamNameById.set(id, (data.name as string) ?? "Team");
   }
 
   const rocks = [...rockById.values()];
@@ -302,44 +293,30 @@ export default async function HomePage() {
     Array<TodoRow & { completed: boolean }>
   >();
   if (shownCandidateIds.size > 0) {
-    const msSnaps = await Promise.all(
-      [...shownCandidateIds].map((rockId) =>
-        db.collection("todos").where("source_rock_id", "==", rockId).get(),
-      ),
-    );
-    let i = 0;
-    for (const rockId of shownCandidateIds) {
-      const snap = msSnaps[i++]!;
-      const list: Array<TodoRow & { completed: boolean }> = [];
-      for (const d of snap.docs) {
-        const data = d.data() as Omit<TodoRow, "id">;
-        list.push({
-          id: d.id,
-          ...data,
-          completed: data.completed_at != null,
-        });
-        if (data.owner_id) memberUids.add(data.owner_id);
-      }
+    // Every candidate gets an entry even with no milestones: an empty list
+    // still counts as "loaded", which is what stops the openMilestones
+    // fallback below from re-adding rows for that rock.
+    for (const rockId of shownCandidateIds) allMsByRock.set(rockId, []);
+    for (const d of await loadMilestonesForRocks(db, [...shownCandidateIds])) {
+      const data = d.data() as Omit<TodoRow, "id">;
+      const list = allMsByRock.get(data.source_rock_id ?? "");
+      if (!list) continue;
+      list.push({
+        id: d.id,
+        ...data,
+        completed: data.completed_at != null,
+      });
+      if (data.owner_id) memberUids.add(data.owner_id);
+    }
+    for (const list of allMsByRock.values()) {
       list.sort(byDueDateAsc);
-      allMsByRock.set(rockId, list);
     }
     // Resolve any milestone owners not already named.
-    const needNames = [...memberUids].filter((id) => !nameByUserId.has(id));
-    if (needNames.length > 0) {
-      const more = await db.getAll(
-        ...needNames.map((id) => db.collection("users").doc(id)),
-      );
-      for (const d of more) {
-        if (!d.exists) continue;
-        const data = d.data() ?? {};
-        const name =
-          (data.display_name as string) ||
-          [data.first_name, data.last_name].filter(Boolean).join(" ").trim() ||
-          (data.email as string) ||
-          "";
-        if (name) nameByUserId.set(d.id, name);
-      }
-    }
+    await hydrateNames(
+      db,
+      [...memberUids].filter((id) => !nameByUserId.has(id)),
+      nameByUserId,
+    );
   }
 
   // Open milestones for expand: prefer full-fetch rows; fall back to team query.
@@ -449,16 +426,8 @@ export default async function HomePage() {
   const metricTeamMissing = myMetrics
     .map((m) => m.team_id)
     .filter((id) => !teamNameById.has(id));
-  if (metricTeamMissing.length > 0) {
-    const teamDocs = await db.getAll(
-      ...[...new Set(metricTeamMissing)].map((id) =>
-        db.collection("teams").doc(id),
-      ),
-    );
-    for (const d of teamDocs) {
-      if (!d.exists) continue;
-      teamNameById.set(d.id, (d.data()?.name as string) ?? "Team");
-    }
+  for (const [id, data] of await loadTeamsById(db, metricTeamMissing)) {
+    teamNameById.set(id, (data.name as string) ?? "Team");
   }
 
   const entryOldest = [

@@ -8,6 +8,11 @@ import {
   getTeamMembers,
   getOrgTeams,
 } from "@/lib/firebase/teams";
+import {
+  loadMilestonesForRocks,
+  loadTeamRocks,
+  loadUsersById,
+} from "@/lib/firebase/queries";
 import { currentQuarter, endOfQuarter, toDateString } from "@/lib/dates";
 import { chunkForInQuery } from "@/lib/firestore-in";
 import { ownerLabel, userDisplayName } from "@/lib/user-name";
@@ -89,12 +94,8 @@ export default async function RocksPage({
   // Fetch rocks, todos (milestones), and status history in parallel.
   // Status comments live in rock_status_updates (append-only); they were
   // written on save but never rendered until this fetch existed.
-  const [rocksSnap, sharedSnap, todosSnap, statusSnap] = await Promise.all([
-    db.collection("rocks").where("team_id", "==", teamId).get(),
-    db
-      .collection("rocks")
-      .where("shared_team_ids", "array-contains", teamId)
-      .get(),
+  const [teamRocks, todosSnap, statusSnap] = await Promise.all([
+    loadTeamRocks(db, teamId),
     db.collection("todos").where("team_id", "==", teamId).get(),
     db
       .collection("rock_status_updates")
@@ -104,7 +105,7 @@ export default async function RocksPage({
 
   // Project plain fields only — spreading d.data() would pull created_at
   // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
-  const allRocksRaw = rocksSnap.docs.map((d) => {
+  const allRocksRaw = teamRocks.own.map((d) => {
     const x = d.data();
     return {
       id: d.id,
@@ -132,8 +133,7 @@ export default async function RocksPage({
     showArchived ? r.archived_at != null : r.archived_at == null,
   );
 
-  const homeIds = new Set(allRocksRaw.map((r) => r.id));
-  const sharedRocksRaw = sharedSnap.docs
+  const sharedRocksRaw = teamRocks.shared
     .map((d) => {
       const x = d.data();
       return {
@@ -150,12 +150,7 @@ export default async function RocksPage({
         archived_at: archivedAtMillis(x.archived_at),
       };
     })
-    .filter(
-      (r) =>
-        !homeIds.has(r.id) &&
-        isSharedIntoTeam(r, teamId) &&
-        r.archived_at == null,
-    );
+    .filter((r) => isSharedIntoTeam(r, teamId) && r.archived_at == null);
   // Shared-in rocks belong on the Active list only — they archive on the
   // parent team, not here.
 
@@ -205,11 +200,7 @@ export default async function RocksPage({
 
   const sharedRockIds = sharedRocksRaw.map((r) => r.id);
   if (sharedRockIds.length > 0) {
-    const extraTodoSnaps = await Promise.all(
-      chunkForInQuery(sharedRockIds).map((ids) =>
-        db.collection("todos").where("source_rock_id", "in", ids).get(),
-      ),
-    );
+    const extraMilestones = await loadMilestonesForRocks(db, sharedRockIds);
     const extraStatusSnaps = await Promise.all(
       chunkForInQuery(sharedRockIds).map((ids) =>
         db
@@ -218,22 +209,20 @@ export default async function RocksPage({
           .get(),
       ),
     );
-    for (const snap of extraTodoSnaps) {
-      for (const d of snap.docs) {
-        const t = d.data() as TodoDoc;
-        if (!t.source_rock_id) continue;
-        const m: MilestoneSerialized = {
-          id: d.id,
-          title: t.title,
-          owner_id: t.owner_id,
-          due_date: t.due_date,
-          completed: !!t.completed_at,
-          description: t.description ?? null,
-        };
-        const list = milestonesByRock.get(t.source_rock_id) ?? [];
-        list.push(m);
-        milestonesByRock.set(t.source_rock_id, list);
-      }
+    for (const d of extraMilestones) {
+      const t = d.data() as TodoDoc;
+      if (!t.source_rock_id) continue;
+      const m: MilestoneSerialized = {
+        id: d.id,
+        title: t.title,
+        owner_id: t.owner_id,
+        due_date: t.due_date,
+        completed: !!t.completed_at,
+        description: t.description ?? null,
+      };
+      const list = milestonesByRock.get(t.source_rock_id) ?? [];
+      list.push(m);
+      milestonesByRock.set(t.source_rock_id, list);
     }
     for (const snap of extraStatusSnaps) {
       for (const d of snap.docs) {
@@ -277,16 +266,9 @@ export default async function RocksPage({
     ),
   ].filter((id): id is string => !!id && !members.some((m) => m.user_id === id));
   const extraNameById = new Map<string, string>();
-  if (extraNameIds.length > 0) {
-    const unique = [...new Set(extraNameIds)];
-    const docs = await db.getAll(
-      ...unique.map((id) => db.collection("users").doc(id)),
-    );
-    for (const d of docs) {
-      if (!d.exists) continue;
-      const name = userDisplayName(d.data());
-      if (name) extraNameById.set(d.id, name);
-    }
+  for (const [id, data] of await loadUsersById(db, extraNameIds)) {
+    const name = userDisplayName(data);
+    if (name) extraNameById.set(id, name);
   }
 
   // Filter: "all" or a member user_id. Legacy values from the retired

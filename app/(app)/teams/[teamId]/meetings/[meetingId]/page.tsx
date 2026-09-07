@@ -10,7 +10,11 @@ import {
   getTeamMembers,
   getOrgTeams,
 } from "@/lib/firebase/teams";
-import { chunkForInQuery } from "@/lib/firestore-in";
+import {
+  loadMilestonesForRocks,
+  loadTeamRocks,
+  loadUsersById,
+} from "@/lib/firebase/queries";
 import { userDisplayName } from "@/lib/user-name";
 import { isSharedIntoTeam } from "@/lib/rocks-share";
 import {
@@ -581,12 +585,8 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [rocksSnap, sharedSnap, todosSnap, orgTeams] = await Promise.all([
-      db.collection("rocks").where("team_id", "==", teamId).get(),
-      db
-        .collection("rocks")
-        .where("shared_team_ids", "array-contains", teamId)
-        .get(),
+    const [teamRocks, todosSnap, orgTeams] = await Promise.all([
+      loadTeamRocks(db, teamId),
       db
         .collection("todos")
         .where("team_id", "==", teamId)
@@ -612,23 +612,18 @@ async function SegmentContent({
         shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       };
     };
-    const homeRocks = rocksSnap.docs
+    const homeRocks = teamRocks.own
       .filter((d) => d.data().archived_at == null)
       .map(mapRock);
-    const homeIds = new Set(homeRocks.map((r) => r.id));
-    const sharedRocks = sharedSnap.docs
+    const sharedRocks = teamRocks.shared
       .filter((d) => d.data().archived_at == null)
       .map(mapRock)
-      .filter((r) => !homeIds.has(r.id) && isSharedIntoTeam(r, teamId));
+      .filter((r) => isSharedIntoTeam(r, teamId));
     const initialRocks = [...homeRocks, ...sharedRocks];
-    const extraTodoSnaps =
-      sharedRocks.length === 0
-        ? []
-        : await Promise.all(
-            chunkForInQuery(sharedRocks.map((r) => r.id)).map((ids) =>
-              db.collection("todos").where("source_rock_id", "in", ids).get(),
-            ),
-          );
+    const extraMilestones = await loadMilestonesForRocks(
+      db,
+      sharedRocks.map((r) => r.id),
+    );
     const mapTodo = (d: QueryDocumentSnapshot) => {
       const x = d.data();
       return {
@@ -644,8 +639,7 @@ async function SegmentContent({
     };
     const initialTodos = [
       ...todosSnap.docs.map(mapTodo),
-      ...extraTodoSnaps
-        .flatMap((s) => s.docs)
+      ...extraMilestones
         .filter((d) => d.data().visibility !== "private")
         .map(mapTodo),
     ];
@@ -658,15 +652,9 @@ async function SegmentContent({
       ),
     ];
     const extraOwnerNames: { user_id: string; full_name: string }[] = [];
-    if (extraOwnerIds.length > 0) {
-      const docs = await db.getAll(
-        ...extraOwnerIds.map((id) => db.collection("users").doc(id)),
-      );
-      for (const d of docs) {
-        if (!d.exists) continue;
-        const full_name = userDisplayName(d.data());
-        if (full_name) extraOwnerNames.push({ user_id: d.id, full_name });
-      }
+    for (const [user_id, data] of await loadUsersById(db, extraOwnerIds)) {
+      const full_name = userDisplayName(data);
+      if (full_name) extraOwnerNames.push({ user_id, full_name });
     }
     return (
       <SegmentRocks

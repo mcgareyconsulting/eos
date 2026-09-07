@@ -1,10 +1,11 @@
 // Minimal in-memory Firestore fake for unit tests.
 //
-// Covers only the surface lib/google/tasks.ts and lib/firebase/teams.ts
-// actually call: single-doc get/set/update/delete, `where` (== and "in"),
-// `orderBy` (single field, ascending), a bare `collection().get()`, and
-// `getAll(...refs)`. It is not an emulator replacement — just enough shape
-// to drive these modules' logic without touching real Firebase.
+// Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts and
+// lib/firebase/queries.ts actually call: single-doc get/set/update/delete,
+// `where` (==, "in" and "array-contains"), `orderBy` (single field,
+// ascending), a bare `collection().get()`, and `getAll(...refs)`. It is not
+// an emulator replacement — just enough shape to drive these modules' logic
+// without touching real Firebase.
 
 type DocData = Record<string, unknown>;
 
@@ -82,6 +83,11 @@ class FakeQuery {
         const actual = (d.data() ?? {})[field];
         if (op === "==") return actual === value;
         if (op === "in") return Array.isArray(value) && value.includes(actual);
+        // Real Firestore skips docs where the field is missing or not an
+        // array, rather than erroring — shared_team_ids is absent on most
+        // rocks.
+        if (op === "array-contains")
+          return Array.isArray(actual) && actual.includes(value);
         throw new Error(`fake-firestore: unsupported where operator ${op}`);
       });
     }

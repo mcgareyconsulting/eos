@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, UserPlus, X } from "lucide-react";
 import { addTeamMember } from "./actions";
 import { IconButton } from "@/components/ui/button";
+import { useDismissOnEscape } from "@/components/ui/modal";
 
 export function AddMemberDrawer({ teamId }: { teamId: string }) {
   const router = useRouter();
@@ -16,14 +17,7 @@ export function AddMemberDrawer({ teamId }: { teamId: string }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  useDismissOnEscape(() => setOpen(false), open);
 
   function reset() {
     setFirstName("");

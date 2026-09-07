@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import { IconButton } from "@/components/ui/button";
+import { ModalShell } from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 type ShareTeam = { id: string; name: string };
@@ -239,14 +240,6 @@ export function RockModal({
     focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const filled = rows.filter((r) => r.title.trim());
 
   function patchRow(key: string, patch: Partial<DraftMilestone>) {
@@ -303,18 +296,14 @@ export function RockModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? "Edit rock" : "New rock"}
-        className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-      >
+    <ModalShell
+      open
+      onClose={onClose}
+      ariaLabel={editing ? "Edit rock" : "New rock"}
+      size="5xl"
+    >
+        {/* Header padding (px-6 py-3.5) differs from the shared ModalHeader's
+            px-5 py-3, so this stays a bespoke header rather than using it. */}
         <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3.5 dark:border-zinc-800">
           <div>
             {teamName && (
@@ -592,8 +581,7 @@ export function RockModal({
             </div>
           </footer>
         </form>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
 

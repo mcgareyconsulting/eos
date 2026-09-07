@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, X } from "lucide-react";
 import { normalizeDescription } from "@/lib/csv-import";
@@ -8,6 +8,7 @@ import { RichTextEditor } from "@/components/rich-text-editor";
 import { updateTodoMeta } from "./actions";
 import { Button, IconButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useDismissOnEscape } from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 
@@ -63,14 +64,7 @@ export function EditTodoDrawer({
     }
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  useDismissOnEscape(() => setOpen(false), open);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

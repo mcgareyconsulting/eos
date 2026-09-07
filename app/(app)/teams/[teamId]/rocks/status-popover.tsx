@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
+import { useDismissOnEscape } from "@/components/ui/modal";
 import { setRockStatus } from "./actions";
 import {
   STATUSES,
@@ -126,21 +127,18 @@ export function StatusPopover({
   }
 
   // Close on Esc or click outside.
+  useDismissOnEscape(() => setOpen(false), open);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
     const onClick = (e: MouseEvent) => {
       const t = e.target as Node;
       if (rootRef.current?.contains(t)) return;
       if (panelRef.current?.contains(t)) return;
       setOpen(false);
     };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onClick);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onClick);
     };
   }, [open]);

@@ -10,6 +10,7 @@ import {
   parseScorecardValue,
 } from "@/lib/scorecard";
 import { cn } from "@/lib/utils";
+import { useDismissOnEscape } from "@/components/ui/modal";
 
 // A rejected *value* (bad input) is self-explanatory once the cell reverts, so
 // it clears itself. A failed *save* must not: the number is not in Firestore,
@@ -102,6 +103,13 @@ export function ValueCell({
     setEditing(true);
   };
 
+  const cancelEdit = () => {
+    setError(null);
+    setEditing(false);
+  };
+
+  useDismissOnEscape(cancelEdit, editing);
+
   const commit = (raw = draft) => {
     const previous = formatScorecardDraft(optimisticValue, unit);
     if (raw === previous) {
@@ -183,12 +191,6 @@ export function ValueCell({
           commit(next);
         }}
         onBlur={() => commit()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setError(null);
-            setEditing(false);
-          }
-        }}
         className={fieldClass}
       >
         <option value="">—</option>
@@ -217,9 +219,6 @@ export function ValueCell({
         if (e.key === "Enter") {
           e.preventDefault();
           (e.target as HTMLElement).blur();
-        } else if (e.key === "Escape") {
-          setError(null);
-          setEditing(false);
         }
       }}
       className={fieldClass}

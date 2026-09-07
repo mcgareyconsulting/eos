@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ModalShell, type ModalSize } from "@/components/ui/modal";
 
 // Centered read-only detail dialog for a single item's at-a-glance card.
 //
@@ -10,10 +10,10 @@ import { cn } from "@/lib/utils";
 // banner: optional full-width strip above the padded body (rock status banner).
 // When banner is set, the close button sits in the body (top-right) instead of
 // over the banner.
-const SIZE_CLASS = {
-  md: "max-w-md",
-  lg: "max-w-2xl",
-} as const;
+const SHELL_SIZE: Record<"md" | "lg", ModalSize> = {
+  md: "md",
+  lg: "2xl",
+};
 
 export function DetailModal({
   ariaLabel,
@@ -25,17 +25,9 @@ export function DetailModal({
   ariaLabel: string;
   onClose: () => void;
   children: React.ReactNode;
-  size?: keyof typeof SIZE_CLASS;
+  size?: "md" | "lg";
   banner?: React.ReactNode;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const closeBtn = (
     <button
       type="button"
@@ -48,35 +40,25 @@ export function DetailModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <ModalShell
+      open
+      onClose={onClose}
+      ariaLabel={ariaLabel}
+      size={SHELL_SIZE[size]}
+    >
+      {banner}
+      {!banner && closeBtn}
       <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-hidden
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={ariaLabel}
         className={cn(
-          "relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900",
-          SIZE_CLASS[size],
+          "relative min-h-0 flex-1 overflow-y-auto",
+          banner
+            ? "px-6 py-5 sm:px-7 sm:py-6"
+            : "px-6 py-6 sm:px-7 sm:py-7",
         )}
       >
-        {banner}
-        {!banner && closeBtn}
-        <div
-          className={cn(
-            "relative min-h-0 flex-1 overflow-y-auto",
-            banner
-              ? "px-6 py-5 sm:px-7 sm:py-6"
-              : "px-6 py-6 sm:px-7 sm:py-7",
-          )}
-        >
-          {banner ? closeBtn : null}
-          {children}
-        </div>
+        {banner ? closeBtn : null}
+        {children}
       </div>
-    </div>
+    </ModalShell>
   );
 }

@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { X } from "lucide-react";
 import { RatingForm } from "@/components/l10/rating-form";
 import { rateMeeting } from "../actions";
-import { IconButton } from "@/components/ui/button";
+import { ModalShell, ModalHeader } from "@/components/ui/modal";
 
 export type RecapItem = {
   id: string;
@@ -89,19 +88,13 @@ export function RecapModal({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("keydown", onKey);
     // Lock the page scroll while the modal is open — wheel events were
     // scrolling the meeting page behind the overlay.
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function close() {
@@ -112,22 +105,10 @@ export function RecapModal({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={close}
-        aria-hidden
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={recapTitle}
-        className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-      >
-        <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+    <ModalShell open={open} onClose={close} ariaLabel={recapTitle} size="3xl">
+      <ModalHeader
+        title={
           <div>
             <h2 className="text-base font-semibold tracking-tight">
               {recapTitle}
@@ -138,10 +119,9 @@ export function RecapModal({
               </p>
             )}
           </div>
-          <IconButton onClick={close} aria-label="Close">
-            <X className="h-4 w-4" />
-          </IconButton>
-        </header>
+        }
+        onClose={close}
+      />
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
           {/* Finishing the meeting opens this recap for everyone right away
@@ -291,8 +271,7 @@ export function RecapModal({
             Done
           </button>
         </footer>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
 

@@ -28,6 +28,7 @@ import {
   setSidebarCollapsed,
   useSidebarCollapsed,
 } from "@/components/sidebar-collapse-toggle";
+import { useDismissOnEscape } from "@/components/ui/modal";
 
 export type ShellTeam = { id: string; name: string };
 
@@ -229,18 +230,15 @@ export function TeamNav({
     };
   }, [flyoutActive]);
 
+  useDismissOnEscape(() => setOpen(false), open);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
     const onPointer = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onPointer);
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPointer);
     };
   }, [open]);

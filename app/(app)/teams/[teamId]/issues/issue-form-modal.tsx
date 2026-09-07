@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { entityAddButtonClass } from "@/components/entity-page-header";
 import { addIssue, updateIssueMeta } from "./actions";
 import type { IssueType } from "@/lib/issues";
 import { RichTextEditor } from "@/components/rich-text-editor";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 
@@ -107,15 +108,6 @@ export function IssueFormModal({
     if (editKey) hydrateFromProps();
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, setOpen]);
-
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) {
@@ -158,131 +150,115 @@ export function IssueFormModal({
         </button>
       )}
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={isEdit ? "Edit issue" : "Add issue"}
-            className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <h2 className="text-base font-semibold tracking-tight">
-                {isEdit ? "Edit issue" : "Add issue"}
-              </h2>
-              <IconButton onClick={() => setOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </IconButton>
-            </div>
+      <ModalShell
+        open={open}
+        onClose={() => setOpen(false)}
+        ariaLabel={isEdit ? "Edit issue" : "Add issue"}
+        size="lg"
+      >
+        <ModalHeader
+          title={isEdit ? "Edit issue" : "Add issue"}
+          onClose={() => setOpen(false)}
+        />
 
-            <form
-              onSubmit={submit}
-              className="flex flex-col gap-3 overflow-y-auto px-5 py-4"
-            >
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Title
-                </span>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Issue (one line)"
-                  required
-                  autoFocus
-                />
-              </label>
+        <ModalBody as="form" onSubmit={submit}>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Title
+            </span>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Issue (one line)"
+              required
+              autoFocus
+            />
+          </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Owner
-                  </span>
-                  <Select
-                    value={ownerId}
-                    onChange={(e) => setOwnerId(e.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.full_name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Owner
+              </span>
+              <Select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.full_name}
+                  </option>
+                ))}
+              </Select>
+            </label>
 
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Priority
-                  </span>
-                  <Select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                  >
-                    <option value="">No priority</option>
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Term
-                </span>
-                <Select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as IssueType)}
-                >
-                  <option value="short">Short-term</option>
-                  <option value="long">Long-term</option>
-                </Select>
-              </label>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Description{" "}
-                  <span className="font-normal text-zinc-400">(optional)</span>
-                </span>
-                <RichTextEditor
-                  value={description}
-                  onChange={setDescription}
-                  placeholder="Decision notes, context, links…"
-                  rows={8}
-                  textareaClassName="min-h-[10rem] leading-relaxed"
-                  className="dark:bg-zinc-950"
-                />
-              </label>
-
-              {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              )}
-
-              <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <Button variant="ghost" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={pending}>
-                  {pending
-                    ? isEdit
-                      ? "Saving…"
-                      : "Adding…"
-                    : isEdit
-                      ? "Save"
-                      : "Add issue"}
-                </Button>
-              </div>
-            </form>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Priority
+              </span>
+              <Select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="">No priority</option>
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </option>
+                ))}
+              </Select>
+            </label>
           </div>
-        </div>
-      )}
+
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Term
+            </span>
+            <Select
+              value={type}
+              onChange={(e) => setType(e.target.value as IssueType)}
+            >
+              <option value="short">Short-term</option>
+              <option value="long">Long-term</option>
+            </Select>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Description{" "}
+              <span className="font-normal text-zinc-400">(optional)</span>
+            </span>
+            <RichTextEditor
+              value={description}
+              onChange={setDescription}
+              placeholder="Decision notes, context, links…"
+              rows={8}
+              textareaClassName="min-h-[10rem] leading-relaxed"
+              className="dark:bg-zinc-950"
+            />
+          </label>
+
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
+
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending
+                ? isEdit
+                  ? "Saving…"
+                  : "Adding…"
+                : isEdit
+                  ? "Save"
+                  : "Add issue"}
+            </Button>
+          </ModalFooter>
+        </ModalBody>
+      </ModalShell>
     </>
   );
 }

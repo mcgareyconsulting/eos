@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, X } from "lucide-react";
+import { Pencil } from "lucide-react";
 import {
   PERIOD_LABELS,
   SCORECARD_PERIODS,
@@ -11,8 +11,9 @@ import {
 } from "@/lib/scorecard-periods";
 import { formatGoalInput, parseScorecardValue } from "@/lib/scorecard";
 import { updateMetric } from "./actions";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
 
 const inputClass =
   "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
@@ -95,15 +96,6 @@ export function EditMetricModal({
     setOpen(true);
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
   function changeUnit(next: string) {
     setUnit(next);
     // Changing the unit invalidates the goal's notation ("Yes" is not a
@@ -165,172 +157,148 @@ export function EditMetricModal({
         Edit measurable
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit measurable"
-            className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <h2 className="text-base font-semibold tracking-tight">
-                Edit measurable
-              </h2>
-              <IconButton onClick={() => setOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </IconButton>
-            </div>
+      <ModalShell open={open} onClose={() => setOpen(false)} ariaLabel="Edit measurable" size="lg">
+        <ModalHeader title="Edit measurable" onClose={() => setOpen(false)} />
 
-            <form
-              onSubmit={submit}
-              className="flex flex-col gap-3 overflow-y-auto px-5 py-4"
-            >
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Name
+        <ModalBody as="form" onSubmit={submit}>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Name
+            </span>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Metric name"
+              required
+              autoFocus
+            />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Interval
+              </span>
+              <select
+                value={interval}
+                disabled={intervalLocked}
+                onChange={(e) =>
+                  setMetricInterval(e.target.value as ScorecardPeriod)
+                }
+                className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                title={
+                  intervalLocked
+                    ? `Set by the group "${metric.group}" — change the group to change the period`
+                    : "How often this measurable is recorded"
+                }
+              >
+                {SCORECARD_PERIODS.map((p) => (
+                  <option key={p} value={p}>
+                    {PERIOD_LABELS[p]}
+                  </option>
+                ))}
+              </select>
+              {intervalLocked && (
+                <span className="block text-[11px] text-zinc-500">
+                  Set by the group “{metric.group}”.
                 </span>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Metric name"
-                  required
-                  autoFocus
-                />
-              </label>
-
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Interval
-                  </span>
-                  <select
-                    value={interval}
-                    disabled={intervalLocked}
-                    onChange={(e) =>
-                      setMetricInterval(e.target.value as ScorecardPeriod)
-                    }
-                    className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                    title={
-                      intervalLocked
-                        ? `Set by the group "${metric.group}" — change the group to change the period`
-                        : "How often this measurable is recorded"
-                    }
-                  >
-                    {SCORECARD_PERIODS.map((p) => (
-                      <option key={p} value={p}>
-                        {PERIOD_LABELS[p]}
-                      </option>
-                    ))}
-                  </select>
-                  {intervalLocked && (
-                    <span className="block text-[11px] text-zinc-500">
-                      Set by the group “{metric.group}”.
-                    </span>
-                  )}
-                </label>
-
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Unit
-                  </span>
-                  <select
-                    value={unit}
-                    onChange={(e) => changeUnit(e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="number">Number</option>
-                    <option value="currency">Currency</option>
-                    <option value="percent">Percent</option>
-                    <option value="yesno">Yes/No</option>
-                    <option value="time">Time</option>
-                  </select>
-                </label>
-              </div>
-
-              {unit === "yesno" ? (
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Goal{" "}
-                    <span className="font-normal text-zinc-400">(optional)</span>
-                  </span>
-                  <select
-                    value={goal}
-                    onChange={(e) => setGoal(e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="">No goal</option>
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
-                  </select>
-                </label>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block space-y-1">
-                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                      Goal comparison
-                    </span>
-                    <select
-                      value={direction}
-                      onChange={(e) => setDirection(e.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="gte">At least (&gt;=)</option>
-                      <option value="lte">At most (&lt;=)</option>
-                      <option value="eq">Exactly (=)</option>
-                    </select>
-                  </label>
-
-                  <label className="block space-y-1">
-                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                      Goal
-                    </span>
-                    <GoalInput unit={unit} value={goal} onChange={setGoal} />
-                  </label>
-                </div>
               )}
+            </label>
 
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Owner
-                </span>
-                <Select
-                  value={ownerId}
-                  onChange={(e) => setOwnerId(e.target.value)}
-                >
-                  {members.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.full_name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-
-              <p className="text-[11px] text-zinc-500">
-                Group is edited from the row itself, next to this button.
-              </p>
-
-              {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              )}
-
-              <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <Button variant="ghost" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={pending}>
-                  {pending ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </form>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Unit
+              </span>
+              <select
+                value={unit}
+                onChange={(e) => changeUnit(e.target.value)}
+                className={inputClass}
+              >
+                <option value="number">Number</option>
+                <option value="currency">Currency</option>
+                <option value="percent">Percent</option>
+                <option value="yesno">Yes/No</option>
+                <option value="time">Time</option>
+              </select>
+            </label>
           </div>
-        </div>
-      )}
+
+          {unit === "yesno" ? (
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Goal{" "}
+                <span className="font-normal text-zinc-400">(optional)</span>
+              </span>
+              <select
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">No goal</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </label>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Goal comparison
+                </span>
+                <select
+                  value={direction}
+                  onChange={(e) => setDirection(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="gte">At least (&gt;=)</option>
+                  <option value="lte">At most (&lt;=)</option>
+                  <option value="eq">Exactly (=)</option>
+                </select>
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Goal
+                </span>
+                <GoalInput unit={unit} value={goal} onChange={setGoal} />
+              </label>
+            </div>
+          )}
+
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Owner
+            </span>
+            <Select
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
+            >
+              {members.map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {m.full_name}
+                </option>
+              ))}
+            </Select>
+          </label>
+
+          <p className="text-[11px] text-zinc-500">
+            Group is edited from the row itself, next to this button.
+          </p>
+
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
+
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : "Save changes"}
+            </Button>
+          </ModalFooter>
+        </ModalBody>
+      </ModalShell>
     </>
   );
 }

@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { entityAddButtonClass } from "@/components/entity-page-header";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
+import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 
@@ -61,15 +62,6 @@ export function AddTodoModal({
     setOpen(true);
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) {
@@ -112,140 +104,116 @@ export function AddTodoModal({
         {buttonLabel}
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add to-do"
-            className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-              <h2 className="text-base font-semibold tracking-tight">
-                Add to-do
-              </h2>
-              <IconButton onClick={() => setOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </IconButton>
-            </div>
+      <ModalShell open={open} onClose={() => setOpen(false)} ariaLabel="Add to-do" size="lg">
+        <ModalHeader title="Add to-do" onClose={() => setOpen(false)} />
 
-            <form
-              onSubmit={submit}
-              className="flex flex-col gap-3 overflow-y-auto px-5 py-4"
-            >
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Title
-                </span>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="To-do (one line)"
-                  required
-                  autoFocus
-                />
-              </label>
+        <ModalBody as="form" onSubmit={submit}>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Title
+            </span>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="To-do (one line)"
+              required
+              autoFocus
+            />
+          </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Owner
-                  </span>
-                  <Select
-                    value={ownerId}
-                    onChange={(e) => setOwnerId(e.target.value)}
-                  >
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.full_name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Owner
+              </span>
+              <Select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+              >
+                {members.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.full_name}
+                  </option>
+                ))}
+              </Select>
+            </label>
 
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Due date
-                  </span>
-                  <Input
-                    type="date"
-                    value={due}
-                    onChange={(e) => setDue(e.target.value)}
-                    size="sm"
-                  />
-                </label>
-              </div>
-
-              {!meetingId && (
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Visibility
-                  </span>
-                  <Select
-                    value={visibility}
-                    onChange={(e) =>
-                      setVisibility(e.target.value as "team" | "private")
-                    }
-                  >
-                    <option value="team">Team</option>
-                    <option value="private">Private</option>
-                  </Select>
-                </label>
-              )}
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Notes{" "}
-                  <span className="font-normal text-zinc-400">(optional)</span>
-                </span>
-                <RichTextEditor
-                  value={description}
-                  onChange={setDescription}
-                  placeholder="Add notes or context"
-                  rows={3}
-                  className="dark:bg-zinc-950"
-                />
-              </label>
-
-              <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                <input
-                  type="checkbox"
-                  checked={weeklyFocus}
-                  onChange={(e) => setWeeklyFocus(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
-                />
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Weekly focus
-                  </span>
-                  <span className="block text-[11px] text-zinc-500">
-                    Shows a “Weekly” pill on the row. Replaces marking the title
-                    with <code>**</code>.
-                  </span>
-                </span>
-              </label>
-
-              {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              )}
-
-              <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <Button variant="ghost" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={pending}>
-                  {pending ? "Adding…" : "Add to-do"}
-                </Button>
-              </div>
-            </form>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Due date
+              </span>
+              <Input
+                type="date"
+                value={due}
+                onChange={(e) => setDue(e.target.value)}
+                size="sm"
+              />
+            </label>
           </div>
-        </div>
-      )}
+
+          {!meetingId && (
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Visibility
+              </span>
+              <Select
+                value={visibility}
+                onChange={(e) =>
+                  setVisibility(e.target.value as "team" | "private")
+                }
+              >
+                <option value="team">Team</option>
+                <option value="private">Private</option>
+              </Select>
+            </label>
+          )}
+
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Notes{" "}
+              <span className="font-normal text-zinc-400">(optional)</span>
+            </span>
+            <RichTextEditor
+              value={description}
+              onChange={setDescription}
+              placeholder="Add notes or context"
+              rows={3}
+              className="dark:bg-zinc-950"
+            />
+          </label>
+
+          <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+            <input
+              type="checkbox"
+              checked={weeklyFocus}
+              onChange={(e) => setWeeklyFocus(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                Weekly focus
+              </span>
+              <span className="block text-[11px] text-zinc-500">
+                Shows a “Weekly” pill on the row. Replaces marking the title
+                with <code>**</code>.
+              </span>
+            </span>
+          </label>
+
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
+
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Adding…" : "Add to-do"}
+            </Button>
+          </ModalFooter>
+        </ModalBody>
+      </ModalShell>
     </>
   );
 }

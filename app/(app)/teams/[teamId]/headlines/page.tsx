@@ -20,6 +20,8 @@ import {
   type HeadlineDoc as HeadlineDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
+import { Card } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 
 type HeadlineDoc = WithId<HeadlineDocRecord>;
 
@@ -140,9 +142,7 @@ export default async function HeadlinesPage({
               {h.title}
             </div>
             {discussed && !archivedRow && (
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-                Discussed · closes Monday
-              </span>
+              <Pill>Discussed · closes Monday</Pill>
             )}
             {readOnly && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
@@ -244,13 +244,13 @@ export default async function HeadlinesPage({
           {headlines.map(renderRow)}
         </div>
       ) : ownerGroups.length === 0 && cascadingHeadlines.length === 0 ? (
-        <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card>
           <EmptyState
             icon={Megaphone}
             title="No headlines yet"
             hint="Share customer wins, employee news, and cascading messages."
           />
-        </div>
+        </Card>
       ) : (
         <>
           {/* overflow-hidden: the first child is an owner header with its own

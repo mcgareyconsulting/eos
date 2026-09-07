@@ -8,6 +8,7 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { RatingForm } from "@/components/l10/rating-form";
 import { saveMeetingNotes, rateMeeting, setAttendeeAbsence } from "../actions";
+import { Eyebrow } from "@/components/ui/text";
 
 type Member = { user_id: string; full_name: string };
 
@@ -93,9 +94,9 @@ export function ConcludeReview({
 
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+          <Eyebrow as="h2" size="md">
             {readOnly ? "Meeting rating" : "Rate this meeting"}
-          </h2>
+          </Eyebrow>
           <span className="text-xs text-zinc-600 dark:text-zinc-400">
             {presentRatings.length === 0
               ? "No ratings yet"
@@ -155,9 +156,9 @@ export function ConcludeReview({
 
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+          <Eyebrow as="h2" size="md">
             Attendance
-          </h2>
+          </Eyebrow>
           {readOnly && (
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
               as recorded at the meeting

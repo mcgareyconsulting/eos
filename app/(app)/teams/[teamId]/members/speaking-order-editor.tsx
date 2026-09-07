@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, ListOrdered } from "lucide-react";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { setTeamSpeakingOrder } from "./actions";
+import { IconButton } from "@/components/ui/button";
 
 type Member = { user_id: string; full_name: string };
 
@@ -94,26 +95,24 @@ export function SpeakingOrderEditor({
               </span>
               {canEdit && (
                 <div className="flex shrink-0 gap-0.5">
-                  <button
-                    type="button"
+                  <IconButton
+                    muted
                     onClick={() => move(i, -1)}
                     disabled={pending || i === 0}
-                    className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                     aria-label={`Move ${name} up`}
                     title="Move up"
                   >
                     <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    muted
                     onClick={() => move(i, 1)}
                     disabled={pending || i === order.length - 1}
-                    className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                     aria-label={`Move ${name} down`}
                     title="Move down"
                   >
                     <ChevronDown className="h-4 w-4" />
-                  </button>
+                  </IconButton>
                 </div>
               )}
             </li>

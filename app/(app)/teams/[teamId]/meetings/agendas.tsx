@@ -28,6 +28,7 @@ import {
 import { SEGMENT_LABELS } from "@/lib/l10/segments";
 import { cn } from "@/lib/utils";
 import { createAgenda, deleteAgenda, startMeeting, updateAgenda } from "./actions";
+import { Button, IconButton } from "@/components/ui/button";
 
 export type { AgendaOption };
 
@@ -302,24 +303,22 @@ function AgendaEditor({
                   />
                   <span className="text-xs text-zinc-500">min</span>
                 </label>
-                <button
-                  type="button"
+                <IconButton
+                  muted
                   onClick={() => move(i, -1)}
                   disabled={pending || i === 0}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                   aria-label="Move up"
                 >
                   <ChevronUp className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
+                </IconButton>
+                <IconButton
+                  muted
                   onClick={() => move(i, 1)}
                   disabled={pending || i === items.length - 1}
-                  className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                   aria-label="Move down"
                 >
                   <ChevronDown className="h-4 w-4" />
-                </button>
+                </IconButton>
                 <button
                   type="button"
                   onClick={() => {
@@ -371,14 +370,9 @@ function AgendaEditor({
         )}
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
+          <Button variant="outline" onClick={onClose} disabled={pending}>
             Cancel
-          </button>
+          </Button>
           <button
             type="button"
             onClick={save}
@@ -482,14 +476,13 @@ export function StartMeetingPicker({
             </ul>
 
             <div className="flex justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={() => setOpen(false)}
                 disabled={pending}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 Cancel
-              </button>
+              </Button>
               <button
                 type="button"
                 onClick={() => {

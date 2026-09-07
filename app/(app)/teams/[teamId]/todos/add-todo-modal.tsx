@@ -7,6 +7,8 @@ import { entityAddButtonClass } from "@/components/entity-page-header";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 
 type Member = { user_id: string; full_name: string };
 
@@ -127,14 +129,9 @@ export function AddTodoModal({
               <h2 className="text-base font-semibold tracking-tight">
                 Add to-do
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </div>
 
             <form
@@ -145,13 +142,12 @@ export function AddTodoModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Title
                 </span>
-                <input
+                <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="To-do (one line)"
                   required
                   autoFocus
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </label>
 
@@ -160,28 +156,27 @@ export function AddTodoModal({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Owner
                   </span>
-                  <select
+                  <Select
                     value={ownerId}
                     onChange={(e) => setOwnerId(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     {members.map((m) => (
                       <option key={m.user_id} value={m.user_id}>
                         {m.full_name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label className="block space-y-1">
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Due date
                   </span>
-                  <input
+                  <Input
                     type="date"
                     value={due}
                     onChange={(e) => setDue(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                    size="sm"
                   />
                 </label>
               </div>
@@ -191,16 +186,15 @@ export function AddTodoModal({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Visibility
                   </span>
-                  <select
+                  <Select
                     value={visibility}
                     onChange={(e) =>
                       setVisibility(e.target.value as "team" | "private")
                     }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="team">Team</option>
                     <option value="private">Private</option>
-                  </select>
+                  </Select>
                 </label>
               )}
 
@@ -241,20 +235,12 @@ export function AddTodoModal({
               )}
 
               <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
+                <Button variant="ghost" onClick={() => setOpen(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
+                </Button>
+                <Button type="submit" disabled={pending}>
                   {pending ? "Adding…" : "Add to-do"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

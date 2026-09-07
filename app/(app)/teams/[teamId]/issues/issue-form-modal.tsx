@@ -7,6 +7,8 @@ import { entityAddButtonClass } from "@/components/entity-page-header";
 import { addIssue, updateIssueMeta } from "./actions";
 import type { IssueType } from "@/lib/issues";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 
 type Member = { user_id: string; full_name: string };
 
@@ -173,14 +175,9 @@ export function IssueFormModal({
               <h2 className="text-base font-semibold tracking-tight">
                 {isEdit ? "Edit issue" : "Add issue"}
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </div>
 
             <form
@@ -191,13 +188,12 @@ export function IssueFormModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Title
                 </span>
-                <input
+                <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Issue (one line)"
                   required
                   autoFocus
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </label>
 
@@ -206,10 +202,9 @@ export function IssueFormModal({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Owner
                   </span>
-                  <select
+                  <Select
                     value={ownerId}
                     onChange={(e) => setOwnerId(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="">Unassigned</option>
                     {members.map((m) => (
@@ -217,17 +212,16 @@ export function IssueFormModal({
                         {m.full_name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label className="block space-y-1">
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Priority
                   </span>
-                  <select
+                  <Select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="">No priority</option>
                     {PRIORITIES.map((p) => (
@@ -235,7 +229,7 @@ export function IssueFormModal({
                         {p.charAt(0).toUpperCase() + p.slice(1)}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
 
@@ -243,14 +237,13 @@ export function IssueFormModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Term
                 </span>
-                <select
+                <Select
                   value={type}
                   onChange={(e) => setType(e.target.value as IssueType)}
-                  className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 >
                   <option value="short">Short-term</option>
                   <option value="long">Long-term</option>
-                </select>
+                </Select>
               </label>
 
               <label className="block space-y-1">
@@ -273,18 +266,10 @@ export function IssueFormModal({
               )}
 
               <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
+                <Button variant="ghost" onClick={() => setOpen(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
+                </Button>
+                <Button type="submit" disabled={pending}>
                   {pending
                     ? isEdit
                       ? "Saving…"
@@ -292,7 +277,7 @@ export function IssueFormModal({
                     : isEdit
                       ? "Save"
                       : "Add issue"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

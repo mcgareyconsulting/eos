@@ -11,6 +11,8 @@ import {
 } from "@/lib/scorecard-periods";
 import { formatGoalInput, parseScorecardValue } from "@/lib/scorecard";
 import { updateMetric } from "./actions";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 
 const inputClass =
   "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
@@ -180,14 +182,9 @@ export function EditMetricModal({
               <h2 className="text-base font-semibold tracking-tight">
                 Edit measurable
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </div>
 
             <form
@@ -198,13 +195,12 @@ export function EditMetricModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Name
                 </span>
-                <input
+                <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Metric name"
                   required
                   autoFocus
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </label>
 
@@ -303,17 +299,16 @@ export function EditMetricModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Owner
                 </span>
-                <select
+                <Select
                   value={ownerId}
                   onChange={(e) => setOwnerId(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 >
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <p className="text-[11px] text-zinc-500">
@@ -325,20 +320,12 @@ export function EditMetricModal({
               )}
 
               <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
+                <Button variant="ghost" onClick={() => setOpen(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
+                </Button>
+                <Button type="submit" disabled={pending}>
                   {pending ? "Saving…" : "Save changes"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

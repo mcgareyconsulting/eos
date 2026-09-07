@@ -12,6 +12,7 @@ import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoDrawer } from "./edit-todo-drawer";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
+import { Eyebrow } from "@/components/ui/text";
 
 export type TodoListItem = {
   id: string;
@@ -238,27 +239,21 @@ export function TodoListRow({
           <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
             {hideOwner ? null : (
               <div>
-                <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  Owner
-                </dt>
+                <Eyebrow as="dt">Owner</Eyebrow>
                 <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
                   {ownerName}
                 </dd>
               </div>
             )}
             <div>
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Due
-              </dt>
+              <Eyebrow as="dt">Due</Eyebrow>
               <dd className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
                 {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
               </dd>
             </div>
             {todo.visibility === "private" && (
               <div>
-                <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  Visibility
-                </dt>
+                <Eyebrow as="dt">Visibility</Eyebrow>
                 <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
                   Private
                 </dd>

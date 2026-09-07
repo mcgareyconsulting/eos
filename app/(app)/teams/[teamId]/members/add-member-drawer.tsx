@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, UserPlus, X } from "lucide-react";
 import { addTeamMember } from "./actions";
+import { IconButton } from "@/components/ui/button";
 
 export function AddMemberDrawer({ teamId }: { teamId: string }) {
   const router = useRouter();
@@ -87,14 +88,9 @@ export function AddMemberDrawer({ teamId }: { teamId: string }) {
                 <UserPlus className="h-4 w-4 text-hpb-blue" />
                 <h2 className="text-base font-semibold">Add team member</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </header>
 
             <form

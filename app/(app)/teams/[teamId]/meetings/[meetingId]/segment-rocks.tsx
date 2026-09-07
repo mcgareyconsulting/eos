@@ -30,6 +30,7 @@ import {
   type TodoDoc as TodoDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
+import { SectionTitle } from "@/components/ui/text";
 
 type RockDoc = WithId<RockDocRecord>;
 
@@ -354,9 +355,7 @@ export function SegmentRocks({
                 initials(g.title) || "?"
               )}
             </span>
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              {g.title}
-            </h3>
+            <SectionTitle as="h3">{g.title}</SectionTitle>
             <span className="text-xs text-zinc-500">{g.rocks.length}</span>
             {g.isCurrentSpeaker && (
               <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
@@ -399,9 +398,7 @@ export function SegmentRocks({
           className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900"
         >
           <header className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              {g.title}
-            </h3>
+            <SectionTitle as="h3">{g.title}</SectionTitle>
             <span className="text-xs text-zinc-500">{g.rocks.length}</span>
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">

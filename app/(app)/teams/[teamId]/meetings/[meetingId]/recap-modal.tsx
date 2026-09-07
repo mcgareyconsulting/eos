@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { RatingForm } from "@/components/l10/rating-form";
 import { rateMeeting } from "../actions";
+import { IconButton } from "@/components/ui/button";
 
 export type RecapItem = {
   id: string;
@@ -137,14 +138,9 @@ export function RecapModal({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={close}
-            className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            aria-label="Close"
-          >
+          <IconButton onClick={close} aria-label="Close">
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         </header>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">

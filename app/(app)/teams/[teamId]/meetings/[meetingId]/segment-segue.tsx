@@ -19,6 +19,7 @@ import {
   setSpeakingIndex,
   setSpeakingOrder,
 } from "../actions";
+import { Card } from "@/components/ui/card";
 
 type Member = { user_id: string; full_name: string };
 
@@ -141,7 +142,7 @@ export function SegmentSegue({
         />
       </div>
 
-      <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <Card>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <div className="text-sm font-medium">
             Good news round
@@ -305,7 +306,7 @@ export function SegmentSegue({
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Never auto-advances the stage — the group moves on when the
           facilitator says so, not when a pointer hits the end. */}

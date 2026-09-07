@@ -15,6 +15,7 @@ import {
   type RockType,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
+import { IconButton } from "@/components/ui/button";
 
 type Member = { user_id: string; full_name: string };
 type ShareTeam = { id: string; name: string };
@@ -329,14 +330,9 @@ export function RockModal({
               {editing ? "Edit Rock" : "New Rock"}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          >
+          <IconButton onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         </header>
 
         <form onSubmit={submit} className="flex flex-1 flex-col overflow-y-auto">

@@ -14,6 +14,7 @@ import {
   deleteScorecardGroup,
   moveScorecardGroup,
 } from "./actions";
+import { Button, IconButton } from "@/components/ui/button";
 
 /**
  * "Groups" button + modal: create a group, and set the order groups appear in
@@ -99,18 +100,18 @@ export function ManageGroupsButton({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={() => {
           setInterval(activePeriod);
           setError(null);
           setOpen(true);
         }}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        className="inline-flex items-center gap-1.5"
       >
         <Layers className="h-4 w-4" aria-hidden />
         Groups
-      </button>
+      </Button>
 
       {open &&
         createPortal(
@@ -130,14 +131,9 @@ export function ManageGroupsButton({
                 <h2 className="text-base font-semibold tracking-tight">
                   Scorecard groups
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  aria-label="Close"
-                >
+                <IconButton onClick={() => setOpen(false)} aria-label="Close">
                   <X className="h-4 w-4" />
-                </button>
+                </IconButton>
               </div>
 
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
@@ -162,13 +158,9 @@ export function ManageGroupsButton({
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="submit"
-                    disabled={pending}
-                    className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                  >
+                  <Button type="submit" disabled={pending}>
                     Add
-                  </button>
+                  </Button>
                 </form>
 
                 {error && (
@@ -197,26 +189,24 @@ export function ManageGroupsButton({
                             <span className="min-w-0 flex-1 truncate">
                               {g.name}
                             </span>
-                            <button
-                              type="button"
+                            <IconButton
+                              muted
                               onClick={() => move(g.id, -1)}
                               disabled={pending || i === 0}
                               aria-label={`Move ${g.name} up`}
                               title="Move up"
-                              className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                             >
                               <ArrowUp className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
+                            </IconButton>
+                            <IconButton
+                              muted
                               onClick={() => move(g.id, 1)}
                               disabled={pending || i === items.length - 1}
                               aria-label={`Move ${g.name} down`}
                               title="Move down"
-                              className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
                             >
                               <ArrowDown className="h-4 w-4" />
-                            </button>
+                            </IconButton>
                             <button
                               type="button"
                               onClick={() => remove(g.id)}

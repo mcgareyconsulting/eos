@@ -6,6 +6,8 @@ import { Pencil, X } from "lucide-react";
 import { normalizeDescription } from "@/lib/csv-import";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { updateTodoMeta } from "./actions";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Member = { user_id: string; full_name: string };
 
@@ -120,14 +122,9 @@ export function EditTodoDrawer({
           >
             <header className="flex items-center justify-between border-b border-zinc-300 px-5 py-4 dark:border-zinc-800">
               <h2 className="text-base font-semibold">Edit to-do</h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </header>
 
             <form
@@ -136,11 +133,11 @@ export function EditTodoDrawer({
             >
               <div className="space-y-4 px-5 py-4">
                 <Field label="Title" required>
-                  <input
+                  <Input
                     autoFocus
+                    ring
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                 </Field>
 
@@ -217,13 +214,9 @@ export function EditTodoDrawer({
               </div>
 
               <footer className="mt-auto flex items-center justify-end gap-2 border-t border-zinc-300 px-5 py-3 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
+                <Button variant="outline" onClick={() => setOpen(false)}>
                   Cancel
-                </button>
+                </Button>
                 <button
                   type="submit"
                   disabled={pending || !title.trim()}

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
 import { createTeamWithLeader } from "./create-team-actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Step = 1 | 2 | 3;
 
@@ -131,48 +133,47 @@ export function CreateTeamWizard({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="First name" required>
-                <input
+                <Input
                   autoFocus
+                  ring
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   autoComplete="given-name"
                   placeholder="Jane"
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                 />
               </Field>
               <Field label="Last name" required>
-                <input
+                <Input
+                  ring
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   autoComplete="family-name"
                   placeholder="Doe"
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                 />
               </Field>
             </div>
             <Field label="Email" required>
-              <input
+              <Input
                 type="email"
                 inputMode="email"
+                ring
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 placeholder="jane.doe@highplainsbank.com"
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
               />
             </Field>
             {error && <ErrorText>{error}</ErrorText>}
             <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={() => {
                   setError(null);
                   setStep(1);
                 }}
-                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 Back
-              </button>
+              </Button>
               <button
                 type="submit"
                 disabled={pending}

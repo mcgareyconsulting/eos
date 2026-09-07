@@ -29,6 +29,8 @@ import {
   type HeadlineDoc as HeadlineDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
+import { Card } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 
 // created_at arrives as a Firestore Timestamp from onSnapshot, but as a
 // plain millis number when pre-rendered on the server (RSC boundary can't
@@ -145,11 +147,7 @@ export function SegmentHeadlines({
             >
               {h.title}
             </div>
-            {discussed && (
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-                Discussed · closes Monday
-              </span>
-            )}
+            {discussed && <Pill>Discussed · closes Monday</Pill>}
             {readOnly && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
                 Org-wide · text is read-only
@@ -254,9 +252,7 @@ export function SegmentHeadlines({
               <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 Cascading
               </h2>
-              <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-                {sortedCascading.map(renderRow)}
-              </div>
+              <Card divided>{sortedCascading.map(renderRow)}</Card>
             </div>
           )}
         </div>

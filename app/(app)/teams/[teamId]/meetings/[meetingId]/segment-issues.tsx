@@ -46,6 +46,7 @@ import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
 import { QuickAddIssue } from "@/components/quick-add-issue";
+import { Pill } from "@/components/ui/pill";
 import { AddTodoModal } from "../../todos/add-todo-modal";
 import { ownerLabel } from "@/lib/user-name";
 import {
@@ -364,11 +365,7 @@ export function SegmentIssues({
                   >
                     {STATUS_LABEL[i.status]}
                   </span>
-                  {closedPending && (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-                      Closes Monday
-                    </span>
-                  )}
+                  {closedPending && <Pill>Closes Monday</Pill>}
                 </div>
                 <IssueDetailTrigger
                   issue={i}

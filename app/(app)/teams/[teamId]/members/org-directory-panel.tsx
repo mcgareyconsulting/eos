@@ -3,6 +3,7 @@ import { Building2, Plus, Shield, ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import type { DirectoryTeam, OrgAdmin } from "@/lib/firebase/teams";
 import { AdminBadge } from "./admin-badge";
+import { Card } from "@/components/ui/card";
 
 /**
  * Org-wide team directory (soft tenancy: names + roster only).
@@ -65,7 +66,7 @@ export function OrgDirectoryPanel({
       </div>
 
       {directory.length === 0 ? (
-        <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card>
           <EmptyState
             icon={Building2}
             title="No teams yet"
@@ -86,17 +87,14 @@ export function OrgDirectoryPanel({
               </Link>
             </div>
           )}
-        </div>
+        </Card>
       ) : (
         <div className="space-y-4">
           {directory.map((team) => {
             const onTeam = membershipSet.has(team.id);
             const canOpen = isAdmin || onTeam;
             return (
-              <section
-                key={team.id}
-                className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-              >
+              <Card as="section" key={team.id}>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
                   <div className="min-w-0">
                     <h2 className="truncate text-base font-semibold">
@@ -176,7 +174,7 @@ export function OrgDirectoryPanel({
                     ))
                   )}
                 </ul>
-              </section>
+              </Card>
             );
           })}
         </div>

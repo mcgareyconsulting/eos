@@ -38,6 +38,7 @@ import {
   type TodoDoc as TodoDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
+import { SectionTitle } from "@/components/ui/text";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
 // description is included so L10 rows mirror the To-Dos tab expand/edit UX.
@@ -460,9 +461,7 @@ export function SegmentTodos({
               >
                 {initials(g.title) || "?"}
               </span>
-              <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                {g.title}
-              </h3>
+              <SectionTitle as="h3">{g.title}</SectionTitle>
               <span className="text-xs text-zinc-500">
                 {[
                   g.open.length > 0 ? `${g.open.length} open` : null,
@@ -523,9 +522,7 @@ export function SegmentTodos({
         <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
             <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
-            <h3 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-              Milestones
-            </h3>
+            <SectionTitle as="h3">Milestones</SectionTitle>
             <span className="text-xs text-zinc-500">
               {openMilestones.length}
             </span>
@@ -547,9 +544,7 @@ export function SegmentTodos({
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
                       {initials(g.title) || "?"}
                     </span>
-                    <h4 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-                      {g.title}
-                    </h4>
+                    <SectionTitle as="h4">{g.title}</SectionTitle>
                     <span className="text-xs text-zinc-500">
                       {g.items.length}
                     </span>

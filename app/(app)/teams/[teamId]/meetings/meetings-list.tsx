@@ -15,6 +15,7 @@ import {
 } from "@/lib/l10/agenda";
 import { SEGMENT_LABELS, normalizeSegment } from "@/lib/l10/segments";
 import { deleteMeeting } from "./actions";
+import { Card } from "@/components/ui/card";
 
 // Timestamps arrive two ways: serialized to millis by the server render
 // (initial), and as Firestore Timestamps from onSnapshot. Normalize both.
@@ -70,7 +71,7 @@ export function MeetingsList({
   );
 
   return (
-    <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+    <Card divided>
       {sorted.length === 0 && (
         <EmptyState
           icon={Calendar}
@@ -193,6 +194,6 @@ export function MeetingsList({
           </div>
         );
       })}
-    </div>
+    </Card>
   );
 }

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Pencil, X } from "lucide-react";
 import { updateHeadline } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 
 export type HeadlineEditValues = {
   id: string;
@@ -117,14 +119,9 @@ export function HeadlineEditButton({
                 <h2 className="text-base font-semibold tracking-tight">
                   Edit headline
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  aria-label="Close"
-                >
+                <IconButton onClick={() => setOpen(false)} aria-label="Close">
                   <X className="h-4 w-4" />
-                </button>
+                </IconButton>
               </div>
 
               {/* Fields scroll; the footer stays pinned so Save is always reachable
@@ -135,13 +132,12 @@ export function HeadlineEditButton({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Headline
                   </span>
-                  <input
+                  <Input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Headline (one line)"
                     required
                     autoFocus
-                    className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   />
                 </label>
 
@@ -149,19 +145,18 @@ export function HeadlineEditButton({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Category
                   </span>
-                  <select
+                  <Select
                     value={kind}
                     onChange={(e) =>
                       setKind(e.target.value as HeadlineEditValues["kind"])
                     }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     {KIND_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
                         {opt.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label className="block space-y-1">
@@ -187,20 +182,12 @@ export function HeadlineEditButton({
                 </div>
 
                 <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  >
+                  <Button variant="ghost" onClick={() => setOpen(false)}>
                     Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={pending}
-                    className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                  >
+                  </Button>
+                  <Button type="submit" disabled={pending}>
                     {pending ? "Saving…" : "Save"}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>

@@ -5,6 +5,7 @@ import { formatDateOnly, formatDateShort } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { cn } from "@/lib/utils";
 import { TodoCheckbox } from "./todo-row";
+import { Eyebrow } from "@/components/ui/text";
 
 export type MilestoneTodoItem = {
   id: string;
@@ -71,9 +72,7 @@ export function MilestoneTodoRow({
         <div className="ml-7 mt-3 border-l border-zinc-200 pl-4 dark:border-zinc-800">
           <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
             <div className="col-span-2">
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Rock
-              </dt>
+              <Eyebrow as="dt">Rock</Eyebrow>
               {/* Full title, unwrapped — the row has no room for it. */}
               <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
                 {milestone.rock_title}
@@ -81,18 +80,14 @@ export function MilestoneTodoRow({
             </div>
             {!hideOwner && (
               <div>
-                <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  Owner
-                </dt>
+                <Eyebrow as="dt">Owner</Eyebrow>
                 <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
                   {ownerName}
                 </dd>
               </div>
             )}
             <div>
-              <dt className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Due
-              </dt>
+              <Eyebrow as="dt">Due</Eyebrow>
               <dd className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
                 {milestone.due_date ? formatDateOnly(milestone.due_date) : "—"}
               </dd>

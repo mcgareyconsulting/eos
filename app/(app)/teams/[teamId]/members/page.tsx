@@ -18,6 +18,8 @@ import { MemberRoleControls } from "./member-role-controls";
 import { SpeakingOrderEditor } from "./speaking-order-editor";
 import { MembersTabs, type MembersTab } from "./members-tabs";
 import { OrgDirectoryPanel } from "./org-directory-panel";
+import { Card } from "@/components/ui/card";
+import { Eyebrow } from "@/components/ui/text";
 
 type JoinRequest = {
   user_id: string;
@@ -119,9 +121,9 @@ export default async function MembersPage({
 
       {canManage && (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+          <Eyebrow as="h2" size="md">
             Meeting settings
-          </h2>
+          </Eyebrow>
           <div className="space-y-4 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
             <form action={setMeetingDriver.bind(null, tid)}>
               <label
@@ -208,7 +210,7 @@ export default async function MembersPage({
               </span>
             )}
           </h2>
-          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+          <Card divided>
             {pending.length === 0 && (
               <div className="px-4 py-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
                 No pending requests.
@@ -255,15 +257,15 @@ export default async function MembersPage({
                 </div>
               );
             })}
-          </div>
+          </Card>
         </section>
       )}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        <Eyebrow as="h2" size="md">
           Team members
-        </h2>
-        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+        </Eyebrow>
+        <Card divided>
           {roster.map((m) => (
             <div
               key={m.user_id}
@@ -310,7 +312,7 @@ export default async function MembersPage({
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       </section>
     </div>
   );

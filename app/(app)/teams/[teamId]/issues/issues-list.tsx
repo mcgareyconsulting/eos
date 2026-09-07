@@ -35,6 +35,8 @@ import {
   type IssueDoc as IssueDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
+import { Card } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 
 export type IssueDoc = WithId<IssueDocRecord> & {
   // Display-only date computed server-side when the issue is archived — not
@@ -118,7 +120,7 @@ export function IssuesList({
       </div>
 
       {issues.length === 0 ? (
-        <div className="rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <Card>
           <EmptyState
             icon={showArchived ? Archive : AlertCircle}
             title={showArchived ? "No archived issues" : "No issues yet"}
@@ -128,7 +130,7 @@ export function IssuesList({
                 : "Use Add issue to capture blockers. Vote and solve the top ones during the L10 Issues segment."
             }
           />
-        </div>
+        </Card>
       ) : (
         <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {list.length === 0 && (
@@ -234,11 +236,7 @@ function IssueRow({
           >
             {STATUS_LABEL[issue.status]}
           </span>
-          {closedPending && (
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400">
-              Closes Monday
-            </span>
-          )}
+          {closedPending && <Pill>Closes Monday</Pill>}
         </div>
         <IssueDetailTrigger
           issue={issue}

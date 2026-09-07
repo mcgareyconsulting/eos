@@ -10,6 +10,8 @@ import {
 } from "@/lib/scorecard-periods";
 import { parseScorecardValue } from "@/lib/scorecard";
 import { addMetric } from "./actions";
+import { Button, IconButton } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/input";
 
 const inputClass =
   "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
@@ -150,14 +152,9 @@ export function AddMetricModal({
               <h2 className="text-base font-semibold tracking-tight">
                 Add measurable
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
+              <IconButton onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />
-              </button>
+              </IconButton>
             </div>
 
             <form
@@ -168,14 +165,13 @@ export function AddMetricModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Name
                 </span>
-                <input
+                <Input
                   name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Metric name"
                   required
                   autoFocus
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </label>
 
@@ -184,13 +180,12 @@ export function AddMetricModal({
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Interval
                   </span>
-                  <select
+                  <Select
                     name="interval"
                     value={interval}
                     onChange={(e) =>
                       setMetricInterval(e.target.value as ScorecardPeriod)
                     }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                     title="How often this measurable is recorded"
                   >
                     {SCORECARD_PERIODS.map((p) => (
@@ -198,25 +193,24 @@ export function AddMetricModal({
                         {PERIOD_LABELS[p]}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
 
                 <label className="block space-y-1">
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Unit
                   </span>
-                  <select
+                  <Select
                     name="unit"
                     value={unit}
                     onChange={(e) => changeUnit(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="number">Number</option>
                     <option value="currency">Currency</option>
                     <option value="percent">Percent</option>
                     <option value="yesno">Yes/No</option>
                     <option value="time">Time</option>
-                  </select>
+                  </Select>
                 </label>
               </div>
 
@@ -272,18 +266,17 @@ export function AddMetricModal({
                 <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Owner
                 </span>
-                <select
+                <Select
                   name="owner_id"
                   value={ownerId}
                   onChange={(e) => setOwnerId(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 >
                   {members.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <label className="block space-y-1">
@@ -291,13 +284,12 @@ export function AddMetricModal({
                   Group{" "}
                   <span className="font-normal text-zinc-400">(optional)</span>
                 </span>
-                <input
+                <Input
                   name="group"
                   list="scorecard-add-groups"
                   value={group}
                   onChange={(e) => setGroup(e.target.value)}
                   placeholder="e.g. Weekly, Compliance"
-                  className="w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
                 <datalist id="scorecard-add-groups">
                   {groups.map((g) => (
@@ -311,20 +303,12 @@ export function AddMetricModal({
               )}
 
               <div className="mt-1 flex justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
+                <Button variant="ghost" onClick={() => setOpen(false)}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
+                </Button>
+                <Button type="submit" disabled={pending}>
                   {pending ? "Adding…" : "Add metric"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

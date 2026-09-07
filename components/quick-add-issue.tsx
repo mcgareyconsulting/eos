@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Check, Plus, X } from "lucide-react";
 import { addIssue } from "@/app/(app)/teams/[teamId]/issues/actions";
-import { useDismissOnEscape } from "@/components/ui/modal";
 
 export function QuickAddIssue({
   teamId,
@@ -52,13 +51,6 @@ export function QuickAddIssue({
     });
   }
 
-  function cancel() {
-    setOpen(false);
-    setTitle(prefill ?? "");
-  }
-
-  useDismissOnEscape(cancel, open);
-
   if (!open) {
     return (
       <button
@@ -98,6 +90,9 @@ export function QuickAddIssue({
           if (e.key === "Enter") {
             e.preventDefault();
             submit();
+          } else if (e.key === "Escape") {
+            setOpen(false);
+            setTitle(prefill ?? "");
           }
         }}
         placeholder="New issue (one line)"
@@ -113,7 +108,10 @@ export function QuickAddIssue({
       </button>
       <button
         type="button"
-        onClick={cancel}
+        onClick={() => {
+          setOpen(false);
+          setTitle(prefill ?? "");
+        }}
         className="rounded-md p-1 text-zinc-500 hover:text-zinc-600"
         aria-label="Cancel"
       >

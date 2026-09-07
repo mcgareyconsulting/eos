@@ -97,15 +97,18 @@ export function ModalHeader({
   title,
   onClose,
   right,
+  as: Comp = "div",
 }: {
   title: ReactNode;
+  /** "header" where the site used a landmark element (the meeting recap). */
+  as?: "div" | "header";
   /** Renders the standard close IconButton on the right when set. */
   onClose?: () => void;
   /** Overrides the default close button — for a header with something else there. */
   right?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+    <Comp className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
       {typeof title === "string" ? (
         <h2 className="text-base font-semibold tracking-tight">{title}</h2>
       ) : (
@@ -117,7 +120,7 @@ export function ModalHeader({
             <X className="h-4 w-4" />
           </IconButton>
         ) : null)}
-    </div>
+    </Comp>
   );
 }
 

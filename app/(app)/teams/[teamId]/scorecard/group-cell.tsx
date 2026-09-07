@@ -3,7 +3,6 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { setMetricGroup } from "./actions";
-import { useDismissOnEscape } from "@/components/ui/modal";
 
 // Inline editor for a metric's group label. Mirrors ValueCell's click-to-edit
 // pattern so group assignment feels consistent with the week-cell editing
@@ -33,8 +32,6 @@ export function GroupCell({
   );
 
   const display = optimisticGroup ?? "+ Group";
-
-  useDismissOnEscape(() => setEditing(false), editing);
 
   if (!editing) {
     return (
@@ -102,6 +99,8 @@ export function GroupCell({
         if (e.key === "Enter") {
           e.preventDefault();
           (e.target as HTMLElement).blur();
+        } else if (e.key === "Escape") {
+          setEditing(false);
         }
       }}
       className="w-full min-w-0 text-xs rounded bg-white dark:bg-zinc-900 px-1 py-0.5 ring-1 ring-inset ring-zinc-300 dark:ring-zinc-700 focus:outline-none focus:ring-zinc-900"

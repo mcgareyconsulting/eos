@@ -108,6 +108,7 @@ export function RecapModal({
   return (
     <ModalShell open={open} onClose={close} ariaLabel={recapTitle} size="3xl">
       <ModalHeader
+        as="header"
         title={
           <div>
             <h2 className="text-base font-semibold tracking-tight">

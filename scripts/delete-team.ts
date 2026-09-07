@@ -39,7 +39,6 @@ const TEAM_SCOPED = [
   "scorecard_metrics",
   "meetings",
   "team_members",
-  "team_join_requests",
 ] as const;
 
 function parseArgs(argv: string[]) {

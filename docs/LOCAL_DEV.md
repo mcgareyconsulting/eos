@@ -107,7 +107,8 @@ the seed-data divergence, or the "works locally, breaks in the cloud"
 surprises that come from the emulator not enforcing the same rules and index
 requirements as real Firestore.
 
-It survives in the codebase for one reason: a fully offline demo with no GCP
+It survives in the codebase for one reason: running fully offline with no GCP
 project at all. If you need that, `pnpm emulators` (requires Java 11+) plus a
-separate env file, then `pnpm seed <your-email>`. Don't point `.env.local` at
-it.
+separate env file. Don't point `.env.local` at it. The emulator starts empty
+and there is no longer a seeder, so you have to create a team and load data
+yourself before any screen has something on it.

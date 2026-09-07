@@ -13,8 +13,7 @@ export default function NotFound() {
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           This page doesn&apos;t exist, or your account isn&apos;t on that
           team. If you just signed in, ask a team leader to add you under{" "}
-          <span className="font-medium">Members</span>, or request access
-          from the join page.
+          <span className="font-medium">Members</span>.
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <Link
@@ -24,10 +23,10 @@ export default function NotFound() {
             Back to Home
           </Link>
           <Link
-            href="/join"
+            href="/directory"
             className="inline-block rounded-md border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
-            Request team access
+            Browse teams
           </Link>
         </div>
       </div>

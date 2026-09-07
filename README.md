@@ -61,24 +61,11 @@ pnpm dev
 
 Open <http://localhost:3000>. You'll be redirected to `/login` — sign in with Google.
 
-### 5. Seed demo data
+### 5. Load data
 
-The seed populates **every screen** for a believable bank leadership team (4 teammates, rocks + milestones, a 13-week scorecard, ranked issues, to-dos, headlines, and a completed meeting). It's idempotent — re-run it for a clean slate between demos.
-
-```bash
-pnpm seed <your-login-email>      # or pass your UID
-```
-
-Pass the **email or UID of the account you sign in to the app with** — using your login email guarantees the data lands on a team your account can actually see. The seed finds (or creates) a team named "Demo Team", makes you its leader, and fills it. (Get a UID from **Firebase Console → Authentication → Users** if you prefer.)
-
-See **[docs/DEMO.md](docs/DEMO.md)** for the 5–10 minute walkthrough script.
-
-### 6. Import real data (optional)
-
-To seed a team from a client's actual numbers instead of the synthetic demo
-set, `pnpm import:csv` loads scorecards, rocks, and milestones from
-ninety.io-style CSV, TSV, or .xlsx exports (or any spreadsheet with the same
-columns):
+A fresh sign-in lands on an empty app until a team exists and has data on it.
+`pnpm import:csv` loads scorecards, rocks, and milestones from ninety.io-style
+CSV, TSV, or .xlsx exports (or any spreadsheet with the same columns):
 
 ```bash
 pnpm import:csv --team "Enterprise Systems & Data" --create-team \
@@ -142,7 +129,7 @@ lib/
   l10/segments.ts               — stage tools (labels, default timings)
   l10/agenda.ts                 — built-in agendas + meeting snapshots
   dates.ts  scorecard.ts        — date bucketing + metric formatting
-scripts/seed-demo.ts            — comprehensive demo seed
+scripts/                        — operator CLIs (see scripts/README.md)
 firestore.rules                 — security rules
 proxy.ts                        — Next.js 16 proxy: session refresh + route gating
 ```

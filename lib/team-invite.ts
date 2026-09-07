@@ -49,8 +49,6 @@ export async function writeMembership(
     firstName: string;
     lastName: string;
     email: string;
-    /** If set, close a pending join request for this team+user. */
-    decidedBy?: string;
   },
 ): Promise<void> {
   const fullName = `${opts.firstName} ${opts.lastName}`.trim();
@@ -81,20 +79,6 @@ export async function writeMembership(
     role: opts.role,
     created_at: FieldValue.serverTimestamp(),
   });
-
-  if (opts.decidedBy) {
-    const requestRef = db
-      .collection("team_join_requests")
-      .doc(`${opts.teamId}__${opts.userId}`);
-    const requestSnap = await requestRef.get();
-    if (requestSnap.exists && requestSnap.data()?.status === "pending") {
-      batch.update(requestRef, {
-        status: "approved",
-        decided_at: FieldValue.serverTimestamp(),
-        decided_by: opts.decidedBy,
-      });
-    }
-  }
 
   await batch.commit();
 }

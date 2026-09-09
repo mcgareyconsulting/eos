@@ -38,6 +38,29 @@ service cloud.firestore {
         && exists(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
     }
 
+    // Is the caller on any team this document was shared into? Used by rocks
+    // and by scorecard measurables, which share the same `shared_team_ids`
+    // shape (lib/rocks-share.ts, lib/scorecard-share.ts).
+    //
+    // Unrolled because rules cannot loop, and **the 8 here is the cap, not a
+    // formality** — a ninth share would be written happily by the Admin SDK
+    // and then be unreadable by the client listener, so both share libraries
+    // refuse past 8. Lengthen this list and those constants together or not
+    // at all.
+    function listSharedToMe(data) {
+      let ids = data.get('shared_team_ids', []);
+      return ids is list && (
+        (ids.size() > 0 && isMember(ids[0])) ||
+        (ids.size() > 1 && isMember(ids[1])) ||
+        (ids.size() > 2 && isMember(ids[2])) ||
+        (ids.size() > 3 && isMember(ids[3])) ||
+        (ids.size() > 4 && isMember(ids[4])) ||
+        (ids.size() > 5 && isMember(ids[5])) ||
+        (ids.size() > 6 && isMember(ids[6])) ||
+        (ids.size() > 7 && isMember(ids[7]))
+      );
+    }
+
     function isLeader(teamId) {
       let m = get(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
       return m != null && m.data.role == "leader";
@@ -75,8 +98,28 @@ service cloud.firestore {
     }
 
     // ---------- scorecard ----------
+    // A measurable has one home team and an optional `shared_team_ids` — the
+    // teams that pulled it onto their scorecard from the org-wide "Add
+    // existing" picker (lib/scorecard-share.ts).
+    //
+    // **Read widens; write does not.** A borrowing team can see the row and
+    // its history, which is the point of borrowing it, but every write —
+    // renaming, re-goaling, regrouping, deleting — stays with the home team,
+    // so one team can never edit another team's measurable through a row it
+    // merely displays. Attaching and detaching a share are Admin-SDK server
+    // actions (`addExistingMetric` / `hideSharedMetric`), authorised by
+    // `requireTeamAccess` rather than by these rules; what these rules govern
+    // is the client listener reading a borrowed row afterwards.
+    //
+    // Values are the one write a non-home team can reach, and they are gated
+    // in the server action, not here: only the home team and org admins may
+    // set an entry. See `canEditMetricValues`.
+    function metricSharedToMe() {
+      return listSharedToMe(resource.data);
+    }
     match /scorecard_metrics/{id} {
-      allow read, write: if admin() || isMember(resource.data.team_id);
+      allow read:        if admin() || isMember(resource.data.team_id) || metricSharedToMe();
+      allow write:       if admin() || isMember(resource.data.team_id);
       allow create:      if admin() || isMember(request.resource.data.team_id);
     }
 
@@ -87,14 +130,26 @@ service cloud.firestore {
       allow create:      if admin() || isMember(request.resource.data.team_id);
     }
 
+    // Entries carry no team of their own — they are keyed
+    // `${metricId}__${weekStartDate}` — so they inherit their measurable's
+    // visibility. That inheritance is what makes a share a *reference*: one
+    // set of values, read by every scorecard the measurable appears on, with
+    // no second copy to drift.
+    //
+    // Reads follow the share. Writes do not: they stay on the home team, so a
+    // borrowing team cannot rewrite the numbers it is displaying.
     match /scorecard_entries/{id} {
+      function metricDoc() {
+        return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data;
+      }
       function metricTeam() {
-        return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data.team_id;
+        return metricDoc().team_id;
       }
       function createMetricTeam() {
         return get(/databases/$(db)/documents/scorecard_metrics/$(request.resource.data.metric_id)).data.team_id;
       }
-      allow read, update, delete: if admin() || isMember(metricTeam());
+      allow read:                 if admin() || isMember(metricTeam()) || listSharedToMe(metricDoc());
+      allow update, delete:       if admin() || isMember(metricTeam());
       allow create:               if admin() || isMember(createMetricTeam());
     }
 
@@ -104,19 +159,8 @@ service cloud.firestore {
     // stay on the home team only — edit status/share from the parent team.
     // Share-down is allowed: the writer does not have to sit on the guest
     // team (a rock shared from its parent team into another).
-    function listSharedToMe(data) {
-      let ids = data.get('shared_team_ids', []);
-      return ids is list && (
-        (ids.size() > 0 && isMember(ids[0])) ||
-        (ids.size() > 1 && isMember(ids[1])) ||
-        (ids.size() > 2 && isMember(ids[2])) ||
-        (ids.size() > 3 && isMember(ids[3])) ||
-        (ids.size() > 4 && isMember(ids[4])) ||
-        (ids.size() > 5 && isMember(ids[5])) ||
-        (ids.size() > 6 && isMember(ids[6])) ||
-        (ids.size() > 7 && isMember(ids[7]))
-      );
-    }
+    // `listSharedToMe` is defined with the shared helpers at the top of this
+    // block — the scorecard rules use it too and come earlier in the file.
     function rockSharedToMe() {
       return listSharedToMe(resource.data);
     }

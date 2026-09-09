@@ -3,12 +3,18 @@
 /* Enable class-based dark mode (toggled by <html class="dark">). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Native scrollbars, form controls and default canvas are painted from
+   color-scheme, not from the .dark class — without it they stay light in
+   dark mode. Invisible on macOS (overlay scrollbars auto-hide); on Windows
+   it shows as a white scrollbar track down a dark UI. */
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #171717;
 }
 
 .dark {
+  color-scheme: dark;
   --background: #09090b;
   --foreground: #ededed;
 }

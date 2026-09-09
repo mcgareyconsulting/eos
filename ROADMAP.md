@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-04
+updated: 2026-09-09
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -11,7 +11,7 @@ queue:                        # agent-maintained, set by agreement in session
   # that counts; `awaiting` is gated on someone else, not on capacity.
   now: QW1     # prod == main; the backlog is verification, not shipping
   next: [F4, N18, F3, N3, N2, N4, F6, F7, F8]  # F6–F8 added 2026-08-31, appended not ranked
-  awaiting: [P3-1, N10, F2, B1, P3-5]
+  awaiting: [N10, F2, B1, P3-5]
 ---
 
 # HPB · ROADMAP
@@ -76,7 +76,7 @@ by cost-to-close, then by size:
 | 5 | **N2** | M | Sandbox-runnable; makes N1-class validation repeatable |
 
 **`awaiting` = gated on someone else.** These do not consume capacity and
-must not be read as "next up": **P3-1** (Joe, Open question 3) · **N10**
+must not be read as "next up": **N10**
 (Cloud Storage bucket — rides with F2) · **F2** (security-tier selection +
 IAM resolution) · **B1**, **P3-5** (client BigQuery conventions). **N1 left
 `awaiting` in Pass 21** — Steph's onboarding walkthrough ran 2026-08-18;
@@ -2416,8 +2416,20 @@ concluded meeting and `?view=` peek all re-verified in the sandbox.
 - 2026-07-30 · transcript · src tracker-2026-08-03#8 — Jenna: ≥4 agenda formats now, select agenda at meeting start
 - 2026-08-12 · fix · src session — 3 dead `!== "done"` comparisons broke `next build` type-check; segments retyped to `AgendaToolType` so the "done is never a viewable stage" invariant is compiler-enforced
 
-### P3-1 · Calculated measurables + cross-team share-up
-*W3 · not-started · due — · deps — · owner daniel · src tracker-2026-08-03#11 · upd 2026-08-10*
+### P3-1 · Calculated measurables + cross-team share-up — **folded into N57**
+*W3 · folded · due — · deps — · owner daniel · src tracker-2026-08-03#11 · upd 2026-09-09*
+
+**Closed as an item on 2026-09-09, not as a requirement.** daniel: P3-1
+"will collapse into other scorecard rules." Share-up is one case of the
+general question **N57** now owns — who may attach a metric to a scorecard
+they do not own, and what the attachment *is* — so scoping it separately
+would settle the same data-model fork twice, in two places, with two
+answers. **Brian's requirements below are live and must survive into
+N57's model**; they are the concrete test case it has to satisfy, and this
+body is retained as their record. Nothing here is descoped — only
+relocated. The 2026-07-30 Owed item (Joe's confirmation) and Open
+question 3 both retire with it: they gated a live-vs-warehouse fork that
+N57 will decide on broader grounds.
 
 Effort L. The top-value open scorecard ask, with concrete requirements from
 Brian (tracker update 2026-08-10): per-branch direct-input metrics
@@ -2433,6 +2445,7 @@ uses share-up — confirm with Joe (Open question 3).
 **Trail**
 - 2026-07-30 · transcript · src tracker-2026-08-03#11 — Jessica: calculated measurables from other metrics; share-up to other teams; confirm with Joe
 - 2026-08-10 · note · src tracker-2026-08-03#11 — Brian's detail: sum-of-branches → leadership, editable formula, history preserved — the only new content in the 08-10 tracker re-read
+- 2026-09-09 · decision · src steph-joe-2026-09-08 — folded into **N57**; requirements carry forward intact, Owed row and Open question 3 retire, item leaves `queue.awaiting`
 
 ### P3-2 · Rich text / links across descriptions
 *W3 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#15 · upd 2026-08-12*
@@ -2635,6 +2648,158 @@ tokens + webhook secret in Secret Manager.
 
 ---
 
+## Intake — 2026-09-08 Steph + Joe, transcript pending
+
+**Not workstream items yet, and deliberately not in `queue`.** Eight lines
+from the 2026-09-08 meeting with Steph and Joe, captured verbatim in
+`docs/feedback/steph-joe-2026-09-08-notes.md` — **the transcript has not
+arrived yet**, so every scope statement below is provisional and should be
+re-read against it (the l10-2026-08-12 notes needed exactly that second pass).
+Four became items. One line — *"Domain/App name deferred on Steph's
+brainstorm"* — is **not** an item: it is a deferral, recorded so the silence
+is legible rather than forgotten.
+
+**N55 and N56 already have root causes**, found in code on 2026-09-09 before
+scoping. Both are S and both are one-line-ish fixes; neither has been queued,
+because ordering is set by agreement in session and was not agreed here.
+**They are the obvious queue candidates.**
+
+### N55 · Dark-mode scrollbars unstyled — `color-scheme` is never declared
+*W3 · built · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+
+**Built 2026-09-09 on `notes/2026-09-08-steph-joe`. Not run, not merged,
+not seen on Windows** — daniel asked for the fix without testing, so this
+is `built`, not `shipped`, and the one machine that can actually show the
+bug has not looked at it. **Promote only on a Windows confirmation**; a
+Mac check cannot distinguish a fix from the pre-existing invisibility.
+
+Effort S. Reported as "scrollbars not styled correctly in dark mode (windows
+v mac?)". **The Windows-vs-Mac hunch is correct and it is the tell.**
+
+`app/globals.css` sets up class-based dark mode — `@custom-variant dark`,
+`:root`, `.dark` — but **`color-scheme` appears nowhere in the repo.** A
+browser paints native scrollbars (and native form controls, and the default
+canvas) from `color-scheme`, not from a Tailwind class, so they stay light no
+matter what `.dark` does. macOS hides the difference: overlay scrollbars
+auto-hide and are drawn thin. Windows paints an always-visible track, so the
+same CSS shows a white gutter down a dark UI. Nothing is broken on Mac; it is
+merely invisible there.
+
+Fix: `color-scheme: light` on `:root`, `color-scheme: dark` on `.dark`. That
+also corrects native form controls and the default background in one move.
+`components/scorecard/scorecard-filters.tsx` carries a lone ad-hoc
+`[scrollbar-width:thin]` — **deliberately left alone.** It is a width
+choice on a horizontal filter strip, not a theming one, so it is orthogonal
+to this fix and now inherits the right colours from `color-scheme`
+regardless. Revisit only if the strip looks wrong.
+
+**Trail**
+- 2026-09-08 · request · src steph-joe-2026-09-08 — dark-mode scrollbars, Windows vs Mac suspected
+- 2026-09-09 · finding · src session-2026-09-09 — no `color-scheme` anywhere in the repo; explains the platform split exactly (macOS overlay scrollbars mask it, Windows does not)
+- 2026-09-09 · built · src session-2026-09-09 — `color-scheme: light` on `:root`, `dark` on `.dark` in `app/globals.css`. Not run and not Windows-checked at daniel's instruction; stays `built` until someone on Windows confirms
+
+### N56 · Sessions expire between weekly meetings — 5-day cookie, no renewal
+*W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+
+Effort S for relief, S–M for the durable fix. Reported as "users are logging
+in every time, need better authentication/reauthentication flow".
+
+**This is arithmetic, not a flow problem.** `lib/firebase/session.ts` mints a
+**5-day** session cookie (`FIVE_DAYS_MS`), and `createSession()` has exactly
+one caller — `app/(auth)/login/actions.ts`. **Nothing renews it anywhere in
+the app.** HPB's real usage cadence is the **weekly** L10. 7 days > 5 days, so
+a user who opens the app only for their weekly meeting is logged out *every
+single time*, deterministically. The report is not vague dissatisfaction; it
+is the exact behaviour the constant produces.
+
+Two fixes, different sizes. **(a)** Raise `expiresIn` to Firebase's 14-day
+ceiling — one line, covers a weekly cadence with a week of margin. **(b)**
+Sliding renewal: re-mint once the cookie passes half-life. This needs a fresh
+client **ID token**, because a session cookie cannot re-mint itself, so it is
+a client round-trip plus a server action, not a middleware one-liner.
+
+**Do not ship (a) without reading it against the security posture.** A longer
+window is a longer window on a bad session. Two things bear on it: sessions
+are already verified with `verifySessionCookie(..., true)`, so revocation
+takes effect on the next request — which is what makes a longer TTL
+defensible — and audit **M2** (the perimeter never checks `email_verified`)
+is still open and still accepted only on the condition that Google stays the
+sole provider. **N52** is where that condition gets revisited. Decide TTL and
+M2 together, not in sequence.
+
+**Trail**
+- 2026-09-08 · request · src steph-joe-2026-09-08 — users logging in every time; wants better auth/reauth flow
+- 2026-09-09 · finding · src session-2026-09-09 — 5-day non-sliding cookie vs a weekly meeting cadence; `createSession` has a single caller and no renewal path exists
+- 2026-09-09 · finding · src session-2026-09-09 — TTL change couples to **M2** / **N52**; `checkRevoked` is already on and is the mitigation that makes a longer TTL arguable
+
+### N57 · Scorecard sharing, editing and permissions — the model
+*W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+
+Effort L, and **not yet scoped on purpose** — daniel: "we will need to
+brainstorm about improved scorecard/metrics sharing, editing, etc over a few
+turns." This item exists to hold the question, not to answer it.
+
+**It absorbs P3-1** (calculated measurables + cross-team share-up), folded
+here 2026-09-09. Brian's requirements from the 2026-08-10 tracker are the
+concrete test case any model here must satisfy: per-branch teller
+transactions, each owned by its BSM, rolling up to a Leadership "Total Teller
+Transactions" = sum, with a **versioned formula** so that adding a branch does
+not rewrite prior periods. Read P3-1's retained body before scoping.
+
+Four asks from 2026-09-08 sit under it:
+
+- **Delete** — permitted by scorecard owner, metric owner, **or** admin.
+- **Adopt** — any user can pull an existing metric and add it to "their" list.
+- **Hide/show** — per-metric visibility on the scorecard page for metrics
+  irrelevant to that viewer.
+- **Non-owner measurable actions** — "Add to group", "Remove from group",
+  "Archive" for users who are neither admin nor owner.
+
+**One fork decides all four, and it should be settled first.** Is an adopted
+metric a **reference** (one metric object, one history, surfaced on many
+scorecards) or a **copy** (an independent metric the adopter owns)? Reference
+makes hide/show a per-viewer preference and makes delete genuinely dangerous —
+a subscriber must not be able to destroy a metric that feeds someone else's
+rollup, which is precisely where the delete-permission triple above collides
+with P3-1's calculated metrics. Copy makes delete safe and makes share-up
+incoherent. **Do not scope the four asks independently; they are one model.**
+
+Adjacent, and to be reconciled rather than duplicated: **N40** already owns
+scorecard groups surfaced and ordered in the L10 — the group asks here are
+about *who may act*, not about the grouping itself. **N28** (metric-expand
+styling + scroll behaviour) may be what the note's bare "improved scorecard
+behavior" line restates; the transcript should settle whether that is a
+restatement or a fifth ask. **P2-7** is the settled role model this has to be
+expressed in.
+
+**Trail**
+- 2026-07-30 · transcript · src tracker-2026-08-03#11 — (via P3-1) Jessica: calculated measurables; share-up to other teams
+- 2026-08-10 · note · src tracker-2026-08-03#11 — (via P3-1) Brian's sum-of-branches → leadership, editable formula, history preserved
+- 2026-09-08 · request · src steph-joe-2026-09-08 — delete permissions, adopt-to-my-list, hide/show, non-owner group + archive actions; flagged by daniel as a multi-turn brainstorm
+- 2026-09-09 · decision · src steph-joe-2026-09-08 — **P3-1 folded in**; share-up is one case of this model's central fork, so scoping it separately would answer the same question twice
+
+### N58 · Data Directory for Admin
+*W3 · not-started · due — · deps N49 · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+
+Effort — (unscoped). The note is four words: "Data Directory for Admin". **It
+is not yet clear what it is**, and the two readings build different things: a
+browsable **catalog of all metrics** for discovery and adoption — which would
+be the front door to N57's adopt flow and belongs to it — or an **admin data
+surface** for values, exports and orphans, which is a separate build. Get the
+reading from the transcript before scoping; do not guess between them.
+
+Depends on **N49** ("say what an Admin can do that others cannot") for the
+same reason N49 depends on P2-7: an admin-only surface has to reflect a
+permissions model that is settled and stated, or it advertises powers that do
+not exist. Note the standing distinction N49 draws — the in-app `role: "admin"`
+custom claim is not the same as consultant/operator GCP IAM access, and only
+the former belongs on screen.
+
+**Trail**
+- 2026-09-08 · request · src steph-joe-2026-09-08 — "Data Directory for Admin", no further detail given
+
+---
+
 ## Intake — 2026-09-02 client feedback, awaiting investigation
 
 **Not workstream items yet, and deliberately not in `queue`.** Seven reports
@@ -2757,7 +2922,6 @@ she has powers she does not.
 | BigQuery/data-compliance conventions from the Jack Henry migration (naming, region, partitioning, PII, retention, reader access) | B1, P3-5 | 2026-07-01 |
 | Security-tier selection from the Pass 10 levers menu (Tier 0 / 1 / 2) | F2 | 2026-07-01 |
 | IAM resolution per `docs/HPB_IAM_REQUEST.md` (Option A grant or Option B bindings) — confirmation of which was applied | F2, F3 | 2026-07-27 |
-| Joe's confirmation that Transformation actually uses scorecard share-up | P3-1 | 2026-07-30 |
 | Leadership team to be created (company rocks live there) | N4 | 2026-08-18 |
 
 ## Open questions
@@ -2783,8 +2947,11 @@ she has powers she does not.
    (create gap is pre-existing; edit/delete gaps are audit M6/L11), and it
    collides with Steph's two-way ask. Product decision before P1-7 builds.
    **Answers:** Steph + daniel.
-3. **Does the Transformation team use share-up?** Jessica said to confirm
-   with Joe. Shapes P3-1 scope (live vs warehouse fork). **Answers:** Joe.
+3. ~~**Does the Transformation team use share-up?**~~ **Retired 2026-09-09**
+   (src steph-joe-2026-09-08). It existed to shape P3-1's live-vs-warehouse
+   fork; P3-1 is folded into **N57**, which decides that fork on the whole
+   sharing model rather than on one team's usage. Re-ask only if N57's
+   model turns out to need per-team evidence.
 4. **How was the IAM request resolved?** The app serves publicly, so the
    critical bindings evidently exist, but no doc records whether HPB chose
    Option A (temporary consultant IAM rights → Terraform manages bindings)

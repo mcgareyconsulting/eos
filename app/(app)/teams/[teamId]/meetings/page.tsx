@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { entityHeaderControlBase } from "@/components/entity-page-header";
+import { cn } from "@/lib/utils";
 import { Timestamp } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import {
@@ -140,7 +142,13 @@ function HeaderAction({
     return (
       <Link
         href={`/teams/${teamId}/meetings/${liveMeeting.id}`}
-        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+        // Green rather than brand blue on purpose — a live meeting is a
+        // state, not an action — but the geometry is the shared one so it
+        // lines up with Start meeting, which occupies the same slot.
+        className={cn(
+          entityHeaderControlBase,
+          "min-w-[11rem] bg-hpb-green text-white hover:brightness-110 focus-visible:ring-hpb-green/40",
+        )}
       >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
         Join live meeting

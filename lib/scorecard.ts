@@ -264,6 +264,16 @@ export function average(values: (number | null)[]): number | null {
  * Status uses the N most recently *populated* scores (default 3),
  * matching ninety's Trends rule — empty weeks don't count.
  */
+/**
+ * Recent periods shown in the "Add existing" picker's status strip.
+ *
+ * Lives here, not with the catalog loader, because the picker is a client
+ * component: importing a *value* from `lib/firebase/scorecard-catalog` pulls
+ * `firebase-admin` into the browser bundle and fails the build. Types from
+ * there are fine — they erase — but constants are not.
+ */
+export const STRIP_LENGTH = 8;
+
 export type TrendStatus = "ok" | "watch" | "off" | "empty" | "nogoal";
 
 export const TREND_STATUS_LABEL: Record<TrendStatus, string> = {
@@ -483,13 +493,23 @@ export function bucketMetricsByGroup<T extends { group?: string | null }>(
   metrics: T[],
   flat = false,
   orderNames?: (names: string[]) => string[],
+  /**
+   * Which section a row belongs to, when that is not simply its `group`.
+   *
+   * The standalone scorecard resolves a section for every row — a borrowing
+   * team's own choice, else the cadence default — so that nothing lands in
+   * `ungrouped` and no headerless table renders. `group` still carries the
+   * stored value, because the inline group editor edits that; conflating the
+   * two would make the editor show "Weekly" as though someone had set it.
+   */
+  groupOf: (m: T) => string | null | undefined = (m) => m.group,
 ): { ungrouped: T[]; groups: { name: string; items: T[] }[] } {
   if (flat) return { ungrouped: [...metrics], groups: [] };
 
   const ungrouped: T[] = [];
   const byName = new Map<string, T[]>();
   for (const m of metrics) {
-    const name = m.group?.trim() || "";
+    const name = groupOf(m)?.trim() || "";
     if (!name) {
       ungrouped.push(m);
       continue;

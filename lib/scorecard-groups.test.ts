@@ -8,6 +8,7 @@ import {
   orderGroupNames,
   reorderGroup,
   type ScorecardGroup,
+  defaultGroupName,
 } from "./scorecard-groups";
 
 const group = (
@@ -121,11 +122,21 @@ describe("orderGroupNames", () => {
     );
   });
 
-  test("no group docs at all falls back to alphabetical", () => {
-    assert.deepEqual(orderGroupNames(["Weekly", "Compliance"], [], "weekly"), [
-      "Compliance",
-      "Weekly",
-    ]);
+  // Changed 2026-09-09 with the cadence default groups. This used to assert a
+  // purely alphabetical fallback, which put "Compliance" above "Weekly" — and
+  // "Weekly" is no longer just a label someone typed, it is the catch-all every
+  // unfiled measurable now lands in. Ranking the catch-all below a themed group
+  // is the exact inversion this whole function exists to prevent, so the
+  // default leads and everything else keeps the alphabetical fallback.
+  test("no group docs: the cadence default leads, the rest are alphabetical", () => {
+    assert.deepEqual(
+      orderGroupNames(["Weekly", "Compliance"], [], "weekly"),
+      ["Weekly", "Compliance"],
+    );
+    assert.deepEqual(
+      orderGroupNames(["Zebra", "Compliance", "Ad hoc"], [], "weekly"),
+      ["Ad hoc", "Compliance", "Zebra"],
+    );
   });
 });
 
@@ -180,5 +191,62 @@ describe("reorderGroup", () => {
       { id: "c", sort_order: 1 },
       { id: "b", sort_order: 2 },
     ]);
+  });
+});
+
+describe("defaultGroupName", () => {
+  test("names the cadence", () => {
+    assert.equal(defaultGroupName("weekly"), "Weekly");
+    assert.equal(defaultGroupName("monthly"), "Monthly");
+    assert.equal(defaultGroupName("quarterly"), "Quarterly");
+    assert.equal(defaultGroupName("annual"), "Annual");
+  });
+
+  // A real group doc called "Weekly" should absorb the default rather than
+  // rendering a second header beside it.
+  test("normalises to the same key as a custom group of that name", () => {
+    assert.equal(groupNameKey(defaultGroupName("weekly")), groupNameKey("weekly"));
+  });
+});
+
+describe("orderGroupNames — cadence default", () => {
+  const compliance: ScorecardGroup = {
+    id: "g1",
+    team_id: "t",
+    name: "Compliance",
+    interval: "weekly",
+    sort_order: 0,
+  };
+
+  // The catch-all holds the ordinary weekly measurables, which is precisely
+  // what this ordering exists to keep above themed groups.
+  test("sorts above defined groups, not alphabetically among free labels", () => {
+    assert.deepEqual(
+      orderGroupNames(["Compliance", "Weekly"], [compliance], "weekly"),
+      ["Weekly", "Compliance"],
+    );
+  });
+
+  test("free-text labels still sort after the defined groups", () => {
+    assert.deepEqual(
+      orderGroupNames(["Ad hoc", "Compliance", "Weekly"], [compliance], "weekly"),
+      ["Weekly", "Compliance", "Ad hoc"],
+    );
+  });
+
+  // A real group doc named "Weekly" takes its configured position instead.
+  test("a real group doc of the same name is not pinned", () => {
+    const weeklyDoc: ScorecardGroup = { ...compliance, id: "g2", name: "Weekly", sort_order: 1 };
+    assert.deepEqual(
+      orderGroupNames(["Weekly", "Compliance"], [compliance, weeklyDoc], "weekly"),
+      ["Compliance", "Weekly"],
+    );
+  });
+
+  test("the default for another cadence is not pinned here", () => {
+    assert.deepEqual(
+      orderGroupNames(["Monthly", "Compliance"], [compliance], "weekly"),
+      ["Compliance", "Monthly"],
+    );
   });
 });

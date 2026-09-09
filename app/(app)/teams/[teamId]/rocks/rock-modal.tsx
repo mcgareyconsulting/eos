@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,10 +90,16 @@ export function NewRockButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-[9px] bg-hpb-blue px-3 py-[7px] text-[12.5px] font-extrabold text-white hover:bg-[#00257a] focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+        // Was a one-off set of magic values — `font-extrabold`,
+        // `text-[12.5px]`, `rounded-[9px]`, `py-[7px]`, a hardcoded hover hex
+        // and a heavier icon stroke — which made this the only add button in
+        // the app in a different weight and size from the rest of its own
+        // header row. Shared chrome now; if Rocks wants a louder button, that
+        // is a decision for every page at once.
+        className={entityAddButtonClass}
       >
-        <Plus className="h-4 w-4" strokeWidth={2.5} />
-        New Rock
+        <Plus className="h-4 w-4" />
+        Add Rock
       </button>
       {open && (
         <RockModal
@@ -299,7 +306,7 @@ export function RockModal({
     <ModalShell
       open
       onClose={onClose}
-      ariaLabel={editing ? "Edit rock" : "New rock"}
+      ariaLabel={editing ? "Edit Rock" : "Add Rock"}
       size="5xl"
     >
         {/* Header padding (px-6 py-3.5) differs from the shared ModalHeader's
@@ -316,7 +323,7 @@ export function RockModal({
               </div>
             )}
             <h2 className="mt-0.5 text-base font-semibold">
-              {editing ? "Edit Rock" : "New Rock"}
+              {editing ? "Edit Rock" : "Add Rock"}
             </h2>
           </div>
           <IconButton onClick={onClose} aria-label="Close">

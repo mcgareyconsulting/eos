@@ -2,7 +2,7 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
-import { setMetricGroup } from "./actions";
+import { setMetricGroup, setSharedMetricGroup } from "./actions";
 
 // Inline editor for a metric's group label. Mirrors ValueCell's click-to-edit
 // pattern so group assignment feels consistent with the week-cell editing
@@ -17,11 +17,22 @@ export function GroupCell({
   teamId,
   metricId,
   initial,
+  isShared = false,
 }: {
   teamId: string;
   metricId: string;
   initial: string | null;
+  /**
+   * Borrowed from another team, so the group is this team's alone.
+   *
+   * Routes to `setSharedMetricGroup`, which writes `shared_groups[teamId]`.
+   * `setMetricGroup` would reject the write anyway (the document belongs to
+   * another team) and, if it did not, would move the row on the owner's
+   * scorecard and rewrite its cadence to match the group's period.
+   */
+  isShared?: boolean;
 }) {
+  const save = isShared ? setSharedMetricGroup : setMetricGroup;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(initial ?? "");
   const [error, setError] = useState(false);
@@ -74,7 +85,7 @@ export function GroupCell({
     start(async () => {
       setOptimisticGroup(next);
       try {
-        await setMetricGroup(teamId, metricId, draft);
+        await save(teamId, metricId, draft);
         setError(false);
       } catch (err) {
         // Same contract as ValueCell: let Next's redirect/notFound reach the

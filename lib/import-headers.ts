@@ -25,6 +25,11 @@ export const EXPECTED_HEADERS: Record<
       "Link",
       "Created Date",
       "Quarter",
+      // Read by the rocks parser (isArchived / archivedAtFrom in
+      // lib/team-import/normalize.ts) since archived rows started being held
+      // back, but never listed here — so the Import page didn't mention it and
+      // the /data export had no documented column for it.
+      "Archived Date",
     ],
     notes:
       "Status: On Track / Off Track / Complete / Cancelled. Level: Company / Department / Individual. Level=Department rocks land in the Department section (even with a personal owner). Team/Department column filters multi-department exports. A rock already on the team is matched by title and left as it is.",

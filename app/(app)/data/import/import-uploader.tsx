@@ -260,7 +260,7 @@ export function ImportUploader({
           </span>
           <select
             value={teamId}
-            onChange={(e) => router.push(`/teams/${e.target.value}/import`)}
+            onChange={(e) => router.push(`/data/import?team=${e.target.value}`)}
             disabled={importableTeams.length < 2}
             className="max-w-lg rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
           >

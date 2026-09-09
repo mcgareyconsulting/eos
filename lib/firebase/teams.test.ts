@@ -6,6 +6,8 @@ import {
   requireTeamAccess,
   requireTeamLeader,
   requireAdmin,
+  requireOrgReader,
+  isOrgReader,
   requireTeamDoc,
   getTeamMembers,
   getOrgTeams,
@@ -336,5 +338,70 @@ describe("getOrgDirectory", () => {
       ["Zoe", "Amir"],
     );
     assert.equal(team!.members[0].role, "leader");
+  });
+});
+
+describe("requireOrgReader", () => {
+  test("an org admin is allowed without any leadership team existing", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "t1");
+    const reader = await requireOrgReader({
+      user: fakeUser({ uid: "admin", isAdmin: true, db }),
+    });
+    assert.equal(reader.uid, "admin");
+    assert.equal(reader.viaLeadershipTeamId, null);
+  });
+
+  test("a member of the leadership team is allowed and names the team", async () => {
+    const db = new FakeFirestore();
+    db.seed("teams", "lead", { name: "Leadership", is_leadership: true });
+    seedMembership(db, "lead", "u1", "member");
+    const reader = await requireOrgReader({
+      user: fakeUser({ uid: "u1", isAdmin: false, db }),
+    });
+    assert.equal(reader.viaLeadershipTeamId, "lead");
+  });
+
+  // The whole point of the gate: being on *a* team is not org-wide read.
+  test("a member of an ordinary team is not an org reader", async () => {
+    const db = new FakeFirestore();
+    db.seed("teams", "lead", { name: "Leadership", is_leadership: true });
+    seedTeam(db, "t2", "Lending");
+    seedMembership(db, "t2", "u2", "leader");
+    await assertNotFound(() =>
+      requireOrgReader({ user: fakeUser({ uid: "u2", isAdmin: false, db }) }),
+    );
+  });
+
+  test("no leadership team means no non-admin readers", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "t1");
+    seedMembership(db, "t1", "u1", "leader");
+    await assertNotFound(() =>
+      requireOrgReader({ user: fakeUser({ uid: "u1", isAdmin: false, db }) }),
+    );
+  });
+});
+
+describe("isOrgReader", () => {
+  test("answers with a boolean instead of 404ing the layout", async () => {
+    const db = new FakeFirestore();
+    db.seed("teams", "lead", { name: "Leadership", is_leadership: true });
+    seedMembership(db, "lead", "u1", "member");
+    seedTeam(db, "t2", "Lending");
+    seedMembership(db, "t2", "u2", "member");
+
+    assert.equal(
+      await isOrgReader({ user: fakeUser({ uid: "u1", isAdmin: false, db }) }),
+      true,
+    );
+    assert.equal(
+      await isOrgReader({ user: fakeUser({ uid: "u2", isAdmin: false, db }) }),
+      false,
+    );
+    assert.equal(
+      await isOrgReader({ user: fakeUser({ uid: "a", isAdmin: true, db }) }),
+      true,
+    );
   });
 });

@@ -15,6 +15,7 @@
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",
     "member:set-role": "tsx scripts/set-member-role.ts",
+    "team:set-leadership": "tsx scripts/set-leadership-team.ts",
     "user:reassign": "tsx scripts/reassign-user.ts",
     "user:merge": "tsx scripts/merge-import-user.ts",
     "db:copy": "tsx scripts/copy-db.ts",

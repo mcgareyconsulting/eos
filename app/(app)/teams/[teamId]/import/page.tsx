@@ -1,63 +1,15 @@
-import { Upload } from "lucide-react";
-import {
-  requireTeamLeader,
-  getTeamMembers,
-  getOrgTeams,
-  getImportableTeams,
-} from "@/lib/firebase/teams";
-import { ImportUploader } from "./import-uploader";
+import { redirect } from "next/navigation";
 
-export default async function ImportPage({
+/**
+ * Import moved to /data/import, which picks its target team from `?team=`
+ * instead of the path. Kept as a redirect: the sidebar linked here for months
+ * and people have it bookmarked.
+ */
+export default async function LegacyTeamImportPage({
   params,
 }: {
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = await params;
-  // Import is a leader/admin surface (see importTeamFile) — members 404.
-  const { team } = await requireTeamLeader(teamId);
-  const [members, orgTeams, importableTeams] = await Promise.all([
-    getTeamMembers(teamId),
-    // Department filter matches text in the *file*, so it offers every team
-    // name (already a soft-directory read) plus an "Other…" escape hatch.
-    getOrgTeams(),
-    // "Import into" is a write surface: admins get every team, everyone else
-    // only the teams they lead.
-    getImportableTeams(teamId),
-  ]);
-
-  return (
-    // Wide on purpose: the dry-run preview is a four-column table of real
-    // rows, and 2xl squeezed titles into two clamped lines (client, 8/26).
-    <div className="mx-auto max-w-6xl space-y-6">
-      <header>
-        <div className="flex items-center gap-2 text-hpb-blue dark:text-hpb-gold">
-          <Upload className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-wide">
-            Data import
-          </span>
-        </div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-          Import into {team.name}
-        </h1>
-        <p className="mt-1 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
-          Drop a CSV or Excel file to add <strong>Rocks</strong>,{" "}
-          <strong>To-Dos</strong>, <strong>Issues</strong>, or{" "}
-          <strong>Headlines</strong>. Re-importing the
-          same file is safe: rows already on the team are matched by title and
-          left alone, so only what&rsquo;s new is added.
-        </p>
-      </header>
-
-      <ImportUploader
-        teamId={teamId}
-        teamName={team.name}
-        orgTeams={orgTeams}
-        importableTeams={importableTeams}
-        members={members.map((m) => ({
-          user_id: m.user_id,
-          full_name: m.full_name,
-        }))}
-      />
-    </div>
-  );
+  redirect(`/data/import?team=${encodeURIComponent(teamId)}`);
 }

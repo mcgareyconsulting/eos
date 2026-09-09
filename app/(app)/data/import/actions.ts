@@ -35,7 +35,8 @@ function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/headlines`);
   revalidatePath(`/teams/${teamId}/scorecard`);
   revalidatePath(`/teams/${teamId}/meetings`);
-  revalidatePath(`/teams/${teamId}/import`);
+  revalidatePath("/data");
+  revalidatePath("/data/import");
   revalidatePath("/home");
 }
 

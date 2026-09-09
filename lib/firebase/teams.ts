@@ -99,6 +99,59 @@ export const requireAdmin = cache(async (deps: TeamsDeps = {}) => {
   return user;
 });
 
+/**
+ * Org-wide *read* access for the `/data` page: org admins, plus every member
+ * of a team flagged `is_leadership`.
+ *
+ * The flag lives on the team doc rather than in an env var or a name match, so
+ * it survives a rename, is visible in the data, and generalizes past a single
+ * team. Set it with `pnpm team:set-leadership`.
+ *
+ * This is the only cross-team read path a non-admin has, and it exists only on
+ * the server: `firestore.rules` still denies a leadership member every other
+ * team's rocks / issues / scorecard from the browser, so callers must stay
+ * server-side (an RSC or route handler on the admin SDK) — which also means no
+ * onSnapshot on surfaces gated this way. 404s rather than 403s, so `/data`
+ * isn't discoverable by probing, matching requireTeamAccess.
+ */
+export const requireOrgReader = cache(async (deps: TeamsDeps = {}) => {
+  const reader = await resolveOrgReader(deps);
+  if (!reader) notFound();
+  return reader;
+});
+
+/**
+ * The same test as requireOrgReader, as a boolean — for the app shell, which
+ * has to decide whether to render the Data link and must not 404 the whole
+ * layout for everyone else.
+ */
+export const isOrgReader = cache(async (deps: TeamsDeps = {}) => {
+  return (await resolveOrgReader(deps)) !== null;
+});
+
+const resolveOrgReader = cache(async (deps: TeamsDeps = {}) => {
+  const user = await (deps.user ?? requireFirebaseUser)();
+  if (user.isAdmin) return { ...user, viaLeadershipTeamId: null };
+
+  const leadership = await user.db
+    .collection("teams")
+    .where("is_leadership", "==", true)
+    .get();
+  // getAll() with no refs is an error in firebase-admin, and an org with no
+  // leadership team simply has no non-admin readers.
+  if (leadership.docs.length === 0) return null;
+
+  const memberships = await user.db.getAll(
+    ...leadership.docs.map((t) =>
+      user.db.collection("team_members").doc(`${t.id}__${user.uid}`),
+    ),
+  );
+  const hit = memberships.findIndex((m) => m.exists);
+  if (hit === -1) return null;
+
+  return { ...user, viaLeadershipTeamId: leadership.docs[hit].id };
+});
+
 // Fetches `${collection}/${id}` and verifies it belongs to `teamId`, 404ing
 // (matching requireTeamAccess/requireTeamLeader, and the read-path guard
 // pattern already used on e.g. the meeting detail page) if the doc doesn't

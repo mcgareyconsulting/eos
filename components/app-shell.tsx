@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Settings, Shield } from "lucide-react";
+import { Database, Home, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
@@ -22,6 +22,7 @@ export function AppShell({
   isAdmin = false,
   membershipCount = 0,
   importTeamIds = [],
+  isOrgReader = false,
   children,
 }: {
   user: { email?: string | null };
@@ -33,6 +34,8 @@ export function AppShell({
   membershipCount?: number;
   /** Teams whose Import page this user may open (leaders + admin god-mode). */
   importTeamIds?: string[];
+  /** Org admin or leadership-team member — gates the org-wide Data page. */
+  isOrgReader?: boolean;
   children: React.ReactNode;
 }) {
   const displayName =
@@ -74,6 +77,9 @@ export function AppShell({
           <div className="flex-1 overflow-y-auto">
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
+              {isOrgReader && (
+                <NavLink href="/data" icon={Database} label="Data" />
+              )}
             </nav>
 
             {membershipCount === 0 && !isAdmin && (

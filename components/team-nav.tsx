@@ -390,7 +390,11 @@ export function TeamNav({
         ).map((item) => (
           <NavLink
             key={item.section}
-            href={`${teamPath}/${item.section}`}
+            href={
+              item.section === "import"
+                ? `/data/import?team=${activeTeam.id}`
+                : `${teamPath}/${item.section}`
+            }
             icon={item.icon}
             label={item.label}
           />

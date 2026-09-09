@@ -55,10 +55,9 @@ export function normalizeRockType(v: string | null | undefined): RockType {
 }
 
 /**
- * The kind the edit form's radio should start on. Legacy "company" folds to
- * Team here **for the radio only** — the Company flag is carried separately
- * by `isCompanyRock`, so nothing is lost on save the way it was when the
- * fold was applied to the stored value.
+ * The kind the edit form's radio should start on. Legacy "company" opens as
+ * Team — which is what it has always rendered as, and what it stays until an
+ * admin ticks the separate Company checkbox.
  */
 export function kindForForm(
   v: string | null | undefined,

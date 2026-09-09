@@ -36,11 +36,16 @@ describe("rockBucket — placement ladder", () => {
     assert.equal(rockBucket({ owner_id: "", rock_type: "individual" }), "department");
   });
 
-  test("legacy rock_type 'company' → company bucket, Company + Team pills", () => {
+  test("legacy rock_type 'company' is a Team rock, not Company — nothing auto-migrates", () => {
     const r = { owner_id: owner, rock_type: "company" };
-    assert.equal(rockBucket(r), "company");
-    assert.equal(isCompanyRock(r), true);
+    assert.equal(rockBucket(r), "department");
+    assert.equal(isCompanyRock(r), false);
     assert.equal(isTeamRock(r), true);
+  });
+
+  test("legacy 'company' becomes Company only once an admin sets the flag", () => {
+    const r = { owner_id: owner, rock_type: "company", is_company_rock: true };
+    assert.equal(rockBucket(r), "company");
   });
 
   test("is_company_rock false / missing is not Company", () => {

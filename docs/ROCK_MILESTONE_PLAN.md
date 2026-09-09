@@ -91,14 +91,13 @@ affordance and the gate cannot drift.
 >   `lib/l10/rock-order.ts`, so the duplicated `isDepartmentRock` rule is gone
 >   rather than copied a third time. `rock-type.ts` re-exports it for `app/`.
 > - On a **non-admin update**, the flag is written as `isCompanyRock(existing)`
->   rather than omitted (A3 said "omit the key"). Omitting would lose the
->   Company half of a legacy `rock_type: "company"` doc, because the kind radio
->   rewrites `rock_type` to `department` on the same save. Reading the stored
->   doc through `isCompanyRock` preserves it and folds legacy forward lazily —
->   so after everyone's next edit, A6 is a no-op for those docs.
->
-> A6 (migration) is written as `scripts/migrate-company-rocks.ts`, dry-run by
-> default, **not yet run** — row count unknown.
+>   rather than omitted (A3 said "omit the key") — same effect, but explicit.
+> - **A6 is dropped — no migration.** Legacy `rock_type: "company"` docs (and
+>   CSV imports with Level = Company) read as **Team** rocks, exactly as they
+>   rendered before, until an admin ticks the Company checkbox by hand. A first
+>   cut treated the legacy value as Company and a sandbox rock silently
+>   promoted itself on deploy; that is why `isCompanyRock` checks the boolean
+>   only.
 
 ### A0. Current behaviour
 

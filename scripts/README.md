@@ -19,7 +19,6 @@ first where one exists.
 | `copy-db.ts` | `pnpm db:copy` | Copies every document from one Firestore database to another in the same project (prod → sandbox refresh). Destination id must contain `sandbox`. | **Destructive to the destination.** `--dry-run` available. |
 | `reassign-user.ts` | `pnpm user:reassign` | Moves all EOS data and memberships from one uid to another — e.g. someone switched Google accounts. | Writes. Dry-run unless `--apply`. |
 | `merge-import-user.ts` | `pnpm user:merge` | Merges a CSV-import placeholder uid (`import-*`) into the person's real Auth uid on one team. | Writes. Dry-run unless `--apply`. |
-| `migrate-company-rocks.ts` | `pnpm rocks:migrate-company` | Folds legacy `rock_type: "company"` rocks onto the two-flag model (`rock_type: "department"` + `is_company_rock: true`). Idempotent; the app reads either shape. | Writes. Dry-run unless `--apply`. |
 | `deploy.sh` | `pnpm ship` | Builds the image, pushes it to Artifact Registry, and rolls Cloud Run. Reads `.env.prod` by default. | **Deploys to production.** `-- --dry-run` prints the plan. |
 
 `csv-templates/` holds blank CSVs with the exact headers `import-csv.ts`

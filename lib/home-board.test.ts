@@ -200,10 +200,10 @@ describe("homeRockPillKind", () => {
       ),
       "company",
     );
-    // Legacy rock_type "company" reads the same way.
+    // Legacy rock_type "company" is NOT Company until an admin flags it.
     assert.equal(
       homeRockPillKind(rock({ id: "c3", owner_id: other, rock_type: "company" })),
-      "company",
+      "team",
     );
   });
 
@@ -287,10 +287,10 @@ describe("splitHomeRocksByType (N34)", () => {
     { id: "g", owner_id: "u-joe", rock_type: "department", is_company_rock: true },
   ];
 
-  test("three sections: company (flag or legacy type), departmental, mine", () => {
+  test("three sections: company (flag only), departmental (incl. legacy 'company'), mine", () => {
     const { company, mine, departmental } = splitHomeRocksByType(rocks);
-    assert.deepEqual(company.map((r) => r.id), ["d", "f", "g"]);
-    assert.deepEqual(departmental.map((r) => r.id), ["b"]);
+    assert.deepEqual(company.map((r) => r.id), ["f", "g"]);
+    assert.deepEqual(departmental.map((r) => r.id), ["b", "d"]);
     assert.deepEqual(mine.map((r) => r.id), ["a", "c", "e"]);
   });
 

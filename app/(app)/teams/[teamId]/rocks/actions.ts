@@ -297,10 +297,9 @@ function parseRockFields(formData: FormData, uid: string) {
  * A non-admin save must **preserve** the stored flag, never default it: the
  * modal always submits the kind radio, so a member re-saving a title change
  * on a Company rock would otherwise wipe the admin's flag. `existing` is the
- * doc being updated (null on create). Reading it through isCompanyRock also
- * folds a legacy `rock_type: "company"` doc forward the first time anyone
- * saves it — the radio rewrites rock_type to department, and without this
- * the Company half of that legacy value would be lost.
+ * doc being updated (null on create). A legacy `rock_type: "company"` doc is
+ * NOT Company (lib/rock-bucket.ts) — the radio rewrites it to department on
+ * save and the flag stays false until an admin sets it.
  */
 function companyFlagPatch(
   formData: FormData,

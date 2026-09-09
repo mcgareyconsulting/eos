@@ -71,6 +71,7 @@ type RockRow = {
   owner_id: string | null;
   team_id: string;
   rock_type?: string | null;
+  is_company_rock?: boolean | null;
   archived_at?: unknown | null;
   shared_team_ids?: string[] | null;
 };
@@ -357,9 +358,10 @@ export default async function HomePage() {
   const rockItems: HomeRockListItem[] = homeRocks.map((r) => {
     const kind = homeRockPillKind(r);
     const teamName = teamNameById.get(r.team_id) ?? "Team";
-    // Owner column: "You" / person name / team name for department rocks.
+    // Owner column: "You" / person name / team name for company and
+    // department rocks — a shared priority is labelled by where it lives.
     let ownerLabel: string;
-    if (kind === "team") {
+    if (kind === "team" || kind === "company") {
       ownerLabel = teamName;
     } else if (r.owner_id === user.id) {
       ownerLabel = "You";
@@ -382,6 +384,7 @@ export default async function HomePage() {
       team_id: r.team_id,
       owner_id: r.owner_id ?? null,
       rock_type: r.rock_type ?? null,
+      is_company_rock: r.is_company_rock === true,
       href: `/teams/${r.team_id}/rocks`,
       ownerLabel,
       milestoneDone,
@@ -401,8 +404,11 @@ export default async function HomePage() {
     };
   });
 
-  const { mine: myRocks, departmental: departmentalRocks } =
-    splitHomeRocksByType(rockItems);
+  const {
+    company: companyRocks,
+    mine: myRocks,
+    departmental: departmentalRocks,
+  } = splitHomeRocksByType(rockItems);
 
   // Personal scorecard: metrics I own on teams I can open.
   const myMetrics: MetricRow[] = myMetricsSnap.docs
@@ -506,13 +512,24 @@ export default async function HomePage() {
             ))}
           </BoardColumn>
 
-          {/* "My Rocks" and "Departmental Rocks" read as two lists, not one
-              mixed one — otherwise a viewer can't tell which rocks are
-              actually theirs. Split by rock_type, so a department rock the
-              viewer owns still sits with the department's. Either section is
-              dropped entirely when empty rather than showing an empty-state
-              twice. */}
+          {/* "Company Rocks", "My Rocks" and "Departmental Rocks" read as
+              separate lists, not one mixed one — otherwise a viewer can't
+              tell which rocks are actually theirs. Split by kind down the
+              Company > Department > owner ladder, so a department rock the
+              viewer owns still sits with the department's and a Company rock
+              leads regardless. Any section is dropped entirely when empty
+              rather than showing an empty-state three times. */}
           <div className="space-y-4">
+            {companyRocks.length > 0 && (
+              <BoardColumn
+                scroll
+                title="Company Rocks"
+                count={companyRocks.length}
+                flush
+              >
+                <HomeRocksList rocks={companyRocks} />
+              </BoardColumn>
+            )}
             {myRocks.length > 0 && (
               <BoardColumn scroll title="My Rocks" count={myRocks.length} flush>
                 <HomeRocksList rocks={myRocks} />

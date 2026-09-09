@@ -2,15 +2,11 @@
 // Pure helpers so page.tsx stays thin and unit-testable.
 
 import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
+import { rockBucket, type BucketableRock } from "@/lib/rock-bucket";
 
-/** Mirrors rocks/rock-type isDepartmentRock without importing from app/. */
-function isDepartmentRock(r: {
-  owner_id?: string | null;
-  rock_type?: string | null;
-}): boolean {
-  // Legacy null owner = department; type department/company with person owner too.
-  if (r.owner_id == null || r.owner_id === "") return true;
-  return r.rock_type === "department" || r.rock_type === "company";
+/** Shared (non-owner) rock: Company or Team. Same rule as Rocks / L10. */
+function isSharedRock(r: BucketableRock): boolean {
+  return rockBucket(r) !== "owner";
 }
 
 export type HomeTodoLike = {
@@ -26,6 +22,7 @@ export type HomeRockLike = {
   owner_id: string | null;
   team_id: string;
   rock_type?: string | null;
+  is_company_rock?: boolean | null;
   status?: string | null;
   archived_at?: unknown | null;
   /** Guest teams this rock is shared into (may be missing on older docs). */
@@ -122,7 +119,7 @@ export function shouldShowHomeRock(
   if (rock.owner_id === opts.uid) return true;
 
   const onMyTeam = opts.myTeamIds.has(rock.team_id);
-  if (onMyTeam && isDepartmentRock(rock)) return true;
+  if (onMyTeam && isSharedRock(rock)) return true;
 
   const shared = rock.shared_team_ids ?? [];
   if (shared.some((id) => opts.myTeamIds.has(id))) return true;
@@ -147,9 +144,10 @@ export function isHomeRockActive(rock: HomeRockLike): boolean {
  */
 export function homeRockPillKind(
   rock: HomeRockLike,
-): "team" | "person" {
-  if (isDepartmentRock(rock)) return "team";
-  if (rock.owner_id == null || rock.owner_id === "") return "team";
+): "company" | "team" | "person" {
+  const bucket = rockBucket(rock);
+  if (bucket === "company") return "company";
+  if (bucket === "department") return "team";
   return "person";
 }
 
@@ -164,32 +162,35 @@ export function byDueDateAsc<T extends { due_date: string | null }>(
 }
 
 /**
- * Split the Home rocks column into the viewer's own rocks and the
- * department/company ones.
+ * Split the Home rocks column into Company rocks, the viewer's own rocks,
+ * and the department's.
  *
  * One undifferentiated list answers the wrong question. A viewer scanning it
  * cannot tell at a glance which rocks are theirs and which belong to the
- * department — both are worth showing, but as two labelled sections rather
- * than one pile.
+ * department or the company — all are worth showing, but as labelled
+ * sections rather than one pile.
  *
  * Split by kind, not by who the viewer is: a department rock the viewer
  * happens to own is still the department's rock, and that is the distinction
  * being asked for. Everything else — owned, shared in, or reached through a
  * milestone assigned to the viewer — is theirs.
  *
- * Uses the same `isDepartmentRock` rule as the rest of this module, which
+ * Uses the same placement ladder as Rocks / L10 (lib/rock-bucket.ts), which
  * means callers must pass `owner_id`: a legacy rock with no owner counts as
  * departmental, and an item shape missing the field would silently put every
  * rock in that bucket.
  */
-export function splitHomeRocksByType<
-  T extends { owner_id?: string | null; rock_type?: string | null },
->(rocks: T[]): { mine: T[]; departmental: T[] } {
+export function splitHomeRocksByType<T extends BucketableRock>(
+  rocks: T[],
+): { company: T[]; mine: T[]; departmental: T[] } {
+  const company: T[] = [];
   const mine: T[] = [];
   const departmental: T[] = [];
   for (const r of rocks) {
-    if (isDepartmentRock(r)) departmental.push(r);
+    const bucket = rockBucket(r);
+    if (bucket === "company") company.push(r);
+    else if (bucket === "department") departmental.push(r);
     else mine.push(r);
   }
-  return { mine, departmental };
+  return { company, mine, departmental };
 }

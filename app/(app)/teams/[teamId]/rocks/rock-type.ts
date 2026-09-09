@@ -1,12 +1,24 @@
-// Shared EOS Rock type constants (company / department / individual). Used by
-// server actions, the rock-type badge, and list ordering. Existing rock docs
-// predate this field, so a missing/invalid value is always treated as
-// "individual" — never write undefined, always normalize on read.
+// Shared EOS Rock kind constants. Used by server actions, the rock-type
+// pills, and list ordering.
 //
-// Department section rocks (top of Rocks list / L10):
-//   - rock_type === "department" or "company", OR
-//   - legacy: owner_id null (pre person-always model)
-// A department/team rock still has a **person** owner_id.
+// Two independent flags describe a rock (see lib/rock-bucket.ts for the
+// placement ladder they feed):
+//   - rock_type: "individual" | "department"  — the Team axis. Stored as
+//     department; UI says Team. Any member sets it via the kind radio.
+//   - is_company_rock: boolean                — the Company flag. Admin-only.
+// A rock may be Company, Team, both, or neither. A department/team rock
+// still has a **person** owner_id.
+//
+// "company" stays in ROCK_TYPES so legacy docs (written before the boolean
+// existed) still parse; it is never written by the app any more and never
+// offered in the picker. Always normalize on read, never write undefined.
+
+export {
+  isCompanyRock,
+  isTeamRock,
+  rockBucket,
+  type RockBucket,
+} from "@/lib/rock-bucket";
 
 const ROCK_TYPES = ["company", "department", "individual"] as const;
 export type RockType = (typeof ROCK_TYPES)[number];
@@ -18,20 +30,11 @@ export const ROCK_TYPE_LABELS: Record<RockType, string> = {
   individual: "Individual",
 };
 
-/**
- * The only kinds offered on create/edit: Individual vs Team. "company" stays
- * in RockType for legacy docs — it still sorts into the Department section
- * (isDepartmentRock) but is no longer selectable, and reads back as Team.
- */
+/** The two kinds offered on create/edit. Company is a separate checkbox. */
 export const ROCK_KIND_OPTIONS: { value: RockType; label: string }[] = [
   { value: "individual", label: "Individual" },
   { value: "department", label: "Team" },
 ];
-
-/** Normalize onto the two selectable kinds — legacy company folds into Team. */
-export function toFormRockType(v: string | null | undefined): RockType {
-  return normalizeRockType(v) === "individual" ? "individual" : "department";
-}
 
 export const ROCK_TYPE_STYLES: Record<RockType, string> = {
   company:
@@ -51,25 +54,17 @@ export function normalizeRockType(v: string | null | undefined): RockType {
   return v && isRockType(v) ? v : "individual";
 }
 
-/** Legacy docs only: no person owner_id. */
-function isSharedDepartmentOwner(
-  ownerId: string | null | undefined,
-): boolean {
-  return ownerId == null || ownerId === "";
-}
-
 /**
- * Rocks that belong in the Department section at the top of the list / L10.
- * Department/company-typed rocks land here even with a person owner.
+ * The kind the edit form's radio should start on. Legacy "company" opens as
+ * Team — which is what it has always rendered as, and what it stays until an
+ * admin ticks the separate Company checkbox.
  */
-export function isDepartmentRock(r: {
-  owner_id?: string | null;
-  rock_type?: string | null;
-}): boolean {
-  if (isSharedDepartmentOwner(r.owner_id)) return true;
-  const t = normalizeRockType(r.rock_type);
-  return t === "department" || t === "company";
+export function kindForForm(
+  v: string | null | undefined,
+): "individual" | "department" {
+  return normalizeRockType(v) === "individual" ? "individual" : "department";
 }
 
-/** Display label for the shared department owner chip. */
+/** Section titles for the two leading blocks on Rocks / L10. */
+export const COMPANY_SECTION_TITLE = "Company";
 export const DEPARTMENT_SECTION_TITLE = "Department";

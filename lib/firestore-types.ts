@@ -29,6 +29,12 @@ export type RockDoc = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  // Company-level rock. Orthogonal to rock_type — a rock may be both a
+  // Company rock and a Team rock. Admin-only to set; absent on every doc
+  // created before the field existed, so only ever read as `=== true`.
+  // Non-admin edits must leave this key out of the patch entirely so the
+  // stored value survives (see updateRockWithMilestones).
+  is_company_rock?: boolean;
   // Teams this rock is shared with. Must flow through to RockRow — the edit
   // modal seeds its share picker from it, and saving without it wipes the
   // field on the rock doc.

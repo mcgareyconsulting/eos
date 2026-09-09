@@ -22,11 +22,13 @@ export type HomeRockListItem = {
   team_id: string;
   href: string;
   /**
-   * Both needed by the My/Departmental split — a legacy rock with no
-   * owner counts as departmental, so owner_id is not optional here.
+   * All three feed the Company / My / Departmental split (lib/rock-bucket.ts)
+   * — a legacy rock with no owner counts as departmental, so owner_id is not
+   * optional here.
    */
   owner_id: string | null;
   rock_type: string | null;
+  is_company_rock: boolean;
   /** "You", person name, or team name for department rocks */
   ownerLabel: string;
   milestoneDone: number;

@@ -15,9 +15,11 @@ import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
-  toFormRockType,
+  isCompanyRock,
+  isTeamRock,
   ROCK_TYPE_LABELS,
   ROCK_TYPE_STYLES,
+  type RockType,
 } from "./rock-type";
 import { STATUS_BAR, isRockStatus, type RockStatus } from "./status";
 import {
@@ -37,6 +39,7 @@ type Rock = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  is_company_rock?: boolean | null;
   shared_team_ids?: string[] | null;
   archived_at?: unknown | null;
 };
@@ -60,6 +63,7 @@ export function RockRow({
   currentUserId,
   teamName,
   shareTeams = [],
+  canFlagCompany = false,
   readOnly = false,
 }: {
   teamId: string;
@@ -73,6 +77,8 @@ export function RockRow({
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  /** Org admin — may set the Company flag in the edit modal. */
+  canFlagCompany?: boolean;
   /** Guest-team view of a shared-in rock — no edit / archive / status. */
   readOnly?: boolean;
 }) {
@@ -93,7 +99,13 @@ export function RockRow({
   );
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
-  const type = toFormRockType(rock.rock_type);
+  // Kind pills are a set, not one-of: a rock can be Company and Team at once
+  // (lib/rock-bucket.ts). Individual is the absence of both and gets its own
+  // quiet pill so every row still carries exactly one-or-more kind marks.
+  const pills: RockType[] = [];
+  if (isCompanyRock(rock)) pills.push("company");
+  if (isTeamRock(rock)) pills.push("department");
+  if (pills.length === 0) pills.push("individual");
   // Always prefer person name; legacy null owner shows as em dash.
   const displayOwner = ownerName || "—";
   const doneCount = milestones.filter((m) => m.completed).length;
@@ -147,14 +159,17 @@ export function RockRow({
               >
                 {rock.title}
               </RockDetailTrigger>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-1.5 py-px text-[10px] font-bold ring-1 ring-inset",
-                  ROCK_TYPE_STYLES[type],
-                )}
-              >
-                {ROCK_TYPE_LABELS[type]}
-              </span>
+              {pills.map((p) => (
+                <span
+                  key={p}
+                  className={cn(
+                    "shrink-0 rounded-full px-1.5 py-px text-[10px] font-bold ring-1 ring-inset",
+                    ROCK_TYPE_STYLES[p],
+                  )}
+                >
+                  {ROCK_TYPE_LABELS[p]}
+                </span>
+              ))}
               {readOnly && teamName ? (
                 <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
                   from {teamName}
@@ -223,6 +238,7 @@ export function RockRow({
               currentUserId={currentUserId}
               teamName={teamName}
               shareTeams={shareTeams}
+              canFlagCompany={canFlagCompany}
               className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
             />
             <form action={toggleArchive}>
@@ -330,6 +346,7 @@ export function RockRow({
                   currentUserId={currentUserId}
                   teamName={teamName}
                   shareTeams={shareTeams}
+                  canFlagCompany={canFlagCompany}
                 />
                 )}
                 <RockDetailTrigger
@@ -365,6 +382,7 @@ function AddMilestoneLink(props: {
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  canFlagCompany?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (

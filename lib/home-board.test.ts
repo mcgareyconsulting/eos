@@ -80,6 +80,16 @@ describe("selectHomeTodos", () => {
 describe("shouldShowHomeRock", () => {
   const myTeams = new Set([teamA]);
 
+  test("shows a Company rock on my team, even an Individual one I don't own", () => {
+    assert.equal(
+      shouldShowHomeRock(
+        rock({ id: "rc", owner_id: other, rock_type: "individual", is_company_rock: true }),
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+      ),
+      true,
+    );
+  });
+
   test("shows my individual rock", () => {
     assert.equal(
       shouldShowHomeRock(rock({ id: "r1", owner_id: me }), {
@@ -179,6 +189,24 @@ describe("isHomeRockActive", () => {
 });
 
 describe("homeRockPillKind", () => {
+  test("company for a Company-flagged rock, whatever its kind", () => {
+    assert.equal(
+      homeRockPillKind(rock({ id: "c1", owner_id: other, is_company_rock: true })),
+      "company",
+    );
+    assert.equal(
+      homeRockPillKind(
+        rock({ id: "c2", owner_id: other, rock_type: "department", is_company_rock: true }),
+      ),
+      "company",
+    );
+    // Legacy rock_type "company" reads the same way.
+    assert.equal(
+      homeRockPillKind(rock({ id: "c3", owner_id: other, rock_type: "company" })),
+      "company",
+    );
+  });
+
   test("team for department / null owner, person otherwise", () => {
     assert.equal(
       homeRockPillKind(rock({ id: "1", owner_id: null })),
@@ -255,18 +283,21 @@ describe("splitHomeRocksByType (N34)", () => {
     { id: "c", owner_id: "u-joe", rock_type: null },
     { id: "d", owner_id: "u-joe", rock_type: "company" },
     { id: "e", owner_id: "u-casey", rock_type: "team" },
+    { id: "f", owner_id: "u-joe", rock_type: "individual", is_company_rock: true },
+    { id: "g", owner_id: "u-joe", rock_type: "department", is_company_rock: true },
   ];
 
-  test("department and company rocks form the departmental section", () => {
-    const { mine, departmental } = splitHomeRocksByType(rocks);
-    assert.deepEqual(
-      departmental.map((r) => r.id),
-      ["b", "d"],
-    );
-    assert.deepEqual(
-      mine.map((r) => r.id),
-      ["a", "c", "e"],
-    );
+  test("three sections: company (flag or legacy type), departmental, mine", () => {
+    const { company, mine, departmental } = splitHomeRocksByType(rocks);
+    assert.deepEqual(company.map((r) => r.id), ["d", "f", "g"]);
+    assert.deepEqual(departmental.map((r) => r.id), ["b"]);
+    assert.deepEqual(mine.map((r) => r.id), ["a", "c", "e"]);
+  });
+
+  test("a rock that is both Company and Team lands in company only", () => {
+    const { company, departmental } = splitHomeRocksByType(rocks);
+    assert.ok(company.some((r) => r.id === "g"));
+    assert.ok(!departmental.some((r) => r.id === "g"));
   });
 
   test("a department rock the viewer owns is still departmental", () => {
@@ -296,8 +327,9 @@ describe("splitHomeRocksByType (N34)", () => {
     );
   });
 
-  test("an empty board yields two empty sections, not undefined", () => {
-    const { mine, departmental } = splitHomeRocksByType([]);
+  test("an empty board yields three empty sections, not undefined", () => {
+    const { company, mine, departmental } = splitHomeRocksByType([]);
+    assert.deepEqual(company, []);
     assert.deepEqual(mine, []);
     assert.deepEqual(departmental, []);
   });

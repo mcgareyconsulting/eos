@@ -6,9 +6,11 @@ import {
   sortRocksForSection,
 } from "./rock-order";
 
-// Department rocks first in L10: the leading Department
-// section must always precede the per-owner speaking-order walk, and "now
-// speaking" must never land on that section (it has no single speaker).
+import { rockBucket } from "@/lib/rock-bucket";
+
+// Shared sections first in L10: Company, then Department, must always precede
+// the per-owner speaking-order walk, and "now speaking" must never land on
+// either (neither has a single speaker).
 
 type Rock = {
   id: string;
@@ -17,10 +19,10 @@ type Rock = {
   quarter?: string | null;
   due_date: string | null;
   rock_type: string | null;
+  is_company_rock?: boolean;
 };
 
-const isDepartmentRock = (r: Rock) =>
-  r.owner_id == null || r.rock_type === "department";
+const titles = { company: "Company", department: "Department" };
 
 const members = [
   { user_id: "u-sarah", full_name: "Sarah Chen" },
@@ -50,20 +52,69 @@ describe("groupRocksForL10", () => {
     ];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       [],
       "u-sarah",
-      "Department",
+      titles,
     );
     assert.equal(sections[0].key, "department");
-    assert.equal(sections[0].isDepartmentSection, true);
+    assert.equal(sections[0].bucket, "department");
     assert.deepEqual(sections[0].rocks.map((r) => r.id), ["r-shared"]);
     assert.deepEqual(
       sections.slice(1).map((s) => s.key),
       ["u-sarah", "u-marcus"],
     );
+  });
+
+  test("Company section leads, ahead of Department and every owner", () => {
+    const rocks = [
+      rock("r-sarah", { owner_id: "u-sarah" }),
+      rock("r-dept", { owner_id: "u-marcus", rock_type: "department" }),
+      rock("r-co", { owner_id: "u-marcus", is_company_rock: true }),
+    ];
+    const sections = groupRocksForL10(
+      rocks,
+      rockBucket,
+      members,
+      order,
+      [],
+      "u-marcus",
+      titles,
+    );
+    // Marcus's only rock moved into Company, so he gets no owner section —
+    // a rock lives in exactly one place.
+    assert.deepEqual(
+      sections.map((s) => s.key),
+      ["company", "department", "u-sarah"],
+    );
+    assert.equal(sections[0].bucket, "company");
+    assert.equal(sections[0].title, "Company");
+    assert.deepEqual(sections[0].rocks.map((r) => r.id), ["r-co"]);
+    // Never the current speaker, even when the flagged rock's owner is.
+    assert.equal(sections[0].isCurrentSpeaker, false);
+    assert.equal(sections[1].isCurrentSpeaker, false);
+  });
+
+  test("a rock that is both Company and Team sits in Company only", () => {
+    const rocks = [
+      rock("r-both", {
+        owner_id: "u-sarah",
+        rock_type: "department",
+        is_company_rock: true,
+      }),
+    ];
+    const sections = groupRocksForL10(
+      rocks,
+      rockBucket,
+      members,
+      order,
+      [],
+      null,
+      titles,
+    );
+    assert.deepEqual(sections.map((s) => s.key), ["company"]);
   });
 
   test("department-typed rocks land in Department even with a personal owner", () => {
@@ -75,12 +126,12 @@ describe("groupRocksForL10", () => {
     ];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       [],
       null,
-      "Department",
+      titles,
     );
     assert.equal(sections[0].key, "department");
     assert.deepEqual(sections[0].rocks.map((r) => r.id), ["r-dept-owned"]);
@@ -92,14 +143,14 @@ describe("groupRocksForL10", () => {
     const rocks = [rock("r1", { owner_id: "u-sarah" })];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       [],
       null,
-      "Department",
+      titles,
     );
-    assert.equal(sections.some((s) => s.isDepartmentSection), false);
+    assert.equal(sections.some((s) => s.bucket !== "owner"), false);
   });
 
   test("orders remaining owner sections by speaking order, present before absent", () => {
@@ -110,12 +161,12 @@ describe("groupRocksForL10", () => {
     ];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       ["u-sarah"], // Sarah absent — must not sit above Marcus/Elena
       null,
-      "Department",
+      titles,
     );
     assert.deepEqual(
       sections.map((s) => s.key),
@@ -133,15 +184,15 @@ describe("groupRocksForL10", () => {
     ];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       [],
       "u-marcus",
-      "Department",
+      titles,
     );
     assert.equal(
-      sections.find((s) => s.isDepartmentSection)?.isCurrentSpeaker,
+      sections.find((s) => s.bucket === "department")?.isCurrentSpeaker,
       false,
     );
     assert.equal(
@@ -162,12 +213,12 @@ describe("groupRocksForL10", () => {
     ];
     const sections = groupRocksForL10(
       rocks,
-      isDepartmentRock,
+      rockBucket,
       members,
       order,
       ["u-gone-2"],
       null,
-      "Department",
+      titles,
     );
     const keys = sections.map((s) => s.key);
     assert.deepEqual(keys, ["u-sarah", "u-gone-1", "u-gone-2"]);
@@ -176,7 +227,7 @@ describe("groupRocksForL10", () => {
 
   test("returns no sections for an empty rock list", () => {
     assert.deepEqual(
-      groupRocksForL10([], isDepartmentRock, members, order, [], null, "Department"),
+      groupRocksForL10([], rockBucket, members, order, [], null, titles),
       [],
     );
   });

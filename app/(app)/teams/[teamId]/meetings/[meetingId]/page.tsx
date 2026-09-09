@@ -447,6 +447,7 @@ export default async function MeetingDetailPage({
               speakerIndex={speakerIndex}
               scorecardWeekRange={scorecardWeekRange}
               scorecardPeriod={scorecardPeriod}
+              canFlagCompany={isAdmin}
             />
           </section>
         )}
@@ -506,6 +507,7 @@ async function SegmentContent({
   speakerIndex,
   scorecardWeekRange,
   scorecardPeriod,
+  canFlagCompany,
 }: {
   teamId: string;
   userId: string;
@@ -519,6 +521,8 @@ async function SegmentContent({
   speakerIndex: number;
   scorecardWeekRange: WeekRange;
   scorecardPeriod: ScorecardPeriod;
+  /** Org admin — the Rocks segment's edit modal offers the Company flag. */
+  canFlagCompany: boolean;
 }) {
   // The roster is already in scope from the page's getTeamMembers call, so
   // Segue needs no fetch of its own.
@@ -609,6 +613,7 @@ async function SegmentContent({
         status: x.status as string,
         description: (x.description as string | null) ?? null,
         rock_type: (x.rock_type as string | null) ?? null,
+        is_company_rock: x.is_company_rock === true,
         shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       };
     };
@@ -672,6 +677,7 @@ async function SegmentContent({
         shareTeams={shareTeams}
         allTeams={orgTeams}
         extraOwnerNames={extraOwnerNames}
+        canFlagCompany={canFlagCompany}
       />
     );
   }

@@ -5,6 +5,7 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { notFound } from "next/navigation";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { canSetRockStatus } from "@/lib/rocks-share";
+import { isCompanyRock } from "@/lib/rock-bucket";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
 
@@ -57,7 +58,9 @@ export async function setRockType(
   rockId: string,
   rockType: string,
 ) {
-  if (!isRockType(rockType)) throw new Error("Bad rock type");
+  if (!isRockType(rockType) || rockType === "company") {
+    throw new Error("Bad rock type");
+  }
 
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "rocks", rockId, teamId);
@@ -247,8 +250,10 @@ function milestoneDoc(
 const MAX_SHARED_TEAMS = 8;
 
 /**
- * Rock fields from the modal. Owner is always a person; type is separate
- * (individual / department / company); optional shared_team_ids.
+ * Rock fields from the modal. Owner is always a person; kind is separate
+ * (individual / department); optional shared_team_ids. The Company flag is
+ * NOT parsed here — it is admin-gated and handled by the caller, because the
+ * right default differs between create and update (see companyFlagPatch).
  */
 function parseRockFields(formData: FormData, uid: string) {
   const title = String(formData.get("title") ?? "").trim();
@@ -265,7 +270,12 @@ function parseRockFields(formData: FormData, uid: string) {
   }
 
   const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
-  const rock_type = isRockType(rockTypeRaw) ? rockTypeRaw : "individual";
+  // The form only offers individual / department. "company" is legacy-only
+  // and never written back; a stray value falls to individual.
+  const rock_type =
+    isRockType(rockTypeRaw) && rockTypeRaw !== "company"
+      ? rockTypeRaw
+      : "individual";
 
   return {
     title,
@@ -277,6 +287,28 @@ function parseRockFields(formData: FormData, uid: string) {
     owner_id: ownerRaw || uid,
     rock_type,
   };
+}
+
+/**
+ * The `is_company_rock` value to write. Admin-only to set, org-wide (the
+ * claim, not team role — an admin flags a Company rock through whatever team
+ * they are on).
+ *
+ * A non-admin save must **preserve** the stored flag, never default it: the
+ * modal always submits the kind radio, so a member re-saving a title change
+ * on a Company rock would otherwise wipe the admin's flag. `existing` is the
+ * doc being updated (null on create). Reading it through isCompanyRock also
+ * folds a legacy `rock_type: "company"` doc forward the first time anyone
+ * saves it — the radio rewrites rock_type to department, and without this
+ * the Company half of that legacy value would be lost.
+ */
+function companyFlagPatch(
+  formData: FormData,
+  isAdmin: boolean,
+  existing: Record<string, unknown> | null,
+): boolean {
+  if (isAdmin) return formData.get("is_company_rock") === "true";
+  return existing ? isCompanyRock(existing as { rock_type?: string | null; is_company_rock?: boolean | null }) : false;
 }
 
 function parseSharedTeamIds(
@@ -331,10 +363,11 @@ export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
+  const is_company_rock = companyFlagPatch(formData, isAdmin, null);
 
   const allowed = await allowedShareTeamIds(db);
   const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
@@ -351,6 +384,7 @@ export async function createRockWithMilestones(
     owner_id,
     description,
     rock_type,
+    is_company_rock,
     shared_team_ids,
     status: "on_track",
     completed_at: null,
@@ -375,7 +409,7 @@ export async function updateRockWithMilestones(
   rockId: string,
   formData: FormData,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
     parseRockFields(formData, uid);
@@ -390,7 +424,7 @@ export async function updateRockWithMilestones(
 
   // The ownership check and the milestone read are independent — one round
   // trip, not two.
-  const [, existingSnap] = await Promise.all([
+  const [rockSnap, existingSnap] = await Promise.all([
     requireTeamDoc(db, "rocks", rockId, teamId),
     db
       .collection("todos")
@@ -398,6 +432,11 @@ export async function updateRockWithMilestones(
       .where("source_rock_id", "==", rockId)
       .get(),
   ]);
+  const is_company_rock = companyFlagPatch(
+    formData,
+    isAdmin,
+    rockSnap.data() ?? null,
+  );
 
   const batch = db.batch();
   batch.update(db.collection("rocks").doc(rockId), {
@@ -407,6 +446,7 @@ export async function updateRockWithMilestones(
     description,
     owner_id,
     rock_type,
+    is_company_rock,
     shared_team_ids,
   });
 

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { collection, doc, query as fsQuery, where } from "firebase/firestore";
-import { Users } from "lucide-react";
+import { Building2, Users } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
 import {
@@ -15,8 +15,9 @@ import {
   isSharedIntoTeam,
 } from "@/lib/rocks-share";
 import {
+  COMPANY_SECTION_TITLE,
   DEPARTMENT_SECTION_TITLE,
-  isDepartmentRock,
+  rockBucket,
 } from "../../rocks/rock-type";
 import { RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
@@ -75,6 +76,7 @@ export function SegmentRocks({
   shareTeams,
   allTeams = [],
   extraOwnerNames = [],
+  canFlagCompany = false,
 }: {
   teamId: string;
   meetingId: string;
@@ -90,6 +92,8 @@ export function SegmentRocks({
   shareTeams: { id: string; name: string }[];
   allTeams?: { id: string; name: string }[];
   extraOwnerNames?: { user_id: string; full_name: string }[];
+  /** Org admin — may set the Company flag from the in-meeting edit modal. */
+  canFlagCompany?: boolean;
 }) {
   const db = getClientDb();
 
@@ -277,12 +281,12 @@ export function SegmentRocks({
   const sharedVisible = visible.filter((r) => isSharedIntoTeam(r, teamId));
   const groups = groupRocksForL10(
     homeVisible,
-    isDepartmentRock,
+    rockBucket,
     members,
     speakingOrder,
     absent,
     currentSpeaker,
-    DEPARTMENT_SECTION_TITLE,
+    { company: COMPANY_SECTION_TITLE, department: DEPARTMENT_SECTION_TITLE },
   );
   const sharedGroups = groupSharedRocksByOwner(sharedVisible, (id) =>
     id ? (nameById.get(id) ?? "—") : "—",
@@ -348,7 +352,9 @@ export function SegmentRocks({
                   : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
               }
             >
-              {g.isDepartmentSection ? (
+              {g.bucket === "company" ? (
+                <Building2 className="h-3.5 w-3.5" />
+              ) : g.bucket === "department" ? (
                 <Users className="h-3.5 w-3.5" />
               ) : (
                 initials(g.title) || "?"
@@ -385,6 +391,7 @@ export function SegmentRocks({
                 currentUserId={userId}
                 teamName={teamName}
                 shareTeams={shareTeams}
+                canFlagCompany={canFlagCompany}
               />
             ))}
           </div>
@@ -417,6 +424,7 @@ export function SegmentRocks({
                 currentUserId={userId}
                 teamName={teamNameById.get(r.team_id) ?? "another team"}
                 shareTeams={shareTeams}
+                canFlagCompany={canFlagCompany}
                 readOnly
               />
             ))}

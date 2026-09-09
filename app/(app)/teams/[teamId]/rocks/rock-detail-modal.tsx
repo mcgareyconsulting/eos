@@ -34,6 +34,7 @@ export type RockDetailData = {
   status: string;
   description: string | null;
   rock_type: string | null;
+  is_company_rock?: boolean | null;
 };
 
 export type RockDetailMilestone = {

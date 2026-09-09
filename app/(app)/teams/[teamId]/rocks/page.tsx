@@ -23,8 +23,9 @@ import {
 import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
 import {
+  COMPANY_SECTION_TITLE,
   DEPARTMENT_SECTION_TITLE,
-  isDepartmentRock,
+  rockBucket,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
@@ -78,7 +79,9 @@ export default async function RocksPage({
   const { teamId } = await params;
   const { owner: ownerParam, archived: archivedParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  // Company flag is org-admin only — the claim, not team role.
+  const canFlagCompany = isAdmin;
   const [orgTeams, members] = await Promise.all([
     getOrgTeams(),
     getTeamMembers(teamId),
@@ -117,6 +120,7 @@ export default async function RocksPage({
       status: x.status as string,
       description: (x.description as string | null) ?? null,
       rock_type: (x.rock_type as string | null) ?? null,
+      is_company_rock: x.is_company_rock === true,
       shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
       // archived_at is a Firestore Timestamp — pass millis, the raw class
       // instance can't cross into the client RockRow.
@@ -146,6 +150,7 @@ export default async function RocksPage({
         status: x.status as string,
         description: (x.description as string | null) ?? null,
         rock_type: (x.rock_type as string | null) ?? null,
+        is_company_rock: x.is_company_rock === true,
         shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
         archived_at: archivedAtMillis(x.archived_at),
       };
@@ -299,9 +304,10 @@ export default async function RocksPage({
     }
   }
 
-  // All view: Department section first (shared ownership + Level=Department
-  // rocks, even when a person is accountable), then members A–Z, then owners
-  // no longer on the roster. L10 matches (see segment-rocks.tsx).
+  // All view: Company section first, then Department (shared ownership +
+  // Team rocks, even when a person is accountable), then members A–Z, then
+  // owners no longer on the roster. A rock lands in exactly one section down
+  // that ladder (lib/rock-bucket.ts). L10 matches (see segment-rocks.tsx).
   type RockWithId = WithId<RockDoc>;
   type RockGroup = {
     key: string;
@@ -320,10 +326,16 @@ export default async function RocksPage({
       ];
     }
 
+    const companyRocks: RockWithId[] = [];
     const deptRocks: RockWithId[] = [];
     const byOwner = new Map<string, RockWithId[]>();
     for (const r of rocks) {
-      if (isDepartmentRock(r)) {
+      const bucket = rockBucket(r);
+      if (bucket === "company") {
+        companyRocks.push(r);
+        continue;
+      }
+      if (bucket === "department") {
         deptRocks.push(r);
         continue;
       }
@@ -334,6 +346,13 @@ export default async function RocksPage({
     }
 
     const groups: RockGroup[] = [];
+    if (companyRocks.length > 0) {
+      groups.push({
+        key: "company",
+        title: COMPANY_SECTION_TITLE,
+        rocks: sortRocks(companyRocks),
+      });
+    }
     if (deptRocks.length > 0) {
       groups.push({
         key: "department",
@@ -416,6 +435,7 @@ export default async function RocksPage({
             currentUserId={uid}
             teamName={team.name}
             shareTeams={shareTeams}
+            canFlagCompany={canFlagCompany}
           />
         }
       />
@@ -450,6 +470,7 @@ export default async function RocksPage({
                   currentUserId={uid}
                   teamName={team.name}
                   shareTeams={shareTeams}
+                  canFlagCompany={canFlagCompany}
                 />
               ))}
             </RockSection>

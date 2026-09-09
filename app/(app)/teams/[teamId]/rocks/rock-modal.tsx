@@ -11,7 +11,8 @@ import {
 } from "./actions";
 import {
   ROCK_KIND_OPTIONS,
-  toFormRockType,
+  isCompanyRock,
+  kindForForm,
   type RockType,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
@@ -48,6 +49,7 @@ type RockForEdit = {
   quarter: string;
   due_date: string | null;
   rock_type?: string | null;
+  is_company_rock?: boolean | null;
   shared_team_ids?: string[] | null;
 };
 
@@ -74,6 +76,7 @@ export function NewRockButton({
   currentUserId,
   teamName,
   shareTeams = [],
+  canFlagCompany = false,
 }: {
   teamId: string;
   members: Member[];
@@ -82,6 +85,7 @@ export function NewRockButton({
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  canFlagCompany?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -103,6 +107,7 @@ export function NewRockButton({
           currentUserId={currentUserId}
           teamName={teamName}
           shareTeams={shareTeams}
+          canFlagCompany={canFlagCompany}
           onClose={() => setOpen(false)}
         />
       )}
@@ -120,6 +125,7 @@ export function EditRockButton({
   currentUserId,
   teamName,
   shareTeams = [],
+  canFlagCompany = false,
   className,
 }: {
   teamId: string;
@@ -130,6 +136,7 @@ export function EditRockButton({
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  canFlagCompany?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -155,6 +162,7 @@ export function EditRockButton({
           currentUserId={currentUserId}
           teamName={teamName}
           shareTeams={shareTeams}
+          canFlagCompany={canFlagCompany}
           rock={rock}
           milestones={milestones}
           onClose={() => setOpen(false)}
@@ -176,6 +184,7 @@ export function RockModal({
   currentUserId,
   teamName,
   shareTeams = [],
+  canFlagCompany = false,
   rock,
   milestones = [],
   focusMilestones = false,
@@ -189,6 +198,12 @@ export function RockModal({
   currentUserId: string;
   teamName?: string;
   shareTeams?: ShareTeam[];
+  /**
+   * Org admin — the only role that may set or clear the Company flag. When
+   * false the checkbox is not rendered; the server preserves the stored
+   * value on save regardless of what the form sends.
+   */
+  canFlagCompany?: boolean;
   /** Present = edit mode. */
   rock?: RockForEdit;
   milestones?: MilestoneSerialized[];
@@ -202,13 +217,17 @@ export function RockModal({
 
   const editing = !!rock;
   const initialOwner = personOwnerId(rock?.owner_id, currentUserId);
-  // Legacy company rocks open as Team — the form has no Company option.
-  const initialType = toFormRockType(rock?.rock_type);
+  // The kind radio is two-way; a legacy "company" rock_type opens as Team
+  // here and its Company half is carried by the checkbox below instead.
+  const initialType = kindForForm(rock?.rock_type);
 
   const [title, setTitle] = useState(rock?.title ?? "");
   const [description, setDescription] = useState(rock?.description ?? "");
   const [ownerId, setOwnerId] = useState(initialOwner);
   const [rockType, setRockType] = useState<RockType>(initialType);
+  const [companyRock, setCompanyRock] = useState(
+    rock ? isCompanyRock(rock) : false,
+  );
   const [sharedTeamIds, setSharedTeamIds] = useState<string[]>(() => {
     const ids = rock?.shared_team_ids ?? [];
     return ids.filter((id) => id && id !== teamId);
@@ -267,6 +286,7 @@ export function RockModal({
     fd.set("description", description);
     fd.set("owner_id", ownerId);
     fd.set("rock_type", rockType);
+    fd.set("is_company_rock", companyRock ? "true" : "false");
     fd.set("shared_team_ids", JSON.stringify(sharedTeamIds));
     fd.set("quarter", qtr);
     fd.set("due_date", due);
@@ -378,6 +398,31 @@ export function RockModal({
                   );
                 })}
               </div>
+              {canFlagCompany ? (
+                <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-lg border border-hpb-blue/30 bg-hpb-blue/[0.04] px-3 py-2 dark:bg-hpb-blue/10">
+                  <input
+                    type="checkbox"
+                    checked={companyRock}
+                    onChange={(e) => setCompanyRock(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-hpb-blue"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-bold text-hpb-blue dark:text-white">
+                      Company Rock
+                    </span>
+                    <span className="block text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">
+                      Company-level priority — leads the list ahead of the
+                      Department section. Independent of the kind above; a
+                      Team rock can be a Company rock too. Admins only.
+                    </span>
+                  </span>
+                </label>
+              ) : companyRock ? (
+                <p className="mt-2 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                  Flagged as a <span className="font-bold text-hpb-blue dark:text-hpb-gold">Company Rock</span> by an
+                  admin — saving keeps that flag.
+                </p>
+              ) : null}
             </div>
 
             <Field label="Description" hint="(optional)">

@@ -129,4 +129,20 @@ export type ScorecardMetricDoc = {
   // `initialMetrics` until the realtime listener replaces it.
   group?: string | null;
   interval?: string | null;
+  // Teams that pulled this measurable onto their scorecard from the org-wide
+  // "Add existing" picker. The measurable still belongs to `team_id`; these
+  // teams read it and its history. Capped at 8 — `firestore.rules` unrolls
+  // the membership check index by index and cannot see past that. See
+  // `lib/scorecard-share.ts`.
+  shared_team_ids?: string[] | null;
+  // Soft archive, same convention as rocks / issues / headlines: a timestamp
+  // means archived, null or missing means active. Archived measurables drop
+  // off scorecards and out of the "Add existing" picker; their values are kept
+  // and restoring brings the row back unchanged.
+  archived_at?: unknown;
+  // Per-borrowing-team section, keyed by team id. `group` above stays the home
+  // team's; a borrowing team's choice lives here so putting a pulled row in
+  // your own section cannot move it — or change its cadence — on the owner's
+  // scorecard. See `metricGroupForTeam`.
+  shared_groups?: Record<string, string | null> | null;
 };

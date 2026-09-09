@@ -36,6 +36,41 @@ export type ScorecardMetric = {
   group?: string | null;
   /** weekly | monthly | quarterly | annual — missing = weekly */
   interval?: string | null;
+  // --- cross-team share (lib/scorecard-share.ts) ---
+  // All three are optional so the L10 segment and any other caller that
+  // renders a plain team scorecard keeps compiling and keeps behaving as it
+  // did: absent `sharedFrom` means "this team's own row", which is what every
+  // pre-share caller is passing.
+  /** Home team id. Differs from the scorecard being viewed on a borrowed row. */
+  team_id?: string;
+  /** Home team's name when borrowed, else null. Drives the badge and Hide. */
+  sharedFrom?: string | null;
+  /**
+   * Owner's display name, pre-resolved by the server.
+   *
+   * Needed because the roster lookup below only knows *this* team, and a
+   * borrowed row's owner sits on the home team — so it misses and the row
+   * renders "—". Set for rows whose owner is not on the asking team; the
+   * roster still answers for everyone else.
+   */
+  ownerName?: string | null;
+  /** May the viewer type into this row's cells? Defaults to true when unset. */
+  canEditValues?: boolean;
+  /**
+   * May the viewer archive or delete this measurable — owner or org admin, on
+   * the home team. One flag for both because they share one permission gate;
+   * see `canManageMetricLifecycle`. Defaults to false when unset, so a caller
+   * that has not thought about it does not render destructive controls.
+   */
+  canManage?: boolean;
+  /** Archived measurables render only in the archived view, where Restore replaces Archive. */
+  isArchived?: boolean;
+  /**
+   * Section to render under, resolved for the viewing team: its own choice for
+   * a borrowed row, else the cadence default. Falls back to `group` when the
+   * caller has not resolved one, which is what the L10 does.
+   */
+  sectionName?: string | null;
 };
 
 export type ScorecardMember = {
@@ -202,15 +237,18 @@ export function ScorecardGrid({
     return new Map(Object.entries(entryByMetricWeek));
   }, [entryByMetricWeek]);
 
-  const ownerName = (id: string | null) =>
-    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
+  // Roster first — it is already loaded and covers this team. `m.ownerName`
+  // carries the server-resolved name for owners the roster cannot see, which
+  // is every owner of a borrowed measurable.
+  const ownerName = (id: string | null, resolved?: string | null) =>
+    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name || resolved || undefined);
 
   const filtered = useMemo(() => {
     if (hideLocalSearch) return metrics;
     const q = search.trim().toLowerCase();
     if (!q) return metrics;
     return metrics.filter((m) => {
-      const owner = ownerName(m.owner_id).toLowerCase();
+      const owner = ownerName(m.owner_id, m.ownerName).toLowerCase();
       const group = (m.group ?? "").toLowerCase();
       return (
         m.name.toLowerCase().includes(q) ||
@@ -225,8 +263,11 @@ export function ScorecardGrid({
   // in the L10 each group renders its own speaking round.
   const { ungrouped, groups: metricGroups } = useMemo(
     () =>
-      bucketMetricsByGroup(filtered, flatList, (names) =>
-        orderGroupNames(names, groups, interval),
+      bucketMetricsByGroup(
+        filtered,
+        flatList,
+        (names) => orderGroupNames(names, groups, interval),
+        (m) => m.sectionName ?? m.group,
       ),
     [filtered, flatList, groups, interval],
   );
@@ -258,7 +299,7 @@ export function ScorecardGrid({
       m.goal,
       m.direction,
     );
-    const owner = ownerName(m.owner_id);
+    const owner = ownerName(m.owner_id, m.ownerName);
 
     const avgTone =
       avgOnTrack == null
@@ -333,6 +374,17 @@ export function ScorecardGrid({
             >
               {owner}
             </div>
+            {/* Borrowed from another team. Named, not just marked: the values
+                in this row are that team's, and a reader deciding whether a
+                number is theirs to chase needs to know whose it is. */}
+            {m.sharedFrom && (
+              <div
+                className="mt-0.5 truncate text-[11px] italic text-zinc-400 dark:text-zinc-500"
+                title={`Shared from ${m.sharedFrom} — values are maintained by that team`}
+              >
+                Shared from {m.sharedFrom}
+              </div>
+            )}
             <div className="mt-1 flex items-center gap-2">
               <span
                 className={cn(
@@ -407,6 +459,7 @@ export function ScorecardGrid({
                   unit={m.unit}
                   onTrack={onTrack(v, m.goal, m.direction)}
                   isCurrentWeek={isCurrent}
+                  readOnly={m.canEditValues === false}
                 />
               </td>
             );
@@ -430,6 +483,9 @@ export function ScorecardGrid({
                           metric: m,
                           members,
                           groupInterval: groupIntervalFor(m.group),
+                          canManage: m.canManage === true,
+                          isArchived: m.isArchived === true,
+                          isShared: !!m.sharedFrom,
                         }
                       : undefined
                   }

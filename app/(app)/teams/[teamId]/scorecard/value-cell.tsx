@@ -49,6 +49,7 @@ export function ValueCell({
   onTrack,
   unit = "number",
   isCurrentWeek = false,
+  readOnly = false,
 }: {
   teamId: string;
   metricId: string;
@@ -57,6 +58,17 @@ export function ValueCell({
   onTrack: boolean | null;
   unit?: string;
   isCurrentWeek?: boolean;
+  /**
+   * Show the value but refuse the pen. Set on a measurable borrowed from
+   * another team, where the numbers belong to the owning team and only they
+   * (or an org admin) may change them.
+   *
+   * This renders a plain span rather than a disabled button because the row
+   * is not broken and there is nothing here to retry — an affordance that
+   * looks clickable and never is reads as a bug. `setEntry` refuses the same
+   * write server-side; this is the explanation, not the guard.
+   */
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => formatScorecardDraft(initial, unit));
@@ -137,6 +149,20 @@ export function ValueCell({
       }
     });
   };
+
+  if (readOnly) {
+    return (
+      <span
+        title={`${exact} — belongs to another team`}
+        className={cn(
+          "block w-full min-w-[4.5rem] cursor-default rounded-md px-2 py-1.5 text-right tabular-nums",
+          tone,
+        )}
+      >
+        {display}
+      </span>
+    );
+  }
 
   if (!editing) {
     return (

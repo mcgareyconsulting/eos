@@ -8,6 +8,7 @@ import {
   orderGroupNames,
   reorderGroup,
   type ScorecardGroup,
+  defaultGroupName,
 } from "./scorecard-groups";
 
 const group = (
@@ -180,5 +181,20 @@ describe("reorderGroup", () => {
       { id: "c", sort_order: 1 },
       { id: "b", sort_order: 2 },
     ]);
+  });
+});
+
+describe("defaultGroupName", () => {
+  test("names the cadence", () => {
+    assert.equal(defaultGroupName("weekly"), "Weekly");
+    assert.equal(defaultGroupName("monthly"), "Monthly");
+    assert.equal(defaultGroupName("quarterly"), "Quarterly");
+    assert.equal(defaultGroupName("annual"), "Annual");
+  });
+
+  // A real group doc called "Weekly" should absorb the default rather than
+  // rendering a second header beside it.
+  test("normalises to the same key as a custom group of that name", () => {
+    assert.equal(groupNameKey(defaultGroupName("weekly")), groupNameKey("weekly"));
   });
 });

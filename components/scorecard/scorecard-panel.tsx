@@ -45,6 +45,7 @@ export function ScorecardPanel({
   /** L10: absentees sort after present owners (same as Rocks). */
   absentUserIds,
   toolbarExtra,
+  viewerId,
 }: {
   teamId: string;
   teamLabel?: string;
@@ -63,9 +64,28 @@ export function ScorecardPanel({
   speakingOrder?: string[];
   absentUserIds?: string[];
   toolbarExtra?: React.ReactNode;
+  /**
+   * The signed-in user, so their own measurables sort first **within each
+   * group** on the standalone scorecard.
+   *
+   * Deliberately a sort and not a filter or a separate "My measurables"
+   * table: lifting the viewer's rows out would break them away from the group
+   * they belong to and render a section that exists for nobody but the
+   * viewer. Grouping is the scorecard's structure; whose row it is, is an
+   * ordering question inside it.
+   *
+   * Ignored in the L10, where speaking order decides the sequence and a
+   * viewer-first shuffle would put whoever is looking at the screen ahead of
+   * whoever is meant to be talking.
+   */
+  viewerId?: string;
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [ownerId, setOwnerId] = useState("");
+  // Filters on the *resolved* section, not the stored `group`, so picking
+  // "Weekly" finds the rows that render under Weekly rather than only the ones
+  // someone happened to type that word into.
+  const [group, setGroup] = useState("");
   // "order" on both surfaces, because it is the only sort that keeps groups.
   // Any other sort flattens the grid (see `flatList` below), so defaulting the
   // Scorecard tab to "status" meant grouping was never visible there without
@@ -92,6 +112,7 @@ export function ScorecardPanel({
     const q = search.trim().toLowerCase();
     let rows = intervalMetrics.filter((m) => {
       if (ownerId && m.owner_id !== ownerId) return false;
+      if (group && (m.sectionName ?? m.group ?? "") !== group) return false;
 
       const values = valuesFor(m.id);
       const st = trendStatus(values, m.goal, m.direction);
@@ -126,6 +147,15 @@ export function ScorecardPanel({
             speakingOrder,
             absentUserIds ?? [],
           );
+        }
+        // Standalone: your own rows first. Bucketing preserves this order, so
+        // sorting the flat list viewer-first puts you at the top of *every*
+        // group you own a measurable in, without lifting you out of any.
+        if (viewerId) {
+          const mine = (m: { owner_id: string | null }) =>
+            m.owner_id === viewerId ? 0 : 1;
+          const byMine = mine(a) - mine(b);
+          if (byMine !== 0) return byMine;
         }
         return a.sort_order - b.sort_order || a.name.localeCompare(b.name);
       }
@@ -174,7 +204,21 @@ export function ScorecardPanel({
     search,
     speakingOrder,
     absentUserIds,
+    viewerId,
+    group,
   ]);
+
+  // Built from the interval's rows, not from `filtered` — deriving them after
+  // the group filter applied would leave the select holding only the option
+  // already chosen, with no way back to the others.
+  const groupOptions = useMemo(() => {
+    const seen: string[] = [];
+    for (const m of intervalMetrics) {
+      const name = (m.sectionName ?? m.group ?? "").trim();
+      if (name && !seen.includes(name)) seen.push(name);
+    }
+    return seen.sort((a, b) => a.localeCompare(b));
+  }, [intervalMetrics]);
 
   const statusCounts = filtered.reduce(
     (acc, m) => {
@@ -195,6 +239,9 @@ export function ScorecardPanel({
         onStatusChange={setStatus}
         ownerId={ownerId}
         onOwnerChange={setOwnerId}
+        group={group}
+        onGroupChange={setGroup}
+        groupOptions={groupOptions}
         sort={sort}
         onSortChange={setSort}
         search={search}

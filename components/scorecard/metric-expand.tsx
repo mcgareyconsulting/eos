@@ -1,10 +1,14 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { GroupCell } from "@/app/(app)/teams/[teamId]/scorecard/group-cell";
 import { MetricFormModal } from "@/app/(app)/teams/[teamId]/scorecard/metric-form-modal";
-import { deleteMetric } from "@/app/(app)/teams/[teamId]/scorecard/actions";
+import {
+  deleteMetric,
+  removeSharedMetric,
+  setMetricArchived,
+} from "@/app/(app)/teams/[teamId]/scorecard/actions";
+import { Archive, ArchiveRestore, CircleMinus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   STATUS_TONE,
@@ -56,6 +60,13 @@ export function MetricExpand({
     goal: number | null;
     direction: GoalDirection;
     unit: string;
+    /**
+     * Home team's name when this row is borrowed from another scorecard,
+     * else null/undefined. Optional so the L10 segment and any other caller
+     * rendering a plain team scorecard keeps compiling — absent means "this
+     * team's own measurable", which is what every pre-share caller passes.
+     */
+    sharedFrom?: string | null;
   };
   ownerName: string;
   /** Newest first, same array the row uses. */
@@ -85,10 +96,22 @@ export function MetricExpand({
     members: { user_id: string; full_name: string }[];
     /** Period owned by this metric's group, when it sits in a defined one. */
     groupInterval?: MetricInterval | null;
+    /**
+     * May the viewer archive or delete — owner or org admin, home team. One
+     * flag for both; they share one permission gate. Absent means no, so a
+     * caller that has not thought about it renders no destructive control.
+     */
+    canManage?: boolean;
+    /** Borrowed row — the group editor writes this team's own section. */
+    isShared?: boolean;
+    /** Already archived: Restore replaces Archive, and Delete stays available. */
+    isArchived?: boolean;
   };
 }) {
   const status = trendStatus(values, metric.goal, metric.direction);
   const tone = STATUS_TONE[status];
+  // Borrowed from another team — decides Hide vs Edit/Delete in the manage bar.
+  const isShared = !!metric.sharedFrom;
   const avg = average(values);
   const avgOk = onTrack(avg, metric.goal, metric.direction);
   const {
@@ -174,27 +197,108 @@ export function MetricExpand({
               teamId={manage.teamId}
               metricId={metric.id}
               initial={manage.group}
+              isShared={manage.isShared === true}
             />
+            {/* A borrowed measurable offers Remove; one this team owns offers
+                Edit and Delete.
+
+                They are not two labels for one action and the panel must not
+                let them look like it. **Remove detaches** — it drops this team
+                from the measurable's share list, takes the row off this
+                scorecard, and leaves the measurable, its owner and every value
+                ever logged against it exactly as they were. Re-adding it from
+                the picker brings the row back unchanged. **Delete destroys**,
+                for every scorecard the measurable appears on at once.
+
+                So Delete is never rendered on a borrowed row: it is not merely
+                that the server would refuse it (`deleteMetric` does), but that
+                offering it is how one team erases another team's history by
+                reaching for what reads as a remove button. Edit is withheld
+                for the same reason — name, goal and owner belong to the team
+                that owns the measurable. */}
             <div className="ml-auto flex items-center gap-2">
-              <MetricFormModal
-                mode="edit"
-                teamId={manage.teamId}
-                metric={manage.metric}
-                members={manage.members}
-                groupInterval={manage.groupInterval}
-              />
-            <ConfirmSubmitForm
-              action={deleteMetric.bind(null, manage.teamId, metric.id)}
-              confirmMessage={`Delete "${metric.name}"? This removes the measurable from the scorecard, including its logged history. This can't be undone.`}
-            >
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                Delete measurable
-              </button>
-            </ConfirmSubmitForm>
+              {isShared ? (
+                <ConfirmSubmitForm
+                  action={removeSharedMetric.bind(null, manage.teamId, metric.id)}
+                  title="Remove measurable"
+                  confirmLabel="Remove measurable"
+                  // Not red. The dialog's job here is to say this is a removal
+                  // from a view rather than a deletion, and a red button would
+                  // argue with the sentence above it.
+                  destructive={false}
+                  confirmMessage={`Remove "${metric.name}" from this scorecard? It stays on ${metric.sharedFrom ?? "its own team"}'s scorecard with all of its history, and you can add it back at any time.`}
+                >
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    <CircleMinus className="h-3.5 w-3.5" aria-hidden />
+                    Remove Metric
+                  </button>
+                </ConfirmSubmitForm>
+              ) : (
+                <>
+                  <MetricFormModal
+                    mode="edit"
+                    teamId={manage.teamId}
+                    metric={manage.metric}
+                    members={manage.members}
+                    groupInterval={manage.groupInterval}
+                  />
+                  {/* Archive and Delete are owner-or-admin; Edit and Group are
+                      not. Withholding the pair rather than disabling it is
+                      deliberate — a greyed Delete invites a support question,
+                      and the answer ("you are not the owner") is not something
+                      the button can say in the space it has. */}
+                  {manage.canManage && (
+                    <>
+                      {/* Reversible, so no confirm — same as setRockArchived. */}
+                      <form
+                        action={setMetricArchived.bind(
+                          null,
+                          manage.teamId,
+                          metric.id,
+                          !manage.isArchived,
+                        )}
+                      >
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          {manage.isArchived ? (
+                            <>
+                              <ArchiveRestore
+                                className="h-3.5 w-3.5"
+                                aria-hidden
+                              />
+                              Restore measurable
+                            </>
+                          ) : (
+                            <>
+                              <Archive className="h-3.5 w-3.5" aria-hidden />
+                              Archive measurable
+                            </>
+                          )}
+                        </button>
+                      </form>
+                      <ConfirmSubmitForm
+                        action={deleteMetric.bind(null, manage.teamId, metric.id)}
+                        title="Delete measurable"
+                        confirmLabel="Delete permanently"
+                        confirmMessage={`Delete "${metric.name}"? This removes the measurable from the scorecard, including its logged history. This can't be undone — archive it instead if you only want it off the scorecard.`}
+                      >
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          Delete measurable
+                        </button>
+                      </ConfirmSubmitForm>
+                    </>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

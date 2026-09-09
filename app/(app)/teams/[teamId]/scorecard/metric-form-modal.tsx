@@ -31,8 +31,28 @@ export type MetricFormMetric = {
   interval?: string | null;
 };
 
-type MetricFormModalProps =
-  | {
+/**
+ * Optional controlled mode, used by the Add-measurable menu.
+ *
+ * Passing `open` suppresses the built-in trigger button and hands the parent
+ * the state, so the modal can be mounted somewhere the menu is not — which it
+ * has to be, because the menu unmounts itself when an item is chosen and a
+ * modal rendered inside it would be destroyed in the same tick it was asked to
+ * open. That was a real bug, not a hypothetical.
+ *
+ * A controlled caller is expected to **mount this component only while the
+ * modal is open**. That is what replaces `resetForOpen()` on that path: fresh
+ * `useState` initialisers seed the form from props on every open, so nothing
+ * carries over from the last one, and no effect has to reach in and reset
+ * state after the fact.
+ */
+type ControlledProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+type MetricFormModalProps = ControlledProps &
+  ({
       mode: "create";
       teamId: string;
       members: Member[];
@@ -53,7 +73,7 @@ type MetricFormModalProps =
        * interval stays free).
        */
       groupInterval?: MetricInterval | null;
-    };
+    });
 
 /**
  * "Add measurable" / "Edit measurable" button + modal, one component for
@@ -77,7 +97,15 @@ export function MetricFormModal(props: MetricFormModalProps) {
   const groupInterval = isEdit ? props.groupInterval : null;
 
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  // Controlled when the caller passes `open`; self-managed otherwise, which is
+  // what every existing call site (the Edit button in the expand panel) does.
+  const controlled = props.open !== undefined;
+  const [selfOpen, setSelfOpen] = useState(false);
+  const open = controlled ? !!props.open : selfOpen;
+  const setOpen = (next: boolean) => {
+    if (controlled) props.onOpenChange?.(next);
+    else setSelfOpen(next);
+  };
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -189,7 +217,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
 
   return (
     <>
-      {isEdit ? (
+      {controlled ? null : isEdit ? (
         <button
           type="button"
           onClick={openModal}

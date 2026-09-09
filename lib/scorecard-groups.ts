@@ -14,7 +14,11 @@
 // grid already reads. The group doc adds the two things a bare string can't
 // carry: which period it belongs to, and where it sits.
 
-import { SCORECARD_PERIODS, type MetricInterval } from "@/lib/scorecard-periods";
+import {
+  PERIOD_LABELS,
+  SCORECARD_PERIODS,
+  type MetricInterval,
+} from "@/lib/scorecard-periods";
 
 export type ScorecardGroup = {
   id: string;
@@ -34,6 +38,25 @@ export function normalizeGroupName(raw: string | null | undefined): string {
  * Case-insensitive identity for a group name. "Compliance" and "compliance"
  * are the same group — the importer and a hand-typed cell must not create two.
  */
+/**
+ * The group a measurable falls into when nobody has put it in a custom one.
+ *
+ * **Every measurable is in a group.** Before this, rows with no `group` fell
+ * into a headerless bucket rendered above the real groups — which read as a
+ * nameless table floating outside the scorecard's own structure. Naming that
+ * bucket after the cadence it already belongs to costs nothing and removes the
+ * exception: a Weekly measurable with no custom group is in "Weekly".
+ *
+ * These are labels, not `scorecard_groups` docs. Nothing is written when a row
+ * lands here, so no ordering or period is implied and the row keeps a freely
+ * editable interval. A team that *does* create a real group called "Weekly"
+ * simply merges with it — `groupNameKey` normalises both, and the result is
+ * what anyone would expect.
+ */
+export function defaultGroupName(interval: MetricInterval): string {
+  return PERIOD_LABELS[interval];
+}
+
 export function groupNameKey(raw: string | null | undefined): string {
   return normalizeGroupName(raw).toLowerCase();
 }

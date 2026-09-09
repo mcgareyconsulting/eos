@@ -106,6 +106,9 @@ export function ScorecardFilters({
   onStatusChange,
   ownerId,
   onOwnerChange,
+  group,
+  onGroupChange,
+  groupOptions,
   sort,
   onSortChange,
   search,
@@ -121,6 +124,17 @@ export function ScorecardFilters({
   onStatusChange: (v: StatusFilter) => void;
   ownerId: string; // "" = all
   onOwnerChange: (v: string) => void;
+  group: string; // "" = all
+  onGroupChange: (v: string) => void;
+  /**
+   * Sections present in the current tab, in render order.
+   *
+   * Built from the resolved sections rather than from `scorecard_groups`
+   * docs, so the cadence defaults ("Weekly") appear alongside the custom
+   * groups and the filter offers exactly the headers on screen — never a
+   * group that would filter to nothing.
+   */
+  groupOptions: string[];
   sort: SortOption;
   onSortChange: (v: SortOption) => void;
   search: string;
@@ -168,6 +182,7 @@ export function ScorecardFilters({
   const defaults =
     status === "all" &&
     ownerId === "" &&
+    group === "" &&
     sort === defaultSort &&
     weekRange === 13 &&
     search.trim() === "";
@@ -175,6 +190,7 @@ export function ScorecardFilters({
   const clearAll = () => {
     onStatusChange("all");
     onOwnerChange("");
+    onGroupChange("");
     onSortChange(defaultSort);
     onSearchChange("");
     if (weekRange !== 13) setWeekRange(13);
@@ -277,6 +293,23 @@ export function ScorecardFilters({
           <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
             {rangeHint}
           </span>
+        )}
+
+        {groupOptions.length > 1 && (
+          <FilterSelect
+            id="sc-group"
+            label="Group"
+            value={group}
+            active={group !== ""}
+            onChange={onGroupChange}
+          >
+            <option value="">All groups</option>
+            {groupOptions.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </FilterSelect>
         )}
 
         <FilterSelect

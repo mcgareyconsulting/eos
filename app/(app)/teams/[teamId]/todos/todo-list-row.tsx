@@ -10,7 +10,7 @@ import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { TodoCheckbox } from "./todo-row";
-import { EditTodoDrawer } from "./edit-todo-drawer";
+import { EditTodoModal } from "./edit-todo-modal";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
 import { Eyebrow } from "@/components/ui/text";
 
@@ -183,7 +183,7 @@ export function TodoListRow({
             </form>
           )}
           {!archived && (
-            <EditTodoDrawer teamId={teamId} todo={todo} members={members} />
+            <EditTodoModal teamId={teamId} todo={todo} members={members} />
           )}
           <form action={toggleArchive}>
             <button

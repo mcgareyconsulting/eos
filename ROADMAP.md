@@ -2665,7 +2665,13 @@ because ordering is set by agreement in session and was not agreed here.
 **They are the obvious queue candidates.**
 
 ### N55 · Dark-mode scrollbars unstyled — `color-scheme` is never declared
-*W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+*W3 · built · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+
+**Built 2026-09-09 on `notes/2026-09-08-steph-joe`. Not run, not merged,
+not seen on Windows** — daniel asked for the fix without testing, so this
+is `built`, not `shipped`, and the one machine that can actually show the
+bug has not looked at it. **Promote only on a Windows confirmation**; a
+Mac check cannot distinguish a fix from the pre-existing invisibility.
 
 Effort S. Reported as "scrollbars not styled correctly in dark mode (windows
 v mac?)". **The Windows-vs-Mac hunch is correct and it is the tell.**
@@ -2682,12 +2688,15 @@ merely invisible there.
 Fix: `color-scheme: light` on `:root`, `color-scheme: dark` on `.dark`. That
 also corrects native form controls and the default background in one move.
 `components/scorecard/scorecard-filters.tsx` carries a lone ad-hoc
-`[scrollbar-width:thin]` — check whether it is still needed once the root
-declaration lands, rather than leaving one hand-tuned scrollbar behind.
+`[scrollbar-width:thin]` — **deliberately left alone.** It is a width
+choice on a horizontal filter strip, not a theming one, so it is orthogonal
+to this fix and now inherits the right colours from `color-scheme`
+regardless. Revisit only if the strip looks wrong.
 
 **Trail**
 - 2026-09-08 · request · src steph-joe-2026-09-08 — dark-mode scrollbars, Windows vs Mac suspected
 - 2026-09-09 · finding · src session-2026-09-09 — no `color-scheme` anywhere in the repo; explains the platform split exactly (macOS overlay scrollbars mask it, Windows does not)
+- 2026-09-09 · built · src session-2026-09-09 — `color-scheme: light` on `:root`, `dark` on `.dark` in `app/globals.css`. Not run and not Windows-checked at daniel's instruction; stays `built` until someone on Windows confirms
 
 ### N56 · Sessions expire between weekly meetings — 5-day cookie, no renewal
 *W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*

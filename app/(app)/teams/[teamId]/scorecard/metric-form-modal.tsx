@@ -13,7 +13,15 @@ import { formatGoalInput, parseScorecardValue } from "@/lib/scorecard";
 import { addMetric, updateMetric } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
+import {
+  DiscardChangesDialog,
+  draftChanged,
+  ModalShell,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDiscardGuard,
+} from "@/components/ui/modal";
 
 const inputClass =
   "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
@@ -124,33 +132,76 @@ export function MetricFormModal(props: MetricFormModalProps) {
     isEdit ? (metric!.owner_id ?? (members[0]?.user_id ?? "")) : props.defaultOwnerId,
   );
   const [group, setGroup] = useState("");
+  // What the fields held when the modal opened. Seeded from the state hooks
+  // above on first render, which covers the controlled path too — a
+  // controlled caller mounts this component only while the modal is open (see
+  // the note above ControlledProps), so mount time is open time there.
+  const [opened, setOpened] = useState(() => ({
+    name,
+    interval,
+    unit,
+    direction,
+    goal,
+    ownerId,
+    group,
+  }));
+
+  // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
+  const guard = useDiscardGuard(
+    draftChanged({ name, interval, unit, direction, goal, ownerId, group }, opened),
+    () => setOpen(false),
+  );
 
   const intervalLocked = isEdit && !!groupInterval;
 
   function resetForOpen() {
-    if (isEdit) {
-      setName(props.metric.name);
-      setMetricInterval(
-        (props.groupInterval ??
+    if (props.mode === "edit") {
+      hydrate({
+        name: props.metric.name,
+        interval: (props.groupInterval ??
           (props.metric.interval as ScorecardPeriod) ??
           "weekly") as ScorecardPeriod,
-      );
-      setUnit(props.metric.unit);
-      setDirection(props.metric.direction);
-      // Seed the goal in the same notation the field accepts back, so
-      // opening and saving without touching anything is a no-op rather than
-      // a reformat.
-      setGoal(formatGoalInput(props.metric.goal, props.metric.unit));
-      setOwnerId(props.metric.owner_id ?? (props.members[0]?.user_id ?? ""));
+        unit: props.metric.unit,
+        direction: props.metric.direction,
+        // Seed the goal in the same notation the field accepts back, so
+        // opening and saving without touching anything is a no-op rather than
+        // a reformat.
+        goal: formatGoalInput(props.metric.goal, props.metric.unit),
+        ownerId: props.metric.owner_id ?? (props.members[0]?.user_id ?? ""),
+        // Create-only field; never rendered or submitted on edit.
+        group: "",
+      });
     } else {
-      setName("");
-      setMetricInterval(props.activePeriod);
-      setUnit("number");
-      setDirection("gte");
-      setGoal("");
-      setOwnerId(props.defaultOwnerId);
-      setGroup("");
+      hydrate({
+        name: "",
+        interval: props.activePeriod,
+        unit: "number",
+        direction: "gte",
+        goal: "",
+        ownerId: props.defaultOwnerId,
+        group: "",
+      });
     }
+  }
+
+  /** Sets every field and records them as the values the form opened with. */
+  function hydrate(draft: {
+    name: string;
+    interval: ScorecardPeriod;
+    unit: string;
+    direction: string;
+    goal: string;
+    ownerId: string;
+    group: string;
+  }) {
+    setName(draft.name);
+    setMetricInterval(draft.interval);
+    setUnit(draft.unit);
+    setDirection(draft.direction);
+    setGoal(draft.goal);
+    setOwnerId(draft.ownerId);
+    setGroup(draft.group);
+    setOpened(draft);
     setError(null);
   }
 
@@ -239,13 +290,15 @@ export function MetricFormModal(props: MetricFormModalProps) {
 
       <ModalShell
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={guard.requestClose}
+        // Escape belongs to the discard confirm while it is up.
+        dismissible={!guard.asking}
         ariaLabel={isEdit ? "Edit measurable" : "Add measurable"}
         size="lg"
       >
         <ModalHeader
           title={isEdit ? "Edit measurable" : "Add measurable"}
-          onClose={() => setOpen(false)}
+          onClose={guard.requestClose}
         />
 
         <ModalBody as="form" onSubmit={submit}>
@@ -404,7 +457,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
           )}
 
           <ModalFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={guard.requestClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>
@@ -419,6 +472,17 @@ export function MetricFormModal(props: MetricFormModalProps) {
           </ModalFooter>
         </ModalBody>
       </ModalShell>
+
+      <DiscardChangesDialog
+        open={guard.asking}
+        onKeepEditing={guard.keepEditing}
+        onDiscard={guard.discard}
+        message={
+          isEdit
+            ? "Your edits to this measurable haven't been saved. Close now and they're gone."
+            : "This measurable hasn't been added yet. Close now and what you've typed is gone."
+        }
+      />
     </>
   );
 }

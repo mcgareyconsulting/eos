@@ -7,8 +7,38 @@ import { entityAddButtonClass } from "@/components/entity-page-header";
 import { daysFromNow } from "@/lib/dates";
 import { addTodo } from "./actions";
 import { Button } from "@/components/ui/button";
-import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
+import {
+  DiscardChangesDialog,
+  draftChanged,
+  ModalShell,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDiscardGuard,
+} from "@/components/ui/modal";
 import { TodoFormFields, type Member } from "./todo-form-fields";
+
+/** Every field the form owns, in one shape — see draftChanged. */
+type TodoDraft = {
+  title: string;
+  ownerId: string;
+  due: string;
+  visibility: "team" | "private";
+  description: string;
+  weeklyFocus: boolean;
+};
+
+/** The values a fresh Add to-do opens with. */
+function draftFrom(defaultOwnerId: string): TodoDraft {
+  return {
+    title: "",
+    ownerId: defaultOwnerId,
+    due: daysFromNow(7),
+    visibility: "team",
+    description: "",
+    weeklyFocus: false,
+  };
+}
 
 /**
  * "Add to-do" button + modal. Same pattern as scorecard Add measurable.
@@ -44,20 +74,37 @@ export function AddTodoModal({
   const [description, setDescription] = useState("");
   const [weeklyFocus, setWeeklyFocus] = useState(false);
 
-  function resetForOpen() {
-    setTitle("");
-    setOwnerId(defaultOwnerId);
-    setDue(daysFromNow(7));
-    setVisibility("team");
-    setDescription("");
-    setWeeklyFocus(false);
+  // What the fields held when the modal opened, so closing can tell an
+  // untouched form from one holding typing. The default due date is captured
+  // with the rest: a date the form suggested is not a date you'd miss.
+  const [opened, setOpened] = useState<TodoDraft>(() =>
+    draftFrom(defaultOwnerId),
+  );
+
+  function hydrate(draft: TodoDraft) {
+    setTitle(draft.title);
+    setOwnerId(draft.ownerId);
+    setDue(draft.due);
+    setVisibility(draft.visibility);
+    setDescription(draft.description);
+    setWeeklyFocus(draft.weeklyFocus);
+    setOpened(draft);
     setError(null);
   }
 
   function openModal() {
-    resetForOpen();
+    hydrate(draftFrom(defaultOwnerId));
     setOpen(true);
   }
+
+  // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
+  const guard = useDiscardGuard(
+    draftChanged(
+      { title, ownerId, due, visibility, description, weeklyFocus },
+      opened,
+    ),
+    () => setOpen(false),
+  );
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,8 +148,15 @@ export function AddTodoModal({
         {buttonLabel}
       </button>
 
-      <ModalShell open={open} onClose={() => setOpen(false)} ariaLabel="Add to-do" size="lg">
-        <ModalHeader title="Add to-do" onClose={() => setOpen(false)} />
+      <ModalShell
+        open={open}
+        onClose={guard.requestClose}
+        // Escape belongs to the discard confirm while it is up.
+        dismissible={!guard.asking}
+        ariaLabel="Add to-do"
+        size="lg"
+      >
+        <ModalHeader title="Add to-do" onClose={guard.requestClose} />
 
         <ModalBody as="form" onSubmit={submit}>
           <TodoFormFields
@@ -124,7 +178,7 @@ export function AddTodoModal({
           />
 
           <ModalFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={guard.requestClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>
@@ -133,6 +187,13 @@ export function AddTodoModal({
           </ModalFooter>
         </ModalBody>
       </ModalShell>
+
+      <DiscardChangesDialog
+        open={guard.asking}
+        onKeepEditing={guard.keepEditing}
+        onDiscard={guard.discard}
+        message="This to-do hasn't been added yet. Close now and what you've typed is gone."
+      />
     </>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, type HTMLAttributes, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 
 /**
  * Registers a single window "keydown" listener while `enabled`, calling
@@ -44,6 +44,13 @@ export type ModalShellProps = {
   size?: ModalSize;
   /** Backdrop click dismisses. Every existing dialog did this, so it defaults true. */
   closeOnBackdrop?: boolean;
+  /**
+   * Escape and backdrop stop dismissing while this is false. Set it while a
+   * nested dialog sits on top of this one (see `useDiscardGuard`): both shells
+   * listen for Escape on the window, so without this one keypress would be
+   * answered by the confirm *and* by the form underneath it.
+   */
+  dismissible?: boolean;
   /** Render into document.body instead of in place. Only pass this where the
    *  dialog already portalled — an ancestor's opacity/overflow otherwise hides
    *  it (see headline-edit-modal, manage-groups). */
@@ -61,12 +68,13 @@ export function ModalShell({
   ariaLabel,
   size = "lg",
   closeOnBackdrop = true,
+  dismissible = true,
   portal = false,
   banner,
   className,
   children,
 }: ModalShellProps) {
-  useDismissOnEscape(onClose, open);
+  useDismissOnEscape(onClose, open && dismissible);
 
   if (!open) return null;
 
@@ -74,7 +82,7 @@ export function ModalShell({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/40"
-        onClick={closeOnBackdrop ? onClose : undefined}
+        onClick={closeOnBackdrop && dismissible ? onClose : undefined}
         aria-hidden
       />
       <div
@@ -157,5 +165,119 @@ export function ModalFooter({ className, ...props }: ModalFooterProps) {
       )}
       {...props}
     />
+  );
+}
+
+/**
+ * Field-by-field compare of what the form holds now against what it opened
+ * with. Deliberately shallow: a draft is a flat record of form values, and
+ * anything that isn't (a list of milestone rows, a set of ids) is folded into
+ * a string by the form before it gets here, so there is one comparison rule
+ * rather than one per field type.
+ *
+ * Comparing against the *opened* values rather than against empty is what
+ * makes this work on edit forms as well as create ones. An edit modal opens
+ * full of data and is not dirty; type a word and delete it again and it is
+ * not dirty either.
+ */
+export function draftChanged<T extends object>(current: T, opened: T): boolean {
+  return (Object.keys(current) as (keyof T)[]).some(
+    (k) => current[k] !== opened[k],
+  );
+}
+
+/**
+ * Confirm-before-discard for a dialog holding unsaved edits.
+ *
+ * The complaint this answers: a click that lands one pixel outside the Add
+ * issue box throws away everything typed into it, with no warning and no way
+ * back. Autosaving the draft was the other candidate fix, and it is worse
+ * here — a half-typed issue that saves itself is a half-typed issue on the
+ * list, visible to the team, votable, and needing cleanup. The work only has
+ * to survive the accident, not become a record.
+ *
+ * So closing is not blocked, only interrupted, and only when there is
+ * something to lose: `dirty` false closes straight through, so the common
+ * case (open it, change your mind, click out) is unchanged.
+ *
+ * Route *every* way out of the dialog through `requestClose` — backdrop,
+ * Escape, the header ×, and Cancel. A Cancel that discards silently while the
+ * × asks first is the kind of inconsistency people learn the hard way.
+ */
+export function useDiscardGuard(dirty: boolean, close: () => void) {
+  const [asking, setAsking] = useState(false);
+
+  const requestClose = useCallback(() => {
+    if (dirty) setAsking(true);
+    else close();
+  }, [dirty, close]);
+
+  const discard = useCallback(() => {
+    setAsking(false);
+    close();
+  }, [close]);
+
+  const keepEditing = useCallback(() => setAsking(false), []);
+
+  return { asking, requestClose, discard, keepEditing };
+}
+
+/**
+ * The dialog `useDiscardGuard` puts in front of the close. Render it as a
+ * sibling of the form's own `ModalShell` and pass the guard through:
+ *
+ *     <ModalShell open={open} onClose={guard.requestClose}
+ *                 dismissible={!guard.asking} …>
+ *     <DiscardChangesDialog open={guard.asking}
+ *                           onKeepEditing={guard.keepEditing}
+ *                           onDiscard={guard.discard} />
+ *
+ * **Keep editing is the primary and holds focus**, and Escape answers it, so
+ * every reflex that lands on this dialog by accident — Enter, Escape, a click
+ * on the backdrop — keeps the draft. Discarding is the deliberate one.
+ */
+export function DiscardChangesDialog({
+  open,
+  onKeepEditing,
+  onDiscard,
+  title = "Discard your changes?",
+  message = "You have unsaved changes here. Close now and they're gone.",
+  discardLabel = "Discard changes",
+}: {
+  open: boolean;
+  onKeepEditing: () => void;
+  onDiscard: () => void;
+  title?: string;
+  /** Say what is lost, in the words of the thing being edited. */
+  message?: string;
+  discardLabel?: string;
+}) {
+  return (
+    // Portalled so it paints above the dialog it interrupts, whatever stacking
+    // context that one sits in.
+    <ModalShell
+      open={open}
+      onClose={onKeepEditing}
+      ariaLabel={title}
+      size="md"
+      portal
+    >
+      <ModalHeader title={title} onClose={onKeepEditing} />
+      <ModalBody>
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">{message}</p>
+      </ModalBody>
+      <ModalFooter className="px-4 pb-4">
+        <Button
+          variant="ghost"
+          onClick={onDiscard}
+          className="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          {discardLabel}
+        </Button>
+        <Button autoFocus onClick={onKeepEditing}>
+          Keep editing
+        </Button>
+      </ModalFooter>
+    </ModalShell>
   );
 }

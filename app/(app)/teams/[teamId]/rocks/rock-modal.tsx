@@ -18,7 +18,12 @@ import {
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import { IconButton } from "@/components/ui/button";
-import { ModalShell } from "@/components/ui/modal";
+import {
+  DiscardChangesDialog,
+  draftChanged,
+  ModalShell,
+  useDiscardGuard,
+} from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 type ShareTeam = { id: string; name: string };
@@ -58,6 +63,23 @@ let draftSeq = 0;
 function blankRow(ownerId: string): DraftMilestone {
   draftSeq += 1;
   return { key: `draft-${draftSeq}`, title: "", owner_id: ownerId, due_date: "" };
+}
+
+/**
+ * Milestone rows folded to one string so the whole rock draft compares with a
+ * single shallow rule (see draftChanged).
+ *
+ * Only rows carrying a title are included, which is what makes "add a row"
+ * not count as unsaved work: a fresh rock opens with three blank rows and
+ * clicking + for a fourth has typed nothing into it. A row with words in it
+ * is work; an empty row is furniture.
+ */
+function serializeRows(rows: DraftMilestone[]): string {
+  return JSON.stringify(
+    rows
+      .filter((r) => r.title.trim())
+      .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date]),
+  );
 }
 
 function personOwnerId(
@@ -266,6 +288,43 @@ export function RockModal({
     focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
   );
 
+  // Frozen at mount, which *is* "when it opened": both NewRockButton and
+  // EditRockButton mount this component only while the modal is open, so the
+  // values the state hooks above just seeded are the values the user was
+  // shown. Freezing matters — a router.refresh() elsewhere can hand this
+  // component a newer `rock` prop mid-edit, and a baseline recomputed from
+  // props would quietly move under the comparison.
+  const [opened] = useState(() => ({
+    title,
+    description,
+    ownerId,
+    rockType,
+    companyRock,
+    sharedTeamIds: sharedTeamIds.join(","),
+    qtr,
+    due,
+    milestones: serializeRows(rows),
+  }));
+
+  // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
+  const guard = useDiscardGuard(
+    draftChanged(
+      {
+        title,
+        description,
+        ownerId,
+        rockType,
+        companyRock,
+        sharedTeamIds: sharedTeamIds.join(","),
+        qtr,
+        due,
+        milestones: serializeRows(rows),
+      },
+      opened,
+    ),
+    onClose,
+  );
+
   const filled = rows.filter((r) => r.title.trim());
 
   function patchRow(key: string, patch: Partial<DraftMilestone>) {
@@ -325,7 +384,9 @@ export function RockModal({
   return (
     <ModalShell
       open
-      onClose={onClose}
+      onClose={guard.requestClose}
+      // Escape belongs to the discard confirm while it is up.
+      dismissible={!guard.asking}
       ariaLabel={editing ? "Edit Rock" : "Add Rock"}
       size="5xl"
     >
@@ -346,7 +407,7 @@ export function RockModal({
               {editing ? "Edit Rock" : "Add Rock"}
             </h2>
           </div>
-          <IconButton onClick={onClose} aria-label="Close">
+          <IconButton onClick={guard.requestClose} aria-label="Close">
             <X className="h-4 w-4" />
           </IconButton>
         </header>
@@ -612,7 +673,7 @@ export function RockModal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={guard.requestClose}
                 className="rounded-md border border-zinc-300 px-3 py-1.5 text-[13.5px] font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 Cancel
@@ -633,6 +694,17 @@ export function RockModal({
             </div>
           </footer>
         </form>
+
+        <DiscardChangesDialog
+          open={guard.asking}
+          onKeepEditing={guard.keepEditing}
+          onDiscard={guard.discard}
+          message={
+            editing
+              ? "Your edits to this Rock haven't been saved. Close now and they're gone."
+              : "This Rock hasn't been added yet. Close now and what you've typed — including its milestones — is gone."
+          }
+        />
     </ModalShell>
   );
 }

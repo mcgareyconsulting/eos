@@ -119,16 +119,24 @@ export function isOnScorecard(
  * one that matters: the values belong to the team that owns the measurable,
  * and a second team editing them would silently rewrite the first team's
  * scorecard. Non-admins on a borrowing team get a read-only row and Remove.
+ *
+ * **Archived beats all of it, including admin**, because `setEntry` already
+ * refuses an archived measurable server-side. Without that check here the cell
+ * would still look editable, accept a number, and only then report that the
+ * measurable is archived — an error the UI had every means to prevent. The
+ * client predicate and the server rule have to agree on what is writable or
+ * one of them is decoration.
  */
 export function canEditMetricValues({
   metric,
   teamId,
   isAdmin,
 }: {
-  metric: ShareableMetric;
+  metric: ManageableMetric;
   teamId: string;
   isAdmin: boolean;
 }): boolean {
+  if (isArchivedMetric(metric)) return false;
   return isAdmin || isHomeTeam(metric, teamId);
 }
 

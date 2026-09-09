@@ -249,3 +249,28 @@ describe("metricGroupForTeam", () => {
     );
   });
 });
+
+describe("canEditMetricValues — archived", () => {
+  // The server refuses these in setEntry, so the cell must not look editable.
+  test("an archived measurable is read-only for its own team", () => {
+    assert.equal(
+      canEditMetricValues({
+        metric: { team_id: "leadership", archived_at: new Date() },
+        teamId: "leadership",
+        isAdmin: false,
+      }),
+      false,
+    );
+  });
+
+  test("and for an admin", () => {
+    assert.equal(
+      canEditMetricValues({
+        metric: { team_id: "leadership", archived_at: new Date() },
+        teamId: "leadership",
+        isAdmin: true,
+      }),
+      false,
+    );
+  });
+});

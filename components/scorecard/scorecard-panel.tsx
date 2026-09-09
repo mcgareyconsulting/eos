@@ -136,7 +136,27 @@ export function ScorecardPanel({
     const ownerName = (id: string | null) =>
       id ? (members.find((x) => x.user_id === id)?.full_name ?? "") : "";
 
+    const inL10 = !!speakingOrder && speakingOrder.length > 0;
+
     rows = [...rows].sort((a, b) => {
+      // **Your rows lead, whatever the sort.** Applied before the sort choice
+      // rather than inside Default order, because the ask is "top of my
+      // subsection" and the subsection is whatever grouping is in effect —
+      // a real group under Default/Name, and the flat list under Status,
+      // Average or Owner, which collapse the groups anyway. Bucketing
+      // preserves this order, so one comparison here puts you first inside
+      // *every* group you own a measurable in without lifting you out of any.
+      //
+      // Never in the L10: there the sequence is whose turn it is to speak,
+      // and putting whoever happens to be driving the screen at the top would
+      // reorder the room.
+      if (viewerId && !inL10) {
+        const mine = (m: { owner_id: string | null }) =>
+          m.owner_id === viewerId ? 0 : 1;
+        const byMine = mine(a) - mine(b);
+        if (byMine !== 0) return byMine;
+      }
+
       if (sort === "order") {
         // L10: participant/speaking order (not status reshuffle). Standalone
         // keeps configured sort_order only.
@@ -147,15 +167,6 @@ export function ScorecardPanel({
             speakingOrder,
             absentUserIds ?? [],
           );
-        }
-        // Standalone: your own rows first. Bucketing preserves this order, so
-        // sorting the flat list viewer-first puts you at the top of *every*
-        // group you own a measurable in, without lifting you out of any.
-        if (viewerId) {
-          const mine = (m: { owner_id: string | null }) =>
-            m.owner_id === viewerId ? 0 : 1;
-          const byMine = mine(a) - mine(b);
-          if (byMine !== 0) return byMine;
         }
         return a.sort_order - b.sort_order || a.name.localeCompare(b.name);
       }

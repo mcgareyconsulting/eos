@@ -33,9 +33,17 @@ import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { parseWeekRange, type WeekRange } from "@/lib/scorecard";
 import { loadScorecardEntries } from "@/lib/scorecard-entries";
 import {
+  canEditMetricValues,
+  isArchivedMetric,
+  metricGroupForTeam,
+} from "@/lib/scorecard-share";
+import { defaultGroupName } from "@/lib/scorecard-groups";
+import { loadUserNames } from "@/lib/firebase/user-names";
+import {
   oldestPeriodStart,
   parseScorecardPeriod,
   type ScorecardPeriod,
+  normalizeMetricInterval,
 } from "@/lib/scorecard-periods";
 import { endOfQuarter, toDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -536,27 +544,82 @@ async function SegmentContent({
     );
   }
 
-  const { db, team } = await requireTeamAccess(teamId);
+  const { db, team, isAdmin } = await requireTeamAccess(teamId);
 
   if (segment === "scorecard") {
-    const metricsSnap = await db
-      .collection("scorecard_metrics")
-      .where("team_id", "==", teamId)
-      .get();
+    // Owned *and* borrowed, exactly as the standalone Scorecard page loads
+    // them. Filtering on `team_id` alone was the bug: a measurable pulled from
+    // another team showed on the scorecard and then went missing from the
+    // meeting where the scorecard is actually read aloud. Firestore cannot OR
+    // the two conditions, so it is two queries merged.
+    const [ownedSnap, sharedSnap, orgTeams] = await Promise.all([
+      db.collection("scorecard_metrics").where("team_id", "==", teamId).get(),
+      db
+        .collection("scorecard_metrics")
+        .where("shared_team_ids", "array-contains", teamId)
+        .get(),
+      getOrgTeams(),
+    ]);
     const scorecardGroups = await loadScorecardGroups(db, teamId);
-    const initialMetrics = metricsSnap.docs.map((d) => {
-      const x = d.data();
+
+    const metricById = new Map<string, FirebaseFirestore.DocumentData>();
+    for (const d of [...ownedSnap.docs, ...sharedSnap.docs]) {
+      if (!metricById.has(d.id)) metricById.set(d.id, { id: d.id, ...d.data() });
+    }
+    // Archived measurables stay out of the room — the meeting reads the
+    // active scorecard, and there is no Archived view here to reach them from.
+    const liveMetrics = [...metricById.values()].filter(
+      (x) => !isArchivedMetric({ team_id: String(x.team_id ?? teamId), archived_at: x.archived_at }),
+    );
+
+    const teamNameById = new Map(orgTeams.map((t) => [t.id, t.name]));
+    // Borrowed rows are owned by someone on the home team, so this team's
+    // roster cannot name them — same lookup the Scorecard page does.
+    const rosterIds = new Set(members.map((m) => m.user_id));
+    const resolvedOwner = await loadUserNames(
+      db,
+      liveMetrics
+        .map((x) => String(x.owner_id ?? ""))
+        .filter((id) => id !== "" && !rosterIds.has(id)),
+    );
+
+    const initialMetrics = liveMetrics.map((x) => {
+      const home = String(x.team_id ?? teamId);
+      const borrowed = home !== teamId;
+      const shareable = {
+        team_id: home,
+        shared_team_ids: x.shared_team_ids,
+        group: x.group ?? null,
+        shared_groups: x.shared_groups,
+      };
+      const interval =
+        (x.interval as string | null | undefined) ?? "weekly";
       return {
-        id: d.id,
-        team_id: x.team_id,
+        id: x.id as string,
+        team_id: home,
         name: x.name,
         unit: x.unit,
         goal: x.goal ?? null,
         direction: x.direction,
         owner_id: x.owner_id ?? null,
-        group: x.group ?? null,
-        interval: (x.interval as string | null | undefined) ?? "weekly",
+        group: metricGroupForTeam(shareable, teamId),
+        interval,
         sort_order: x.sort_order ?? 0,
+        sharedFrom: borrowed
+          ? (teamNameById.get(home) ?? "Another team")
+          : null,
+        ownerName: resolvedOwner.get(String(x.owner_id ?? "")) ?? null,
+        // Logging a number mid-meeting is the one write this segment offers,
+        // and a borrowed row is not this team's to write — admins excepted,
+        // same rule the Scorecard page and `setEntry` enforce.
+        canEditValues: canEditMetricValues({
+          metric: shareable,
+          teamId,
+          isAdmin,
+        }),
+        sectionName:
+          metricGroupForTeam(shareable, teamId) ??
+          defaultGroupName(normalizeMetricInterval(interval)),
       };
     });
     const oldest = oldestPeriodStart(scorecardPeriod, scorecardWeekRange);
@@ -575,6 +638,9 @@ async function SegmentContent({
         initialMetrics={initialMetrics}
         initialEntries={initialEntries}
         members={members}
+        isAdmin={isAdmin}
+        teamNameById={Object.fromEntries(teamNameById)}
+        ownerNameById={Object.fromEntries(resolvedOwner)}
         speakingOrder={speakingOrder}
         absentUserIds={absentUserIds}
       />

@@ -14,8 +14,8 @@ import {
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
 import { normalizeMetricInterval } from "@/lib/scorecard-periods";
-import Link from "next/link";
-import { Archive } from "lucide-react";
+import { EntityViewTabs } from "@/components/entity-view-tabs";
+import { EntityPageHeader } from "@/components/entity-page-header";
 import { loadScorecardGroups } from "@/lib/firebase/scorecard-groups";
 import { parseWeekRange } from "@/lib/scorecard";
 import {
@@ -85,9 +85,13 @@ export default async function ScorecardPage({
   // not mixed in. A greyed row interleaved with live ones still occupies a
   // line in the grid and still reads as something the team is tracking, which
   // is exactly what archiving it was meant to stop.
-  const archivedCount = [...byId.values()].filter((x) =>
-    isArchivedMetric(x),
-  ).length;
+  // Both counts, because the tabs name them. They are deliberately counted
+  // across every interval rather than the active tab's: the tab bar sits above
+  // the period tabs and switching Weekly/Monthly must not make the Archived
+  // count jump, which would read as rows appearing and disappearing.
+  const all = [...byId.values()];
+  const archivedCount = all.filter((x) => isArchivedMetric(x)).length;
+  const activeCount = all.length - archivedCount;
 
   const metrics = [...byId.values()]
     .filter((x) => isArchivedMetric(x) === showArchived)
@@ -158,37 +162,37 @@ export default async function ScorecardPage({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {showArchived ? "Archived measurables" : "Scorecard"}
-          </h1>
-          {showArchived && (
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Hidden from the scorecard, with every logged value kept. Restore
-              one to put it back.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {(archivedCount > 0 || showArchived) && (
-            <Link
-              href={
-                showArchived
-                  ? `/teams/${tid}/scorecard?period=${period}`
-                  : `/teams/${tid}/scorecard?period=${period}&archived=1`
-              }
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              <Archive className="h-4 w-4" aria-hidden />
-              {showArchived ? "Back to scorecard" : `Archived (${archivedCount})`}
-            </Link>
-          )}
-          <ManageGroupsButton
-            teamId={tid}
-            groups={groups}
-            activePeriod={period}
+      {/* The same header component the other entity pages use, so the column
+          order — filter, then Active|Archived, then Add — and the pixels each
+          lands on are shared rather than re-derived here. Rolling its own was
+          how this page ended up with the tabs to the *left* of Groups while
+          every other page had them to the right. */}
+      <EntityPageHeader
+        title="Scorecard"
+        filter={
+          // Right-aligned in its column so it sits against the tabs. The other
+          // pages fill this slot with a full-width select; a narrower button
+          // left-aligned would leave a gap that reads as a missing control.
+          <div className="flex justify-end">
+            <ManageGroupsButton
+              teamId={tid}
+              groups={groups}
+              activePeriod={period}
+            />
+          </div>
+        }
+        tabs={
+          <EntityViewTabs
+            basePath={`/teams/${tid}/scorecard`}
+            showArchived={showArchived}
+            activeCount={activeCount}
+            archivedCount={archivedCount}
+            // Carry the period across, or switching views silently drops you
+            // back to Weekly and the row you wanted looks like it vanished.
+            params={{ period, weeks: sp.weeks }}
           />
+        }
+        add={
           <AddMeasurableMenu
             teamId={tid}
             members={members}
@@ -196,8 +200,15 @@ export default async function ScorecardPage({
             groups={groupNames}
             activePeriod={period}
           />
-        </div>
-      </header>
+        }
+      />
+
+      {showArchived && (
+        <p className="-mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+          Archived measurables are hidden from the scorecard, with every logged
+          value kept. Restore one to put it back.
+        </p>
+      )}
 
       <Suspense
         fallback={

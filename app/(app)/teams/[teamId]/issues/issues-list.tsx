@@ -1,6 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  entityToggleIdleClass,
+  entityToggleSelectedClass,
+} from "@/components/entity-view-tabs";
 import { collection, query as fsQuery, where } from "firebase/firestore";
 import {
   Trash2,
@@ -100,8 +104,8 @@ export function IssuesList({
           onClick={() => setTab("short")}
           className={
             tab === "short"
-              ? "rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-              : "rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              ? entityToggleSelectedClass
+              : entityToggleIdleClass
           }
         >
           Short-term ({rankedShort.length})
@@ -111,8 +115,8 @@ export function IssuesList({
           onClick={() => setTab("long")}
           className={
             tab === "long"
-              ? "rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-              : "rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              ? entityToggleSelectedClass
+              : entityToggleIdleClass
           }
         >
           Long-term ({rankedLong.length})

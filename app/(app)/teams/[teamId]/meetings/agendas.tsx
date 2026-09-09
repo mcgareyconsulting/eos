@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -415,7 +416,7 @@ export function StartMeetingPicker({
           setSelectedId(defaultId);
           setOpen(true);
         }}
-        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+        className={entityAddButtonClass}
       >
         <Plus className="h-4 w-4" />
         Start meeting

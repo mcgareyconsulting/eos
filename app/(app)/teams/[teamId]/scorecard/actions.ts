@@ -324,7 +324,8 @@ export async function moveScorecardGroup(
 /**
  * Delete a group and un-assign its measurables. The metrics themselves are
  * never touched beyond clearing `group` — deleting a bucket must not delete
- * what was in it, and they reappear above the remaining groups as ungrouped.
+ * what was in it, and they fall back to the default group for their cadence,
+ * which renders above the remaining groups.
  */
 export async function deleteScorecardGroup(teamId: string, groupId: string) {
   const { db } = await requireTeamAccess(teamId);

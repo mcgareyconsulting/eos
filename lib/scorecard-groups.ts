@@ -124,9 +124,27 @@ export function orderGroupNames(
     else undefinedNames.push(name);
   }
 
+  // The cadence default sits **first**, not with the other unmanaged labels.
+  //
+  // It is the catch-all for measurables nobody has filed, and this file's own
+  // reason for existing is that "Compliance is a weekly group that shouldn't
+  // outrank the ordinary weekly measurables". Those ordinary measurables are
+  // exactly what lands in the default group, so leaving it to sort
+  // alphabetically among the free-text labels put it below every custom group
+  // — the ordering this function was written to prevent, reintroduced by the
+  // back door once ungrouped rows gained a name.
+  //
+  // A team that creates a real group doc called "Weekly" is not affected: that
+  // name resolves to a doc, takes its configured position, and never reaches
+  // this branch.
+  const defaultKey = groupNameKey(defaultGroupName(interval));
+  const pinned = undefinedNames.filter((n) => groupNameKey(n) === defaultKey);
+  const rest = undefinedNames.filter((n) => groupNameKey(n) !== defaultKey);
+
   return [
+    ...pinned,
     ...defined.sort(compareGroups).map((g) => g.name),
-    ...undefinedNames.sort((a, b) => a.localeCompare(b)),
+    ...rest.sort((a, b) => a.localeCompare(b)),
   ];
 }
 

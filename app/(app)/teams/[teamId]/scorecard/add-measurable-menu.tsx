@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Library, Plus } from "lucide-react";
+import { entityAddButtonClass } from "@/components/entity-page-header";
 import type { ScorecardPeriod } from "@/lib/scorecard-periods";
 import { MetricFormModal } from "./metric-form-modal";
 import { AddExistingMetricModal } from "./add-existing-metric-modal";
@@ -74,7 +75,7 @@ export function AddMeasurableMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+        className={entityAddButtonClass}
       >
         <Plus className="h-4 w-4" aria-hidden />
         Add measurable

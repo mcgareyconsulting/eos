@@ -8,7 +8,13 @@ import { addHeadline, updateHeadline } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { ModalShell, ModalHeader } from "@/components/ui/modal";
+import {
+  DiscardChangesDialog,
+  draftChanged,
+  ModalShell,
+  ModalHeader,
+  useDiscardGuard,
+} from "@/components/ui/modal";
 
 const KIND_OPTIONS = [
   { value: "customer", label: "Customer" },
@@ -25,6 +31,20 @@ export type HeadlineEditValues = {
   body: string | null;
   kind: Kind;
 };
+
+/** Every field the form owns, in one shape — see draftChanged. */
+type HeadlineDraft = { title: string; kind: Kind; body: string };
+
+/** The values the form opens with: the headline's own when editing, blanks
+ *  when creating. */
+function draftFrom(headline: HeadlineEditValues | null): HeadlineDraft {
+  if (!headline) return { title: "", kind: "customer", body: "" };
+  return {
+    title: headline.title,
+    kind: headline.kind,
+    body: headline.body ?? "",
+  };
+}
 
 type HeadlineFormModalProps =
   | {
@@ -56,24 +76,30 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
     isEdit ? props.headline.kind : "customer",
   );
   const [body, setBody] = useState(isEdit ? (props.headline.body ?? "") : "");
+  // What the fields held when the modal opened. On edit that is the headline
+  // itself, so a modal opened and closed without a keystroke asks nothing.
+  const [opened, setOpened] = useState<HeadlineDraft>(() =>
+    draftFrom(isEdit ? props.headline : null),
+  );
 
-  function resetForOpen() {
-    if (isEdit) {
-      setTitle(props.headline.title);
-      setBody(props.headline.body ?? "");
-      setKind(props.headline.kind);
-    } else {
-      setTitle("");
-      setKind("customer");
-      setBody("");
-    }
+  function hydrate(draft: HeadlineDraft) {
+    setTitle(draft.title);
+    setKind(draft.kind);
+    setBody(draft.body);
+    setOpened(draft);
     setError(null);
   }
 
   function openModal() {
-    resetForOpen();
+    hydrate(draftFrom(props.mode === "edit" ? props.headline : null));
     setOpen(true);
   }
+
+  // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
+  const guard = useDiscardGuard(
+    draftChanged({ title, kind, body }, opened),
+    () => setOpen(false),
+  );
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -141,14 +167,16 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
           header/toolbar with no such ancestor, so it doesn't need one. */}
       <ModalShell
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={guard.requestClose}
+        // Escape belongs to the discard confirm while it is up.
+        dismissible={!guard.asking}
         ariaLabel={isEdit ? "Edit headline" : "Add headline"}
         size="4xl"
         portal={isEdit}
       >
         <ModalHeader
           title={isEdit ? "Edit headline" : "Add headline"}
-          onClose={() => setOpen(false)}
+          onClose={guard.requestClose}
         />
 
         {/* Fields scroll; the footer stays pinned so Save/Add is always
@@ -207,7 +235,7 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
           </div>
 
           <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={guard.requestClose}>
               Cancel
             </Button>
             {isEdit ? (
@@ -226,6 +254,17 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
           </div>
         </form>
       </ModalShell>
+
+      <DiscardChangesDialog
+        open={guard.asking}
+        onKeepEditing={guard.keepEditing}
+        onDiscard={guard.discard}
+        message={
+          isEdit
+            ? "Your edits to this headline haven't been saved. Close now and they're gone."
+            : "This headline hasn't been added yet. Close now and what you've typed is gone."
+        }
+      />
     </>
   );
 }

@@ -9,7 +9,15 @@ import type { IssueType } from "@/lib/issues";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { ModalShell, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
+import {
+  DiscardChangesDialog,
+  draftChanged,
+  ModalShell,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDiscardGuard,
+} from "@/components/ui/modal";
 
 type Member = { user_id: string; full_name: string };
 
@@ -23,6 +31,41 @@ export type IssueFormValues = {
 };
 
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+
+/** Every field the form owns, in one shape, so "has this been touched?" is a
+ *  comparison against the values it opened with rather than five of them. */
+type IssueDraft = {
+  title: string;
+  ownerId: string;
+  priority: string;
+  type: IssueType;
+  description: string;
+};
+
+/** The values the form opens with: the issue's own when editing, the page's
+ *  defaults when creating. */
+function draftFrom(
+  issue: IssueFormValues | null,
+  defaultOwnerId: string,
+  defaultType: IssueType,
+): IssueDraft {
+  if (!issue) {
+    return {
+      title: "",
+      ownerId: defaultOwnerId,
+      priority: "",
+      type: defaultType,
+      description: "",
+    };
+  }
+  return {
+    title: issue.title,
+    ownerId: issue.owner_id ?? "",
+    priority: issue.priority ?? "",
+    type: issue.type === "long" ? "long" : "short",
+    description: issue.description ?? "",
+  };
+}
 
 /**
  * Centered modal for create + edit. Same shell as Add to-do.
@@ -69,35 +112,33 @@ export function IssueFormModal({
   const [priority, setPriority] = useState("");
   const [type, setType] = useState<IssueType>(defaultType);
   const [description, setDescription] = useState("");
+  // What the fields held when the modal opened. Kept so closing can tell an
+  // untouched form (close it, no questions) from one holding typing.
+  const [opened, setOpened] = useState<IssueDraft>(() =>
+    draftFrom(null, defaultOwnerId, defaultType),
+  );
 
-  function hydrateFromProps() {
-    if (issue) {
-      setTitle(issue.title);
-      setOwnerId(issue.owner_id ?? "");
-      setPriority(issue.priority ?? "");
-      setType(issue.type === "long" ? "long" : "short");
-      setDescription(issue.description ?? "");
-    } else {
-      setTitle("");
-      setOwnerId(defaultOwnerId);
-      setPriority("");
-      setType(defaultType);
-      setDescription("");
-    }
+  function hydrate(draft: IssueDraft) {
+    setTitle(draft.title);
+    setOwnerId(draft.ownerId);
+    setPriority(draft.priority);
+    setType(draft.type);
+    setDescription(draft.description);
+    setOpened(draft);
     setError(null);
   }
 
   function openCreate() {
-    hydrateFromProps();
-    // Create path always re-reads defaultType from the active tab.
-    setTitle("");
-    setOwnerId(defaultOwnerId);
-    setPriority("");
-    setType(defaultType);
-    setDescription("");
-    setError(null);
+    // Re-reads defaultType, so the new issue lands on the active Short/Long tab.
+    hydrate(draftFrom(null, defaultOwnerId, defaultType));
     setOpen(true);
   }
+
+  // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
+  const guard = useDiscardGuard(
+    draftChanged({ title, ownerId, priority, type, description }, opened),
+    () => setOpen(false),
+  );
 
   // When controlled edit opens, sync fields from the issue. Render-time, so
   // the fields are populated on the same paint the modal appears.
@@ -105,7 +146,7 @@ export function IssueFormModal({
   const [hydratedFor, setHydratedFor] = useState<string | null>(editKey);
   if (editKey !== hydratedFor) {
     setHydratedFor(editKey);
-    if (editKey) hydrateFromProps();
+    if (editKey) hydrate(draftFrom(issue, defaultOwnerId, defaultType));
   }
 
   function submit(e: React.FormEvent) {
@@ -152,13 +193,15 @@ export function IssueFormModal({
 
       <ModalShell
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={guard.requestClose}
+        // Escape belongs to the discard confirm while it is up.
+        dismissible={!guard.asking}
         ariaLabel={isEdit ? "Edit issue" : "Add issue"}
         size="lg"
       >
         <ModalHeader
           title={isEdit ? "Edit issue" : "Add issue"}
-          onClose={() => setOpen(false)}
+          onClose={guard.requestClose}
         />
 
         <ModalBody as="form" onSubmit={submit}>
@@ -244,7 +287,7 @@ export function IssueFormModal({
           )}
 
           <ModalFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={guard.requestClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>
@@ -259,6 +302,17 @@ export function IssueFormModal({
           </ModalFooter>
         </ModalBody>
       </ModalShell>
+
+      <DiscardChangesDialog
+        open={guard.asking}
+        onKeepEditing={guard.keepEditing}
+        onDiscard={guard.discard}
+        message={
+          isEdit
+            ? "Your edits to this issue haven't been saved. Close now and they're gone."
+            : "This issue hasn't been added yet. Close now and what you've typed is gone."
+        }
+      />
     </>
   );
 }

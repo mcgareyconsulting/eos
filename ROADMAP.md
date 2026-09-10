@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-09
+updated: 2026-09-10
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -769,7 +769,7 @@ so the client path matches Home.
 - 2026-08-19 · decision · src session-2026-08-19 — share-down overrules "writer must sit on the guest team". Parent-team member (or admin) may share into any org team. Guest read rule (`listSharedToMe`) is the N20 remaining piece and is in `firestore.rules`.
 
 ### N35 · Directory: company people CSV + add-member from directory
-*W2 · not-started · due — · deps P2-7 · owner daniel · src onboarding-2026-08-18 · upd 2026-08-18*
+*W2 · not-started · due — · deps — · owner daniel · src onboarding-2026-08-18 · upd 2026-09-10*
 
 Effort M. The Pass 11 / P2-7 stretch, now concrete from Steph's
 onboarding session. New-team onboarding was solid; **adding members was
@@ -791,10 +791,54 @@ Two surfaces, one directory:
 Do not collapse this into N6 — different payload, different permissions
 (org admin vs team leader), and the CSV is people not rocks.
 
+**Re-raised 2026-09-10** alongside the Steph tracker rows, so this is a
+second ask, not a stale one. Two things changed since 08-18, and they pull
+in opposite directions.
+
+**It is unblocked.** `deps P2-7` is cleared — P2-7 is `shipped` and live on
+prod (only N1's admin-dropdown confirm gates it reaching `verified`, which is
+a verification, not a build). Nothing is in front of this item.
+
+**But surface 1 is not a CSV parser, and costing it as one will be wrong.**
+The blocker is the data model: **there is no "person in the org but not on a
+team" state today.** `getOrgDirectory()` (`lib/firebase/teams.ts:318`) builds
+its user-id set by walking **`team_members`**, then fetches `/users` docs by
+id — there is **no query against the `users` collection anywhere in the
+repo**, only `.doc(id)` gets. The org directory is a *projection of team
+rosters*, not a list in its own right. Reinforcing the same assumption from
+the other end: `writeMembership` (`lib/team-invite.ts:66`) is the only code
+that writes a `/users` profile at all, and it does so **inside the
+add-to-team batch**; and `delete-team.ts:193` prunes membership-less user
+docs as orphans (scoped to `demo-`/`import-` prefixes, so real accounts are
+safe — but the assumption is visible in the code).
+
+So "import people, then assign to a team from a dropdown — membership is a
+second step, not implied by the file" is exactly the shape the current model
+cannot express. **The work is making the directory a first-class collection**
+(profile writes independent of membership, a `users` query behind
+`getOrgDirectory`, and a rules/permission answer for who may read and write
+it); the CSV parse on top of that is the small half.
+
+**`pnpm accounts:create` is not the halfway house it looks like.** It takes
+people as **CLI arguments** (`Name <email>`, one per person), not a file, and
+it creates an **Auth account only** — no `/users` doc. Someone
+pre-provisioned that way exists to Firebase and is invisible in the app's
+directory until a leader adds them to a team. It solves the uid-stability
+problem it was written for (import owner matching), not this one.
+
+**Knock-on:** whatever `getOrgDirectory` becomes is also what **N54**
+(person-per-row directory table) and **N58** (Data Directory for Admin)
+render, and **N38** (deactivate) acts on. Settle the collection before
+building any of the three views on top of the projection.
+
 **Trail**
 - 2026-07-13 · note · src roadmap-prior#pass-11 — CSV user import named in directory/admin asks
 - 2026-08-10 · note · src P2-7 — stretch left open: CSV directory import
 - 2026-08-18 · request · src onboarding-2026-08-18 — Steph: company CSV (first, last, email) then add-to-team dropdown; add-member modal should pull/search the existing directory
+- 2026-09-10 · request · src session-2026-09-10 — company directory import raised again with the 09-10 feedback batch; recorded here rather than as a new item, since surface 1 of this item already *is* the ask
+- 2026-09-10 · finding · src session-2026-09-10 — **dep on P2-7 cleared** (P2-7 shipped and live); nothing blocks this item
+- 2026-09-10 · finding · src session-2026-09-10 — the org directory is derived from `team_members`, not stored: `getOrgDirectory` walks memberships and the `users` collection is never queried, only `.doc(id)`-fetched. `writeMembership` is the sole `/users` writer and writes inside the add-to-team batch. A teamless person cannot exist, so the "import then assign" flow needs a model change before it needs a parser
+- 2026-09-10 · finding · src session-2026-09-10 — `pnpm accounts:create` is argv-driven and Auth-only (no `/users` doc); it is not a partial implementation of this item
 
 ### N38 · Deactivate user (soft-delete)
 *W2 · not-started · due — · deps P2-7 · owner daniel · src onboarding-2026-08-18 · upd 2026-08-18*
@@ -1436,7 +1480,7 @@ description, but we do do that a lot").
 - 2026-08-15 · client · src l10-2026-08-12-transcript — origin: Steph wants a discussion-notes home other than the description; Jessica points at comments; demarcation resolves it without a new field
 
 ### N31 · Issue-discussion notification — internal, not email
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-09-10*
 
 Effort M. Steph wants to know when there's discussion on a particular issue
 — her current system distributes that as an **email**. We have freedom to
@@ -1463,6 +1507,7 @@ this replaces email volume rather than adding to it.
 - 2026-08-12 · decision · src l10-2026-08-12 — daniel: lean internal notification, not email distribution, short term
 - 2026-08-15 · followup · src l10-2026-08-12-transcript — Steph to check whether 90 emails issue comments to all participants or the owner only; her answer decides subscribe vs broadcast
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
+- 2026-09-10 · note · src feedback-2026-09-10 — **N61** arrived asking for the same thing on to-dos (follow + notify-on-complete). Design the two as one model over `entity_type`. Nancy using follow in ninety today is evidence for the subscribe shape, but the participants-vs-owner answer above is still owed
 
 ### N32 · Meeting rating stays editable after the meeting ends
 *W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-19*
@@ -2008,7 +2053,7 @@ display formatter is *not* substitutable.
 - 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox** on a self-created measurable: form seeds `1234.56` while the grid behind it shows `>= $1,235`; renaming and saving left the stored goal at `1234.56` (checked in Firestore, not just in the UI); interval free when ungrouped or free-labelled, and **disabled at `monthly` naming the group** once assigned to a defined monthly group. Probe metric and group deleted; sandbox back to 5 metrics / 0 groups
 
 ### N54 · Directory as a person-per-row table (ninety parity)
-*W3 · not-started · due — · deps N38, P2-7 · owner daniel · src session-2026-09-04 · upd 2026-09-04*
+*W3 · not-started · due — · deps N38, P2-7, N35 · owner daniel · src session-2026-09-04 · upd 2026-09-10*
 
 Effort M. daniel, with a ninety screenshot: "we want our directory view to
 match the content/columns in this table, obviously keeping our good styling."
@@ -2055,6 +2100,7 @@ may not be the parity that was asked for.
 **Trail**
 - 2026-09-04 · request · src session-2026-09-04 — daniel, with a ninety Directory screenshot: match content/columns, keep our styling
 - 2026-09-04 · finding · src session-2026-09-04 — 4 of 6 columns are available today (avatar, first, last, teams); Role access is ambiguous under a per-team role model (P2-7) and Status does not exist (N38)
+- 2026-09-10 · finding · src session-2026-09-10 — **deps N35 added.** This table renders `getOrgDirectory()`, which is a projection of `team_members` — so until N35 makes the directory a stored collection, a person-per-row table can only ever show people who are already on a team. That is not ninety parity, it is the roster with different chrome
 
 ### N46 · Create a to-do from an issue, inside the meeting
 *W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
@@ -2235,7 +2281,7 @@ on when to run it against prod.
 - 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox**: the star toggle set the flag and the gold WEEKLY pill rendered on the To-Dos row and on Home. Alignment measured on glyph boxes after the fix — due-date text, title text and star icon all centre at the same y (0px offset). Backfill dry run on the ES team found exactly the 3 marked rows — including the **archived** one, confirming a backfill limited to active rows would have missed it — across both spellings (`** Title` and `**Title`). Toggle reverted; migration deliberately left unapplied
 
 ### N6 · Better import functionality
-*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-24*
+*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-09-10*
 
 Effort M. Beyond the current CSV/xlsx import: clearer mapping, validation,
 dry-run, re-import, error report. Attachments are out of import scope
@@ -2308,9 +2354,10 @@ todos / issues only — headlines was added 2026-08-19 (`2de1be1`, finding 5);
 - 2026-08-18 · client · src onboarding-2026-08-18 — import "decent"; milestone sheet dropped on rocks upload; preview not useful (Jessica's dry-run ask, live); team filter should be dropdowns; unmatched owner → No Owner + name in description; headlines kind missing; archived-import contract to confirm
 - 2026-08-18 · decision · src onboarding-2026-08-18 — people/directory CSV is N35, not this item
 - 2026-08-24 · request · src session-2026-08-24 — daniel: need an in-app Import path for **scorecard** data so other teams can be onboarded without the CLI. Parser already supports it; only `WebImportKind` gates it. Flagged alongside: two-collection preview, and the hardcoded `interval: "weekly"`
+- 2026-09-10 · note · src feedback-2026-09-10 — **N60** (to-dos importing as rocks) is the cost of finding 2 above being unbuilt: a row-level preview is what would have caught a mis-picked kind. The two should ship together, or the guard ships alone first
 
 ### N10 · Attachments + links on entities (forward only)
-*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-09-10*
 
 Effort L. Rocks/issues/todos/headlines accept file attachments and/or
 hyperlinks. **No data migration** of ninety attachments (decided
@@ -2321,10 +2368,21 @@ belongs with F2's go-live work, plus a security review of the upload path
 substitute for binary attachments (Jenna, Pass 14 #6), so links can ship
 ahead of binaries. Linkify/rich-text remains P3-2.
 
+**That substitution no longer holds (2026-09-10).** Links shipped with P3-2
+and the ask came back anyway: Steph, on the Issues area, "Cannot add an
+'attachment' to an issue (like a PDF) — would be nice to add an image also."
+Binaries are named specifically, and an image is not something a Doc link
+substitutes for. This does **not** move N10 out of `awaiting` — it still
+needs the Cloud Storage bucket that rides with F2, and the bank-client
+review of the upload path is unchanged — but "links may be enough" is no
+longer available as a reason to defer it, and **Issues is the surface the
+client asks for first**.
+
 **Trail**
 - 2026-07-30 · transcript · src tracker-2026-08-03#6 — Jenna: attachments optional; links to Google Docs OK instead
 - 2026-07-13 · note · src roadmap-prior#pass-11 — attachments imply a Cloud Storage bucket not in the Terraform footprint
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — forward only; no ninety attachment migration
+- 2026-09-10 · client · src feedback-2026-09-10 — Steph Benes, Issues: cannot attach a PDF to an issue, would like images too. Recorded here rather than as a new item — same ask, sharper. Contradicts the 2026-07-30 links-are-an-acceptable-substitute concession, which P3-2 has since satisfied without closing this
 
 ### N15 · Meeting notes UX
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -2647,6 +2705,191 @@ tokens + webhook secret in Secret Manager.
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 19 with the security-docs deliverable attached
 
 ---
+
+## Intake — 2026-09-10 Steph tracker rows
+
+**Not workstream items yet, and deliberately not in `queue`.** Four rows
+dated 2026-09-10, all Steph Benes, one per area — Issues, Meetings, Import,
+To-Dos — plus **company directory import**, raised by daniel in the same
+session. **Three became items** (N59, N60, N61). **Two became no new item**,
+because an existing item already *is* the ask, and a duplicate row with a new
+number would have split the trail:
+
+- **Issues attachments → N10.** Recorded there as a second and sharper
+  report. It matters because it retires the concession N10 was partly
+  deferred on (links as a substitute for binaries).
+- **Company directory import → N35**, surface 1. Recorded there with the
+  finding that makes it bigger than it reads: the org directory is a
+  *projection of `team_members`*, not a stored list, so "import people, then
+  assign to a team" needs a model change before it needs a CSV parser. Its
+  `deps P2-7` is also now **cleared** — P2-7 shipped, so N35 is unblocked and
+  is the only item in this batch with nothing in front of it.
+
+Each item below carries a code finding made 2026-09-10, before scoping. Two
+of the three land on the *opposite* side of their obvious reading, which is
+the reason to read them before ordering them:
+
+- **N59 is smaller than it sounds.** `firestore.rules` has always let any
+  member create a meeting doc. The leader gate is one call, in one server
+  action, plus the button that mirrors it.
+- **N61 is larger than it sounds.** "Following" and "notify on complete" sit
+  on a comment surface that **does not exist for to-dos**
+  (`CommentEntityType` is `"issue" | "rock"`) and on a notification
+  transport this app does not have at all. The emails Steph describes are
+  ninety's, not ours.
+- **N60 has a mechanism but no repro.** Ryan's JIRA file is client-held and
+  has not been seen. What follows is what the code makes possible, not what
+  has been reproduced — **get the file before building anything.**
+
+### N59 · Anyone on the team can start a meeting, not just the leader
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*
+
+Effort S. Steph: "Anyone should be able to start a meeting - not just the
+team leader."
+
+**The gate is entirely application-side, and the data layer never agreed with
+it.** `startMeeting` (`app/(app)/teams/[teamId]/meetings/actions.ts:151`)
+opens with `requireTeamLeader`, and `meetings/page.tsx:34` hides the control
+behind `isAdmin || membershipRole === "leader"`. But `firestore.rules:306`
+already reads `allow create: if admin() || isMember(request.resource.data.team_id)`
+— any member of the team may mint a meeting doc as far as the rules are
+concerned. Nothing has to change in the rules; this is one call and one
+boolean.
+
+**The decision that actually needs making is where to stop.** Five meeting
+actions are leader-gated and they are not one kind of thing:
+
+- **Transport** — `advanceSegment` (:233) and `endMeeting` (:393) move the
+  *group's* stage for everyone in the room. Both were gated on purpose
+  ("starting the shared L10 room is a facilitator control").
+- **Authoring** — the three agenda CRUD actions (:56, :79, :97), plus the
+  leader-only custom-agenda list on the Meetings page. Not what Steph asked
+  about.
+- **Start** — the one in the report.
+
+Opening `startMeeting` alone does **not** imply opening transport, and the
+tempting "open them together" is worth resisting for a turn: a member who can
+start a room but cannot advance it lands the team in a *worse* state than not
+being able to start — a live meeting nobody present can drive. Two candidate
+scopes:
+
+- **(a) Start only.** Any member opens the room; the leader still drives it.
+  Matches the ask literally, one-line-ish. Carries the stranded-room risk
+  above, which is only real if the leader is absent — the exact case Steph is
+  reporting.
+- **(b) Start + transport.** Whoever is in the room drives it. This is
+  **N27**'s territory (leader-driven sync with off-sync opt-out) and must not
+  be decided here in isolation from it.
+
+**Recommendation: (a), read against N27 and N25 (presence) before building** —
+if N27 lands first, (b) becomes nearly free and the stranded-room objection to
+(a) disappears. One thing that does *not* need solving: `startMeeting` already
+joins an existing live meeting instead of minting a second one, so widening
+who may call it creates no duplicate-room risk.
+
+**Trail**
+- 2026-09-10 · request · src feedback-2026-09-10 — Steph Benes, Meetings
+- 2026-09-10 · finding · src session-2026-09-10 — gate is `requireTeamLeader` in `startMeeting` + the page's `isLeader`; `firestore.rules` already permits member creates, so no rules change is involved
+- 2026-09-10 · open · src session-2026-09-10 — start-only vs start+transport is a scope decision coupled to **N27**; not settled here
+
+### N60 · To-Dos import as Rocks — nothing checks the file against the kind
+*W3 · not-started · due — · deps N6 · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*
+
+Effort S to guard, M if it rides N6's preview rework. Steph: "Sometimes todos
+are imported as rocks - see Ryan JIRA example."
+
+**No repro yet — the JIRA file is client-held and has not been seen.** What
+the code shows is that the symptom is reachable by ordinary use, from *two*
+independent directions, and that nothing in the pipeline could have caught
+either one.
+
+1. **Rocks and to-dos are structurally indistinguishable to the importer.**
+   `EXPECTED_HEADERS` (`lib/import-headers.ts`) requires exactly `Owner` +
+   `Title` for **both** kinds. `importTeamFile` validates the *kind string*
+   and the *filename extension* and never once looks at whether the table it
+   parsed matches the kind it was told. A to-do export is a completely valid
+   rocks file — so a mis-picked dropdown imports cleanly and silently.
+2. **Sheet picking falls back to the first sheet, silently.** `pickSheet`
+   (`lib/xlsx.ts:320`) ends `?? sheets[0]`: no match on the kind's prefer
+   regex means sheet one is used, with no warning. The rocks path
+   (`pickRockWorkbookSheets`) strips milestone-named sheets and then falls
+   back exactly the same way. The prefer regexes are tuned to **ninety's**
+   sheet names (`/rock/i`, `/to-?dos?|task/i`); a JIRA export named `Sheet1`
+   matches none of them and takes the fallback every time.
+3. **The preview could not have caught it, which is why it reaches prod
+   data.** That is already **N6 finding 2** — Preview prints filename, row
+   count, write counts, skipped and a collapsed header list, not rows. A user
+   who picked the wrong kind sees a plausible count and applies. Worse for
+   this bug specifically: `buildInputs` returns `sheets: []` for the **todos**
+   and **scorecard** kinds, so the one fact that would expose the fallback —
+   *which sheet did you actually read?* — is not even carried to the preview
+   for the kind most likely to hit it.
+
+**Fix shape (do not build before the file arrives).** A kind/shape check
+between parse and write: refuse, or warn loudly in preview, when the resolved
+sheet name and headers are not consistent with the chosen kind. The cheap
+first half is to stop throwing the resolved sheet name away — surface it for
+every kind, not just issues/headlines — because that alone turns a silent
+fallback into a visible one.
+
+**Cleanup is a second, separate problem.** Rows already imported as the wrong
+type are sitting in prod data now, and there is **no convert/move path between
+entity collections anywhere in the app** — nothing named `convertTo`/`moveTo`
+exists. A guard stops the next one; it does not undo Ryan's. Scope the
+reclassification pass explicitly rather than assuming the fix covers it.
+
+**Trail**
+- 2026-09-10 · request · src feedback-2026-09-10 — Steph Benes, Import; "see Ryan JIRA example"
+- 2026-09-10 · finding · src session-2026-09-10 — rocks and todos share identical required headers (`Owner`, `Title`) and no importer validates the table against the kind
+- 2026-09-10 · finding · src session-2026-09-10 — `pickSheet` falls back to `sheets[0]` with no warning; prefer regexes are ninety-shaped, so a JIRA sheet name takes the fallback
+- 2026-09-10 · finding · src session-2026-09-10 — `buildInputs` returns `sheets: []` for todos and scorecard, so the resolved sheet never reaches the preview for those kinds
+- 2026-09-10 · open · src session-2026-09-10 — **need Ryan's JIRA file** to know which of the two mechanisms fired; and cleanup of already-miscategorised rows has no existing path
+
+### N61 · Following a to-do, and a signal when one is completed
+*W3 · not-started · due — · deps N31 · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*
+
+Effort M–L, and **it should be designed with N31, not after it.** Steph: "The
+concept of 'following' a To-Do has not been addressed. Nancy is actively using
+this in the current 90 to assign and follow to-dos. Currently emails are sent
+when comments are added - maybe not necessary but some level of notification
+when a to-do is completed."
+
+**Read the second half carefully: "currently emails are sent" is ninety, not
+us.** This app sends no email, has no notification collection, and ships one
+Cloud Function (`archiveStaleTodos`). There is nothing here to turn down — the
+noise Steph is describing is in the system she is leaving, and she is telling
+us which part of it to *not* rebuild.
+
+**And the first half needs a surface we don't have.**
+`CommentEntityType = "issue" | "rock"`
+(`app/(app)/teams/[teamId]/entity-comments/actions.ts:7`). **To-dos have no
+comments at all.** So the ask decomposes into three pieces of very different
+size:
+
+- **(a) Comments on to-dos.** Smallest of the three: `entity_comments` is
+  already keyed by `entity_type`, so widening the union and the
+  `parentCollection` map is most of it.
+- **(b) A follow/subscribe relation.** The genuinely new thing — the only
+  part of this row with no precedent anywhere in the roadmap.
+- **(c) A completion notification.** This is **N31's** transport, arriving on
+  a second entity before N31 has built it once.
+
+**This row is evidence for N31's open design question, though not the answer
+it is owed.** N31 has been parked on *subscribe (watch-this-item) vs
+broadcast-to-owner*, waiting on Steph to report whether ninety emails issue
+comments to all participants or the owner only. That answer is still owed.
+But Nancy actively using follow-to-assign-and-track, on to-dos, is a working
+user on the **subscribe** model — and Steph's own framing ("maybe not
+necessary" for comment mail, "some level of notification when a to-do is
+completed") keeps the noise constraint she set in Pass 20: the bell replaces
+email volume, it does not add to it. Build one notification model over
+`entity_type` covering issues and to-dos, not two features that meet later.
+
+**Trail**
+- 2026-09-10 · request · src feedback-2026-09-10 — Steph Benes, To-Dos; Nancy actively using follow in ninety today
+- 2026-09-10 · finding · src session-2026-09-10 — to-dos have no comment surface (`CommentEntityType` is issue | rock); the comment emails described are ninety's, not this app's
+- 2026-09-10 · finding · src session-2026-09-10 — no notification transport exists in the repo at all; `archiveStaleTodos` is the only Cloud Function
+- 2026-09-10 · decision · src session-2026-09-10 — design with **N31** as one model over `entity_type`; this row is evidence for the subscribe shape but is **not** the participants-vs-owner answer N31 is still owed
 
 ## Intake — 2026-09-08 Steph + Joe, transcript pending
 
@@ -3043,6 +3286,7 @@ distinct from Trail entries, which carry a layer + src.*
 | l10-2026-08-19-it | (Gemini notes + transcript, client-held — not a repo artifact) | IT Systems & Security L10, 2026-08-19; anchors are its transcript timestamps. N26 / N39 / N40 / N41 / N42 / N29 |
 | l10-2026-08-19-esd | (Gemini notes + transcript, client-held — not a repo artifact) | Enterprise Systems & Data L10, 2026-08-19; anchors are its transcript timestamps. N26 / N34 / N42 |
 | feedback-2026-09-02 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes + Jessica Teichman feedback dated 2026-09-02; anchors are the reporter + area. N46–N52 (N52 arrived 2026-09-04) |
+| feedback-2026-09-10 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes feedback dated 2026-09-10, four rows; anchors are the reporter + area (Issues / Meetings / Import / To-Dos). N59 / N60 / N61, plus a second report on N10 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
 

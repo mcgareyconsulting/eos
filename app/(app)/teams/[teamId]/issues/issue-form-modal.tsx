@@ -107,16 +107,21 @@ export function IssueFormModal({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const [title, setTitle] = useState("");
-  const [ownerId, setOwnerId] = useState(defaultOwnerId);
-  const [priority, setPriority] = useState("");
-  const [type, setType] = useState<IssueType>(defaultType);
-  const [description, setDescription] = useState("");
+  // Edit mounts already holding its issue (the parent renders this modal only
+  // once a row is being edited), so seed from the issue rather than waiting for
+  // the render-time sync below — that sync only fires on a *change* of issue.
+  const [mounted] = useState<IssueDraft>(() =>
+    draftFrom(issue, defaultOwnerId, defaultType),
+  );
+
+  const [title, setTitle] = useState(mounted.title);
+  const [ownerId, setOwnerId] = useState(mounted.ownerId);
+  const [priority, setPriority] = useState(mounted.priority);
+  const [type, setType] = useState<IssueType>(mounted.type);
+  const [description, setDescription] = useState(mounted.description);
   // What the fields held when the modal opened. Kept so closing can tell an
   // untouched form (close it, no questions) from one holding typing.
-  const [opened, setOpened] = useState<IssueDraft>(() =>
-    draftFrom(null, defaultOwnerId, defaultType),
-  );
+  const [opened, setOpened] = useState<IssueDraft>(mounted);
 
   function hydrate(draft: IssueDraft) {
     setTitle(draft.title);

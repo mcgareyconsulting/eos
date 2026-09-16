@@ -15,30 +15,34 @@ app and the CLI produce identical documents.
 One row per person-and-team. Columns are matched case- and
 whitespace-insensitively.
 
-| Column    | Required | Also reads                      | What it does |
-|-----------|----------|---------------------------------|--------------|
-| **First** | yes\*    | `Given Name`                    | First name |
-| **Last**  | yes\*    | `Surname`, `Family Name`        | Surname |
-| **Email** | **yes**  | `Email Address`, `E-mail`, `Work Email` | The identity. Everything keys off it |
-| **Team**  | no       | `Department`, `Dept`, `Group`   | Team to join. Created if it doesn't exist |
-| **Role**  | no       | `Title`, `Job Title`, `Position` | Stored as a **job title**. Grants nothing |
+| Column          | Required | Also reads                      | What it does |
+|-----------------|----------|---------------------------------|--------------|
+| **First Name**  | yes\*    | `First`, `Given Name`           | First name |
+| **Last Name**   | yes\*    | `Last`, `Surname`               | Surname |
+| **Email**       | **yes**  | `Email Address`, `E-mail`, `Work Email` | The identity. Everything keys off it |
+| **Team**        | no       | `Department`, `Dept`, `Group`   | Team to join. Created if it doesn't exist |
+| **Role access** | no       | `Access`, `Permission`, `Role`  | `Admin` → **org admin**. Anything else → **Member** |
+| *(Job Title)*   | no       | `Position`, `Title`             | Display only. Grants nothing |
 
 \* A single **`Name`** / **`Full Name`** column works instead of First + Last.
 Both `Jane Doe` and `Doe, Jane` parse. If a row has an email and no name at
 all, the name is derived from the address (`jane.doe@` → Jane Doe).
 
 ```csv
-First,Last,Email,Team,Role
-Jane,Doe,jane.doe@highplainsbank.com,Leadership,Branch Manager
-Ann,Roe,ann.roe@highplainsbank.com,Leadership,Teller
-Bob,Loe,bob.loe@highplainsbank.com,Lending,Loan Officer
+First Name,Last Name,Team,Role access,Email
+Jane,Doe,Leadership,Admin,jane.doe@highplainsbank.com
+Ann,Roe,Leadership,Member,ann.roe@highplainsbank.com
+Bob,Loe,Lending,,bob.loe@highplainsbank.com
 ```
+
+Tab-separated pastes out of Sheets or Excel work as-is — the delimiter is
+sniffed from the header row — as does `.xlsx`.
 
 **Someone on two teams** gets either two rows with the same email, or one row
 whose Team cell lists both separated by a **semicolon**:
 
 ```csv
-Jane,Doe,jane.doe@highplainsbank.com,Leadership; Lending,Branch Manager
+Jane,Doe,"Leadership; Lending",Admin,jane.doe@highplainsbank.com
 ```
 
 Semicolon — **not comma**. A comma inside a quoted cell is as likely to be
@@ -59,6 +63,8 @@ guessing wrong invents teams nobody asked for.
   ignoring case and punctuation).
 - a **`team_members` row** joining each person to each of their teams, always
   with role `member`.
+- the **org-admin custom claim** for every row whose `Role access` says
+  `Admin`, merged onto any claims the account already carries.
 
 **Never:**
 
@@ -67,27 +73,37 @@ guessing wrong invents teams nobody asked for.
   to action by hand. The import doesn't act on it.
 - **changes an existing membership's role.** Re-running last quarter's file
   cannot demote a leader you promoted since.
-- **grants leadership or org admin.** See below.
+- **revokes org admin.** Someone holding the claim whom the file calls a
+  member keeps it, and is listed in the report. Revoking is deliberate:
+  `pnpm admin:set-role --email <address> --role normal --apply`.
+- **grants team leadership.** See below.
 
 **Idempotent.** People match on email, teams on name, membership ids are
 deterministic (`{teamId}__{uid}`). Applying the same file twice is a no-op the
 second time.
 
-### The Role column grants nothing
+### What `Role access` does and doesn't grant
 
-The client's Role values are job titles (*Branch Manager*, *Teller*), not app
-permissions, so the importer stores them on the profile and **imports everyone
-as a plain member**. Two consequences worth knowing before you run it:
+**`Admin` → org admin.** The Identity Platform custom claim `role: "admin"` —
+god mode: every team's data, plus the `/admin` screens. Matched case- and
+wording-insensitively (`Admin`, `admin`, `Org Admin`, `Administrator`).
 
-1. **Every team the import creates starts with no leader.** Only org admins
-   can manage it until you promote someone. The report lists these teams
-   explicitly, and the Teams tab flags them with *"no leader yet"*.
-2. Promote leaders afterwards — Members tab → *Make leader*, or
-   `pnpm member:set-role`. Org admin stays `pnpm admin:set-role`.
+**Everything else → Member**, blank included. `Member`, `User`, `Standard`,
+`Normal`, `None` and `Staff` are understood as meaning exactly that. Any
+*other* value — `Owner`, `Leader` — also imports as a member but is
+**reported** as unrecognized, so a file that meant something by it doesn't
+pass unnoticed.
 
-If the client later supplies a Role vocabulary that does map onto app
-permissions, the seam is `lib/user-import/run.ts` (the membership write is a
-single hardcoded `role: "member"`).
+Two consequences worth knowing before you run it:
+
+1. **A granted claim needs a fresh sign-in.** The claim rides on the session
+   cookie, so someone already signed in keeps their old access until they
+   sign out and back in.
+2. **`Role access` never sets team leadership**, so every team the import
+   creates starts with no *leader*. Org admins can still manage it; nobody
+   else can. The report lists these teams, and the Teams tab flags them
+   *"no leader yet"*. Promote one on the Members tab, or with
+   `pnpm member:set-role`.
 
 ### The allowlist applies
 
@@ -108,9 +124,11 @@ Drop the file → **Preview** → read the report → **Apply**. Apply stays dis
 until a preview has run, because the report is the only place you see which
 teams are about to be created.
 
-The report gives counts, a row-by-row table of what lands where, and three
-review lists: rows that couldn't be imported and why, teams left without a
-leader, and people on a roster here but absent from the file.
+The report gives counts, a row-by-row table of what lands where (including who
+gets org admin), and review lists for everything that needs a human: rows that
+couldn't be imported and why, org admin granted, people who kept org admin
+though the file calls them members, unrecognized `Role access` values, teams
+left without a leader, and people on a roster here but absent from the file.
 
 The other two admin tabs cover the rest of the lifecycle:
 
@@ -160,8 +178,9 @@ Credentials work the same way as every other script here (ADC, or
 
 ## Order of operations at cutover
 
-1. `pnpm users:seed people.csv --apply` — people, teams, memberships.
+1. `pnpm users:seed people.csv --apply` — people, teams, memberships, admins.
 2. Promote a leader on each team (`pnpm member:set-role`, or the Members tab).
+   Have anyone granted org admin sign out and back in.
 3. Per-team data import (`docs/CSV_IMPORT.md`) — rocks, to-dos, issues,
    scorecard. Owner names in those files now match real accounts, so rows land
    on real people instead of `import-*` placeholders.

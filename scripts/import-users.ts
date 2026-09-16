@@ -1,4 +1,5 @@
-// Seeds people, teams and memberships from a First/Last/Email/Team/Role file.
+// Seeds people, teams, memberships and org-admin claims from a
+// First Name / Last Name / Team / Role access / Email file.
 //
 // Same importer the admin console's "Import seed file" page runs
 // (`lib/user-import`) — this is the operator-side entry point for when the
@@ -77,7 +78,8 @@ async function main() {
 
   for (const row of report.rows) {
     console.log(
-      `  ${row.action.padEnd(6)} ${row.name.padEnd(24)} ${row.email.padEnd(32)} ${row.team}` +
+      `  ${row.action.padEnd(6)} ${row.name.padEnd(24)} ${row.email.padEnd(32)} ` +
+        `${row.team.padEnd(20)} ${row.orgAdmin ? "ORG ADMIN" : "member"}` +
         `${row.note ? `   (${row.note})` : ""}`,
     );
   }
@@ -86,8 +88,33 @@ async function main() {
     `\nTeams:       ${report.teams.created} created, ${report.teams.matched} matched\n` +
       `Accounts:    ${report.people.authCreated} created, ${report.people.authExisting} existed\n` +
       `Memberships: ${report.memberships.created} added, ${report.memberships.existing} already in place\n` +
+      `Org admins:  ${report.orgAdmins.granted.length} granted, ${report.orgAdmins.unchanged.length} already admin\n` +
       `Writes:      ${report.writes}`,
   );
+
+  if (report.orgAdmins.granted.length > 0) {
+    console.log(
+      `\nOrg admin ${apply ? "granted to" : "would be granted to"}: ${report.orgAdmins.granted.join(", ")}` +
+        (apply
+          ? "\n  They must sign out and back in — the claim rides on the session cookie."
+          : ""),
+    );
+  }
+
+  if (report.orgAdmins.notRevoked.length > 0) {
+    console.log(
+      `\nStill org admin though the file says member: ${report.orgAdmins.notRevoked.join(", ")}\n` +
+        "  This import never revokes access. Remove it deliberately:\n" +
+        "    pnpm admin:set-role --email <address> --role normal --apply",
+    );
+  }
+
+  if (report.unrecognizedAccess.length > 0) {
+    console.log(
+      `\nUnrecognized Role access values (imported as member): ` +
+        report.unrecognizedAccess.map((v) => `"${v}"`).join(", "),
+    );
+  }
 
   if (report.issues.length > 0) {
     console.log(`\nRows not imported (${report.issues.length}):`);
@@ -100,7 +127,7 @@ async function main() {
   if (report.leaderless.length > 0) {
     console.log(
       `\nTeams with no leader: ${report.leaderless.join(", ")}\n` +
-        "  The Role column is stored as a job title and never promotes anyone.\n" +
+        "  Role access grants org admin, never team leadership.\n" +
         "  Promote a leader per team:  pnpm member:set-role --help",
     );
   }

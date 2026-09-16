@@ -158,7 +158,7 @@ function ReportView({ report }: { report: SeedReport }) {
           : `Imported. ${report.writes} document${report.writes === 1 ? "" : "s"} written.`}
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat
           label="Teams"
           value={`${report.teams.created} new`}
@@ -173,6 +173,11 @@ function ReportView({ report }: { report: SeedReport }) {
           label="Memberships"
           value={`${report.memberships.created} added`}
           sub={`${report.memberships.existing} already in place`}
+        />
+        <Stat
+          label="Org admins"
+          value={`${report.orgAdmins.granted.length} granted`}
+          sub={`${report.orgAdmins.unchanged.length} already admin`}
         />
         <Stat
           label="Problem rows"
@@ -197,12 +202,61 @@ function ReportView({ report }: { report: SeedReport }) {
         </Panel>
       )}
 
+      {report.orgAdmins.granted.length > 0 && (
+        <Panel title={`Org admin ${report.dryRun ? "to be granted" : "granted"}`}>
+          <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
+            From the <strong>Role access</strong> column. Org admin sees and
+            manages every team, plus these admin screens.
+            {!report.dryRun && (
+              <>
+                {" "}
+                They must <strong>sign out and back in</strong> before it takes
+                effect — the claim rides on the session cookie.
+              </>
+            )}
+          </p>
+          <p className="text-sm font-medium">
+            {report.orgAdmins.granted.join(", ")}
+          </p>
+        </Panel>
+      )}
+
+      {report.orgAdmins.notRevoked.length > 0 && (
+        <Panel title="Still org admin, though the file doesn't say so" tone="amber">
+          <p className="mb-2 text-sm">
+            The file lists these people as members, but they already hold org
+            admin. The import never revokes access, so they kept it. Remove it
+            deliberately with{" "}
+            <code className="rounded bg-black/5 px-1 dark:bg-white/10">
+              pnpm admin:set-role --role normal
+            </code>
+            .
+          </p>
+          <p className="text-sm font-medium">
+            {report.orgAdmins.notRevoked.join(", ")}
+          </p>
+        </Panel>
+      )}
+
+      {report.unrecognizedAccess.length > 0 && (
+        <Panel title="Role access values that weren't recognized" tone="amber">
+          <p className="mb-2 text-sm">
+            Only <strong>Admin</strong> grants anything; these were imported as
+            plain members. Check they were meant to be.
+          </p>
+          <p className="text-sm font-medium">
+            {report.unrecognizedAccess.map((v) => `“${v}”`).join(", ")}
+          </p>
+        </Panel>
+      )}
+
       {report.leaderless.length > 0 && (
         <Panel title="Teams with no leader" tone="amber">
           <p className="mb-2 text-sm">
-            The file&rsquo;s Role column is treated as a job title, so the
-            import never promotes anyone. Promote a leader on each team&rsquo;s
-            Members tab — until then only org admins can manage these teams.
+            <strong>Role access</strong> grants org admin, never team
+            leadership, so the import promotes nobody to leader. Until you
+            promote one on each team&rsquo;s Members tab, only org admins can
+            manage these teams.
           </p>
           <p className="text-sm font-medium">{report.leaderless.join(", ")}</p>
         </Panel>
@@ -237,7 +291,7 @@ function ReportView({ report }: { report: SeedReport }) {
                 <th className="px-3 py-2 font-medium">Name</th>
                 <th className="px-3 py-2 font-medium">Email</th>
                 <th className="px-3 py-2 font-medium">Team</th>
-                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="px-3 py-2 font-medium">Access</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -261,7 +315,18 @@ function ReportView({ report }: { report: SeedReport }) {
                   <td className="px-3 py-2 text-zinc-500">{row.email}</td>
                   <td className="px-3 py-2">{row.team}</td>
                   <td className="px-3 py-2 text-zinc-500">
-                    {row.title ?? "—"}
+                    {row.orgAdmin ? (
+                      <span className="rounded-full bg-hpb-blue/10 px-2 py-0.5 text-[10px] font-medium text-hpb-blue ring-1 ring-inset ring-hpb-blue/20 dark:text-hpb-gold dark:ring-hpb-gold/20">
+                        Org admin
+                      </span>
+                    ) : (
+                      "Member"
+                    )}
+                    {row.title ? (
+                      <span className="block text-xs text-zinc-400">
+                        {row.title}
+                      </span>
+                    ) : null}
                     {row.note ? (
                       <span className="block text-xs text-zinc-400">
                         {row.note}

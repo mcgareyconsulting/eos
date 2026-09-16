@@ -13,11 +13,18 @@ export type SeedPersonRow = {
   /** Team names exactly as written in the file. A cell may name several. */
   teams: string[];
   /**
-   * The file's Role/Title column, captured verbatim onto the profile.
-   * **Never** grants access: the client's role values are job titles, not app
-   * permissions, so every imported membership lands as `member` regardless.
-   * Team leadership and org admin stay manual (Members tab / admin:set-role).
+   * The `Role access` column said admin — grant the org-admin custom claim.
+   * This is the **only** thing that column grants: team leadership is not set
+   * by the file, and every membership it writes is a plain `member`.
    */
+  orgAdmin: boolean;
+  /** The Role access cell verbatim, for the preview. */
+  accessRaw: string | null;
+  /** Set when the cell was neither admin nor a member synonym — imported as
+   *  member and reported, rather than silently flattened. */
+  unrecognizedAccess: string | null;
+  /** A job title, if the file carries a separate column for one. Display
+   *  only — it grants nothing. */
   title: string | null;
 };
 
@@ -44,6 +51,8 @@ export type SeedPersonPlan = {
   email: string;
   firstName: string;
   lastName: string;
+  /** True if **any** of this person's rows said admin. */
+  orgAdmin: boolean;
   title: string | null;
   /** Deduped team names from every row this person appeared on. */
   teams: string[];
@@ -67,6 +76,8 @@ export type SeedPreviewRow = {
   email: string;
   /** Team name, or "—" for a person the file gives no team. */
   team: string;
+  /** The file grants this person the org-admin claim. */
+  orgAdmin: boolean;
   title: string | null;
   note?: string;
 };
@@ -89,10 +100,24 @@ export type SeedReport = {
   };
   memberships: { created: number; existing: number };
   /**
-   * Teams the file touches that end up with no leader at all. The role column
-   * is deliberately not read (see SeedPersonRow.title), so every team this
-   * import creates starts leaderless — surfaced here so the admin promotes
-   * someone instead of discovering it when nobody can manage the team.
+   * Org-admin custom claims, by email. `granted` is what this run set,
+   * `unchanged` already had it, and `notRevoked` names people who hold the
+   * claim while the file calls them a member — the import is additive, so it
+   * reports rather than demotes. Revoke with `pnpm admin:set-role --role
+   * normal`.
+   */
+  orgAdmins: { granted: string[]; unchanged: string[]; notRevoked: string[] };
+  /**
+   * Distinct `Role access` values that were neither admin nor a member
+   * synonym. Imported as member; listed so a file meaning something by
+   * "Owner" or "Leader" doesn't pass unnoticed.
+   */
+  unrecognizedAccess: string[];
+  /**
+   * Teams the file touches that end up with no team leader. `Role access`
+   * grants org admin, never team leadership, so every team this import creates
+   * starts leaderless — surfaced here so the admin promotes someone instead of
+   * discovering it when nobody but an org admin can manage the team.
    */
   leaderless: string[];
   /**

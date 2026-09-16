@@ -11,7 +11,8 @@
 > **Live DB:** `hpb-eos-prod-db` (only via ship / prod env — do not point local here)
 
 > **Bulk seeding?** One person at a time is this runbook; a whole roster
-> from a First/Last/Email/Team/Role file is `docs/USER_IMPORT.md`
+> from a First/Last/Team/Role access/Email file is `docs/USER_IMPORT.md`
+> (it grants org admin from that file too)
 > (Admin → Import seed file, or `pnpm users:seed`).
 
 ---

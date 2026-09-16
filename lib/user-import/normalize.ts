@@ -11,7 +11,14 @@ const LAST = ["Last", "Last Name", "Lastname", "Surname", "Family Name"];
 const FULL = ["Name", "Full Name", "Member", "Person", "Employee"];
 const EMAIL = ["Email", "Email Address", "E-mail", "E-mail Address", "Work Email"];
 const TEAM = ["Team", "Teams", "Department", "Dept", "Group"];
-const TITLE = ["Role", "Title", "Job Title", "Position"];
+// **Access, not a job title.** `Role access` is the client's column name and
+// the one that decides permissions: "admin" grants the org-admin claim,
+// anything else is a plain member. Ordered so the explicit spelling wins when
+// a file somehow carries both.
+const ACCESS = ["Role access", "Access", "Access level", "Permission", "Role"];
+// A genuine job title, if the file happens to carry one. Display only — it has
+// never granted anything and still doesn't.
+const TITLE = ["Job Title", "Position", "Title"];
 
 /**
  * A Team cell may name several teams. Split on semicolon, pipe and newline —
@@ -23,6 +30,29 @@ const TEAM_SPLIT = /[;|\n]+/;
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Read the Role access cell.
+ *
+ * Only "admin" grants anything — everything else, blank included, is a plain
+ * member. Values that are neither are reported rather than silently treated as
+ * member, because a file saying "Owner" or "Leader" is one somebody expected
+ * to mean something, and quietly flattening it is how a roster ends up wrong
+ * in a way nobody notices.
+ */
+export function readAccess(raw: string): {
+  orgAdmin: boolean;
+  recognized: boolean;
+} {
+  const key = normalizeKey(raw);
+  if (!key) return { orgAdmin: false, recognized: true };
+  // "admin", "Admin", "Org Admin", "administrator", "admin access".
+  if (/\badmin(istrator)?\b/.test(key)) return { orgAdmin: true, recognized: true };
+  if (/\b(member|user|standard|normal|none|staff)\b/.test(key)) {
+    return { orgAdmin: false, recognized: true };
+  }
+  return { orgAdmin: false, recognized: false };
 }
 
 /**
@@ -115,12 +145,18 @@ export function readSeedRows(table: CsvTable): {
       .map((t) => t.trim())
       .filter(Boolean);
 
+    const accessRaw = cell(row, headers, ...ACCESS);
+    const access = readAccess(accessRaw);
+
     rows.push({
       line,
       firstName: first,
       lastName: last,
       email,
       teams: dedupeByKey(teams),
+      orgAdmin: access.orgAdmin,
+      accessRaw: accessRaw || null,
+      unrecognizedAccess: access.recognized ? null : accessRaw,
       title: cell(row, headers, ...TITLE) || null,
     });
   });
@@ -152,4 +188,4 @@ export function hasSeedColumns(table: CsvTable): boolean {
   return has(EMAIL) && (has(FIRST) || has(LAST) || has(FULL));
 }
 
-export const SEED_COLUMNS = { FIRST, LAST, FULL, EMAIL, TEAM, TITLE };
+export const SEED_COLUMNS = { FIRST, LAST, FULL, EMAIL, TEAM, ACCESS, TITLE };

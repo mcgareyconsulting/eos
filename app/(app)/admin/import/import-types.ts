@@ -16,5 +16,5 @@ export const SEED_FILE_COLUMNS: { name: string; required: boolean; note: string 
   { name: "Last", required: true, note: "Also reads Surname. “Doe, Jane” in one Name column works too." },
   { name: "Email", required: true, note: "The identity. Must pass the sign-in allowlist, and is what the Google account links to." },
   { name: "Team", required: false, note: "Also reads Department / Group. Separate several teams with a semicolon. A team that doesn’t exist yet is created." },
-  { name: "Role", required: false, note: "Stored as a job title on the profile. It does NOT grant leadership or admin — everyone imports as a plain member." },
+  { name: "Role access", required: false, note: "“Admin” grants org admin (all teams, plus these admin screens). Every other value — and blank — is a plain Member. It never sets team leadership." },
 ];

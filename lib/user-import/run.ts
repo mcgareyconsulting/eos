@@ -1,9 +1,10 @@
 // Applies a people seed to Firestore + Identity Platform.
 //
-// **Additive only.** The file can create people, teams and memberships and
-// can refresh a profile's name/title. It never deletes a person, never drops
-// a membership, and never changes an existing membership's role — so
-// re-dropping last month's seed cannot demote a leader or empty a roster.
+// **Additive only.** The file can create people, teams and memberships, grant
+// the org-admin claim, and refresh a profile's name/title. It never deletes a
+// person, never drops a membership, never changes an existing membership's
+// role, and never *revokes* org admin — so re-dropping last month's seed
+// cannot demote anyone or empty a roster.
 // What the file no longer mentions is reported (`notInFile`) for the admin to
 // act on by hand on the People tab, not acted on here.
 //
@@ -32,8 +33,14 @@ import { buildSeedPlan } from "./plan";
  * satisfies it structurally.
  */
 export type SeedAuth = {
-  getUserByEmail(email: string): Promise<{ uid: string }>;
+  getUserByEmail(
+    email: string,
+  ): Promise<{ uid: string; customClaims?: Record<string, unknown> | null }>;
   createUser(props: { email: string; displayName?: string }): Promise<{ uid: string }>;
+  setCustomUserClaims(
+    uid: string,
+    claims: Record<string, unknown> | null,
+  ): Promise<void>;
 };
 
 export type UserImportOptions = {
@@ -127,6 +134,9 @@ export async function runUserImport(
   let authCreated = 0;
   let authExisting = 0;
   let profilesWritten = 0;
+  const adminsGranted: string[] = [];
+  const adminsUnchanged: string[] = [];
+  const adminsNotRevoked: string[] = [];
 
   for (const person of plan.people) {
     const fullName = `${person.firstName} ${person.lastName}`.trim();
@@ -155,14 +165,37 @@ export async function runUserImport(
 
     resolved.set(person.email, { uid, pending, isNew: !found });
 
+    // ------- org-admin claim -------
+    // The claim lives on Identity Platform, not Firestore, so it is set here
+    // rather than through the Writer, and a dry run reports it without
+    // touching anything.
+    const wasAdmin = found?.customClaims?.role === "admin";
+    if (person.orgAdmin && wasAdmin) {
+      adminsUnchanged.push(person.email);
+    } else if (person.orgAdmin) {
+      adminsGranted.push(person.email);
+      if (!dryRun) {
+        // Merge, never replace: another claim on this account is not ours to
+        // drop. Same shape as scripts/set-admin-role.ts.
+        await auth.setCustomUserClaims(uid, {
+          ...(found?.customClaims ?? {}),
+          role: "admin",
+        });
+      }
+    } else if (wasAdmin) {
+      // The file calls them a member but they hold the claim. Additive means
+      // report, not demote — revoking someone's access is not something a
+      // dropped file should do silently.
+      adminsNotRevoked.push(person.email);
+    }
+
     await writer.set(["users", uid], {
       display_name: fullName,
       first_name: person.firstName,
       last_name: person.lastName,
       email: person.email,
-      // Job title from the file's Role column. Stored for the directory only —
-      // access comes from team_members.role and the org-admin claim, never
-      // from this.
+      // Job title, when the file carries a separate column for one. Display
+      // only — access comes from team_members.role and the org-admin claim.
       ...(person.title ? { title: person.title } : {}),
       created_via: "user-import",
     });
@@ -219,6 +252,7 @@ export async function runUserImport(
     plan.people.map((p) => [p.email, `${p.firstName} ${p.lastName}`.trim() || p.email]),
   );
   const titleByEmail = new Map(plan.people.map((p) => [p.email, p.title]));
+  const adminByEmail = new Map(plan.people.map((p) => [p.email, p.orgAdmin]));
 
   const addPreview = (row: SeedPreviewRow) => {
     if (preview.length < previewLimit) preview.push(row);
@@ -235,6 +269,7 @@ export async function runUserImport(
         name: nameByEmail.get(pair.email) ?? pair.email,
         email: pair.email,
         team: pair.teamName,
+        orgAdmin: adminByEmail.get(pair.email) ?? false,
         title: titleByEmail.get(pair.email) ?? null,
         note: "Already on this team — role left as it is.",
       });
@@ -255,6 +290,7 @@ export async function runUserImport(
       name: nameByEmail.get(pair.email) ?? pair.email,
       email: pair.email,
       team: pair.teamName,
+      orgAdmin: adminByEmail.get(pair.email) ?? false,
       title: titleByEmail.get(pair.email) ?? null,
     });
   }
@@ -267,6 +303,7 @@ export async function runUserImport(
       name: nameByEmail.get(person.email) ?? person.email,
       email: person.email,
       team: "—",
+      orgAdmin: person.orgAdmin,
       title: person.title,
       note: "No team in the file — profile only, joins no roster.",
     });
@@ -309,6 +346,18 @@ export async function runUserImport(
     },
     people: { authCreated, authExisting, profilesWritten },
     memberships: { created: membershipsCreated, existing: membershipsExisting },
+    orgAdmins: {
+      granted: adminsGranted,
+      unchanged: adminsUnchanged,
+      notRevoked: adminsNotRevoked,
+    },
+    unrecognizedAccess: [
+      ...new Set(
+        allowed
+          .map((r) => r.unrecognizedAccess)
+          .filter((v): v is string => !!v),
+      ),
+    ],
     leaderless,
     notInFile,
     issues,
@@ -322,8 +371,9 @@ export async function runUserImport(
  * the file, and does the team have a leader. Both are read *after* the writes
  * so an applied run reports the state the admin will actually see.
  *
- * A team this run created is leaderless by construction (the role column is
- * not read), so it is reported without a query.
+ * A team this run created is leaderless by construction — the file grants org
+ * admin but never team leadership — so it is reported without a query. An org
+ * admin can still manage it; a team leader is what it lacks.
  */
 async function reviewLists(
   db: Firestore,

@@ -45,6 +45,7 @@ export function buildSeedPlan(
         email: row.email,
         firstName: row.firstName,
         lastName: row.lastName,
+        orgAdmin: row.orgAdmin,
         title: row.title,
         teams: [...row.teams],
         lines: [row.line],
@@ -63,6 +64,10 @@ export function buildSeedPlan(
         reason: `Two names for one address — keeping "${wasName}", ignoring "${nowName}".`,
       });
     }
+
+    // Access is a union, not first-wins: someone listed on two teams with
+    // admin on only one row meant admin. Nothing here can take it away.
+    existing.orgAdmin = existing.orgAdmin || row.orgAdmin;
 
     // Fill blanks from later rows, never overwrite what the first row set.
     if (!existing.firstName) existing.firstName = row.firstName;

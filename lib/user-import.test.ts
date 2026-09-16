@@ -7,6 +7,7 @@ import {
   buildSeedPlan,
   hasSeedColumns,
   nameFromEmail,
+  readAccess,
   readSeedRows,
   runUserImport,
   splitFullName,
@@ -59,11 +60,11 @@ describe("nameFromEmail", () => {
 // ---------------------------------------------------------------------------
 
 describe("readSeedRows", () => {
-  test("reads the documented columns", () => {
+  test("reads the client's columns", () => {
     const { rows, issues } = readSeedRows(
       table(
-        "First,Last,Email,Team,Role\n" +
-          "Jane,Doe,Jane.Doe@Bank.com,Leadership,Branch Manager\n",
+        "First Name,Last Name,Team,Role access,Email\n" +
+          "Jane,Doe,Leadership,Admin,Jane.Doe@Bank.com\n",
       ),
     );
     assert.equal(issues.length, 0);
@@ -73,7 +74,10 @@ describe("readSeedRows", () => {
       lastName: "Doe",
       email: "jane.doe@bank.com", // lowercased for stable keying
       teams: ["Leadership"],
-      title: "Branch Manager",
+      orgAdmin: true,
+      accessRaw: "Admin",
+      unrecognizedAccess: null,
+      title: null,
     });
   });
 
@@ -201,7 +205,7 @@ describe("buildSeedPlan", () => {
   test("fills a blank field from a later row without overwriting a set one", () => {
     const plan = buildSeedPlan(
       rows(
-        "First,Last,Email,Team,Role\n" +
+        "First,Last,Email,Team,Job Title\n" +
           "Jane,Doe,jane@bank.com,Ops,\n" +
           "Jane,Doe,jane@bank.com,Lending,Teller\n",
       ),
@@ -209,21 +213,64 @@ describe("buildSeedPlan", () => {
     );
     assert.equal(plan.people[0].title, "Teller");
   });
+
+  test("admin on any one of a person's rows makes them admin", () => {
+    const plan = buildSeedPlan(
+      rows(
+        "First,Last,Email,Team,Role access\n" +
+          "Jane,Doe,jane@bank.com,Ops,Member\n" +
+          "Jane,Doe,jane@bank.com,Leadership,Admin\n",
+      ),
+      [],
+    );
+    assert.equal(plan.people.length, 1);
+    assert.equal(plan.people[0].orgAdmin, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Role access
+// ---------------------------------------------------------------------------
+
+describe("readAccess", () => {
+  test("only admin grants, in any casing or wording", () => {
+    for (const v of ["Admin", "admin", "ADMIN", "Org Admin", "Administrator"]) {
+      assert.deepEqual(readAccess(v), { orgAdmin: true, recognized: true }, v);
+    }
+  });
+
+  test("blank and member synonyms are plain members", () => {
+    for (const v of ["", "  ", "Member", "member", "User", "Standard"]) {
+      assert.deepEqual(readAccess(v), { orgAdmin: false, recognized: true }, v);
+    }
+  });
+
+  test("anything else is a member, but flagged rather than silently flattened", () => {
+    assert.deepEqual(readAccess("Owner"), { orgAdmin: false, recognized: false });
+    assert.deepEqual(readAccess("Leader"), { orgAdmin: false, recognized: false });
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Applying
 // ---------------------------------------------------------------------------
 
-/** Auth fake: accounts exist only once created, uids derived from the email. */
-function fakeAuth(existing: Record<string, string> = {}) {
+/**
+ * Auth fake: accounts exist only once created, uids derived from the email.
+ * `existing` maps email → uid; `claims` seeds custom claims by uid.
+ */
+function fakeAuth(
+  existing: Record<string, string> = {},
+  claims: Record<string, Record<string, unknown>> = {},
+) {
   const byEmail = new Map(Object.entries(existing));
+  const claimsByUid = new Map(Object.entries(claims));
   const created: string[] = [];
   const auth: SeedAuth = {
     async getUserByEmail(email) {
       const uid = byEmail.get(email);
       if (!uid) throw new Error("auth/user-not-found");
-      return { uid };
+      return { uid, customClaims: claimsByUid.get(uid) ?? null };
     },
     async createUser({ email }) {
       const uid = `uid-${email.split("@")[0]}`;
@@ -231,15 +278,20 @@ function fakeAuth(existing: Record<string, string> = {}) {
       created.push(email);
       return { uid };
     },
+    async setCustomUserClaims(uid, next) {
+      if (next) claimsByUid.set(uid, next);
+      else claimsByUid.delete(uid);
+    },
   };
-  return { auth, created, byEmail };
+  return { auth, created, byEmail, claimsByUid };
 }
 
+// The client's actual header row, tab-separated as it comes out of Sheets.
 const SEED_CSV =
-  "First,Last,Email,Team,Role\n" +
-  "Jane,Doe,jane@bank.com,Leadership,Branch Manager\n" +
-  "Ann,Roe,ann@bank.com,Leadership,Teller\n" +
-  "Bob,Loe,bob@bank.com,Lending,Loan Officer\n";
+  "First Name\tLast Name\tTeam\tRole access\tEmail\n" +
+  "Jane\tDoe\tLeadership\tAdmin\tjane@bank.com\n" +
+  "Ann\tRoe\tLeadership\tMember\tann@bank.com\n" +
+  "Bob\tLoe\tLending\t\tbob@bank.com\n";
 
 describe("runUserImport", () => {
   test("a dry run previews every person and writes nothing", async () => {
@@ -287,13 +339,13 @@ describe("runUserImport", () => {
     const jane = db.raw("users/uid-jane");
     assert.equal(jane?.display_name, "Jane Doe");
     assert.equal(jane?.email, "jane@bank.com");
-    // The Role column lands as a job title on the profile…
-    assert.equal(jane?.title, "Branch Manager");
 
-    // …and never as a permission: every seeded membership is a plain member.
+    // Role access never becomes a *team* role — admin or not, every seeded
+    // membership is a plain member. Leadership stays a manual promotion.
     for (const m of db.docsIn("team_members")) {
       assert.equal(m.data.role, "member");
     }
+    assert.deepEqual(report.orgAdmins.granted, ["jane@bank.com"]);
   });
 
   test("re-applying the same file changes nothing and keeps a promoted leader", async () => {
@@ -397,6 +449,103 @@ describe("runUserImport", () => {
     });
 
     assert.deepEqual(report.leaderless.sort(), ["Leadership", "Lending"]);
+  });
+
+  test("grants the org-admin claim only to the rows marked Admin", async () => {
+    const db = new FakeFirestore();
+    const { auth, claimsByUid } = fakeAuth();
+
+    const report = await runUserImport(db.asFirestore(), auth, table(SEED_CSV), {
+      dryRun: false,
+    });
+
+    assert.deepEqual(report.orgAdmins.granted, ["jane@bank.com"]);
+    assert.deepEqual(claimsByUid.get("uid-jane"), { role: "admin" });
+    assert.equal(claimsByUid.has("uid-ann"), false, "Member row gets no claim");
+    assert.equal(claimsByUid.has("uid-bob"), false, "blank row gets no claim");
+  });
+
+  test("a dry run reports the grant without setting any claim", async () => {
+    const db = new FakeFirestore();
+    const { auth, claimsByUid } = fakeAuth();
+
+    const report = await runUserImport(db.asFirestore(), auth, table(SEED_CSV));
+
+    assert.deepEqual(report.orgAdmins.granted, ["jane@bank.com"]);
+    assert.equal(claimsByUid.size, 0);
+    assert.equal(
+      report.rows.find((r) => r.email === "jane@bank.com")?.orgAdmin,
+      true,
+    );
+  });
+
+  test("keeps other custom claims on the account when granting", async () => {
+    const db = new FakeFirestore();
+    const { auth, claimsByUid } = fakeAuth(
+      { "jane@bank.com": "google-uid-jane" },
+      { "google-uid-jane": { some_other_claim: 7 } },
+    );
+
+    await runUserImport(db.asFirestore(), auth, table(SEED_CSV), {
+      dryRun: false,
+    });
+
+    assert.deepEqual(claimsByUid.get("google-uid-jane"), {
+      some_other_claim: 7,
+      role: "admin",
+    });
+  });
+
+  test("an already-admin row is reported as unchanged, not re-granted", async () => {
+    const db = new FakeFirestore();
+    const { auth } = fakeAuth(
+      { "jane@bank.com": "google-uid-jane" },
+      { "google-uid-jane": { role: "admin" } },
+    );
+
+    const report = await runUserImport(db.asFirestore(), auth, table(SEED_CSV), {
+      dryRun: false,
+    });
+
+    assert.deepEqual(report.orgAdmins.granted, []);
+    assert.deepEqual(report.orgAdmins.unchanged, ["jane@bank.com"]);
+  });
+
+  test("never revokes admin from someone the file calls a member", async () => {
+    const db = new FakeFirestore();
+    const { auth, claimsByUid } = fakeAuth(
+      { "ann@bank.com": "google-uid-ann" },
+      { "google-uid-ann": { role: "admin" } },
+    );
+
+    const report = await runUserImport(db.asFirestore(), auth, table(SEED_CSV), {
+      dryRun: false,
+    });
+
+    assert.deepEqual(report.orgAdmins.notRevoked, ["ann@bank.com"]);
+    assert.deepEqual(
+      claimsByUid.get("google-uid-ann"),
+      { role: "admin" },
+      "the claim is left exactly as it was",
+    );
+  });
+
+  test("reports Role access values it did not recognize", async () => {
+    const db = new FakeFirestore();
+    const { auth, claimsByUid } = fakeAuth();
+
+    const report = await runUserImport(
+      db.asFirestore(),
+      auth,
+      table(
+        "First Name,Last Name,Team,Role access,Email\n" +
+          "Jane,Doe,Ops,Owner,jane@bank.com\n",
+      ),
+      { dryRun: false },
+    );
+
+    assert.deepEqual(report.unrecognizedAccess, ["Owner"]);
+    assert.equal(claimsByUid.size, 0, "an unrecognized value grants nothing");
   });
 
   test("rejects a file that isn't a people seed at all", async () => {

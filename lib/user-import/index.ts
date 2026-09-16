@@ -25,6 +25,7 @@ export type { SeedAuth, UserImportOptions } from "./run";
 export {
   hasSeedColumns,
   nameFromEmail,
+  readAccess,
   readSeedRows,
   splitFullName,
   SEED_COLUMNS,

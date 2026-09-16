@@ -1,11 +1,12 @@
 // Minimal in-memory Firestore fake for unit tests.
 //
-// Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts and
-// lib/firebase/queries.ts actually call: single-doc get/set/update/delete,
-// `where` (==, "in" and "array-contains"), `orderBy` (single field,
-// ascending), a bare `collection().get()`, and `getAll(...refs)`. It is not
-// an emulator replacement — just enough shape to drive these modules' logic
-// without touching real Firebase.
+// Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts,
+// lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
+// single-doc get/set/update/delete, `where` (==, "in" and "array-contains"),
+// `orderBy` (single field, ascending), a bare `collection().get()`,
+// `collection().doc()` with no id (auto-id), `getAll(...refs)`, and a
+// `batch()` of set/update/delete. It is not an emulator replacement — just
+// enough shape to drive these modules' logic without touching real Firebase.
 
 type DocData = Record<string, unknown>;
 
@@ -128,9 +129,12 @@ export class FakeFirestore {
     this.docs.set(`${collection}/${id}`, data);
   }
 
+  private autoId = 0;
+
   collection(name: string) {
     return {
-      doc: (id: string) => new FakeDocRef(this, `${name}/${id}`),
+      doc: (id?: string) =>
+        new FakeDocRef(this, `${name}/${id ?? `auto-${++this.autoId}`}`),
       where: (field: string, op: string, value: unknown) =>
         new FakeQuery(this, name).where(field, op, value),
       orderBy: (field: string) => new FakeQuery(this, name).orderBy(field),
@@ -140,6 +144,29 @@ export class FakeFirestore {
 
   async getAll(...refs: FakeDocRef[]) {
     return Promise.all(refs.map((r) => r.get()));
+  }
+
+  /** Queued writes applied together on commit(), like the real WriteBatch. */
+  batch() {
+    const ops: (() => Promise<void>)[] = [];
+    const b = {
+      set: (ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) => {
+        ops.push(() => ref.set(data, opts));
+        return b;
+      },
+      update: (ref: FakeDocRef, data: DocData) => {
+        ops.push(() => ref.update(data));
+        return b;
+      },
+      delete: (ref: FakeDocRef) => {
+        ops.push(() => ref.delete());
+        return b;
+      },
+      commit: async () => {
+        for (const op of ops) await op();
+      },
+    };
+    return b;
   }
 
   /** Cast for passing to code typed against firebase-admin's `Firestore`. */

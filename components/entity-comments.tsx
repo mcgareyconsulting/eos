@@ -31,6 +31,8 @@ type CommentDoc = {
   entity_id: string;
   body: string;
   author_id: string;
+  /** Roster uids `@`-mentioned in the body; absent on older comments. */
+  mention_ids?: string[];
   created_at: MaybeTimestamp;
 };
 
@@ -81,6 +83,22 @@ export function EntityComments({
     if (id === userId) return "You";
     return members.find((m) => m.user_id === id)?.full_name ?? "—";
   };
+
+  // @mentions are a to-do feature for now — the client asked for exactly
+  // that scope. The same roster drives the picker and the read-side
+  // highlight, so what you picked is what gets lit up.
+  const mentionsOn = entityType === "todo";
+  const mentionCandidates = useMemo(
+    () =>
+      mentionsOn
+        ? members.map((m) => ({ id: m.user_id, name: m.full_name }))
+        : undefined,
+    [mentionsOn, members],
+  );
+  const mentionNames = useMemo(
+    () => (mentionsOn ? members.map((m) => m.full_name) : undefined),
+    [mentionsOn, members],
+  );
 
   function submit() {
     const t = body.trim();
@@ -170,6 +188,7 @@ export function EntityComments({
                 </div>
                 <RichText
                   value={c.body}
+                  mentionNames={mentionNames}
                   className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
                 />
               </li>
@@ -190,7 +209,8 @@ export function EntityComments({
               }
             }}
             rows={2}
-            placeholder="Add a comment…"
+            placeholder={mentionsOn ? "Add a comment… @ to mention someone" : "Add a comment…"}
+            mentionCandidates={mentionCandidates}
             className="w-full flex-1 rounded-[10px] focus-within:border-hpb-blue focus-within:shadow-[0_0_0_3px_rgba(0,51,160,.10)] focus-within:ring-0 dark:focus-within:border-hpb-blue"
           />
           <button
@@ -206,7 +226,8 @@ export function EntityComments({
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
         ) : (
           <p className="text-[11px] text-zinc-400">
-            Formatting supported · links open in a new tab · ⌘/Ctrl+Enter
+            Formatting supported · links open in a new tab
+            {mentionsOn ? " · @ mentions" : ""} · ⌘/Ctrl+Enter
           </p>
         )}
       </div>

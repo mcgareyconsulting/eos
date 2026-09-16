@@ -6,8 +6,31 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, profile, teams, isAdmin, membershipTeamIds, leaderTeamIds } =
-    await getUserTeamsFirebase();
+  const {
+    user,
+    profile,
+    teams,
+    isAdmin,
+    membershipTeamIds,
+    leaderTeamIds,
+    db,
+  } = await getUserTeamsFirebase();
+
+  // Unread badge for first paint; the sidebar's listener takes over after
+  // client auth. One aggregation read per page render — cheap, and it means
+  // the count never flashes from 0 to N on load.
+  let unreadNotifications = 0;
+  try {
+    const agg = await db
+      .collection("notifications")
+      .where("user_id", "==", user.id)
+      .where("read_at", "==", null)
+      .count()
+      .get();
+    unreadNotifications = agg.data().count;
+  } catch (e) {
+    console.error("[layout] unread notifications count failed:", e);
+  }
 
   // Teams whose Import page this user may open (leader-or-admin — mirrors
   // requireTeamLeader on the page/action). Admins get every sidebar team.
@@ -23,6 +46,7 @@ export default async function AppLayout({
       isAdmin={isAdmin}
       membershipCount={membershipTeamIds.length}
       importTeamIds={importTeamIds}
+      unreadNotifications={unreadNotifications}
     >
       {children}
     </AppShell>

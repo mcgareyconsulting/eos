@@ -244,7 +244,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ---------- free-form comments on issues / rocks ----------
+    // ---------- free-form comments on issues / rocks / to-dos ----------
     // Writes go through server actions (admin SDK); client rules cover live
     // reads + defense-in-depth if a client write path is added later.
     match /entity_comments/{id} {
@@ -256,6 +256,20 @@ service cloud.firestore {
       allow delete: if admin()
                     || (isMember(resource.data.team_id)
                         && resource.data.author_id == request.auth.uid);
+    }
+
+    // ---------- in-app notifications (per-user inbox) ----------
+    // One row per recipient × event, written only by server actions (Admin
+    // SDK — lib/firebase/notifications.ts) when a followed to-do is
+    // commented on, completed, edited or reassigned. The client subscribes
+    // to its own rows for the sidebar badge and the /notifications hub;
+    // marking read goes through a server action, so there is no client
+    // write path at all — a hand-rolled client can neither forge a row for
+    // someone else nor read theirs. A list query must constrain
+    // `user_id == request.auth.uid` or the rule rejects it outright.
+    match /notifications/{id} {
+      allow read:  if authed() && resource.data.user_id == request.auth.uid;
+      allow write: if false;
     }
 
     // ---------- headlines ----------

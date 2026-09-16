@@ -56,6 +56,7 @@ type TodoDoc = WithId<
     | "visibility"
     | "weekly_focus"
     | "source_rock_id"
+    | "follower_ids"
   >
 > & {
   completed_at: TodoDocRecord["completed_at"] | boolean;
@@ -91,6 +92,7 @@ function toListItem(t: TodoDoc): TodoListItem {
     completed: !!t.completed_at,
     visibility: t.visibility === "private" ? "private" : "team",
     weekly_focus: t.weekly_focus === true,
+    follower_ids: t.follower_ids ?? null,
   };
 }
 
@@ -493,6 +495,7 @@ export function SegmentTodos({
                   todo={toListItem(t)}
                   ownerName={g.title}
                   members={members}
+                  userId={userId}
                   hideOwner
                 />
               ))}
@@ -508,6 +511,7 @@ export function SegmentTodos({
                       todo={toListItem(t)}
                       ownerName={g.title}
                       members={members}
+                      userId={userId}
                       hideOwner
                     />
                   ))}

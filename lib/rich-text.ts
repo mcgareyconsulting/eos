@@ -14,11 +14,23 @@
 // paragraph text (callers render with `whitespace-pre-wrap`, as they already
 // did) rather than becoming break nodes.
 
+import { matchMentionAt } from "@/lib/mentions";
+
 export type InlineNode =
   | { kind: "text"; text: string }
   | { kind: "strong"; children: InlineNode[] }
   | { kind: "em"; children: InlineNode[] }
-  | { kind: "link"; href: string; children: InlineNode[] };
+  | { kind: "link"; href: string; children: InlineNode[] }
+  // `@Name` resolved against a roster the caller supplied (lib/mentions.ts).
+  // The stored text is still just "@Name"; only the rendering changes.
+  | { kind: "mention"; name: string };
+
+/**
+ * Per-call parse options. `mentionNames` is the roster to resolve `@` runs
+ * against; with none supplied (the default everywhere but comments), an `@`
+ * is ordinary text and pre-existing descriptions parse exactly as before.
+ */
+export type ParseOptions = { mentionNames?: readonly string[] };
 
 export type ListItem = { children: InlineNode[] };
 
@@ -112,6 +124,7 @@ function findCloser(src: string, marker: string, from: number): number {
 function parseLinkAt(
   src: string,
   i: number,
+  opts: ParseOptions,
 ): { node: InlineNode; next: number } | null {
   // [label](url) — label may not contain a nested bracket, url no spaces.
   let depth = 0;
@@ -138,7 +151,7 @@ function parseLinkAt(
   const label = src.slice(i + 1, close);
   const href = safeHref(src.slice(close + 2, end));
   if (!href) return null; // unsafe or malformed → caller keeps it literal
-  const children = parseInline(label);
+  const children = parseInline(label, opts);
   return {
     node: {
       kind: "link",
@@ -153,8 +166,12 @@ function parseLinkAt(
  * Parses one block's text into inline nodes. Unmatched or unsafe markers are
  * emitted as the literal characters the author typed.
  */
-export function parseInline(src: string): InlineNode[] {
+export function parseInline(
+  src: string,
+  opts: ParseOptions = {},
+): InlineNode[] {
   const out: InlineNode[] = [];
+  const mentionNames = opts.mentionNames ?? [];
   let buf = "";
   let i = 0;
 
@@ -179,7 +196,10 @@ export function parseInline(src: string): InlineNode[] {
       const close = findCloser(src, "**", i + 2);
       if (close > 0) {
         flush();
-        out.push({ kind: "strong", children: parseInline(src.slice(i + 2, close)) });
+        out.push({
+          kind: "strong",
+          children: parseInline(src.slice(i + 2, close), opts),
+        });
         i = close + 2;
         continue;
       }
@@ -189,18 +209,31 @@ export function parseInline(src: string): InlineNode[] {
       const close = findCloser(src, ch, i + 1);
       if (close > 0) {
         flush();
-        out.push({ kind: "em", children: parseInline(src.slice(i + 1, close)) });
+        out.push({
+          kind: "em",
+          children: parseInline(src.slice(i + 1, close), opts),
+        });
         i = close + 1;
         continue;
       }
     }
 
     if (ch === "[") {
-      const link = parseLinkAt(src, i);
+      const link = parseLinkAt(src, i, opts);
       if (link) {
         flush();
         out.push(link.node);
         i = link.next;
+        continue;
+      }
+    }
+
+    if (ch === "@" && mentionNames.length > 0) {
+      const m = matchMentionAt(src, i, mentionNames);
+      if (m) {
+        flush();
+        out.push({ kind: "mention", name: m.name });
+        i = m.end;
         continue;
       }
     }
@@ -233,7 +266,10 @@ const ORDERED_LINE = /^ {0,3}(\d{1,9})[.)][ \t]+(.*)$/;
  * one paragraph (rendered by `whitespace-pre-wrap`) so pre-existing plain
  * text keeps the exact shape it has today.
  */
-export function parseRichText(raw: string | null | undefined): BlockNode[] {
+export function parseRichText(
+  raw: string | null | undefined,
+  opts: ParseOptions = {},
+): BlockNode[] {
   const text = String(raw ?? "").replace(/\r\n?/g, "\n");
   if (!text.trim()) return [];
 
@@ -244,7 +280,9 @@ export function parseRichText(raw: string | null | undefined): BlockNode[] {
   const flushPara = () => {
     if (para.length === 0) return;
     const joined = para.join("\n").trim();
-    if (joined) blocks.push({ kind: "paragraph", children: parseInline(joined) });
+    if (joined) {
+      blocks.push({ kind: "paragraph", children: parseInline(joined, opts) });
+    }
     para = [];
   };
 
@@ -278,10 +316,10 @@ export function parseRichText(raw: string | null | undefined): BlockNode[] {
 
       if (isSameKind) {
         if (bullet) {
-          items.push({ children: parseInline(b![1].trim()) });
+          items.push({ children: parseInline(b![1].trim(), opts) });
         } else {
           if (items.length === 0) start = Number(o![1]);
-          items.push({ children: parseInline(o![2].trim()) });
+          items.push({ children: parseInline(o![2].trim(), opts) });
         }
         continue;
       }
@@ -290,7 +328,7 @@ export function parseRichText(raw: string | null | undefined): BlockNode[] {
         prev.children = [
           ...prev.children,
           { kind: "text", text: " " },
-          ...parseInline(cur.trim()),
+          ...parseInline(cur.trim(), opts),
         ];
         continue;
       }
@@ -313,6 +351,7 @@ function inlineToPlain(nodes: InlineNode[]): string {
   return nodes
     .map((n) => {
       if (n.kind === "text") return n.text;
+      if (n.kind === "mention") return `@${n.name}`;
       if (n.kind === "link") {
         const label = inlineToPlain(n.children);
         return label === n.href ? n.href : `${label} (${n.href})`;

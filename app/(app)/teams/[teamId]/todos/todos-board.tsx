@@ -65,6 +65,7 @@ export type TodoBoardDoc = {
   visibility: "team" | "private";
   weekly_focus?: boolean;
   source_rock_id: string | null;
+  follower_ids?: string[] | null;
 };
 
 export type RockBoardDoc = {
@@ -180,6 +181,7 @@ export function TodosBoard({
   tasksStatus,
   initialTodos,
   initialRocks,
+  focusTodoId = null,
 }: {
   teamId: string;
   userId: string;
@@ -191,6 +193,8 @@ export function TodosBoard({
   tasksStatus: { configured: boolean; connected: boolean; revoked: boolean };
   initialTodos: TodoBoardDoc[];
   initialRocks: RockBoardDoc[];
+  /** `?todo=` — the row a notification linked to; opens expanded and scrolled to. */
+  focusTodoId?: string | null;
 }) {
   const db = getClientDb();
 
@@ -288,6 +292,7 @@ export function TodosBoard({
         weekly_focus: t.weekly_focus === true,
         archived,
         closed_on: formatClosedOn(t.archived_at),
+        follower_ids: t.follower_ids ?? null,
       });
     }
     return { allTodos: todos, allMilestones: milestones };
@@ -390,6 +395,8 @@ export function TodosBoard({
                 todo={t}
                 ownerName={ownerName(t.owner_id)}
                 members={members}
+                userId={userId}
+                focused={t.id === focusTodoId}
               />
             ))
           )}
@@ -438,6 +445,8 @@ export function TodosBoard({
                     todo={t}
                     ownerName={g.title}
                     members={members}
+                    userId={userId}
+                    focused={t.id === focusTodoId}
                     hideOwner
                   />
                 ))}
@@ -450,6 +459,8 @@ export function TodosBoard({
                     todo={t}
                     ownerName={g.title}
                     members={members}
+                    userId={userId}
+                    focused={t.id === focusTodoId}
                     hideOwner
                   />
                 ))}

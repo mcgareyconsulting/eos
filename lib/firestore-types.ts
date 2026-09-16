@@ -71,6 +71,14 @@ export type TodoDoc = {
   source_issue_id: string | null;
   source_meeting_id: string | null;
   source_rock_id: string | null;
+  // Who created it. Written by addTodo since the follow feature landed;
+  // absent on older docs and on imports, so only ever read as optional.
+  created_by?: string | null;
+  // Who gets in-app notifications about comments and updates — see
+  // lib/notifications.ts. Seeded with creator + owner on create, grows with
+  // each reassignment, and toggled by the Follow control on the row. Absent
+  // on docs that predate the feature (treated as nobody following).
+  follower_ids?: string[] | null;
 };
 
 // ---------------------------------------------------------------------------

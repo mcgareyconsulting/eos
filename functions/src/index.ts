@@ -115,8 +115,8 @@ async function recordAuditEvent(
 //
 // Covers organizations, users, teams, team_members,
 // rocks, rock_status_updates, todos, issues, issue_votes, headlines,
-// scorecard_metrics, scorecard_entries, meetings, and any future top-level
-// collection — nothing to add here as the schema grows.
+// entity_comments, scorecard_metrics, scorecard_entries, meetings, and any
+// future top-level collection — nothing to add here as the schema grows.
 //
 // LOOP GUARD: audit_log itself is a top-level collection, so it matches this
 // wildcard. Writing an audit row for a write to audit_log would recurse
@@ -128,11 +128,18 @@ async function recordAuditEvent(
 // that admins can read (firestore.rules) and that keeps them forever
 // (append-only, surviving disconnect). Neither collection is a business
 // record, so skip them entirely.
+//
+// DERIVED GUARD: notifications are per-user inbox rows fanned out *from*
+// writes this log already captures (a comment, a to-do completion, a
+// reassignment — lib/notifications.ts). Logging them would record the same
+// event once more per recipient, plus a row every time someone marks one
+// read. Nothing analytical lives there that the source write doesn't carry.
 // ---------------------------------------------------------------------------
 const AUDIT_EXCLUDED_COLLECTIONS = new Set([
   "audit_log",
   "google_tasks_connections",
   "oauth_csrf_states",
+  "notifications",
 ]);
 
 export const auditTopLevelWrites = onDocumentWrittenWithAuthContext(

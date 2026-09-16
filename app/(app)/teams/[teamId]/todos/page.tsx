@@ -22,18 +22,41 @@ function toMillis(v: { toMillis?: () => number } | null | undefined) {
  * controls that set them already push a URL, and keeping them here means the
  * board never has to guess at a filter the server has already validated
  * against the roster.
+ *
+ * `?todo=` is the deep link a notification carries (lib/notifications.ts
+ * notificationHref). The row opens expanded and scrolled to; if it has since
+ * been archived the Archived view is selected so the link still lands.
  */
 export default async function TodosPage({
   params,
   searchParams,
 }: {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ archived?: string; owner?: string }>;
+  searchParams: Promise<{ archived?: string; owner?: string; todo?: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { archived: archivedParam, owner: ownerParam } = await searchParams;
-  const showArchived = archivedParam === "1" || archivedParam === "true";
+  const {
+    archived: archivedParam,
+    owner: ownerParam,
+    todo: todoParam,
+  } = await searchParams;
+  let showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db, team } = await requireTeamAccess(tid);
+
+  let focusTodoId: string | null = null;
+  if (todoParam) {
+    const focus = await db.collection("todos").doc(todoParam).get();
+    const f = focus.data();
+    const mine = String(f?.owner_id ?? "") === String(uid);
+    if (
+      focus.exists &&
+      f?.team_id === tid &&
+      (f?.visibility !== "private" || mine)
+    ) {
+      focusTodoId = focus.id;
+      if (f?.archived_at != null) showArchived = true;
+    }
+  }
   // Best-effort Google → EOS completion pull for the signed-in user so
   // Tasks completed outside the app show up when opening To-Dos.
   // Soft-fail at the call site too so a Google outage never blanks the list.
@@ -75,6 +98,7 @@ export default async function TodosPage({
       visibility,
       weekly_focus: t.weekly_focus === true,
       source_rock_id: t.source_rock_id ?? null,
+      follower_ids: t.follower_ids ?? null,
     });
   }
 
@@ -109,6 +133,7 @@ export default async function TodosPage({
       tasksStatus={tasksStatus}
       initialTodos={initialTodos}
       initialRocks={initialRocks}
+      focusTodoId={focusTodoId}
     />
   );
 }

@@ -204,11 +204,10 @@ export function MeetingRail({
   // null only when nobody holds the wheel. A driver whose uid isn't on the
   // roster (removed from the team mid-meeting) still holds it — naming them
   // "Someone else" beats rendering the room as driverless.
+  const isMe = !!driverId && driverId === viewerUid;
   const driverName = !driverId
     ? null
-    : driverId === viewerUid
-      ? "You"
-      : (members.find((m) => m.user_id === driverId)?.full_name ?? "Someone else");
+    : (members.find((m) => m.user_id === driverId)?.full_name ?? "Someone else");
 
   // Followers ARE carried forward when someone drives the stage. The old
   // rule was the reverse — nobody was force-navigated,
@@ -473,7 +472,7 @@ export function MeetingRail({
                   "can I press Next?", and reading your own name in the third
                   person is a beat slower than reading the answer. */}
               <span className="truncate">
-                {driverName === "You"
+                {isMe
                   ? "You're driving"
                   : driverName
                     ? `${driverName} is driving`

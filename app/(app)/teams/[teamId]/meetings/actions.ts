@@ -33,7 +33,6 @@ import {
   canDrive,
   isStaleLiveMeeting,
   isUnclaimed,
-  NOT_DRIVING_MESSAGE,
 } from "@/lib/l10/driver";
 import { archiveHeadlinesDiscussedDuringMeeting } from "../headlines/actions";
 import { archiveIssuesClosedDuringMeeting } from "../issues/actions";
@@ -302,11 +301,12 @@ export async function advanceSegment(
     if (snap.data()?.ended_at != null) return;
 
     // Read the wheel inside the transaction: two people taking over in the
-    // same second must not both advance off one stale read.
+    // same second must not both advance off one stale read. A no-op rather
+    // than a throw, like the expectedCurrent guard below: the realistic way
+    // to get here is someone taking the wheel a beat before your click
+    // landed, and that is a stale rail to re-render, not an error page.
     const driverId = (snap.data()?.driver_id as string | null) ?? null;
-    if (!canDrive({ driverId, uid, isAdmin })) {
-      throw new Error(NOT_DRIVING_MESSAGE);
-    }
+    if (!canDrive({ driverId, uid, isAdmin })) return;
 
     const agenda = resolveMeetingAgenda(snap.data() as {
       agenda_id?: string | null;
@@ -377,9 +377,9 @@ export async function takeWheel(teamId: string, meetingId: string) {
     if (!snap.exists || snap.data()?.team_id !== teamId) {
       throw new Error("Meeting not found");
     }
-    if (snap.data()?.ended_at != null) {
-      throw new Error("This meeting has already ended.");
-    }
+    // Ended under you (Finish landed first): nothing to hold. The caller's
+    // refresh shows the recap.
+    if (snap.data()?.ended_at != null) return;
     // Already yours (double-click, or two tabs): don't churn driver_since.
     if (snap.data()?.driver_id === uid) return;
     tx.update(ref, {
@@ -505,27 +505,40 @@ export async function endMeeting(teamId: string, meetingId: string) {
   // Transactional so a second Finish (two people, or a stale tab) can't
   // overwrite ended_at and inflate the recorded duration.
   const ref = db.collection("meetings").doc(meetingId);
-  const didEnd = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (snap.data()?.ended_at != null) return false;
-    // Same read-inside-the-transaction rule as advanceSegment. No claim on the
-    // way out: attributing an unclaimed legacy meeting to whoever closed it
-    // would be a fiction, and there is no stage left to drive.
-    if (
-      !canDrive({
-        driverId: (snap.data()?.driver_id as string | null) ?? null,
-        uid,
-        isAdmin,
-      })
-    ) {
-      throw new Error(NOT_DRIVING_MESSAGE);
-    }
-    tx.update(ref, {
-      current_segment: "done",
-      ended_at: FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
+  const outcome = await db.runTransaction(
+    async (tx): Promise<"ended" | "already-ended" | "not-driver"> => {
+      const snap = await tx.get(ref);
+      if (snap.data()?.ended_at != null) return "already-ended";
+      // Same read-inside-the-transaction rule as advanceSegment, same no-op.
+      // No claim on the way out: attributing an unclaimed legacy meeting to
+      // whoever closed it would be a fiction, and there is no stage left to
+      // drive.
+      if (
+        !canDrive({
+          driverId: (snap.data()?.driver_id as string | null) ?? null,
+          uid,
+          isAdmin,
+        })
+      ) {
+        return "not-driver";
+      }
+      tx.update(ref, {
+        current_segment: "done",
+        ended_at: FieldValue.serverTimestamp(),
+      });
+      return "ended";
+    },
+  );
+
+  // Someone took the wheel a beat before this Finish landed. The meeting is
+  // still live, so the recap redirect below would open a recap over a room
+  // that hasn't ended — re-render the rail instead, which now shows who has
+  // the wheel.
+  if (outcome === "not-driver") {
+    revalidatePath(detailPath(teamId, meetingId));
+    redirect(detailPath(teamId, meetingId));
+  }
+  const didEnd = outcome === "ended";
 
   // Personal vote credits reset at end so no one opens the next L10 already
   // "out of votes". Team tallies (issues.votes) stay until the next Start —

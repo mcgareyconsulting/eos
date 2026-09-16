@@ -41,9 +41,6 @@ export function canDrive(opts: {
   return opts.driverId === opts.uid;
 }
 
-export const NOT_DRIVING_MESSAGE =
-  "Someone else is driving this meeting. Take the wheel to move the group.";
-
 /**
  * Whether the rail should offer "Take the wheel".
  *

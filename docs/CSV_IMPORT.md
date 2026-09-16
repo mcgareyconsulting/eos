@@ -1,5 +1,10 @@
 # CSV import — seeding real client data
 
+> Seeds a team's **data**. The **people and teams** themselves come from
+> the people seed first — see `docs/USER_IMPORT.md`. Running this one
+> before the accounts exist is what leaves `import-*` placeholder owners
+> behind.
+
 ## In-app import (Rocks, To-Dos, Issues)
 
 Team members can upload a **.csv / .tsv / .xlsx** from the sidebar:

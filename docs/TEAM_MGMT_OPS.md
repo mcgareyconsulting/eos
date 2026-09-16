@@ -10,6 +10,10 @@
 > **Sandbox DB:** `hpb-eos-sandbox-db`  
 > **Live DB:** `hpb-eos-prod-db` (only via ship / prod env — do not point local here)
 
+> **Bulk seeding?** One person at a time is this runbook; a whole roster
+> from a First/Last/Email/Team/Role file is `docs/USER_IMPORT.md`
+> (Admin → Import seed file, or `pnpm users:seed`).
+
 ---
 
 ## 0. Credentials first (`rapt_required` / invalid_grant)

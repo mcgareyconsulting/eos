@@ -79,6 +79,10 @@ export function AppShell({
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
+              {/* Org-wide people/teams management and the seed-file import.
+                  Admin-only: every page under /admin calls requireAdmin() and
+                  404s regardless, so this only hides a dead end. */}
+              {isAdmin && <NavLink href="/admin/people" icon={Shield} label="Admin" />}
             </nav>
 
             {membershipCount === 0 && !isAdmin && (

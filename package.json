@@ -11,6 +11,7 @@
     "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "team:info": "tsx scripts/team-info.ts",
     "import:csv": "tsx scripts/import-csv.ts",
+    "users:seed": "tsx scripts/import-users.ts",
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",

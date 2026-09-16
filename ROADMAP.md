@@ -905,7 +905,7 @@ double-checks, not observed bugs.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — the concrete symptom: Steph's Meetings tab shows "join live meeting" but not the agenda surface Joe reached ("I don't think I got to where Joe was able to get to"); daniel: "I'll double check that". Check against her actual role, not the leader role
 
 ### N4 · Multi-team surface + shared rocks
-*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-19*
+*W3 · in-progress · due — · deps P2-7 · owner daniel · src roadmap-prior#pass-18 · upd 2026-09-16*
 
 **Core shipped PR #28** (`feature/multi-team`), discovered by reconciliation
 2026-08-12 — this item was still marked `not-started` while its build sat on
@@ -1002,9 +1002,47 @@ lists **every org team** (not only memberships) so Leadership can share
 *down* into ESD. Server accepts any org team id. Guest milestone/status
 reads allowed when the parent rock is shared to the viewer (rules).
 
+**Built 2026-09-16 (parent-team rule + placement).** Session with daniel
+settled the share model into two questions per shared-in row, both in
+`lib/rocks-share.ts`:
+1. **Where it sits** — by the person owner. On the guest roster → the
+   owner's own section wearing a **from {parent team}** chip; not on the
+   roster → "Shared by {First Last}" at the bottom (`partitionSharedRocks`).
+   Kills the redundant "Daniel McGarey" + "Shared by Daniel McGarey" pair
+   on a team he sits on. Shared-in rocks skip the Company / Department
+   ladder on the guest page — they are not that team's shared priorities.
+2. **What the viewer may do** — by the **viewer**, not the team being
+   viewed (`rockAccessFor`): admin or member of the rock's parent team →
+   full rock + every affordance wherever it renders; the person owner on a
+   guest team → status only; anyone else → read. Rejected the team-scoped
+   alternative (Daniel seeing a reduced view of his own rock on Team Y) as
+   brittle: it would have the server withhold data the viewer already holds
+   a read grant for, and every future surface would have to replicate it.
+   The viewer rule is a line-for-line mirror of the `firestore.rules` read
+   grant, so it cannot drift from it. An edit-tier row renders **as the
+   parent team** (actions take the parent `team_id`, modal gets the parent
+   roster) so the existing server gates apply unchanged; rock actions now
+   revalidate every guest page the rock is shared into. Known display cost,
+   accepted: the same row looks different to different people in the room
+   (a parent-team member presenting a guest team's L10 sees more than the
+   room does) — the chip stays on at every tier so the presenter knows.
+   Vocabulary: **parent team**, not "home team", for the rock's `team_id`.
+
 **Remaining:**
-- Milestone-assignee pull-in (rock headline + **only** that milestone)
-  is not this path — still to build.
+- **Milestone-driven visibility** (the next build, agreed 2026-09-16):
+  assigning a milestone to someone outside the parent team pulls the rock
+  onto that person's teams by default, scoped to **milestones owned by
+  that team's roster** (headline + description + those milestones; no
+  "1 of 4" count, no status history / comments at that scope). Per-rock
+  switch to turn the pull-in off (Leadership case), with a team-level
+  default for new rocks. Explicit team share always wins over milestone
+  scope; the switch never affects an explicit share. Needs: org-directory
+  milestone owner picker (today the picker is the parent roster only, so
+  the cross-team scenario is not yet possible), To-Dos + L10 milestone
+  column querying milestones by owner across teams, rules for
+  milestone-driven reads (N20's remaining piece), a milestone-only row
+  variant. Steph's visibility-vs-participation split: this serves
+  participation; pure visibility is a separate ask.
 - **Company rocks on the Leadership team.** Leadership (still to be
   added) uses `rock_type: company` instead of team/department. The field
   already exists; the 08-12 form folded Company into Team
@@ -1038,6 +1076,8 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-18 · request · src onboarding-2026-08-18 — shared items list at the bottom as "Shared By {First Last}" of the person owner
 - 2026-08-18 · request · src onboarding-2026-08-18 — Leadership team (to be added) carries company rocks, not team rocks; re-offer `rock_type: company` there
 - 2026-08-19 · build · src session-2026-08-19 — guest Rocks + L10 list shared-in rocks ("Shared by {First Last}"); picker = all org teams (share-down); guest read-only; todo/status rules follow the shared rock. Diagnose: writer was fine, read surface was missing.
+- 2026-09-16 · decision · src session-2026-09-16 — daniel: placement by owner-on-roster (owner section + "from {team}" chip, else "Shared by"); access by viewer's parent-team membership, not the team being viewed; "parent team" is the word. Milestone-driven visibility (roster-owned milestones by default, per-rock off switch) agreed as the next build.
+- 2026-09-16 · build · src session-2026-09-16 — `rockAccessFor` + `partitionSharedRocks` in lib/rocks-share.ts; Rocks tab + L10 merge owner-on-roster shared rocks into the owner's section and give parent-team members full affordances from the guest page (row rendered as the parent team); rock actions revalidate guest pages.
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*

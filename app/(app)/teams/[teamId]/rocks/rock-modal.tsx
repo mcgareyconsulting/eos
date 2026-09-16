@@ -202,7 +202,7 @@ export function EditRockButton({
 }
 
 /**
- * Create/edit: home team (context), rock kind, person owner, optional share,
+ * Create/edit: parent team (context), rock kind, person owner, optional share,
  * rich description, milestones.
  */
 export function RockModal({
@@ -399,7 +399,7 @@ export function RockModal({
                 {teamName}
                 <span className="font-medium normal-case tracking-normal text-zinc-400">
                   {" "}
-                  · home team
+                  · parent team
                 </span>
               </div>
             )}
@@ -570,7 +570,7 @@ export function RockModal({
                   })}
                 </div>
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  Home team stays {teamName ?? "this team"}. Sharing is
+                  Parent team stays {teamName ?? "this team"}. Sharing is
                   team-to-team, not person-to-person.
                 </p>
               </Field>

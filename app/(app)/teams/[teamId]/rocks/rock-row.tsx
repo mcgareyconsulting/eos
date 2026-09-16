@@ -8,7 +8,7 @@ import { RichText } from "@/components/rich-text";
 import { hasRichMarkup } from "@/lib/rich-text";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
 import { StatusPill, StatusPopover } from "./status-popover";
-import { canSetRockStatus } from "@/lib/rocks-share";
+import { canSetRockStatus, type RockAccess } from "@/lib/rocks-share";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock, setRockArchived } from "./actions";
@@ -64,7 +64,8 @@ export function RockRow({
   teamName,
   shareTeams = [],
   canFlagCompany = false,
-  readOnly = false,
+  access = "edit",
+  fromTeamName,
 }: {
   teamId: string;
   userId: string;
@@ -79,24 +80,39 @@ export function RockRow({
   shareTeams?: ShareTeam[];
   /** Org admin — may set the Company flag in the edit modal. */
   canFlagCompany?: boolean;
-  /** Guest-team view of a shared-in rock — no edit / archive / status. */
-  readOnly?: boolean;
+  /**
+   * What the viewer may do with this rock (lib/rocks-share.ts
+   * `rockAccessFor`). At "edit" on a shared-in rock the caller passes the
+   * PARENT team as `teamId` / `members` / `teamName` / `shareTeams`, so every
+   * action and the modal run against the team the rock lives on.
+   */
+  access?: RockAccess;
+  /**
+   * Parent team name when the rock is rendering on a team it was shared
+   * into. Shown as a chip at every access tier — a parent-team member
+   * presenting a guest team's L10 sees more than the room does, and the chip
+   * is what says so.
+   */
+  fromTeamName?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // A shared-in rock is read-only on the guest team — except for its own
-  // person owner, who can move the status from here without switching teams.
-  // Structural edits (title, archive, delete, milestones, re-share) stay on
-  // the parent team. Server-side gate: requireStatusWritableRock in actions.ts.
-  const canSetStatus = canSetRockStatus(
-    {
-      team_id: rock.team_id ?? teamId,
-      owner_id: rock.owner_id,
-      shared_team_ids: rock.shared_team_ids,
-    },
-    teamId,
-    currentUserId,
-  );
+  const canEdit = access === "edit";
+  // Status: full access, or the rock's own person owner moving it from a
+  // guest team (server gate: requireStatusWritableRock in actions.ts). The
+  // single-team check is kept as a floor for callers that render without a
+  // viewer membership list.
+  const canSetStatus =
+    access !== "read" ||
+    canSetRockStatus(
+      {
+        team_id: rock.team_id ?? teamId,
+        owner_id: rock.owner_id,
+        shared_team_ids: rock.shared_team_ids,
+      },
+      teamId,
+      currentUserId,
+    );
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   // Kind pills are a set, not one-of: a rock can be Company and Team at once
@@ -153,8 +169,8 @@ export function RockRow({
                 ownerName={displayOwner}
                 milestones={detailMilestones}
                 statusHistory={statusHistory}
-                readOnly={readOnly}
-                sourceTeamName={readOnly ? teamName : undefined}
+                readOnly={!canEdit}
+                sourceTeamName={fromTeamName}
                 className="max-w-full truncate text-left text-sm font-semibold hover:text-hpb-blue dark:hover:text-hpb-gold"
               >
                 {rock.title}
@@ -170,9 +186,9 @@ export function RockRow({
                   {ROCK_TYPE_LABELS[p]}
                 </span>
               ))}
-              {readOnly && teamName ? (
+              {fromTeamName ? (
                 <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
-                  from {teamName}
+                  from {fromTeamName}
                 </span>
               ) : null}
             </div>
@@ -227,7 +243,7 @@ export function RockRow({
               otherwise the status pill slides right into this space. Three
               23px icon buttons (a 15px icon + p-1) with gap-0.5 between. */}
           <div className="flex w-[73px] shrink-0 items-center justify-end gap-0.5">
-            {readOnly ? null : (
+            {!canEdit ? null : (
               <>
             <EditRockButton
               teamId={teamId}
@@ -332,11 +348,11 @@ export function RockRow({
                 teamId={teamId}
                 members={members}
                 milestones={milestones}
-                readOnly={readOnly}
+                readOnly={!canEdit}
               />
 
               <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
-                {readOnly ? null : (
+                {!canEdit ? null : (
                 <AddMilestoneLink
                   teamId={teamId}
                   rock={rock}
@@ -357,8 +373,8 @@ export function RockRow({
                   ownerName={displayOwner}
                   milestones={detailMilestones}
                   statusHistory={statusHistory}
-                  readOnly={readOnly}
-                  sourceTeamName={readOnly ? teamName : undefined}
+                  readOnly={!canEdit}
+                  sourceTeamName={fromTeamName}
                   className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
                   Full detail &amp; status history →

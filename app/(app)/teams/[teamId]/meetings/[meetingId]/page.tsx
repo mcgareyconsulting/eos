@@ -16,7 +16,8 @@ import {
   loadUsersById,
 } from "@/lib/firebase/queries";
 import { userDisplayName } from "@/lib/user-name";
-import { isSharedIntoTeam } from "@/lib/rocks-share";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { isSharedIntoTeam, rockAccessFor } from "@/lib/rocks-share";
 import {
   type Segment,
   isSegment,
@@ -655,15 +656,17 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [teamRocks, todosSnap, orgTeams] = await Promise.all([
-      loadTeamRocks(db, teamId),
-      db
-        .collection("todos")
-        .where("team_id", "==", teamId)
-        .where("visibility", "==", "team")
-        .get(),
-      getOrgTeams(),
-    ]);
+    const [teamRocks, todosSnap, orgTeams, { membershipTeamIds }] =
+      await Promise.all([
+        loadTeamRocks(db, teamId),
+        db
+          .collection("todos")
+          .where("team_id", "==", teamId)
+          .where("visibility", "==", "team")
+          .get(),
+        getOrgTeams(),
+        getUserTeamsFirebase(),
+      ]);
     const shareTeams = orgTeams
       .filter((t) => t.id !== teamId)
       .map((t) => ({ id: t.id, name: t.name }));
@@ -727,6 +730,32 @@ async function SegmentContent({
       const full_name = userDisplayName(data);
       if (full_name) extraOwnerNames.push({ user_id, full_name });
     }
+    // Rosters for shared-in rocks the viewer may edit as their parent team
+    // (lib/rocks-share.ts parent-team rule) — the in-meeting edit modal
+    // needs that team's people, not this one's. Bounded by the viewer's
+    // own memberships.
+    const viewer = { uid: userId, isAdmin, teamIds: new Set(membershipTeamIds) };
+    const editableParentIds = [
+      ...new Set(
+        sharedRocks
+          .filter((r) => rockAccessFor(r, viewer) === "edit")
+          .map((r) => r.team_id),
+      ),
+    ];
+    const parentRosters = Object.fromEntries(
+      await Promise.all(
+        editableParentIds.map(
+          async (id) =>
+            [
+              id,
+              (await getTeamMembers(id)).map((m) => ({
+                user_id: m.user_id,
+                full_name: m.full_name,
+              })),
+            ] as const,
+        ),
+      ),
+    );
     return (
       <SegmentRocks
         teamId={teamId}
@@ -744,6 +773,9 @@ async function SegmentContent({
         allTeams={orgTeams}
         extraOwnerNames={extraOwnerNames}
         canFlagCompany={canFlagCompany}
+        isAdmin={isAdmin}
+        viewerTeamIds={membershipTeamIds}
+        parentRosters={parentRosters}
       />
     );
   }

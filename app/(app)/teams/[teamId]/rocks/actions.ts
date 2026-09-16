@@ -13,6 +13,12 @@ function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
 }
 
+function sharedTeamIdsOf(data: Record<string, unknown> | undefined): string[] {
+  return Array.isArray(data?.shared_team_ids)
+    ? (data!.shared_team_ids as string[]).filter((x) => typeof x === "string")
+    : [];
+}
+
 /**
  * Fetch a rock for a status write made from `teamId`.
  *
@@ -63,10 +69,10 @@ export async function setRockType(
   }
 
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
+  const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
   await db.collection("rocks").doc(rockId).update({ rock_type: rockType });
 
-  revalidatePath(pathFor(teamId));
+  revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
 }
 
 // Atomic: writes the new status onto the rock AND appends an immutable history
@@ -117,17 +123,13 @@ export async function setRockStatus(
   });
   await batch.commit();
 
-  revalidatePath(pathFor(teamId));
-  // Live L10 rocks segment also shows StatusPopover; keep RSC payloads fresh
-  // for anyone who lands mid-meeting without a client subscription yet.
-  revalidatePath(`/teams/${teamId}/meetings`);
-  // Owner moved a shared-in rock from a guest team: the parent team's lists
-  // are the ones holding the authoritative row.
-  if (rockTeamId !== teamId) {
-    revalidatePath(pathFor(rockTeamId));
-    revalidatePath(`/teams/${rockTeamId}/meetings`);
-  }
-  revalidatePath("/home");
+  // Parent team + every guest team the rock is shared into (the L10 rocks
+  // segment shows StatusPopover too; keep RSC payloads fresh for anyone who
+  // lands mid-meeting without a client subscription yet). `teamId` may be a
+  // guest team when the owner moved a shared-in rock from there — it is in
+  // the shared list, so it is covered.
+  revalidateRockSurfaces(rockTeamId, sharedTeamIdsOf(rockSnap.data()));
+  if (rockTeamId !== teamId) revalidatePath(pathFor(teamId));
 }
 
 // Manual archive control (Gmail-style icon on the row) — mirrors
@@ -142,7 +144,7 @@ export async function setRockArchived(
   archived: boolean,
 ) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
+  const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
   await db
     .collection("rocks")
     .doc(rockId)
@@ -152,16 +154,14 @@ export async function setRockArchived(
         : { archived_at: null, completed_at: null },
     );
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/meetings`);
-  revalidatePath("/home");
+  revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
 }
 
 // Removes the rock, linked milestones (todos), and entity_comments.
 // Single batch so a partial failure can't orphan children.
 export async function deleteRock(teamId: string, rockId: string) {
   const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "rocks", rockId, teamId);
+  const rockSnap = await requireTeamDoc(db, "rocks", rockId, teamId);
 
   const [milestonesSnap, commentsSnap] = await Promise.all([
     db
@@ -183,9 +183,7 @@ export async function deleteRock(teamId: string, rockId: string) {
   batch.delete(db.collection("rocks").doc(rockId));
   await batch.commit();
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/todos`);
-  revalidatePath("/home");
+  revalidateRockSurfaces(teamId, sharedTeamIdsOf(rockSnap.data()));
 }
 
 // The redesigned modal (rock-modal.tsx) saves a rock and its milestones in one

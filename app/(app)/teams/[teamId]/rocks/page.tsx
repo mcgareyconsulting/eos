@@ -7,7 +7,9 @@ import {
   requireTeamAccess,
   getTeamMembers,
   getOrgTeams,
+  type TeamMember,
 } from "@/lib/firebase/teams";
+import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import {
   loadMilestonesForRocks,
   loadTeamRocks,
@@ -19,6 +21,9 @@ import { ownerLabel, userDisplayName } from "@/lib/user-name";
 import {
   groupSharedRocksByOwner,
   isSharedIntoTeam,
+  partitionSharedRocks,
+  rockAccessFor,
+  type RockViewer,
 } from "@/lib/rocks-share";
 import { NewRockButton } from "./rock-modal";
 import { RockRow } from "./rock-row";
@@ -82,13 +87,24 @@ export default async function RocksPage({
   const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
   // Company flag is org-admin only — the claim, not team role.
   const canFlagCompany = isAdmin;
-  const [orgTeams, members] = await Promise.all([
+  const [orgTeams, members, { membershipTeamIds }] = await Promise.all([
     getOrgTeams(),
     getTeamMembers(teamId),
+    getUserTeamsFirebase(),
   ]);
-  const shareTeams = orgTeams
-    .filter((t) => t.id !== teamId)
-    .map((t) => ({ id: t.id, name: t.name }));
+  // Access to a shared-in rock follows the viewer's memberships, not the
+  // team being viewed (lib/rocks-share.ts, parent-team rule).
+  const viewer: RockViewer = {
+    uid,
+    isAdmin,
+    teamIds: new Set(membershipTeamIds),
+  };
+  const rosterIds = new Set(members.map((m) => m.user_id));
+  const shareTeamsExcluding = (parentId: string) =>
+    orgTeams
+      .filter((t) => t.id !== parentId)
+      .map((t) => ({ id: t.id, name: t.name }));
+  const shareTeams = shareTeamsExcluding(teamId);
   const teamNameById = new Map(orgTeams.map((t) => [t.id, t.name]));
 
   const quarter = currentQuarter();
@@ -158,6 +174,30 @@ export default async function RocksPage({
     .filter((r) => isSharedIntoTeam(r, teamId) && r.archived_at == null);
   // Shared-in rocks belong on the Active list only — they archive on the
   // parent team, not here.
+  //
+  // Owner on this roster → their own section (with a "from {team}" chip);
+  // otherwise → "Shared by {owner}" at the bottom.
+  const { ownerOnRoster: sharedIntoSections, sharedBy: sharedRocksBelow } =
+    partitionSharedRocks(sharedRocksRaw, rosterIds);
+
+  // A viewer with full access to a shared-in rock (member of its parent
+  // team, or admin) edits it *as the parent team*: the modal needs that
+  // team's roster for the owner / milestone-owner pickers. Bounded by the
+  // viewer's own memberships, and per-request cached.
+  const editableParentIds = [
+    ...new Set(
+      sharedRocksRaw
+        .filter((r) => rockAccessFor(r, viewer) === "edit")
+        .map((r) => r.team_id),
+    ),
+  ];
+  const parentRosters = new Map<string, TeamMember[]>(
+    await Promise.all(
+      editableParentIds.map(
+        async (id) => [id, await getTeamMembers(id)] as const,
+      ),
+    ),
+  );
 
   // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
   // which can't cross the Server → Client component boundary.
@@ -286,7 +326,6 @@ export default async function RocksPage({
       : filterRaw === "team" || filterRaw === "others"
         ? "all"
         : filterRaw;
-  const rosterIds = new Set(members.map((m) => m.user_id));
   const filter = rosterIds.has(legacyMapped) ? legacyMapped : "all";
 
   const ownerName = (id: string | null) =>
@@ -308,12 +347,18 @@ export default async function RocksPage({
   // Team rocks, even when a person is accountable), then members A–Z, then
   // owners no longer on the roster. A rock lands in exactly one section down
   // that ladder (lib/rock-bucket.ts). L10 matches (see segment-rocks.tsx).
+  //
+  // A shared-in rock whose owner sits on this roster skips the ladder and
+  // files under that person: on the guest team it is "something Daniel is
+  // carrying elsewhere", not one of this team's Company / Team priorities.
   type RockWithId = WithId<RockDoc>;
   type RockGroup = {
     key: string;
     title: string;
     rocks: RockWithId[];
   };
+  const bucketOf = (r: RockWithId) =>
+    r.team_id === teamId ? rockBucket(r) : "owner";
 
   function buildSections(rocks: RockWithId[]): RockGroup[] {
     if (filter !== "all") {
@@ -330,7 +375,7 @@ export default async function RocksPage({
     const deptRocks: RockWithId[] = [];
     const byOwner = new Map<string, RockWithId[]>();
     for (const r of rocks) {
-      const bucket = rockBucket(r);
+      const bucket = bucketOf(r);
       if (bucket === "company") {
         companyRocks.push(r);
         continue;
@@ -388,13 +433,15 @@ export default async function RocksPage({
     return groups;
   }
 
-  const sections = buildSections(allRocks);
+  const sections = buildSections(
+    showArchived ? allRocks : [...allRocks, ...sharedIntoSections],
+  );
 
   const sharedForView = showArchived
     ? []
     : filter === "all"
-      ? sharedRocksRaw
-      : sharedRocksRaw.filter((r) => r.owner_id === filter);
+      ? sharedRocksBelow
+      : sharedRocksBelow.filter((r) => r.owner_id === filter);
   const sharedGroups = groupSharedRocksByOwner(
     sharedForView.map((r) => ({ ...r, team_id: r.team_id })),
     ownerName,
@@ -411,6 +458,46 @@ export default async function RocksPage({
 
   const ownerFilter =
     filter !== "all" && filter !== "team" ? filter : undefined;
+
+  // Per-row wiring. A rock on this team renders as-is. A shared-in rock at
+  // "edit" access renders AS ITS PARENT TEAM — actions, roster, share picker
+  // — so the existing server gates (requireTeamDoc on the parent) hold; at
+  // "status" / "read" it renders against this team, read-mostly.
+  function rowProps(r: RockWithId) {
+    if (r.team_id === teamId) {
+      return {
+        teamId,
+        members,
+        teamName: team.name,
+        shareTeams,
+        canFlagCompany,
+        access: "edit" as const,
+        fromTeamName: undefined,
+      };
+    }
+    const access = rockAccessFor(r, viewer);
+    const fromTeamName = teamNameById.get(r.team_id) ?? "another team";
+    if (access === "edit") {
+      return {
+        teamId: r.team_id,
+        members: parentRosters.get(r.team_id) ?? members,
+        teamName: fromTeamName,
+        shareTeams: shareTeamsExcluding(r.team_id),
+        canFlagCompany,
+        access,
+        fromTeamName,
+      };
+    }
+    return {
+      teamId,
+      members,
+      teamName: team.name,
+      shareTeams,
+      canFlagCompany: false,
+      access,
+      fromTeamName,
+    };
+  }
 
   return (
     <div className="space-y-6">
@@ -454,48 +541,26 @@ export default async function RocksPage({
         </RockSection>
       ) : (
         <>
-          {sections.map((g) => (
+          {[
+            ...sections,
+            ...sharedGroups.map((g) => ({
+              key: `shared-${g.ownerId ?? "none"}`,
+              title: g.title,
+              rocks: g.rocks,
+            })),
+          ].map((g) => (
             <RockSection key={g.key} title={g.title} count={g.rocks.length}>
               {g.rocks.map((r) => (
                 <RockRow
                   key={r.id}
-                  teamId={teamId}
+                  {...rowProps(r)}
                   userId={uid}
                   rock={r}
                   ownerName={ownerName(r.owner_id)}
-                  members={members}
                   milestones={milestonesByRock.get(r.id) ?? []}
                   defaultDue={eoq}
                   statusHistory={statusByRock.get(r.id) ?? []}
                   currentUserId={uid}
-                  teamName={team.name}
-                  shareTeams={shareTeams}
-                  canFlagCompany={canFlagCompany}
-                />
-              ))}
-            </RockSection>
-          ))}
-          {sharedGroups.map((g) => (
-            <RockSection
-              key={`shared-${g.ownerId ?? "none"}`}
-              title={g.title}
-              count={g.rocks.length}
-            >
-              {g.rocks.map((r) => (
-                <RockRow
-                  key={r.id}
-                  teamId={teamId}
-                  userId={uid}
-                  rock={r}
-                  ownerName={ownerName(r.owner_id)}
-                  members={members}
-                  milestones={milestonesByRock.get(r.id) ?? []}
-                  defaultDue={eoq}
-                  statusHistory={statusByRock.get(r.id) ?? []}
-                  currentUserId={uid}
-                  teamName={teamNameById.get(r.team_id) ?? "another team"}
-                  shareTeams={shareTeams}
-                  readOnly
                 />
               ))}
             </RockSection>

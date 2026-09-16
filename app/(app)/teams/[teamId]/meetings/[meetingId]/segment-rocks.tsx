@@ -13,6 +13,9 @@ import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
   groupSharedRocksByOwner,
   isSharedIntoTeam,
+  partitionSharedRocks,
+  rockAccessFor,
+  type RockViewer,
 } from "@/lib/rocks-share";
 import {
   COMPANY_SECTION_TITLE,
@@ -77,6 +80,9 @@ export function SegmentRocks({
   allTeams = [],
   extraOwnerNames = [],
   canFlagCompany = false,
+  isAdmin = false,
+  viewerTeamIds = [],
+  parentRosters = {},
 }: {
   teamId: string;
   meetingId: string;
@@ -94,6 +100,15 @@ export function SegmentRocks({
   extraOwnerNames?: { user_id: string; full_name: string }[];
   /** Org admin — may set the Company flag from the in-meeting edit modal. */
   canFlagCompany?: boolean;
+  isAdmin?: boolean;
+  /** Every team the viewer is rostered on — access to a shared-in rock follows these. */
+  viewerTeamIds?: string[];
+  /**
+   * Rosters of the viewer's other teams, keyed by team id, for editing a
+   * shared-in rock as its parent team. A parent that arrives live without a
+   * roster here falls back to this team's members.
+   */
+  parentRosters?: Record<string, Member[]>;
 }) {
   const db = getClientDb();
 
@@ -224,6 +239,12 @@ export function SegmentRocks({
   const nameById = new Map(members.map((m) => [m.user_id, m.full_name]));
   for (const n of extraOwnerNames) nameById.set(n.user_id, n.full_name);
   const teamNameById = new Map(allTeams.map((t) => [t.id, t.name]));
+  const rosterIds = new Set(members.map((m) => m.user_id));
+  const viewer: RockViewer = {
+    uid: userId,
+    isAdmin,
+    teamIds: new Set(viewerTeamIds),
+  };
 
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
   for (const t of todos) {
@@ -279,18 +300,62 @@ export function SegmentRocks({
     : rocks.filter((r) => r.status !== "cancelled");
   const homeVisible = visible.filter((r) => r.team_id === teamId);
   const sharedVisible = visible.filter((r) => isSharedIntoTeam(r, teamId));
+  // Same placement rule as the Rocks tab (lib/rocks-share.ts): a shared-in
+  // rock whose owner is in this room walks with that owner's turn; anyone
+  // else's sits below under "Shared by". Shared-in rocks skip the Company /
+  // Department ladder — they are not this team's shared priorities.
+  const { ownerOnRoster: sharedIntoSections, sharedBy: sharedRocksBelow } =
+    partitionSharedRocks(sharedVisible, rosterIds);
   const groups = groupRocksForL10(
-    homeVisible,
-    rockBucket,
+    [...homeVisible, ...sharedIntoSections],
+    (r) => (r.team_id === teamId ? rockBucket(r) : "owner"),
     members,
     speakingOrder,
     absent,
     currentSpeaker,
     { company: COMPANY_SECTION_TITLE, department: DEPARTMENT_SECTION_TITLE },
   );
-  const sharedGroups = groupSharedRocksByOwner(sharedVisible, (id) =>
+  const sharedGroups = groupSharedRocksByOwner(sharedRocksBelow, (id) =>
     id ? (nameById.get(id) ?? "—") : "—",
   );
+
+  // Mirrors the Rocks tab's rowProps: at "edit" a shared-in rock renders as
+  // its parent team so the server gates hold; otherwise against this team.
+  function rowProps(r: RockDoc) {
+    if (r.team_id === teamId) {
+      return {
+        teamId,
+        members,
+        teamName,
+        shareTeams,
+        canFlagCompany,
+        access: "edit" as const,
+        fromTeamName: undefined,
+      };
+    }
+    const access = rockAccessFor(r, viewer);
+    const fromTeamName = teamNameById.get(r.team_id) ?? "another team";
+    if (access === "edit") {
+      return {
+        teamId: r.team_id,
+        members: parentRosters[r.team_id] ?? members,
+        teamName: fromTeamName,
+        shareTeams: allTeams.filter((t) => t.id !== r.team_id),
+        canFlagCompany,
+        access,
+        fromTeamName,
+      };
+    }
+    return {
+      teamId,
+      members,
+      teamName,
+      shareTeams,
+      canFlagCompany: false,
+      access,
+      fromTeamName,
+    };
+  }
 
   return (
     <div className="space-y-3">
@@ -378,20 +443,16 @@ export function SegmentRocks({
             {g.rocks.map((r) => (
               <RockRow
                 key={r.id}
-                teamId={teamId}
+                {...rowProps(r)}
                 userId={userId}
                 rock={r}
                 ownerName={
                   ownerLabel(r.owner_id, (id) => nameById.get(id))
                 }
-                members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={defaultDue}
                 statusHistory={statusByRock.get(r.id) ?? []}
                 currentUserId={userId}
-                teamName={teamName}
-                shareTeams={shareTeams}
-                canFlagCompany={canFlagCompany}
               />
             ))}
           </div>
@@ -411,21 +472,16 @@ export function SegmentRocks({
             {g.rocks.map((r) => (
               <RockRow
                 key={r.id}
-                teamId={teamId}
+                {...rowProps(r)}
                 userId={userId}
                 rock={r}
                 ownerName={
                   ownerLabel(r.owner_id, (id) => nameById.get(id))
                 }
-                members={members}
                 milestones={milestonesByRock.get(r.id) ?? []}
                 defaultDue={defaultDue}
                 statusHistory={statusByRock.get(r.id) ?? []}
                 currentUserId={userId}
-                teamName={teamNameById.get(r.team_id) ?? "another team"}
-                shareTeams={shareTeams}
-                canFlagCompany={canFlagCompany}
-                readOnly
               />
             ))}
           </div>

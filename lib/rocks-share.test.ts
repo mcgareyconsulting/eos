@@ -5,6 +5,8 @@ import {
   isSharedIntoTeam,
   sharedBySectionTitle,
   canSetRockStatus,
+  partitionSharedRocks,
+  rockAccessFor,
 } from "./rocks-share";
 
 describe("isSharedIntoTeam", () => {
@@ -117,5 +119,87 @@ describe("canSetRockStatus", () => {
       ),
       false,
     );
+  });
+});
+
+describe("rockAccessFor", () => {
+  const rock = {
+    team_id: "esd",
+    owner_id: "sam",
+    shared_team_ids: ["transformation"],
+  };
+  const viewer = (uid: string | null, ...teamIds: string[]) => ({
+    uid,
+    isAdmin: false,
+    teamIds: new Set(teamIds),
+  });
+
+  test("parent-team member gets edit wherever the rock renders", () => {
+    assert.equal(rockAccessFor(rock, viewer("jordan", "esd")), "edit");
+    // Also on a guest team — access follows the viewer, not the page.
+    assert.equal(
+      rockAccessFor(rock, viewer("jordan", "esd", "transformation")),
+      "edit",
+    );
+  });
+
+  test("org admin gets edit with no roster at all", () => {
+    assert.equal(
+      rockAccessFor(rock, { uid: "ops", isAdmin: true, teamIds: new Set() }),
+      "edit",
+    );
+  });
+
+  test("the owner on a guest team only, status", () => {
+    assert.equal(rockAccessFor(rock, viewer("sam", "transformation")), "status");
+  });
+
+  test("other guest-team members read", () => {
+    assert.equal(rockAccessFor(rock, viewer("jordan", "transformation")), "read");
+  });
+
+  test("the owner on a team the rock was never shared into reads", () => {
+    assert.equal(rockAccessFor(rock, viewer("sam", "leadership")), "read");
+  });
+
+  test("signed-out viewer reads", () => {
+    assert.equal(rockAccessFor(rock, viewer(null, "transformation")), "read");
+  });
+
+  test("tolerates a missing shared_team_ids field", () => {
+    assert.equal(
+      rockAccessFor({ team_id: "esd", owner_id: "sam" }, viewer("sam", "it")),
+      "read",
+    );
+  });
+});
+
+describe("partitionSharedRocks", () => {
+  const roster = new Set(["sam", "jordan"]);
+
+  test("owner on the roster merges into their own section", () => {
+    const mine = { team_id: "esd", owner_id: "sam", shared_team_ids: ["it"] };
+    const theirs = { team_id: "esd", owner_id: "cora", shared_team_ids: ["it"] };
+    const { ownerOnRoster, sharedBy } = partitionSharedRocks(
+      [mine, theirs],
+      roster,
+    );
+    assert.deepEqual(ownerOnRoster, [mine]);
+    assert.deepEqual(sharedBy, [theirs]);
+  });
+
+  test("an ownerless legacy rock has no section to merge into", () => {
+    const legacy = { team_id: "esd", owner_id: null, shared_team_ids: ["it"] };
+    const { ownerOnRoster, sharedBy } = partitionSharedRocks([legacy], roster);
+    assert.deepEqual(ownerOnRoster, []);
+    assert.deepEqual(sharedBy, [legacy]);
+  });
+
+  test("keeps input order within each side", () => {
+    const a = { team_id: "esd", owner_id: "sam", shared_team_ids: ["it"] };
+    const b = { team_id: "esd", owner_id: "cora", shared_team_ids: ["it"] };
+    const c = { team_id: "esd", owner_id: "jordan", shared_team_ids: ["it"] };
+    const { ownerOnRoster } = partitionSharedRocks([a, b, c], roster);
+    assert.deepEqual(ownerOnRoster, [a, c]);
   });
 });

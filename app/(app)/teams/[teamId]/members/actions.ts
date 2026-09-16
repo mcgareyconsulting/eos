@@ -112,7 +112,6 @@ export async function removeTeamMember(teamId: string, userId: string) {
       (id) => id !== userId,
     );
   }
-  if (team.meetingDriverId === userId) teamUpdate.meeting_driver_id = null;
   if (Object.keys(teamUpdate).length > 0) {
     batch.update(db.collection("teams").doc(teamId), teamUpdate);
   }
@@ -122,30 +121,6 @@ export async function removeTeamMember(teamId: string, userId: string) {
   revalidatePath(pathFor(teamId));
   revalidatePath(`${pathFor(teamId)}?tab=directory`);
   revalidatePath("/directory");
-}
-
-// Designate (or clear) the member who drives the live L10. Label-only — this
-// does not restrict who can advance the stage; it just marks the facilitator.
-// An empty/"none" value clears the designation. Leaders only. We verify the
-// chosen user is actually a member of this team before writing.
-export async function setMeetingDriver(teamId: string, formData: FormData) {
-  const { db } = await requireTeamLeader(teamId);
-  const raw = String(formData.get("driver_id") ?? "").trim();
-  const driverId = raw && raw !== "none" ? raw : null;
-
-  if (driverId) {
-    const member = await db
-      .collection("team_members")
-      .doc(`${teamId}__${driverId}`)
-      .get();
-    if (!member.exists) throw new Error("Driver must be a team member");
-  }
-
-  await db
-    .collection("teams")
-    .doc(teamId)
-    .set({ meeting_driver_id: driverId }, { merge: true });
-  revalidatePath(pathFor(teamId));
 }
 
 // Save the team's standing Google Meet URL used by the live-meeting Join

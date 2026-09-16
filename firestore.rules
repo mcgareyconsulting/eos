@@ -309,15 +309,20 @@ service cloud.firestore {
 
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
-      allow read, delete: if admin() || isMember(resource.data.team_id);
-      // Concluded meetings are frozen for client writes. Notes,
-      // attendance, and segment state go through the Admin SDK, which
-      // bypasses this; the conclude lock for those lives in the server
-      // actions. Clients cannot reopen or rewrite a finished meeting.
-      allow update: if admin()
-                    || (isMember(resource.data.team_id)
-                        && resource.data.ended_at == null);
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow read: if admin() || isMember(resource.data.team_id);
+      // No client writes at all. Every write to a meeting doc goes through a
+      // server action on the Admin SDK (which bypasses these rules), and the
+      // app has no client-side Firestore write path anywhere — the live
+      // surfaces subscribe with onSnapshot and mutate through actions.
+      //
+      // This used to allow any member to update a live meeting, as
+      // defense-in-depth for a client path that never existed. That made the
+      // whole driver model (meetings/actions.ts, lib/l10/driver.ts) advisory:
+      // `current_segment` is the group's stage, and anyone with a browser
+      // console could move the room. Same for `ended_at`, `driver_id` and the
+      // vote/attendance state. Deletes are leader-only in `deleteMeeting` for
+      // the same reason.
+      allow create, update, delete: if false;
 
       function meetingTeam() {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;

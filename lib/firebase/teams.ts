@@ -40,17 +40,17 @@ export const requireTeamAccess = cache(
   },
 );
 
-// Shape returned to callers for the current team. `meeting_driver_id` names the
-// member designated to drive the live L10 (label-only — anyone can still
-// advance the stage); `meet_link` is the team's standing Google Meet URL used
-// by the Join button. Both are optional and null until a leader sets them.
+// Shape returned to callers for the current team. `meet_link` is the team's
+// standing Google Meet URL used by the Join button, optional and null until a
+// leader sets it. There is deliberately no team-level meeting driver: driving
+// is per-meeting state (`meetings/{id}.driver_id`), claimed by whoever starts
+// the meeting — see lib/l10/driver.ts.
 // `speaking_order` is the team's durable L10 rotation, carried week to week;
 // it is always stale relative to the roster, so read it through
 // reconcileSpeakingOrder() rather than trusting it directly.
 export type TeamSummary = {
   id: string;
   name: string;
-  meetingDriverId: string | null;
   meetLink: string | null;
   speakingOrder: string[];
 };
@@ -60,7 +60,6 @@ function teamFrom(snap: DocumentSnapshot): TeamSummary {
   return {
     id: snap.id,
     name: (data.name as string) ?? "Team",
-    meetingDriverId: (data.meeting_driver_id as string) ?? null,
     meetLink: (data.meet_link as string) ?? null,
     speakingOrder: (data.speaking_order as string[]) ?? [],
   };

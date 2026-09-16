@@ -507,15 +507,6 @@ async function main() {
       });
       log(`speaking_order teams/${teamId}`);
     }
-    // meeting_driver_id
-    if (snap.data()?.meeting_driver_id === fromUid) {
-      ops.push({
-        kind: "update",
-        path: `teams/${teamId}`,
-        patch: { meeting_driver_id: toUid },
-      });
-      log(`meeting_driver_id teams/${teamId}`);
-    }
   }
 
   // --- 7) meetings speaking / absent + effectiveness_scores -----------------
@@ -543,6 +534,10 @@ async function main() {
         }
         const absent = replaceUidInArray(x.absent_user_ids, fromUid, toUid);
         if (absent) patch.absent_user_ids = absent;
+        // The wheel (lib/l10/driver.ts). Live meetings only, same as the
+        // rotation above — a concluded meeting is a record of who actually
+        // drove it, and rewriting that would be falsifying history.
+        if (x.driver_id === fromUid) patch.driver_id = toUid;
         if (Object.keys(patch).length) {
           ops.push({ kind: "update", path: `meetings/${d.id}`, patch });
           log(

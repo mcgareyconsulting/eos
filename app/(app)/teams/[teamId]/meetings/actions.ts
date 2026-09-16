@@ -29,6 +29,11 @@ import {
   firstPresentIndex,
   reconcileSpeakingOrder,
 } from "@/lib/l10/speaking-order";
+import {
+  canDrive,
+  isStaleLiveMeeting,
+  isUnclaimed,
+} from "@/lib/l10/driver";
 import { archiveHeadlinesDiscussedDuringMeeting } from "../headlines/actions";
 import { archiveIssuesClosedDuringMeeting } from "../issues/actions";
 import { archiveTodosCompletedDuringMeeting } from "../todos/actions";
@@ -138,9 +143,10 @@ async function loadAgendaSnapshot(
   );
 }
 
-// Group-transport action — starting the shared L10 room is a facilitator
-// control, so it requires team leader OR org admin (bypass built into
-// requireTeamLeader). Non-leader members 404 rather than minting a meeting.
+// Anyone on the team may start a meeting, and whoever does takes the wheel
+// (`driver_id`) — see lib/l10/driver.ts. This used to require a team leader,
+// which meant a room whose leader was out could not be opened by the seven
+// people sitting in it.
 //
 // `agendaId` selects the template; its stages + durations are snapshotted
 // onto the meeting doc so later template edits never rewrite a live room.
@@ -148,19 +154,65 @@ export async function startMeeting(
   teamId: string,
   agendaId?: string | null,
 ) {
-  const { db, team } = await requireTeamLeader(teamId);
+  const { uid, db, team } = await requireTeamAccess(teamId);
 
   // One live meeting per team: if someone already started one, join it
   // instead of minting a duplicate — two people clicking Start at 9:00 (or a
   // double-click on the button) must land everyone in the same room.
-  const activeSnap = await db
+  //
+  // But only a *recent* one. A meeting nobody pressed Finish on stays
+  // `ended_at == null` forever, and joining it silently made last week's room
+  // into this week's meeting: stale vote tallies (the reset below never runs
+  // on the join path), last week's agenda snapshot, last week's rotation.
+  // Anything untouched past the cutoff is reaped here instead.
+  const openSnap = await db
     .collection("meetings")
     .where("team_id", "==", teamId)
     .where("ended_at", "==", null)
-    .limit(1)
     .get();
-  if (!activeSnap.empty) {
-    redirect(detailPath(teamId, activeSnap.docs[0].id));
+
+  const nowMs = Date.now();
+  const stale: typeof openSnap.docs = [];
+  let joinable: { id: string; lastActivityMs: number } | null = null;
+  for (const d of openSnap.docs) {
+    const lastActivityMs =
+      (d.data().segment_started_at as { toMillis?: () => number } | null)
+        ?.toMillis?.() ??
+      (d.data().started_at as { toMillis?: () => number } | null)
+        ?.toMillis?.() ??
+      null;
+    if (isStaleLiveMeeting({ lastActivityMs, nowMs })) {
+      stale.push(d);
+      continue;
+    }
+    // Two live rooms should not exist, but if they do, the freshest one is
+    // the one people are actually in.
+    if (!joinable || (lastActivityMs ?? 0) > joinable.lastActivityMs) {
+      joinable = { id: d.id, lastActivityMs: lastActivityMs ?? 0 };
+    }
+  }
+
+  if (stale.length > 0) {
+    // Closed at its last sign of life, not at now: a meeting abandoned last
+    // Tuesday lasted an hour, not a week, and the recap reads `ended_at`.
+    // `ended_reason` marks it as reaped rather than concluded — nobody rated
+    // it, and none of the conclude-time archive sweeps ran for it.
+    const batch = db.batch();
+    for (const d of stale) {
+      batch.update(d.ref, {
+        ended_at:
+          d.data().segment_started_at ??
+          d.data().started_at ??
+          FieldValue.serverTimestamp(),
+        ended_reason: "stale",
+        current_segment: "done",
+      });
+    }
+    await batch.commit();
+  }
+
+  if (joinable) {
+    redirect(detailPath(teamId, joinable.id));
   }
 
   // Fresh Issues hour: clear last meeting's vote tallies + any leftover credits
@@ -188,6 +240,11 @@ export async function startMeeting(
     current_issue_id: null,
     notes: null,
     absent_user_ids: [],
+    // Whoever starts it drives it. `started_by` is the historical fact and
+    // never changes; `driver_id` is the wheel and moves with every takeover.
+    started_by: uid,
+    driver_id: uid,
+    driver_since: FieldValue.serverTimestamp(),
     speaking_order: speakingOrder,
     speaking_index: 0,
     agenda_id: agenda.agenda_id,
@@ -218,9 +275,10 @@ async function resetTeamIssueVotes(db: Firestore, teamId: string) {
 }
 
 // Group-transport action — moves the shared current_segment for everyone in
-// the room, so only a team leader or org admin (bypass built into
-// requireTeamLeader) may drive it. Members keep local peek (?view=) via the
-// rail; this only gates the write that moves the *group's* stage.
+// the room, so only the meeting's *driver* (or an org admin) may call it.
+// Anyone else takes the wheel first (takeWheel below), which is one click and
+// never refused. Members keep local peek (?view=) via the rail; this only
+// gates the write that moves the *group's* stage.
 export async function advanceSegment(
   teamId: string,
   meetingId: string,
@@ -230,7 +288,7 @@ export async function advanceSegment(
   // moved and no-ops instead of skipping a stage.
   expectedCurrent?: Segment,
 ) {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   const ref = db.collection("meetings").doc(meetingId);
 
   await db.runTransaction(async (tx) => {
@@ -241,6 +299,14 @@ export async function advanceSegment(
     // A concluded meeting has nothing to drive — a stale tab clicking Next
     // after someone finished must not rewrite history.
     if (snap.data()?.ended_at != null) return;
+
+    // Read the wheel inside the transaction: two people taking over in the
+    // same second must not both advance off one stale read. A no-op rather
+    // than a throw, like the expectedCurrent guard below: the realistic way
+    // to get here is someone taking the wheel a beat before your click
+    // landed, and that is a stale rail to re-render, not an error page.
+    const driverId = (snap.data()?.driver_id as string | null) ?? null;
+    if (!canDrive({ driverId, uid, isAdmin })) return;
 
     const agenda = resolveMeetingAgenda(snap.data() as {
       agenda_id?: string | null;
@@ -275,10 +341,52 @@ export async function advanceSegment(
         (snap.data()?.speaking_order as string[]) ?? [],
         (snap.data()?.absent_user_ids as string[]) ?? [],
       ),
+      // Meetings started before `driver_id` shipped are unclaimed: anyone may
+      // drive them, and driving is what claims the wheel. Cheaper than a
+      // backfill, and the room sees a name instead of "nobody".
+      ...(isUnclaimed(driverId)
+        ? { driver_id: uid, driver_since: FieldValue.serverTimestamp() }
+        : {}),
     });
   });
 
   revalidatePath(detailPath(teamId, meetingId));
+}
+
+/**
+ * Take the wheel.
+ *
+ * Deliberately unrestricted: any member of the team may take over driving, at
+ * any time, without the current driver's consent. The alternative — a wheel
+ * only its holder can pass on — strands the room the moment someone's laptop
+ * dies mid-Issues, which is the failure this whole model exists to prevent.
+ * What keeps it honest is visibility, not permission: `driver_id` is on the
+ * meeting doc every client subscribes to, so a takeover renames the pill on
+ * every screen in the room at once.
+ *
+ * No revalidatePath — the snapshot delivers it (same reasoning as
+ * setDiscussingIssue). The caller refreshes its own server content so the
+ * transport buttons appear for a client whose subscription is blocked.
+ */
+export async function takeWheel(teamId: string, meetingId: string) {
+  const { uid, db } = await requireTeamAccess(teamId);
+  const ref = db.collection("meetings").doc(meetingId);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data()?.team_id !== teamId) {
+      throw new Error("Meeting not found");
+    }
+    // Ended under you (Finish landed first): nothing to hold. The caller's
+    // refresh shows the recap.
+    if (snap.data()?.ended_at != null) return;
+    // Already yours (double-click, or two tabs): don't churn driver_since.
+    if (snap.data()?.driver_id === uid) return;
+    tx.update(ref, {
+      driver_id: uid,
+      driver_since: FieldValue.serverTimestamp(),
+    });
+  });
 }
 
 // Reorder the speaking rotation. Writes BOTH copies: the team doc holds the
@@ -388,23 +496,49 @@ export async function setVotingOpen(
     .update({ voting_open: open });
 }
 
-// Group-transport action — ending the meeting is a facilitator control
-// (Finish), leader/admin-gated the same as advanceSegment/startMeeting.
+// Group-transport action — ending the meeting is the driver's call (Finish),
+// gated the same way as advanceSegment. Nobody else in the room can close it
+// out from under them without taking the wheel first, which is visible.
 export async function endMeeting(teamId: string, meetingId: string) {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
   // Transactional so a second Finish (two people, or a stale tab) can't
   // overwrite ended_at and inflate the recorded duration.
   const ref = db.collection("meetings").doc(meetingId);
-  const didEnd = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (snap.data()?.ended_at != null) return false;
-    tx.update(ref, {
-      current_segment: "done",
-      ended_at: FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
+  const outcome = await db.runTransaction(
+    async (tx): Promise<"ended" | "already-ended" | "not-driver"> => {
+      const snap = await tx.get(ref);
+      if (snap.data()?.ended_at != null) return "already-ended";
+      // Same read-inside-the-transaction rule as advanceSegment, same no-op.
+      // No claim on the way out: attributing an unclaimed legacy meeting to
+      // whoever closed it would be a fiction, and there is no stage left to
+      // drive.
+      if (
+        !canDrive({
+          driverId: (snap.data()?.driver_id as string | null) ?? null,
+          uid,
+          isAdmin,
+        })
+      ) {
+        return "not-driver";
+      }
+      tx.update(ref, {
+        current_segment: "done",
+        ended_at: FieldValue.serverTimestamp(),
+      });
+      return "ended";
+    },
+  );
+
+  // Someone took the wheel a beat before this Finish landed. The meeting is
+  // still live, so the recap redirect below would open a recap over a room
+  // that hasn't ended — re-render the rail instead, which now shows who has
+  // the wheel.
+  if (outcome === "not-driver") {
+    revalidatePath(detailPath(teamId, meetingId));
+    redirect(detailPath(teamId, meetingId));
+  }
+  const didEnd = outcome === "ended";
 
   // Personal vote credits reset at end so no one opens the next L10 already
   // "out of votes". Team tallies (issues.votes) stay until the next Start —
@@ -537,8 +671,11 @@ export async function setAttendeeAbsence(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
+// Leader/admin only. Destroying a team's meeting history (and, for a live
+// meeting, the room everyone is sitting in) is not the same kind of act as
+// driving one, so opening Start to every member does not open this with it.
 export async function deleteMeeting(teamId: string, meetingId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { db } = await requireTeamLeader(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
   const scores = await db
     .collection("meetings")

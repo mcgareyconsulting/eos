@@ -32,6 +32,9 @@ export type MeetingListDoc = {
   team_id: string;
   started_at: TsLike;
   ended_at: TsLike;
+  /** `segment_started_at` (or `started_at`), for the abandoned-meeting cutoff
+   *  on the Meetings page. See lib/l10/driver.ts. */
+  last_activity_at?: TsLike;
   current_segment: string;
   agenda_name?: string | null;
   agenda_items?: AgendaItem[] | null;
@@ -50,10 +53,14 @@ export function MeetingsList({
   teamId,
   initialMeetings,
   ratingsByMeeting,
+  canDelete,
 }: {
   teamId: string;
   initialMeetings: MeetingListDoc[];
   ratingsByMeeting: Record<string, number | null>;
+  /** Leader/admin. Starting a meeting is everyone's; deleting the team's
+   *  meeting history is not, and `deleteMeeting` enforces that server-side. */
+  canDelete: boolean;
 }) {
   const db = getClientDb();
   const meetingsQuery = useMemo(
@@ -166,6 +173,7 @@ export function MeetingsList({
               </Link>
             )}
 
+            {canDelete && (
             <form
               action={deleteMeeting.bind(null, teamId, m.id)}
               onSubmit={(e) => {
@@ -191,6 +199,7 @@ export function MeetingsList({
                 <Trash2 className="w-4 h-4" />
               </button>
             </form>
+            )}
           </div>
         );
       })}

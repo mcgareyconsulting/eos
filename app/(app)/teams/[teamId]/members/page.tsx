@@ -1,4 +1,4 @@
-import { Video, Compass } from "lucide-react";
+import { Video } from "lucide-react";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import {
   requireTeamAccess,
@@ -6,7 +6,7 @@ import {
   getOrgDirectory,
   getOrgAdmins,
 } from "@/lib/firebase/teams";
-import { setMeetingDriver, setMeetLink } from "./actions";
+import { setMeetLink } from "./actions";
 import { AddMemberDrawer } from "./add-member-drawer";
 import { AdminBadge } from "./admin-badge";
 import { MemberRoleControls } from "./member-role-controls";
@@ -74,8 +74,6 @@ export default async function MembersPage({
     });
   });
 
-  const driver = members.find((m) => m.user_id === team.meetingDriverId) ?? null;
-
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
@@ -99,45 +97,7 @@ export default async function MembersPage({
             Meeting settings
           </Eyebrow>
           <div className="space-y-4 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-            <form action={setMeetingDriver.bind(null, tid)}>
-              <label
-                htmlFor="driver_id"
-                className="flex items-center gap-1.5 text-sm font-medium"
-              >
-                <Compass className="h-4 w-4 text-hpb-blue" />
-                Meeting driver
-              </label>
-              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-                Shown as the facilitator on the live meeting. Anyone can still
-                advance the stage.
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <select
-                  id="driver_id"
-                  name="driver_id"
-                  defaultValue={team.meetingDriverId ?? "none"}
-                  className="flex-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-                >
-                  <option value="none">No driver assigned</option>
-                  {members.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.full_name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-                >
-                  Save
-                </button>
-              </div>
-            </form>
-
-            <form
-              action={setMeetLink.bind(null, tid)}
-              className="border-t border-zinc-200 dark:border-zinc-800 pt-4"
-            >
+            <form action={setMeetLink.bind(null, tid)}>
               <label
                 htmlFor="meet_link"
                 className="flex items-center gap-1.5 text-sm font-medium"
@@ -195,12 +155,6 @@ export default async function MembersPage({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {driver?.user_id === m.user_id && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-hpb-green/10 px-2 py-0.5 text-xs font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30">
-                    <Compass className="h-3 w-3" />
-                    Driver
-                  </span>
-                )}
                 {/* Fixed-width slot so the Admin chip (and everything right
                     of it) lines up as columns across rows. */}
                 <span className="flex w-[4.5rem] justify-end">

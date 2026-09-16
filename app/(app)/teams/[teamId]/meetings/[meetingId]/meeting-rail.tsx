@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, Compass } from "lucide-react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useAuthUid } from "@/lib/firebase/use-collection";
@@ -13,6 +13,7 @@ import {
   shouldFollowRefresh,
   shouldReattach,
 } from "@/lib/l10/follow";
+import { canDrive, shouldOfferTakeover } from "@/lib/l10/driver";
 import {
   SEGMENT_LABELS,
   normalizeSegment,
@@ -33,7 +34,7 @@ import { LocalTime } from "@/components/local-time";
 import { formatClock } from "@/lib/l10/format-clock";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { useNow } from "@/lib/l10/use-now";
-import { advanceSegment, endMeeting } from "../actions";
+import { advanceSegment, endMeeting, takeWheel } from "../actions";
 import { SpeakingOrderRail } from "./speaking-order-rail";
 
 // How long the Finish button stays armed before falling back to its safe
@@ -43,7 +44,7 @@ const CONFIRM_WINDOW_MS = 4000;
 
 // Live orchestrator chrome, rendered as the meeting's own left rail. The
 // active stage + timer live on the meeting doc and stream to every client
-// (last-write-wins). Everyone follows the leader by default: when the stage
+// (last-write-wins). Everyone follows the driver by default: when the stage
 // moves, attached viewers move with it. Peeking at another stage locally
 // (?view=) detaches you — it never moves the group, and the group never moves
 // you — until you press "Group is on X — Catch up", which re-attaches.
@@ -62,12 +63,13 @@ export function MeetingRail({
   meetingStartedAtMs,
   startedAtLabel,
   initialEnded,
-  driverName,
+  initialDriverId,
+  viewerUid,
+  viewerIsAdmin,
   members,
   initialSpeakingOrder,
   initialSpeakerIndex,
   initialAbsentUserIds,
-  isLeader,
   initialAgendaItems,
   initialAgendaName,
 }: {
@@ -84,17 +86,18 @@ export function MeetingRail({
    *  client can't disagree on locale. */
   startedAtLabel: string | null;
   initialEnded: boolean;
-  driverName: string | null;
+  /** Who held the wheel at first paint; the snapshot owns it from there. */
+  initialDriverId: string | null;
+  /** This viewer, for the driver comparison. Comes from the server rather
+   *  than from client auth so the transport doesn't flicker on hydration
+   *  while `useAuthUid` resolves. */
+  viewerUid: string;
+  /** Org admin — may drive without holding the wheel (support bypass). */
+  viewerIsAdmin: boolean;
   members: { user_id: string; full_name: string }[];
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
   initialAbsentUserIds: string[];
-  /** Team leader or org admin — the only viewers who may drive
-   *  the shared transport (Back/Next/Finish below). Everyone else keeps
-   *  peek (?view=) and the "Group is on X — Catch up" pill; the server
-   *  actions enforce this independently, so hiding the buttons here is a
-   *  UX courtesy, not the security boundary. */
-  isLeader: boolean;
   /** Snapshot stamped at meeting start (order + per-stage budgets). */
   initialAgendaItems: AgendaItem[];
   initialAgendaName: string;
@@ -116,6 +119,7 @@ export function MeetingRail({
     absentUserIds: string[];
     agendaItems: AgendaItem[];
     agendaName: string;
+    driverId: string | null;
   } | null>(null);
   const uid = useAuthUid();
 
@@ -146,6 +150,7 @@ export function MeetingRail({
           absentUserIds: (x.absent_user_ids as string[]) ?? [],
           agendaItems: agenda.agenda_items,
           agendaName: agenda.agenda_name,
+          driverId: (x.driver_id as string | null) ?? null,
         });
       },
       (e) => console.error("[meeting-rail] subscribe:", e),
@@ -184,6 +189,26 @@ export function MeetingRail({
   );
   const speakerIndex = live?.speakerIndex ?? initialSpeakerIndex;
   const absentUserIds = live?.absentUserIds ?? initialAbsentUserIds;
+
+  // The wheel. Read from the snapshot so a takeover moves the transport
+  // controls between screens the moment it lands, with the server-rendered
+  // value as the fallback for a client whose subscription never connects.
+  const driverId = live?.driverId ?? initialDriverId;
+  const driving = canDrive({ driverId, uid: viewerUid, isAdmin: viewerIsAdmin });
+  const offerTakeover = shouldOfferTakeover({
+    driverId,
+    uid: viewerUid,
+    isAdmin: viewerIsAdmin,
+    ended,
+  });
+  // null only when nobody holds the wheel. A driver whose uid isn't on the
+  // roster (removed from the team mid-meeting) still holds it — naming them
+  // "Someone else" beats rendering the room as driverless.
+  const driverName = !driverId
+    ? null
+    : driverId === viewerUid
+      ? "You"
+      : (members.find((m) => m.user_id === driverId)?.full_name ?? "Someone else");
 
   // Followers ARE carried forward when someone drives the stage. The old
   // rule was the reverse — nobody was force-navigated,
@@ -244,8 +269,9 @@ export function MeetingRail({
     router.replace(pathname);
   }, [following, ended, activeSegment, viewSegment, router, pathname]);
 
-  const [driving, startDrive] = useTransition();
+  const [advancing, startDrive] = useTransition();
   const [finishing, startFinish] = useTransition();
+  const [taking, startTake] = useTransition();
 
   // Two-step Finish. The button is permanently on screen now rather than
   // tucked into the page header, and ending a meeting can't be undone.
@@ -269,6 +295,15 @@ export function MeetingRail({
       await endMeeting(teamId, meetingId);
     });
   };
+
+  // Take the wheel. `refresh()` because the transport controls are also
+  // server-rendered: a client whose Firestore subscription is blocked would
+  // otherwise see nothing happen.
+  const take = () =>
+    startTake(async () => {
+      await takeWheel(teamId, meetingId);
+      router.refresh();
+    });
 
   // Clear ?view= *and* refresh: a follower left behind has no ?view= to drop,
   // so the push alone is a same-URL no-op and would strand them on the stale
@@ -424,13 +459,26 @@ export function MeetingRail({
             )}
           </div>
 
-          {driverName && running && (
+          {running && (
             <div
               className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[11px] font-medium text-hpb-green ring-1 ring-inset ring-hpb-green/30"
-              title="Designated meeting driver"
+              title={
+                driverName
+                  ? "Driving: moves the stage for everyone in the meeting"
+                  : "Nobody has taken the wheel — anyone can drive this meeting"
+              }
             >
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-hpb-green" />
-              <span className="truncate">{driverName} is driving</span>
+              {/* "You're driving" rather than your own name: the pill answers
+                  "can I press Next?", and reading your own name in the third
+                  person is a beat slower than reading the answer. */}
+              <span className="truncate">
+                {driverName === "You"
+                  ? "You're driving"
+                  : driverName
+                    ? `${driverName} is driving`
+                    : "No one is driving"}
+              </span>
             </div>
           )}
         </div>
@@ -542,17 +590,32 @@ export function MeetingRail({
           )}
         </nav>
 
-        {/* Transport — drives the shared stage. Leader/admin
-            only. Members still get peek + catch-up above/below; this block
-            (and Finish) is the group-moving part, so it's hidden rather
-            than shown-disabled — there's nothing for a member to do here. */}
-        {running && isLeader && (
+        {/* Transport — drives the shared stage. The driver only (an unclaimed
+            meeting is everyone's, and driving claims it). Everyone else gets
+            Take the wheel below instead: hidden rather than shown-disabled,
+            because a disabled Next with no explanation reads as a bug. */}
+        {running && driving && (
           <div className="space-y-2 px-3 py-3">
+            {/* Admin-only in practice: the one viewer who may drive without
+                holding the wheel. Moving the room while the pill names
+                someone else is exactly the confusion this model removes, so
+                offer the claim here rather than letting it happen silently. */}
+            {offerTakeover && (
+              <button
+                type="button"
+                onClick={take}
+                disabled={taking}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-500/30 transition hover:bg-amber-500/20 disabled:opacity-60 dark:text-amber-400"
+              >
+                <Compass className="h-3.5 w-3.5 shrink-0" />
+                {taking ? "Taking over…" : `${driverName} holds the wheel — take it`}
+              </button>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => drive("prev")}
-                disabled={driving || atFirst}
+                disabled={advancing || atFirst}
                 className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 ← Back
@@ -563,7 +626,7 @@ export function MeetingRail({
                 // Last agenda stage is the stop — Finish (below) ends the
                 // meeting. Advancing past it used to write "done" without
                 // ended_at and blank the whole page.
-                disabled={driving || atLast}
+                disabled={advancing || atLast}
                 title={
                   atLast
                     ? "This is the last segment — use Finish to end the meeting"
@@ -600,11 +663,30 @@ export function MeetingRail({
           </div>
         )}
 
-        {/* Members (no transport above): still need a way out of the live
-            meeting UI without ending it — the exit link normally bundled
-            with Finish above. */}
-        {running && !isLeader && (
-          <div className="px-3 py-3">
+        {/* Not driving: take the wheel, and the way out of the live meeting UI
+            without ending it (the exit link is bundled with Finish above for
+            the driver). Takeover is never refused — a driver whose laptop
+            died must not be able to strand the room — and it is never silent
+            either: `driver_id` is on the doc every client watches, so the
+            pill renames itself on every screen at once. */}
+        {running && !driving && (
+          <div className="space-y-2 px-3 py-3">
+            {offerTakeover && (
+              <>
+                <button
+                  type="button"
+                  onClick={take}
+                  disabled={taking}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-hpb-blue/40 px-2 py-1.5 text-sm font-medium text-hpb-blue transition hover:bg-hpb-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 disabled:opacity-60"
+                >
+                  <Compass className="h-3.5 w-3.5" />
+                  {taking ? "Taking over…" : "Take the wheel"}
+                </button>
+                <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+                  {driverName} will see that you took over.
+                </p>
+              </>
+            )}
             <Link
               href={`/teams/${teamId}/meetings`}
               className="block text-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline dark:text-zinc-400 dark:hover:text-zinc-200"

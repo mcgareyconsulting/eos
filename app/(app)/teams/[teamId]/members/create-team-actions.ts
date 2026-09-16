@@ -75,7 +75,6 @@ export async function createTeamWithLeader(
       name: teamName,
       org_id: "default",
       parent_team_id: null,
-      meeting_driver_id: null,
       meet_link: null,
       speaking_order: [userId],
       created_at: FieldValue.serverTimestamp(),

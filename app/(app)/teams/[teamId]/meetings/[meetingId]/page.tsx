@@ -80,6 +80,10 @@ type MeetingDoc = {
   agenda_id?: string | null;
   agenda_name?: string | null;
   agenda_items?: unknown;
+  /** Whoever opened the room; never changes. */
+  started_by?: string | null;
+  /** The wheel — moves on every takeover (see lib/l10/driver.ts). */
+  driver_id?: string | null;
 };
 
 export default async function MeetingDetailPage({
@@ -101,12 +105,7 @@ export default async function MeetingDetailPage({
   // standalone Scorecard page so L10 filters match.
   const scorecardWeekRange = parseWeekRange(weeksParam);
   const scorecardPeriod = parseScorecardPeriod(periodParam);
-  const { uid, db, team, isAdmin, membershipRole } = await requireTeamAccess(tid);
-  // Only a team leader (or org admin, god-mode bypass) may drive
-  // the shared L10 transport — advance/rewind segments, Finish. Members keep
-  // peeking + catch-up; MeetingRail hides the transport controls when this
-  // is false. Mirrors the server-side gate in meetings/actions.ts.
-  const isLeader = isAdmin || membershipRole === "leader";
+  const { uid, db, team, isAdmin } = await requireTeamAccess(tid);
 
   const meetingSnap = await db.collection("meetings").doc(mid).get();
   if (!meetingSnap.exists || meetingSnap.data()?.team_id !== tid) notFound();
@@ -123,10 +122,10 @@ export default async function MeetingDetailPage({
   const speakingOrder = reconcileSpeakingOrder(m.speaking_order, members);
   const speakerIndex = m.speaking_index ?? 0;
 
-  // Designated facilitator (label-only) for the live control bar.
-  const driverName =
-    members.find((mm) => mm.user_id === team.meetingDriverId)?.full_name ??
-    null;
+  // Who holds the wheel right now. First paint only — MeetingRail tracks
+  // `driver_id` on the live snapshot from here, so a takeover renames the
+  // pill and moves the transport controls without a round trip.
+  const initialDriverId = m.driver_id ?? null;
 
   const ratingsSnap = await db
     .collection("meetings")
@@ -357,12 +356,13 @@ export default async function MeetingDetailPage({
           meetingStartedAtMs={meetingStartedAtMs}
           startedAtLabel={startedAtLabel}
           initialEnded={!live}
-          driverName={driverName}
+          initialDriverId={initialDriverId}
+          viewerUid={uid}
+          viewerIsAdmin={isAdmin}
           members={members}
           initialSpeakingOrder={speakingOrder}
           initialSpeakerIndex={speakerIndex}
           initialAbsentUserIds={absentUserIds}
-          isLeader={isLeader}
           initialAgendaItems={agenda.agenda_items}
           initialAgendaName={agenda.agenda_name}
         />

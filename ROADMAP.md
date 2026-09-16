@@ -878,7 +878,10 @@ the sweep doesn't instantly re-archive); **#8** confirm before every delete
 comment — all now use `ConfirmSubmitForm`; reversible archives stay
 confirm-free by convention); **#9** leader-only L10 transport
 (start/advance/jump/end require leader server-side via `requireTeamLeader`,
-admin bypass; transport hidden for members; peek unchanged); **#11**
+admin bypass; transport hidden for members; peek unchanged) — **superseded
+2026-09-16 by N59**: transport is the meeting's driver, not the team's leader.
+Note the claim was never fully true: **jump has never existed**, then or now;
+transport is `next`/`prev`; **#11**
 headline edit after create / during L10 + General/FYI category incl.
 CSV-import mapping (also closes Pass 14 #14); **#12** due-soon milestones
 hide under done/cancelled/archived rocks (`lib/milestone-visibility.ts`,
@@ -1325,7 +1328,19 @@ affect other teams."
 - 2026-08-24 · build · src session-2026-08-24 — collapse shipped `0f5c7a1`; check-off shipped `3ded811`. Per-team was a guard to drop, not a model to change — the fan-out is already per team. Edit/delete stay blocked; sweeps updated; functions deploy required
 
 ### N27 · Leader-driven meeting sync (follow the leader, off-sync opt-out)
-*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-26*
+*W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-09-16*
+
+**The driver half landed 2026-09-16 under N59, and it is worth recording here
+that this item's own summary was wrong for three weeks.** "Whoever hits Start
+meeting becomes the default driver" was never built: what shipped on 08-26 was
+the *follow* behaviour, while the driver stayed a label-only team setting
+(`teams.meeting_driver_id`) and transport stayed leader-gated from QW1 #9 —
+three unrelated notions of "driver" in one codebase, none of them the one
+described here. N59 collapses them: the starter takes the wheel, anyone may
+take it from them, and `follow.ts` is untouched (attach/detach never cared who
+drives). Still outstanding from the original ask: **action notifications**
+(N31) and **jump**, which this item and QW1 #9 both describe and neither ever
+built.
 
 **Shipped 2026-08-26.** Found by the 08-26 drift audit as a *decision
 conflict*, not a blank build: the app implemented the exact opposite on
@@ -1409,6 +1424,8 @@ entirely. Keep it; add the follow.
 - 2026-08-26 · build · src session-2026-08-26 — follow effect + `detached` (vs `peeking`) for the catch-up affordances; logic extracted to `lib/l10/follow.ts`. 445 tests pass, tsc + build clean, lint at baseline
 - 2026-08-26 · decision · src session-2026-08-26 — daniel: auto re-attach. A detached viewer standing on the group's own stage rejoins silently rather than waiting to be stranded by the next advance
 - 2026-08-26 · build · src session-2026-08-26 — `shouldReattach` + `router.replace` effect; mutual exclusion with the follow effect pinned by test. 450 tests pass, tsc + build clean, lint at baseline
+- 2026-09-16 · finding · src session-2026-09-16 — this item's "starter becomes the driver" was never built and the file said it had been: driver was a team-level label, transport was leader-gated, and the two never met. Same shape as the 08-26 decision-conflict drift, one level up
+- 2026-09-16 · build · src session-2026-09-16 — driver half shipped under **N59**; jump and action notifications (**N31**) remain unbuilt
 
 ### N28 · Scorecard metric-expand styling + scroll behavior
 *W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
@@ -2783,7 +2800,64 @@ the reason to read them before ordering them:
   has been reproduced — **get the file before building anything.**
 
 ### N59 · Anyone on the team can start a meeting, not just the leader
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*
+*W3 · shipped · due — · deps — · owner daniel · src feedback-2026-09-10 · upd 2026-09-16*
+
+**Shipped 2026-09-16 as scope (b′): start opens to every member, and the
+driver becomes a per-meeting seat rather than a team role.** The open
+question below — start-only vs start+transport — was answered by daniel on
+two pillars: *any user can start a meeting*, and *keep the driver feature*.
+Scope (a) was rejected on its own stated risk: a member who can open a room
+but not advance it strands the team in a worse place than not being able to
+open one.
+
+The model (`lib/l10/driver.ts`, tested):
+
+1. **Whoever starts it drives it.** `meetings/{id}.driver_id`, seeded from the
+   caller at `startMeeting`, plus `started_by` (the historical fact, never
+   rewritten) and `driver_since`.
+2. **Transport is driver-or-admin.** `advanceSegment` and `endMeeting` check
+   `canDrive` *inside* their existing transactions, so two people taking over
+   in the same second can't both advance off one stale read. `requireTeamLeader`
+   leaves the live meeting entirely — it still gates agenda authoring and
+   `deleteMeeting`, which are not the same kind of act as running today's L10.
+3. **Take the wheel is never refused.** Any member takes over, one click, no
+   consent from the current driver — a wheel only its holder can pass on
+   strands the room the moment a laptop dies mid-Issues, which is the failure
+   the whole model exists to prevent. What keeps it honest is visibility: the
+   pill renames itself on every screen through the meeting-doc snapshot every
+   client is already subscribed to. No new transport, no dependency on N31.
+4. **Legacy meetings are *unclaimed*.** No `driver_id` means anyone may drive,
+   and driving claims it. No backfill.
+5. **The team-level driver is retired.** `teams.meeting_driver_id` and its
+   Members-page form are gone. It was label-only, it named someone who might
+   not be in the room, and its own helper text ("Anyone can still advance the
+   stage") had been false since QW1 #9. daniel: *"person starting the meeting
+   is the driver, plain and simple, everything else is overkill, no need to
+   set it pre meeting."*
+
+**Two robustness fixes rode along, both found while reading the start path:**
+
+- **Zombie rooms.** `startMeeting` joined *any* meeting with `ended_at == null`,
+  unbounded, and redirected before `resetTeamIssueVotes` — so a meeting nobody
+  Finished became next week's room, carrying stale vote tallies, agenda
+  snapshot and rotation. Now anything untouched past a 12h cutoff
+  (`isStaleLiveMeeting`, measured from `segment_started_at` so a long meeting
+  is never reaped out from under the people in it) is closed at its last sign
+  of life with `ended_reason: "stale"`. The Meetings page applies the same
+  cutoff before offering "Join live meeting", because otherwise the zombie
+  hides the Start button that reaps it.
+- **`firestore.rules` backed nothing.** `allow update: if isMember(...) &&
+  ended_at == null` let any member write `current_segment` straight from a
+  browser console, which would have made the whole driver gate advisory. The
+  app has no client-side Firestore write path at all (verified: every live
+  surface subscribes with `onSnapshot` and mutates through server actions), so
+  client writes to `meetings/{id}` are now closed entirely. **Needs a
+  `firebase deploy --only firestore:rules` — code ship alone does not apply it.**
+
+Not built, deliberately: **jump-to-segment** (both this item's QW1 #9 entry and
+N27 describe a jump that has never existed — transport is `next`/`prev` only)
+and **presence** (N25), which would turn takeover from "anyone, anytime" into
+"anyone, once the driver goes quiet".
 
 Effort S. Steph: "Anyone should be able to start a meeting - not just the
 team leader."
@@ -2832,6 +2906,9 @@ who may call it creates no duplicate-room risk.
 - 2026-09-10 · request · src feedback-2026-09-10 — Steph Benes, Meetings
 - 2026-09-10 · finding · src session-2026-09-10 — gate is `requireTeamLeader` in `startMeeting` + the page's `isLeader`; `firestore.rules` already permits member creates, so no rules change is involved
 - 2026-09-10 · open · src session-2026-09-10 — start-only vs start+transport is a scope decision coupled to **N27**; not settled here
+- 2026-09-16 · decision · src session-2026-09-16 — daniel: two pillars — any user starts a meeting, and the driver feature stays. Scope (b′): driver is a per-meeting seat held by the starter, takeover open to anyone with a confirm, team-level driver setting retired, jump out of scope
+- 2026-09-16 · build · src session-2026-09-16 — `lib/l10/driver.ts` (canDrive / shouldOfferTakeover / isStaleLiveMeeting) + `takeWheel` action + rail transport keyed on the wheel; `startMeeting` opened to members and stale-room reaping added; `deleteMeeting` tightened to leader; client writes to `meetings/{id}` closed in `firestore.rules`. 670 tests pass, tsc + lint + build clean
+- 2026-09-16 · note · src session-2026-09-16 — **rules deploy owed**: `firestore.rules` changed, so the code ship is not the whole change
 
 ### N60 · To-Dos import as Rocks — nothing checks the file against the kind
 *W3 · not-started · due — · deps N6 · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*

@@ -52,11 +52,13 @@ touches schema — good post-demo task. Related: per-segment durations are never
 persisted (`segment_started_at` is overwritten on each advance), so "how long
 did Issues take?" is unanswerable; ninety.io tracks this (see ROADMAP Pass 11).
 
-### 🟡 Who may drive/end a meeting
-Any team member can advance segments and conclude (the driver label is
-display-only by design). The two-step Finish arm is the only guard. If the
-client wants driver-only transport, it's a small server-side check — but it's
-a workflow decision, not a bug.
+### ✅ Who may drive/end a meeting — settled 2026-09-16 (N59)
+*Historical note: this said any member could advance and conclude, with the
+driver label display-only. That stopped being true at QW1 #9 (leader-only
+transport) and this file was never updated.* The answer now: the meeting's
+**driver** — whoever started it (`meetings/{id}.driver_id`) — advances and
+concludes; anyone on the team may take the wheel, visibly, with one click.
+See `lib/l10/driver.ts` and ROADMAP N59. The two-step Finish arm remains.
 
 ---
 

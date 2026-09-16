@@ -286,6 +286,7 @@ export function SegmentIssues({
             teamId={teamId}
             members={members}
             defaultOwnerId={userId}
+            currentUserId={userId}
             meetingId={meetingId}
             buttonLabel="Add to-do"
             compact

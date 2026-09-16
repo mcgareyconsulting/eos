@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import {
+  getTeamMembers,
+  requireTeamAccess,
+  requireTeamDoc,
+} from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import {
   upsertTaskForTodo,
@@ -11,9 +15,13 @@ import {
 } from "@/lib/google/tasks";
 import { selectTodosCompletedDuringMeeting } from "@/lib/todos-archive";
 import { notify } from "@/lib/firebase/notifications";
+import { recordActivity } from "@/lib/firebase/activity";
+import { joinNames } from "@/lib/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
 import {
+  addedFollowerRecipients,
+  applyFollowerEdit,
   followersAfterOwnerChange,
   initialFollowers,
   recipientsFor,
@@ -98,8 +106,24 @@ export async function addTodo(teamId: string, formData: FormData) {
   if (!title) throw new Error("Title required");
 
   // Creator + owner follow from the start; that is the "assign and follow"
-  // shape the client uses today (N61).
-  const follower_ids = initialFollowers({ creatorId: uid, ownerId: owner_id });
+  // shape the client uses today (N61). "Add followers" picks ride along,
+  // checked against the roster so a stale or hand-rolled form can't
+  // subscribe someone who isn't on the team. A private to-do is readable by
+  // its owner only, so nobody else can meaningfully follow it.
+  const roster = new Set(
+    (await getTeamMembers(teamId)).map((m) => m.user_id),
+  );
+  const picked =
+    visibility === "private"
+      ? []
+      : formData
+          .getAll("follower_ids")
+          .filter((v): v is string => typeof v === "string" && roster.has(v));
+  const follower_ids = initialFollowers({
+    creatorId: uid,
+    ownerId: owner_id,
+    extraIds: picked,
+  });
 
   const ref = await db.collection("todos").add({
     team_id: teamId,
@@ -120,16 +144,49 @@ export async function addTodo(teamId: string, formData: FormData) {
     created_at: FieldValue.serverTimestamp(),
   });
 
+  const target = notifyTarget(teamId, team.name, ref.id, { title });
+  const dueDetail = due_date ? `Due ${formatDateOnly(due_date)}` : null;
   if (owner_id !== uid) {
     await notify({
       db,
       recipientIds: [owner_id],
       kind: "assigned",
-      ...notifyTarget(teamId, team.name, ref.id, { title }),
+      ...target,
       actor: { id: uid },
-      detail: due_date ? `Due ${formatDateOnly(due_date)}` : null,
+      detail: dueDetail,
     });
   }
+  const addedFollowers = addedFollowerRecipients({
+    creatorId: uid,
+    ownerId: owner_id,
+    extraIds: picked,
+  });
+  await notify({
+    db,
+    recipientIds: addedFollowers,
+    kind: "following",
+    ...target,
+    actor: { id: uid },
+    detail: dueDetail,
+  });
+
+  const names = await loadUserNames(db, [owner_id, ...addedFollowers]);
+  await recordActivity({
+    db,
+    teamId,
+    entity: { type: "todo", id: ref.id, visibility, ownerId: owner_id },
+    kind: "created",
+    actor: { id: uid },
+    detail: [
+      `Owner ${owner_id === uid ? "you" : names.get(owner_id) ?? "—"}`,
+      dueDetail,
+      addedFollowers.length > 0
+        ? `Following: ${joinNames(addedFollowers, (id) => names.get(id))}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  });
 
   // Mirror to the owner's Google Tasks (best-effort; no-op if they
   // haven't connected their account).
@@ -176,6 +233,18 @@ export async function toggleTodo(
     ...notifyTarget(teamId, team.name, todoId, data),
     actor: { id: uid },
   });
+  await recordActivity({
+    db,
+    teamId,
+    entity: {
+      type: "todo",
+      id: todoId,
+      visibility: data.visibility,
+      ownerId: data.owner_id,
+    },
+    kind: nowComplete ? "completed" : "reopened",
+    actor: { id: uid },
+  });
 
   const taskId = await upsertTaskForTodo(
     ownerUidOf(data),
@@ -217,10 +286,38 @@ export async function updateTodoMeta(
 
   const prevOwner = ownerUidOf(data) || null;
   const reassigned = owner_id !== prevOwner;
-  // A new owner starts following; nobody is dropped (lib/notifications.ts).
-  const follower_ids = reassigned
-    ? followersAfterOwnerChange(followerIdsOf(data), owner_id)
-    : followerIdsOf(data);
+
+  // Followers. When the Edit form's picker was used (`followers_edited`),
+  // the list is exactly what was left checked, plus the owner
+  // (lib/notifications.ts applyFollowerEdit). Otherwise — an older form, or
+  // a surface without the picker — the old rule holds: a new owner starts
+  // following and nobody is dropped.
+  let follower_ids: string[];
+  let addedFollowers: string[] = [];
+  let removedFollowers: string[] = [];
+  if (formData.get("followers_edited") === "on") {
+    const roster = new Set(
+      (await getTeamMembers(teamId)).map((m) => m.user_id),
+    );
+    const picked = formData
+      .getAll("follower_ids")
+      .filter((v): v is string => typeof v === "string" && roster.has(v));
+    const edit = applyFollowerEdit({
+      current: followerIdsOf(data),
+      ownerId: owner_id,
+      picked,
+      visibility,
+    });
+    follower_ids = edit.next;
+    // The owner hears "assigned", not "added as a follower"; the actor
+    // hears nothing about their own picks.
+    addedFollowers = edit.added.filter((id) => id !== owner_id && id !== uid);
+    removedFollowers = edit.removed;
+  } else {
+    follower_ids = reassigned
+      ? followersAfterOwnerChange(followerIdsOf(data), owner_id)
+      : followerIdsOf(data);
+  }
 
   await db.collection("todos").doc(todoId).update({
     title,
@@ -247,7 +344,11 @@ export async function updateTodoMeta(
 
   // Tell followers what moved. The new owner hears "assigned you" instead of
   // the generic summary; the actor hears nothing either way.
-  const names = await loadUserNames(db, [owner_id]);
+  const names = await loadUserNames(db, [
+    owner_id,
+    ...addedFollowers,
+    ...removedFollowers,
+  ]);
   const summary = summarizeTodoChanges(
     {
       title: String(data.title ?? ""),
@@ -284,6 +385,55 @@ export async function updateTodoMeta(
       detail: summary,
     });
   }
+  if (addedFollowers.length > 0) {
+    await notify({
+      db,
+      recipientIds: addedFollowers,
+      kind: "following",
+      ...notifyTarget(teamId, team.name, todoId, { title }),
+      actor: { id: uid },
+      detail: due_date ? `Due ${formatDateOnly(due_date)}` : null,
+    });
+  }
+
+  // The trace records every change the form made, told or not.
+  const entity = {
+    type: "todo" as const,
+    id: todoId,
+    visibility,
+    ownerId: owner_id,
+  };
+  const actor = { id: uid };
+  if (summary) {
+    await recordActivity({ db, teamId, entity, kind: "updated", actor, detail: summary });
+  }
+  const prevDescription =
+    normalizeDescription(String(data.description ?? "")) || null;
+  if (prevDescription !== description) {
+    await recordActivity({ db, teamId, entity, kind: "description", actor });
+  }
+  if (addedFollowers.length > 0) {
+    await recordActivity({
+      db,
+      teamId,
+      entity,
+      kind: "followers_added",
+      actor,
+      detail: joinNames(addedFollowers, (id) => names.get(id)),
+    });
+  }
+  if (removedFollowers.length > 0) {
+    await recordActivity({
+      db,
+      teamId,
+      entity,
+      kind: "followers_removed",
+      actor,
+      detail: joinNames(removedFollowers, (id) =>
+        id === uid ? "you" : names.get(id),
+      ),
+    });
+  }
 
   revalidatePath(pathFor(teamId));
   revalidatePath("/home");
@@ -314,6 +464,18 @@ export async function setTodoFollowing(
     .collection("todos")
     .doc(todoId)
     .update({ follower_ids: toggleFollower(followerIdsOf(data), uid, following) });
+  await recordActivity({
+    db,
+    teamId,
+    entity: {
+      type: "todo",
+      id: todoId,
+      visibility: data.visibility,
+      ownerId: data.owner_id,
+    },
+    kind: following ? "followed" : "unfollowed",
+    actor: { id: uid },
+  });
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
 }
@@ -333,9 +495,22 @@ export async function toggleWeeklyFocus(
   todoId: string,
   next: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
-  await requireTeamDoc(db, "todos", todoId, teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const data = snap.data() ?? {};
   await db.collection("todos").doc(todoId).update({ weekly_focus: next });
+  await recordActivity({
+    db,
+    teamId,
+    entity: {
+      type: "todo",
+      id: todoId,
+      visibility: data.visibility,
+      ownerId: data.owner_id,
+    },
+    kind: next ? "weekly_focus_on" : "weekly_focus_off",
+    actor: { id: uid },
+  });
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath("/home");
@@ -364,9 +539,10 @@ export async function setTodoArchived(
   todoId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  if (snap.data()?.source_rock_id) {
+  const data = snap.data() ?? {};
+  if (data.source_rock_id) {
     throw new Error("Milestones are managed under Rocks, not archived here");
   }
   await db
@@ -377,6 +553,18 @@ export async function setTodoArchived(
         ? { archived_at: FieldValue.serverTimestamp() }
         : { archived_at: null, completed_at: null },
     );
+  await recordActivity({
+    db,
+    teamId,
+    entity: {
+      type: "todo",
+      id: todoId,
+      visibility: data.visibility,
+      ownerId: data.owner_id,
+    },
+    kind: archived ? "archived" : "restored",
+    actor: { id: uid },
+  });
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
   revalidatePath("/home");

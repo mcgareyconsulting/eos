@@ -39,11 +39,17 @@ export function NotificationsNavLink({
     [db, uid],
   );
   // Only the count matters; the rows are typed minimally on purpose.
+  // Archived rows drop out here, not in the query: `archived_at` is absent
+  // on rows older than the Archived tab, which `== null` would not match.
   const initial = useMemo(
     () => Array.from({ length: initialUnread }, (_, i) => ({ id: `ssr-${i}` })),
     [initialUnread],
   );
-  const unread = useCollection<{ id: string }>(q, initial, "unread-count").length;
+  const unread = useCollection<{ id: string; archived_at?: unknown }>(
+    q,
+    initial,
+    "unread-count",
+  ).filter((n) => n.archived_at == null).length;
   const badge = unread > 99 ? "99+" : String(unread);
 
   return (

@@ -21,13 +21,17 @@ export default async function AppLayout({
   // the count never flashes from 0 to N on load.
   let unreadNotifications = 0;
   try {
-    const agg = await db
+    // Not `.count()`: archived rows are excluded, and `archived_at` is
+    // absent on rows older than the Archived tab, which an `== null` filter
+    // would miss. Unread rows are few, so reading them is as cheap.
+    const snap = await db
       .collection("notifications")
       .where("user_id", "==", user.id)
       .where("read_at", "==", null)
-      .count()
       .get();
-    unreadNotifications = agg.data().count;
+    unreadNotifications = snap.docs.filter(
+      (d) => d.data().archived_at == null,
+    ).length;
   } catch (e) {
     console.error("[layout] unread notifications count failed:", e);
   }

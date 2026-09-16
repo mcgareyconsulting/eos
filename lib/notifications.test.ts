@@ -1,9 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addedFollowerRecipients,
+  applyFollowerEdit,
   commentRecipients,
   followersAfterOwnerChange,
   initialFollowers,
+  notificationColumn,
   notificationHref,
   notificationVerb,
   recipientsFor,
@@ -28,6 +31,32 @@ describe("follow relation", () => {
     ]);
   });
 
+  test("explicit picks at creation follow too, without doubling anyone", () => {
+    assert.deepEqual(
+      initialFollowers({
+        creatorId: "me",
+        ownerId: "you",
+        extraIds: ["them", "you", "me", null],
+      }),
+      ["me", "you", "them"],
+    );
+  });
+
+  test("only the extra picks hear they were added", () => {
+    assert.deepEqual(
+      addedFollowerRecipients({
+        creatorId: "me",
+        ownerId: "you",
+        extraIds: ["them", "you", "me", "them"],
+      }),
+      ["them"],
+    );
+    assert.deepEqual(
+      addedFollowerRecipients({ creatorId: "me", ownerId: null, extraIds: [] }),
+      [],
+    );
+  });
+
   test("reassigning adds the new owner and keeps everyone else", () => {
     assert.deepEqual(followersAfterOwnerChange(["a", "b"], "c"), [
       "a",
@@ -36,6 +65,28 @@ describe("follow relation", () => {
     ]);
     assert.deepEqual(followersAfterOwnerChange(["a", "b"], "b"), ["a", "b"]);
     assert.deepEqual(followersAfterOwnerChange(undefined, "z"), ["z"]);
+  });
+
+  test("editing the follower list keeps the owner and diffs the rest", () => {
+    assert.deepEqual(
+      applyFollowerEdit({
+        current: ["me", "you", "old"],
+        ownerId: "you",
+        picked: ["new", "me"],
+        visibility: "team",
+      }),
+      { next: ["you", "new", "me"], added: ["new"], removed: ["old"] },
+    );
+    // Private: nobody but the owner, whatever was picked.
+    assert.deepEqual(
+      applyFollowerEdit({
+        current: ["me", "you"],
+        ownerId: "you",
+        picked: ["me", "them"],
+        visibility: "private",
+      }),
+      { next: ["you"], added: [], removed: ["me"] },
+    );
   });
 
   test("toggle follows and unfollows without duplicates", () => {
@@ -134,6 +185,29 @@ describe("what the row says", () => {
     assert.equal(
       notificationHref({ team_id: "t1", entity_type: "todo", entity_id: "a b" }),
       "/teams/t1/todos?todo=a%20b",
+    );
+  });
+});
+
+describe("hub columns", () => {
+  test("mentions get their own column; everything else is activity", () => {
+    assert.equal(notificationColumn({ kind: "mention" }), "mentions");
+    for (const kind of [
+      "comment",
+      "completed",
+      "reopened",
+      "updated",
+      "assigned",
+      "following",
+    ] as const) {
+      assert.equal(notificationColumn({ kind }), "activity");
+    }
+  });
+
+  test("the following verb reads as an invitation, not an assignment", () => {
+    assert.equal(
+      notificationVerb({ kind: "following", entity_title: "Ship it" }),
+      "added you as a follower on “Ship it”",
     );
   });
 });

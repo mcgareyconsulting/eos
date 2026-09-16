@@ -48,6 +48,7 @@ export default async function NotificationsPage() {
       detail: (n.detail as string | null) ?? null,
       created_at: toMillis(n.created_at),
       read_at: toMillis(n.read_at),
+      archived_at: toMillis(n.archived_at),
     };
   });
 

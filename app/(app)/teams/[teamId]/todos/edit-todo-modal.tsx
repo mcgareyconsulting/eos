@@ -25,6 +25,7 @@ type TodoForEdit = {
   due_date: string | null;
   visibility: "team" | "private";
   weekly_focus?: boolean;
+  follower_ids?: string[] | null;
 };
 
 /** Every field the form owns, in one shape — see draftChanged. */
@@ -35,6 +36,8 @@ type TodoDraft = {
   due: string;
   visibility: "team" | "private";
   weeklyFocus: boolean;
+  /** Current followers; the owner is implied and re-added by the server. */
+  followerIds: string[];
 };
 
 /** The values the form opens with: the to-do's own. */
@@ -46,6 +49,7 @@ function draftFrom(todo: TodoForEdit, members: Member[]): TodoDraft {
     due: todo.due_date ?? "",
     visibility: todo.visibility,
     weeklyFocus: !!todo.weekly_focus,
+    followerIds: todo.follower_ids ?? [],
   };
 }
 
@@ -62,10 +66,13 @@ export function EditTodoModal({
   teamId,
   todo,
   members,
+  currentUserId,
 }: {
   teamId: string;
   todo: TodoForEdit;
   members: Member[];
+  /** The signed-in user — labelled "You" in the follower picker. */
+  currentUserId: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -84,6 +91,9 @@ export function EditTodoModal({
     todo.visibility,
   );
   const [weeklyFocus, setWeeklyFocus] = useState(!!todo.weekly_focus);
+  const [followerIds, setFollowerIds] = useState<string[]>(
+    todo.follower_ids ?? [],
+  );
   // What the fields held when the dialog opened. Seeded alongside them below,
   // so an edit form that opens full of the to-do's own data is not "changed".
   const [opened, setOpened] = useState<TodoDraft>(() =>
@@ -97,6 +107,7 @@ export function EditTodoModal({
     setDue(draft.due);
     setVisibility(draft.visibility);
     setWeeklyFocus(draft.weeklyFocus);
+    setFollowerIds(draft.followerIds);
     setOpened(draft);
     setError(null);
   }
@@ -114,7 +125,7 @@ export function EditTodoModal({
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
   const guard = useDiscardGuard(
     draftChanged(
-      { title, description, ownerId, due, visibility, weeklyFocus },
+      { title, description, ownerId, due, visibility, weeklyFocus, followerIds },
       opened,
     ),
     () => setOpen(false),
@@ -133,6 +144,10 @@ export function EditTodoModal({
     fd.set("due_date", due);
     fd.set("visibility", visibility);
     if (weeklyFocus) fd.set("weekly_focus", "on");
+    // The picker's list is authoritative when present; the flag tells the
+    // server so an older form without it never wipes the followers.
+    fd.set("followers_edited", "on");
+    for (const id of followerIds) fd.append("follower_ids", id);
     start(async () => {
       try {
         setError(null);
@@ -187,6 +202,12 @@ export function EditTodoModal({
             onVisibilityChange={setVisibility}
             weeklyFocus={weeklyFocus}
             onWeeklyFocusChange={setWeeklyFocus}
+            followers={{
+              currentUserId,
+              creatorFollows: false,
+              value: followerIds,
+              onChange: setFollowerIds,
+            }}
             error={error}
           />
 

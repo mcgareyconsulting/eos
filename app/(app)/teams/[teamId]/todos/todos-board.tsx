@@ -86,7 +86,7 @@ type OwnerGroup = {
 };
 
 /** Firestore Timestamp / millis / server projection → local m/d/yyyy. */
-function formatClosedOn(archived_at: unknown): string | null {
+export function formatClosedOn(archived_at: unknown): string | null {
   if (archived_at == null) return null;
   let d: Date | null = null;
   const v = archived_at as {
@@ -375,6 +375,7 @@ export function TodosBoard({
             teamId={teamId}
             members={members}
             defaultOwnerId={userId}
+            currentUserId={userId}
           />
         }
       />
@@ -438,21 +439,12 @@ export function TodosBoard({
                       .join(" · ") || "none"
                   }
                 />
-                {g.open.map((t) => (
-                  <TodoListRow
-                    key={t.id}
-                    teamId={teamId}
-                    todo={t}
-                    ownerName={g.title}
-                    members={members}
-                    userId={userId}
-                    focused={t.id === focusTodoId}
-                    hideOwner
-                  />
-                ))}
-                {/* No "Done" divider: the row's green check already reads as
-                    done, and the owner header above counts them. */}
-                {g.done.map((t) => (
+                {/* One list, open then done — not two. Keys only match within
+                    a single array, so checking a to-do off would move it to a
+                    sibling list and remount the row, resetting whether it's
+                    expanded. No "Done" divider: the row's green check already
+                    reads as done, and the owner header above counts them. */}
+                {[...g.open, ...g.done].map((t) => (
                   <TodoListRow
                     key={t.id}
                     teamId={teamId}

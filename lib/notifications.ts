@@ -26,7 +26,9 @@ export type NotificationKind =
   /** Title / owner / due date changed on an entity you follow. */
   | "updated"
   /** You were made the owner. */
-  | "assigned";
+  | "assigned"
+  /** Someone added you as a follower when they created the to-do. */
+  | "following";
 
 /** Stored shape of a `/notifications/{id}` row. */
 export type NotificationDoc = {
@@ -45,6 +47,8 @@ export type NotificationDoc = {
   detail: string | null;
   created_at: unknown;
   read_at: unknown;
+  /** Set by the hub's ✕ / "Archive read"; absent on rows older than the tab. */
+  archived_at: unknown;
 };
 
 // ---------------------------------------------------------------------------
@@ -60,15 +64,33 @@ function uniq(ids: readonly (string | null | undefined)[]): string[] {
 }
 
 /**
- * Followers a brand-new to-do starts with: whoever created it and whoever it
- * was assigned to. Creating a to-do for yourself yields one follower, not
- * two copies of you.
+ * Followers a brand-new to-do starts with: whoever created it, whoever it
+ * was assigned to, and anyone the creator picked under "Add followers".
+ * Creating a to-do for yourself yields one follower, not two copies of you;
+ * naming the owner again as a follower does not double them either.
  */
 export function initialFollowers(args: {
   creatorId: string;
   ownerId: string | null | undefined;
+  /** Explicit picks from the Add to-do form; already roster-validated. */
+  extraIds?: readonly (string | null | undefined)[];
 }): string[] {
-  return uniq([args.creatorId, args.ownerId]);
+  return uniq([args.creatorId, args.ownerId, ...(args.extraIds ?? [])]);
+}
+
+/**
+ * The people an "added you as a follower" row goes to: the explicit picks
+ * minus the creator (their own action) and the owner (they get `assigned`
+ * instead, or made the to-do themselves).
+ */
+export function addedFollowerRecipients(args: {
+  creatorId: string;
+  ownerId: string | null | undefined;
+  extraIds: readonly string[];
+}): string[] {
+  return uniq(args.extraIds).filter(
+    (id) => id !== args.creatorId && id !== args.ownerId,
+  );
 }
 
 /**
@@ -81,6 +103,30 @@ export function followersAfterOwnerChange(
   nextOwnerId: string | null | undefined,
 ): string[] {
   return uniq([...(current ?? []), nextOwnerId]);
+}
+
+/**
+ * Followers after the Edit form's picker is saved. The owner always
+ * follows; everyone else is exactly who was left checked. A private to-do
+ * is its owner's alone, so the picks are dropped for one. Returns who was
+ * added and removed so the caller can notify the former and record both.
+ */
+export function applyFollowerEdit(args: {
+  current: readonly string[] | null | undefined;
+  ownerId: string | null | undefined;
+  picked: readonly string[];
+  visibility: "team" | "private" | string | null | undefined;
+}): { next: string[]; added: string[]; removed: string[] } {
+  const before = uniq(args.current ?? []);
+  const next =
+    args.visibility === "private"
+      ? uniq([args.ownerId])
+      : uniq([args.ownerId, ...args.picked]);
+  return {
+    next,
+    added: next.filter((id) => !before.includes(id)),
+    removed: before.filter((id) => !next.includes(id)),
+  };
 }
 
 /** Add or remove one uid — the Follow / Unfollow toggle. */
@@ -191,7 +237,22 @@ export function notificationVerb(n: {
       return `updated ${title}`;
     case "assigned":
       return `assigned you ${title}`;
+    case "following":
+      return `added you as a follower on ${title}`;
   }
+}
+
+/**
+ * Which hub column a row lands in. Mentions are addressed to *you* by name,
+ * so they get their own column; everything else is ambient activity on
+ * to-dos you own or follow.
+ */
+export type NotificationColumn = "activity" | "mentions";
+
+export function notificationColumn(n: {
+  kind: NotificationKind;
+}): NotificationColumn {
+  return n.kind === "mention" ? "mentions" : "activity";
 }
 
 /** Where a row takes you. `?todo=` opens that row on the To-Dos tab. */

@@ -10,31 +10,41 @@ import {
   where,
 } from "firebase/firestore";
 import {
+  Archive,
+  ArchiveRestore,
   AtSign,
   Bell,
+  BellPlus,
   CheckCheck,
   CheckCircle2,
   MessageSquare,
   Pencil,
   RotateCcw,
+  Trash2,
   UserPlus,
 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
+  notificationColumn,
   notificationHref,
   notificationVerb,
   type NotificationKind,
 } from "@/lib/notifications";
 import { EmptyState } from "@/components/empty-state";
 import { LocalTime } from "@/components/local-time";
-import {
-  entityToggleIdleClass,
-  entityToggleSelectedClass,
-} from "@/components/entity-view-tabs";
 import { entityHeaderButtonClass } from "@/components/entity-page-header";
+import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { cn } from "@/lib/utils";
-import { markAllNotificationsRead, markNotificationRead } from "./actions";
+import {
+  archiveNotification,
+  archiveReadNotifications,
+  deleteNotification,
+  markAllNotificationsRead,
+  markNotificationRead,
+  restoreNotification,
+} from "./actions";
+import { TodoPeekModal } from "./todo-peek-modal";
 
 type MaybeTimestamp = { toMillis: () => number } | number | null | undefined;
 
@@ -52,6 +62,8 @@ export type NotificationRow = {
   detail: string | null;
   created_at: MaybeTimestamp;
   read_at: MaybeTimestamp;
+  /** Absent on rows older than the Archived tab — treated as not archived. */
+  archived_at?: MaybeTimestamp;
 };
 
 const HUB_LIMIT = 200;
@@ -79,6 +91,7 @@ const KIND_ICON: Record<
   reopened: RotateCcw,
   updated: Pencil,
   assigned: UserPlus,
+  following: BellPlus,
 };
 
 const KIND_TONE: Record<NotificationKind, string> = {
@@ -88,6 +101,7 @@ const KIND_TONE: Record<NotificationKind, string> = {
   reopened: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
   updated: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   assigned: "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold",
+  following: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 export function NotificationsHub({
@@ -123,12 +137,26 @@ export function NotificationsHub({
     [rows],
   );
 
-  const [view, setView] = useState<"unread" | "all">("unread");
-  const unread = sorted.filter((n) => n.read_at == null);
-  const shown = view === "unread" ? unread : sorted;
+  // Inbox / Archived, the same split to-dos use. Read rows stay in the
+  // inbox, just quieter; a row moves to Archived only by its own ✕ or by
+  // "Archive read", and is deleted only from there. Read/unread is its own
+  // axis — archiving never touches it.
+  const [showArchived, setShowArchived] = useState(false);
+  const inbox = sorted.filter((n) => n.archived_at == null);
+  const archived = sorted.filter((n) => n.archived_at != null);
+  const shown = showArchived ? archived : inbox;
+  const unread = inbox.filter((n) => n.read_at == null);
+  const read = inbox.length - unread.length;
+  // Two columns: ambient activity on to-dos you own or follow, and the rows
+  // that name you.
+  const activity = shown.filter((n) => notificationColumn(n) === "activity");
+  const mentions = shown.filter((n) => notificationColumn(n) === "mentions");
 
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // The to-do a clicked row opens in place — see TodoPeekModal.
+  const [peek, setPeek] = useState<NotificationRow | null>(null);
 
   function markAll() {
     start(async () => {
@@ -141,8 +169,19 @@ export function NotificationsHub({
     });
   }
 
+  function archiveRead() {
+    start(async () => {
+      try {
+        setError(null);
+        await archiveReadNotifications();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    });
+  }
+
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-6xl space-y-6">
       <header className="flex h-10 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -150,77 +189,87 @@ export function NotificationsHub({
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div role="group" aria-label="Show" className="inline-flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setView("unread")}
-              aria-pressed={view === "unread"}
-              className={cn(
-                "min-w-[6.75rem]",
-                view === "unread"
-                  ? entityToggleSelectedClass
-                  : entityToggleIdleClass,
-              )}
-            >
-              Unread ({unread.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("all")}
-              aria-pressed={view === "all"}
-              className={cn(
-                "min-w-[5.5rem]",
-                view === "all"
-                  ? entityToggleSelectedClass
-                  : entityToggleIdleClass,
-              )}
-            >
-              All ({sorted.length})
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={markAll}
-            disabled={pending || unread.length === 0}
-            className={cn(entityHeaderButtonClass, "disabled:opacity-40")}
-          >
-            <CheckCheck className="h-4 w-4" aria-hidden />
-            Mark all read
-          </button>
+          {!showArchived && (
+            <span className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
+              {unread.length === 0
+                ? "all read"
+                : `${unread.length} unread`}
+            </span>
+          )}
+          <EntityViewToggle
+            showArchived={showArchived}
+            onChange={setShowArchived}
+            activeCount={inbox.length}
+            archivedCount={archived.length}
+          />
+          {!showArchived && (
+            <>
+              <button
+                type="button"
+                onClick={markAll}
+                disabled={pending || unread.length === 0}
+                className={cn(entityHeaderButtonClass, "disabled:opacity-40")}
+              >
+                <CheckCheck className="h-4 w-4" aria-hidden />
+                Mark all read
+              </button>
+              <button
+                type="button"
+                onClick={archiveRead}
+                disabled={pending || read === 0}
+                title="Move every read notification to Archived"
+                className={cn(entityHeaderButtonClass, "disabled:opacity-40")}
+              >
+                <Archive className="h-4 w-4" aria-hidden />
+                Archive read
+              </button>
+            </>
+          )}
         </div>
       </header>
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Comments, completions and edits on to-dos you follow, plus anywhere
-        you&apos;re @mentioned. You follow a to-do you create or own; use
-        Follow on any other to-do to opt in.
+        Comments, completions and edits on to-dos you own or follow on the
+        left; anywhere you&apos;re @mentioned on the right. You follow a
+        to-do you create, own or were added to; use Follow on any other to-do
+        to opt in. Click a row to open the to-do here. Rows stay in the
+        inbox until you archive them — read ones just go quiet — and stay
+        findable on Archived until deleted from there.
       </p>
 
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
 
-      <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        {shown.length === 0 ? (
-          <EmptyState
-            icon={Bell}
-            title={
-              view === "unread" ? "You're all caught up" : "Nothing here yet"
-            }
-            hint={
-              view === "unread"
-                ? "New activity on to-dos you follow will show up here."
-                : "When someone comments on, completes or reassigns a to-do you follow — or mentions you — it lands here."
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {shown.map((n) => (
-              <NotificationItem key={n.id} n={n} />
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
+        <HubColumn
+          title="Owned & following"
+          rows={activity}
+          onOpen={setPeek}
+          emptyTitle={showArchived ? "Nothing archived" : "Nothing here"}
+          emptyHint={
+            showArchived
+              ? "Rows you archive from the inbox land here."
+              : "When someone comments on, completes or reassigns a to-do you own or follow, it lands here."
+          }
+        />
+        <HubColumn
+          title="Mentions"
+          icon={AtSign}
+          rows={mentions}
+          onOpen={setPeek}
+          emptyTitle={showArchived ? "No archived mentions" : "No mentions"}
+          emptyHint={
+            showArchived
+              ? "Mentions you archive from the inbox land here."
+              : "When someone @mentions you in a to-do comment, it lands here."
+          }
+        />
+      </div>
+
+      {peek && (
+        <TodoPeekModal n={peek} userId={userId} onClose={() => setPeek(null)} />
+      )}
 
       {sorted.length >= HUB_LIMIT && (
         <p className="text-xs text-zinc-500">
@@ -231,15 +280,57 @@ export function NotificationsHub({
   );
 }
 
-function NotificationItem({ n }: { n: NotificationRow }) {
+function HubColumn({
+  title,
+  icon: Icon = Bell,
+  rows,
+  onOpen,
+  emptyTitle,
+  emptyHint,
+}: {
+  title: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  rows: NotificationRow[];
+  onOpen: (n: NotificationRow) => void;
+  emptyTitle: string;
+  emptyHint: string;
+}) {
+  return (
+    <section className="flex min-w-0 flex-col">
+      <h2 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+        {title}{" "}
+        <span className="font-bold text-zinc-400">({rows.length})</span>
+      </h2>
+      <div className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        {rows.length === 0 ? (
+          <EmptyState icon={Icon} title={emptyTitle} hint={emptyHint} />
+        ) : (
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {rows.map((n) => (
+              <NotificationItem key={n.id} n={n} onOpen={onOpen} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function NotificationItem({
+  n,
+  onOpen,
+}: {
+  n: NotificationRow;
+  onOpen: (n: NotificationRow) => void;
+}) {
   const [, start] = useTransition();
   const Icon = KIND_ICON[n.kind] ?? Bell;
   const tone = KIND_TONE[n.kind] ?? KIND_TONE.comment;
   const unread = n.read_at == null;
   const whenMs = tsMs(n.created_at);
 
-  // Navigate now; the read mark rides along and the listener repaints.
-  const open = () => {
+  // Mark read; the listener repaints the row.
+  const markRead = () => {
     if (!unread) return;
     start(async () => {
       try {
@@ -249,6 +340,30 @@ function NotificationItem({ n }: { n: NotificationRow }) {
       }
     });
   };
+
+  // Open in place; the read mark rides along.
+  const open = () => {
+    markRead();
+    onOpen(n);
+  };
+
+  // Row moves: the listener repaints on commit. Archive/restore leave
+  // read_at alone; delete is only offered once a row is archived.
+  const archived = n.archived_at != null;
+  const run = (label: string, fn: () => Promise<void>) => () => {
+    start(async () => {
+      try {
+        await fn();
+      } catch (e) {
+        console.error(`[notifications] ${label} failed:`, e);
+      }
+    });
+  };
+  const archive = run("archive", () => archiveNotification(n.id));
+  const restore = run("restore", () => restoreNotification(n.id));
+  const destroy = run("delete", () => deleteNotification(n.id));
+  const hoverControl =
+    "flex h-5 w-5 items-center justify-center rounded text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200";
 
   return (
     <li
@@ -268,39 +383,85 @@ function NotificationItem({ n }: { n: NotificationRow }) {
       </span>
 
       <div className="min-w-0 flex-1">
-        <Link
-          href={notificationHref(n)}
+        <button
+          type="button"
           onClick={open}
-          className="block text-sm text-zinc-800 hover:underline dark:text-zinc-200"
+          className={cn(
+            "block w-full text-left text-sm hover:underline",
+            unread
+              ? "font-medium text-zinc-900 dark:text-zinc-100"
+              : "text-zinc-600 dark:text-zinc-400",
+          )}
         >
           <span className="font-semibold">{n.actor_name}</span>{" "}
           {notificationVerb(n)}
-        </Link>
+        </button>
         {n.detail && (
           <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
             {n.detail}
           </p>
         )}
         <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-500">
-          {n.team_name}
+          <Link
+            href={notificationHref(n)}
+            onClick={markRead}
+            className="hover:underline"
+            title="Open on the To-Dos tab"
+          >
+            {n.team_name}
+          </Link>
           {" · "}
           <LocalTime ms={whenMs} options={WHEN} fallback="just now" />
         </p>
       </div>
 
-      {unread ? (
-        <button
-          type="button"
-          onClick={open}
-          title="Mark as read"
-          aria-label="Mark as read"
-          className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-hpb-blue hover:bg-hpb-blue/10 dark:text-hpb-gold dark:hover:bg-hpb-gold/15"
-        >
-          <span className="h-2 w-2 rounded-full bg-current" />
-        </button>
-      ) : (
-        <span className="mt-1.5 h-5 w-5 shrink-0" aria-hidden />
-      )}
+      <div className="mt-1.5 flex shrink-0 items-center gap-0.5">
+        {unread ? (
+          <button
+            type="button"
+            onClick={markRead}
+            title="Mark as read"
+            aria-label="Mark as read"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-hpb-blue hover:bg-hpb-blue/10 dark:text-hpb-gold dark:hover:bg-hpb-gold/15"
+          >
+            <span className="h-2 w-2 rounded-full bg-current" />
+          </button>
+        ) : (
+          <span className="h-5 w-5" aria-hidden />
+        )}
+        {archived ? (
+          <>
+            <button
+              type="button"
+              onClick={restore}
+              title="Restore to inbox"
+              aria-label="Restore to inbox"
+              className={hoverControl}
+            >
+              <ArchiveRestore className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={destroy}
+              title="Delete permanently"
+              aria-label="Delete permanently"
+              className={cn(hoverControl, "hover:text-red-600 dark:hover:text-red-400")}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={archive}
+            title="Archive"
+            aria-label="Archive"
+            className={hoverControl}
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </li>
   );
 }

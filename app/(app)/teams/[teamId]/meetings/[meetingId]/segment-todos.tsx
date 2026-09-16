@@ -402,6 +402,7 @@ export function SegmentTodos({
           teamId={teamId}
           members={members}
           defaultOwnerId={userId}
+          currentUserId={userId}
           meetingId={meetingId}
           compact
         />
@@ -488,7 +489,20 @@ export function SegmentTodos({
               {g.open.length === 0 && g.done.length === 0 && (
                 <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
               )}
-              {g.open.map((t) => (
+              {/* One keyed array with the divider spliced in — separate
+                  open/done lists would remount a row as it's checked off and
+                  reset whether it's expanded. */}
+              {[...g.open, ...g.done].flatMap((t, i) => [
+                ...(i === g.open.length
+                  ? [
+                      <div
+                        key="done-divider"
+                        className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500"
+                      >
+                        Done
+                      </div>,
+                    ]
+                  : []),
                 <TodoListRow
                   key={t.id}
                   teamId={teamId}
@@ -497,26 +511,8 @@ export function SegmentTodos({
                   members={members}
                   userId={userId}
                   hideOwner
-                />
-              ))}
-              {g.done.length > 0 && (
-                <>
-                  <div className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                    Done
-                  </div>
-                  {g.done.map((t) => (
-                    <TodoListRow
-                      key={t.id}
-                      teamId={teamId}
-                      todo={toListItem(t)}
-                      ownerName={g.title}
-                      members={members}
-                      userId={userId}
-                      hideOwner
-                    />
-                  ))}
-                </>
-              )}
+                />,
+              ])}
             </div>
           </section>
         ))}

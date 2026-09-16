@@ -47,6 +47,10 @@ export function TodoListRow({
   hideOwner = false,
   /** Deep-linked from a notification: open expanded and scroll into view. */
   focused = false,
+  /** Start expanded without the deep-link ring or scroll (the peek modal). */
+  defaultExpanded = false,
+  /** "collapsed" hides the comment editor behind a + Comment button. */
+  commentComposer = "inline",
 }: {
   teamId: string;
   todo: TodoListItem;
@@ -55,8 +59,10 @@ export function TodoListRow({
   userId: string;
   hideOwner?: boolean;
   focused?: boolean;
+  defaultExpanded?: boolean;
+  commentComposer?: "inline" | "collapsed";
 }) {
-  const [expanded, setExpanded] = useState(focused);
+  const [expanded, setExpanded] = useState(focused || defaultExpanded);
   const rootRef = useRef<HTMLDivElement>(null);
 
   // One scroll, on arrival. `focused` only ever flips from the URL, and a
@@ -207,7 +213,12 @@ export function TodoListRow({
             </form>
           )}
           {!archived && (
-            <EditTodoModal teamId={teamId} todo={todo} members={members} />
+            <EditTodoModal
+              teamId={teamId}
+              todo={todo}
+              members={members}
+              currentUserId={userId}
+            />
           )}
           <form action={toggleArchive}>
             <button
@@ -303,6 +314,7 @@ export function TodoListRow({
             entityId={todo.id}
             userId={userId}
             members={members}
+            composer={commentComposer}
             className="pt-2"
           />
         </div>

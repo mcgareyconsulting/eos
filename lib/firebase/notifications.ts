@@ -58,6 +58,7 @@ export async function writeNotifications(args: NotifyArgs): Promise<number> {
       detail: args.detail?.trim() || null,
       created_at: FieldValue.serverTimestamp(),
       read_at: null,
+      archived_at: null,
     };
     batch.set(col.doc(), row);
   }

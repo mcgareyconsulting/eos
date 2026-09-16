@@ -26,6 +26,8 @@ type TodoDraft = {
   visibility: "team" | "private";
   description: string;
   weeklyFocus: boolean;
+  /** Explicit "Add followers" picks; creator and owner are implied. */
+  followerIds: string[];
 };
 
 /** The values a fresh Add to-do opens with. */
@@ -37,6 +39,7 @@ function draftFrom(defaultOwnerId: string): TodoDraft {
     visibility: "team",
     description: "",
     weeklyFocus: false,
+    followerIds: [],
   };
 }
 
@@ -49,6 +52,7 @@ export function AddTodoModal({
   teamId,
   members,
   defaultOwnerId,
+  currentUserId,
   meetingId,
   buttonLabel = "Add to-do",
   compact = false,
@@ -56,6 +60,8 @@ export function AddTodoModal({
   teamId: string;
   members: Member[];
   defaultOwnerId: string;
+  /** The signed-in user — shown as an implied follower in the picker. */
+  currentUserId: string;
   /** When set, to-do is linked to this L10 meeting. */
   meetingId?: string;
   buttonLabel?: string;
@@ -73,6 +79,7 @@ export function AddTodoModal({
   const [visibility, setVisibility] = useState<"team" | "private">("team");
   const [description, setDescription] = useState("");
   const [weeklyFocus, setWeeklyFocus] = useState(false);
+  const [followerIds, setFollowerIds] = useState<string[]>([]);
 
   // What the fields held when the modal opened, so closing can tell an
   // untouched form from one holding typing. The default due date is captured
@@ -88,6 +95,7 @@ export function AddTodoModal({
     setVisibility(draft.visibility);
     setDescription(draft.description);
     setWeeklyFocus(draft.weeklyFocus);
+    setFollowerIds(draft.followerIds);
     setOpened(draft);
     setError(null);
   }
@@ -100,7 +108,7 @@ export function AddTodoModal({
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
   const guard = useDiscardGuard(
     draftChanged(
-      { title, ownerId, due, visibility, description, weeklyFocus },
+      { title, ownerId, due, visibility, description, weeklyFocus, followerIds },
       opened,
     ),
     () => setOpen(false),
@@ -120,6 +128,11 @@ export function AddTodoModal({
     fd.set("description", description);
     if (weeklyFocus) fd.set("weekly_focus", "on");
     if (meetingId) fd.set("source_meeting_id", meetingId);
+    // A private to-do has no followers but its owner; the picker is hidden
+    // for it, so drop anything picked before visibility flipped.
+    if (!(!meetingId && visibility === "private")) {
+      for (const id of followerIds) fd.append("follower_ids", id);
+    }
 
     start(async () => {
       try {
@@ -174,6 +187,12 @@ export function AddTodoModal({
             onVisibilityChange={setVisibility}
             weeklyFocus={weeklyFocus}
             onWeeklyFocusChange={setWeeklyFocus}
+            followers={{
+              currentUserId,
+              creatorFollows: true,
+              value: followerIds,
+              onChange: setFollowerIds,
+            }}
             error={error}
           />
 

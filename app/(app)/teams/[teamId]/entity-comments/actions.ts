@@ -9,6 +9,7 @@ import {
   requireTeamDoc,
 } from "@/lib/firebase/teams";
 import { notify } from "@/lib/firebase/notifications";
+import { recordActivity } from "@/lib/firebase/activity";
 import { mentionedIds } from "@/lib/mentions";
 import { commentRecipients, snippetOf } from "@/lib/notifications";
 
@@ -127,6 +128,19 @@ export async function addEntityComment(
       actor: { id: uid },
       detail,
     });
+    await recordActivity({
+      db,
+      teamId,
+      entity: {
+        type: "todo",
+        id: entityId,
+        visibility: data.visibility as string | undefined,
+        ownerId: data.owner_id as string | null | undefined,
+      },
+      kind: "commented",
+      actor: { id: uid },
+      detail,
+    });
   }
 
   revalidatePath(`/teams/${teamId}/issues`);
@@ -150,6 +164,28 @@ export async function deleteEntityComment(
     throw new Error("Only the author can delete this comment");
   }
   await ref.delete();
+  // The trace keeps a record of the deletion; the row that carried the body
+  // is gone, but the snippet on the trace says what it was.
+  if (data.entity_type === "todo") {
+    const parent = await db
+      .collection("todos")
+      .doc(String(data.entity_id ?? ""))
+      .get();
+    const p = parent.data() ?? {};
+    await recordActivity({
+      db,
+      teamId,
+      entity: {
+        type: "todo",
+        id: String(data.entity_id ?? ""),
+        visibility: p.visibility as string | undefined,
+        ownerId: p.owner_id as string | null | undefined,
+      },
+      kind: "comment_deleted",
+      actor: { id: uid },
+      detail: snippetOf(String(data.body ?? "")),
+    });
+  }
   revalidatePath(`/teams/${teamId}/issues`);
   revalidatePath(`/teams/${teamId}/rocks`);
   revalidatePath(`/teams/${teamId}/todos`);

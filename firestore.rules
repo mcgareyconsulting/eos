@@ -341,6 +341,21 @@ service cloud.firestore {
       }
     }
 
+    // ---------- per-entity activity trace ----------
+    // One row per event on a to-do (created, edited, checked off, followed,
+    // commented on — lib/activity.ts), written only by server actions.
+    // Readable on the same terms as the to-do itself: members see a
+    // team-visible to-do's trace; a private one's is its owner's alone. A
+    // list query must constrain `visibility` (and `owner_id` when private)
+    // or the rule rejects it outright.
+    match /entity_activity/{id} {
+      allow read:  if admin()
+                   || (isMember(resource.data.team_id)
+                       && (resource.data.visibility == "team"
+                           || resource.data.owner_id == request.auth.uid));
+      allow write: if false;
+    }
+
     // ---------- audit log (append-only, function-written) ----------
     // Populated exclusively by the onDocumentWrittenWithAuthContext Cloud
     // Function (functions/src/index.ts), which writes via the Admin SDK and

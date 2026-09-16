@@ -6,7 +6,7 @@ import {
   query as fsQuery,
   where,
 } from "firebase/firestore";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
@@ -50,6 +50,7 @@ export function EntityComments({
   entityId,
   userId,
   members,
+  composer = "inline",
   className,
 }: {
   teamId: string;
@@ -57,6 +58,13 @@ export function EntityComments({
   entityId: string;
   userId: string;
   members: Member[];
+  /**
+   * "inline" keeps the editor always open under the thread. "collapsed"
+   * hides it behind a + Comment button and folds it away again after a
+   * post — for surfaces where the editor's toolbar would otherwise dominate
+   * a to-do that has nothing to say yet.
+   */
+  composer?: "inline" | "collapsed";
   className?: string;
 }) {
   const db = getClientDb();
@@ -78,6 +86,7 @@ export function EntityComments({
   const [body, setBody] = useState("");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [composing, setComposing] = useState(composer === "inline");
 
   const authorName = (id: string) => {
     if (id === userId) return "You";
@@ -110,6 +119,7 @@ export function EntityComments({
         setError(null);
         await addEntityComment(teamId, entityType, entityId, fd);
         setBody("");
+        if (composer === "collapsed") setComposing(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -197,6 +207,16 @@ export function EntityComments({
         </ul>
       )}
 
+      {!composing ? (
+        <button
+          type="button"
+          onClick={() => setComposing(true)}
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-dashed border-zinc-300 px-2.5 text-xs font-medium text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          Comment
+        </button>
+      ) : (
       <div className="space-y-1.5">
         <div className="flex items-end gap-2">
           <RichTextEditor
@@ -221,6 +241,19 @@ export function EntityComments({
           >
             {pending ? "Posting…" : "Post"}
           </button>
+          {composer === "collapsed" && (
+            <button
+              type="button"
+              onClick={() => {
+                setBody("");
+                setError(null);
+                setComposing(false);
+              }}
+              className="h-10 shrink-0 rounded-[10px] px-3 text-[12.5px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+          )}
         </div>
         {error ? (
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
@@ -231,6 +264,7 @@ export function EntityComments({
           </p>
         )}
       </div>
+      )}
     </section>
   );
 }

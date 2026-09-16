@@ -1,5 +1,10 @@
 import { Fragment } from "react";
-import { parseRichText, type BlockNode, type InlineNode } from "@/lib/rich-text";
+import {
+  parseRichText,
+  type BlockNode,
+  type InlineNode,
+  type ParseOptions,
+} from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 
 // Read-side renderer for description/body fields. Builds React elements
@@ -13,6 +18,11 @@ import { cn } from "@/lib/utils";
 
 const LINK_CLASS =
   "break-words text-hpb-blue underline decoration-hpb-blue/30 underline-offset-2 hover:decoration-hpb-blue dark:text-hpb-gold dark:decoration-hpb-gold/40";
+
+// A mention is a name, not a link: nothing to open, so no underline — a
+// tinted chip that reads as "this person" and stays inline with the prose.
+const MENTION_CLASS =
+  "rounded bg-hpb-blue/10 px-1 font-medium text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold";
 
 function Inline({ nodes }: { nodes: InlineNode[] }) {
   return (
@@ -44,6 +54,12 @@ function Inline({ nodes }: { nodes: InlineNode[] }) {
               >
                 <Inline nodes={node.children} />
               </a>
+            );
+          case "mention":
+            return (
+              <span key={i} className={MENTION_CLASS}>
+                @{node.name}
+              </span>
             );
         }
       })}
@@ -91,11 +107,14 @@ function Block({ block }: { block: BlockNode }) {
 export function RichText({
   value,
   className,
+  mentionNames,
 }: {
   value: string | null | undefined;
   className?: string;
+  /** Roster names to resolve `@Name` runs against; omit for no mentions. */
+  mentionNames?: ParseOptions["mentionNames"];
 }) {
-  const blocks = parseRichText(value);
+  const blocks = parseRichText(value, { mentionNames });
   if (blocks.length === 0) return null;
 
   // Single paragraph is the overwhelmingly common case (and every pre-existing

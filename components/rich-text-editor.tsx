@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Bold, Eye, Italic, Link2, List, ListOrdered, Pencil } from "lucide-react";
 import { RichText } from "@/components/rich-text";
 import {
@@ -9,6 +9,14 @@ import {
   toggleWrap,
   type Selection,
 } from "@/lib/rich-text-toolbar";
+import {
+  applyMention,
+  filterMentionCandidates,
+  mentionQueryAt,
+  type MentionCandidate,
+  type MentionQuery,
+} from "@/lib/mentions";
+import { initials } from "@/lib/user-name";
 import { cn } from "@/lib/utils";
 
 // Write side of the constrained markdown subset. Deliberately a textarea with a toolbar rather than a
@@ -36,6 +44,7 @@ export function RichTextEditor({
   textareaClassName,
   id,
   autoFocus,
+  mentionCandidates,
 }: {
   /** Present for uncontrolled server-action forms; the textarea carries it. */
   name?: string;
@@ -55,6 +64,12 @@ export function RichTextEditor({
   textareaClassName?: string;
   id?: string;
   autoFocus?: boolean;
+  /**
+   * People an `@` can complete to. When present, typing `@` opens a picker
+   * under the textarea and choosing inserts `@Full Name` — plain text the
+   * roster resolves at read time (lib/mentions.ts). Omit for no picker.
+   */
+  mentionCandidates?: readonly MentionCandidate[];
 }) {
   const controlled = value !== undefined;
   const [internal, setInternal] = useState(defaultValue ?? "");
@@ -100,6 +115,53 @@ export function RichTextEditor({
     area.setSelectionRange(sel.start, sel.end);
   }, [text]);
 
+  // ---- @mention picker -----------------------------------------------------
+  // Tracks the `@…` run under the caret. Recomputed from the textarea itself
+  // after every change or caret move; the state only exists so the list can
+  // render and so arrow keys have something to move through.
+  const [mentionQuery, setMentionQuery] = useState<MentionQuery | null>(null);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const mentionListId = useId();
+  const mentionsOn = !!mentionCandidates && mentionCandidates.length > 0;
+  const mentionMatches =
+    mentionsOn && mentionQuery
+      ? filterMentionCandidates(mentionCandidates!, mentionQuery.query)
+      : [];
+  const mentionOpen = mentionMatches.length > 0;
+
+  const refreshMentionQuery = useCallback(() => {
+    if (!mentionsOn) return;
+    const area = areaRef.current;
+    if (!area) return;
+    // A selection is not a caret; only complete at a collapsed caret.
+    const q =
+      area.selectionStart === area.selectionEnd
+        ? mentionQueryAt(area.value, area.selectionStart)
+        : null;
+    setMentionQuery((prev) =>
+      prev?.start === q?.start && prev?.query === q?.query ? prev : q,
+    );
+    if (!q) setMentionIdx(0);
+  }, [mentionsOn]);
+
+  const pickMention = useCallback(
+    (candidate: MentionCandidate) => {
+      const area = areaRef.current;
+      if (!area || !mentionQuery) return;
+      const r = applyMention(
+        text,
+        mentionQuery,
+        area.selectionStart,
+        candidate.name,
+      );
+      pendingSel.current = { start: r.caret, end: r.caret };
+      setMentionQuery(null);
+      setMentionIdx(0);
+      setText(r.text);
+    },
+    [mentionQuery, text, setText],
+  );
+
   const apply = useCallback(
     (fn: (t: string, s: Selection) => { text: string; sel: Selection }) => {
       const area = areaRef.current;
@@ -125,6 +187,33 @@ export function RichTextEditor({
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // The picker claims its keys first: while it is open, Enter picks rather
+    // than posting, and Escape closes it rather than the dialog around it.
+    if (mentionOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx(
+          (i) => (i - 1 + mentionMatches.length) % mentionMatches.length,
+        );
+        return;
+      }
+      if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+        e.preventDefault();
+        pickMention(mentionMatches[Math.min(mentionIdx, mentionMatches.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setMentionQuery(null);
+        return;
+      }
+    }
     onKeyDownProp?.(e);
     if (e.defaultPrevented) return;
     if (!(e.metaKey || e.ctrlKey)) return;
@@ -177,15 +266,73 @@ export function RichTextEditor({
           name={name}
           autoFocus={autoFocus}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            refreshMentionQuery();
+          }}
           onKeyDown={onKeyDown}
+          onKeyUp={refreshMentionQuery}
+          onClick={refreshMentionQuery}
+          onBlur={() => {
+            // Let a click on a picker row land before the list goes away.
+            setTimeout(() => setMentionQuery(null), 150);
+          }}
           placeholder={placeholder}
           rows={rows}
+          {...(mentionsOn
+            ? {
+                "aria-autocomplete": "list" as const,
+                "aria-controls": mentionOpen ? mentionListId : undefined,
+                "aria-expanded": mentionOpen,
+              }
+            : {})}
           className={cn(
             "block w-full resize-y border-0 bg-transparent px-2.5 py-1.5 text-sm focus:outline-none focus:ring-0",
             textareaClassName,
           )}
         />
+      )}
+
+      {/* In flow (not floated) so the editor's overflow-hidden box can never
+          clip it, and so a dialog's scroll container keeps it reachable. It
+          sits between the textarea and the toolbar in the DOM, which the
+          column reverse renders directly under the text. */}
+      {mentionOpen && (
+        <ul
+          id={mentionListId}
+          role="listbox"
+          aria-label="Mention someone"
+          className="max-h-48 overflow-y-auto border-t border-zinc-200 bg-white py-1 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          {mentionMatches.map((c, i) => {
+            const active = i === Math.min(mentionIdx, mentionMatches.length - 1);
+            return (
+              <li
+                key={c.id}
+                role="option"
+                aria-selected={active}
+                // mousedown, not click: the textarea's blur fires first on
+                // click and would close the list before the choice landed.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pickMention(c);
+                }}
+                onMouseEnter={() => setMentionIdx(i)}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm",
+                  active
+                    ? "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
+                    : "text-zinc-800 dark:text-zinc-200",
+                )}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[9px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  {initials(c.name) || "?"}
+                </span>
+                <span className="min-w-0 truncate">{c.name}</span>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       {/* Uncontrolled forms post `name` from the textarea, which unmounts in

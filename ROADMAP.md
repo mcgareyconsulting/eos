@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-10
+updated: 2026-09-16
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -1508,6 +1508,7 @@ this replaces email volume rather than adding to it.
 - 2026-08-15 · followup · src l10-2026-08-12-transcript — Steph to check whether 90 emails issue comments to all participants or the owner only; her answer decides subscribe vs broadcast
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
 - 2026-09-10 · note · src feedback-2026-09-10 — **N61** arrived asking for the same thing on to-dos (follow + notify-on-complete). Design the two as one model over `entity_type`. Nancy using follow in ninety today is evidence for the subscribe shape, but the participants-vs-owner answer above is still owed
+- 2026-09-16 · build · src session-2026-09-16 — the transport now exists: N61 shipped `follower_ids` + a `notifications` collection + the `/notifications` hub, to-dos only. Extending to issues is a `follower_ids` seed on `addIssue` plus the same `notify()` calls in the issue actions — but the subscribe-vs-broadcast answer above still decides *who* gets seeded, so this stays parked on Steph
 
 ### N32 · Meeting rating stays editable after the meeting ends
 *W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-19*
@@ -2846,7 +2847,42 @@ reclassification pass explicitly rather than assuming the fix covers it.
 - 2026-09-10 · open · src session-2026-09-10 — **need Ryan's JIRA file** to know which of the two mechanisms fired; and cleanup of already-miscategorised rows has no existing path
 
 ### N61 · Following a to-do, and a signal when one is completed
-*W3 · not-started · due — · deps N31 · owner daniel · src feedback-2026-09-10 · upd 2026-09-10*
+*W3 · in-progress · due — · deps — · owner daniel · src feedback-2026-09-10 · upd 2026-09-16*
+
+**Built 2026-09-16 (`claude/inspiring-albattani-feqnjx`, unmerged) — the
+Notifications hub, scoped to to-dos.** One model over `entity_type`, as
+decided below, with to-dos the only entity wired up:
+
+- **Follow relation:** `follower_ids` on the to-do doc (plus `created_by`).
+  Seeded with creator + owner on create, the new owner is added on reassign,
+  and a Follow / Unfollow control in the expanded row opts anyone else in or
+  out (`setTodoFollowing`). Private to-dos have no control — the owner is the
+  only reader. Pure rules in `lib/notifications.ts`, tested.
+- **Comments on to-dos:** `CommentEntityType` widened to `"todo"`; the
+  expanded To-Dos row (tab and L10 segment both) carries `EntityComments`.
+- **@mentions, to-do comments only:** typing `@` in the comment box opens a
+  roster picker (`RichTextEditor` `mentionCandidates`); the stored body stays
+  plain `@First Last`, resolved against the team roster on both ends
+  (`lib/mentions.ts`, longest-name match, never inside an email address).
+  `mention_ids` is stored on the comment; the renderer lights the name up.
+- **Notification rows** (`/notifications` collection, one per recipient ×
+  event, Admin-SDK writes only, client reads its own rows): `comment`,
+  `mention` (supersedes `comment` for that person), `completed` / `reopened`
+  (in-app check-off *and* a Google Tasks completion pull), `updated` (title /
+  owner / due summary) and `assigned`. The actor is never told about their
+  own action. Rules + composite index (`user_id`, `created_at desc`) added;
+  `notifications` is excluded from the audit log as a derived collection.
+- **Hub page** `/notifications` — Unread | All, mark one / mark all read,
+  each row deep-links to `/teams/{id}/todos?todo={id}` which opens that row
+  expanded and scrolled to (switching to Archived if it has been archived).
+  Sidebar link with a live unread badge (server-counted on first paint).
+
+**Not built, deliberately:** email (the client said in-app only), issue and
+rock follows (N31's subscribe-vs-broadcast answer is still owed — the model
+is ready for it, only the fan-out calls are missing), and mentions outside
+to-do comments (scoped down on request). **Deploy note:** `firestore.rules`
+and `firestore.indexes.json` both changed — ship them with the app or the
+sidebar badge and hub listener get permission-denied.
 
 Effort M–L, and **it should be designed with N31, not after it.** Steph: "The
 concept of 'following' a To-Do has not been addressed. Nancy is actively using
@@ -2890,6 +2926,7 @@ email volume, it does not add to it. Build one notification model over
 - 2026-09-10 · finding · src session-2026-09-10 — to-dos have no comment surface (`CommentEntityType` is issue | rock); the comment emails described are ninety's, not this app's
 - 2026-09-10 · finding · src session-2026-09-10 — no notification transport exists in the repo at all; `archiveStaleTodos` is the only Cloud Function
 - 2026-09-10 · decision · src session-2026-09-10 — design with **N31** as one model over `entity_type`; this row is evidence for the subscribe shape but is **not** the participants-vs-owner answer N31 is still owed
+- 2026-09-16 · build · src session-2026-09-16 — daniel: Notifications hub as a single page; "following" = creator/owner get in-app notifications for comments and updates on the to-do; @mentions, tightened to to-do comments. Built as above; tests + tsc + lint + build clean
 
 ## Intake — 2026-09-08 Steph + Joe, transcript pending
 

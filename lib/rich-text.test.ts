@@ -20,6 +20,7 @@ function shape(nodes: InlineNode[]): string {
   return nodes
     .map((n) => {
       if (n.kind === "text") return n.text;
+      if (n.kind === "mention") return `mention(${n.name})`;
       if (n.kind === "link") return `link(${shape(n.children)} -> ${n.href})`;
       return `${n.kind}(${shape(n.children)})`;
     })
@@ -328,5 +329,51 @@ describe("richTextToPlain for Google Tasks / BigQuery / tooltips", () => {
 
   test("empty input is an empty string", () => {
     assert.equal(richTextToPlain(null), "");
+  });
+});
+
+describe("mentions", () => {
+  const names = ["Steph Benes", "Jo Park"];
+
+  test("with no roster an @ is plain text, as it always was", () => {
+    assert.equal(shape(parseInline("ask @Steph Benes")), "ask @Steph Benes");
+  });
+
+  test("a roster name after @ becomes a mention node, longest match wins", () => {
+    const nodes = parseInline("ask @Steph Benes, then @Jo Park.", {
+      mentionNames: names,
+    });
+    assert.deepEqual(nodes, [
+      { kind: "text", text: "ask " },
+      { kind: "mention", name: "Steph Benes" },
+      { kind: "text", text: ", then " },
+      { kind: "mention", name: "Jo Park" },
+      { kind: "text", text: "." },
+    ]);
+  });
+
+  test("mentions resolve inside emphasis and list items", () => {
+    const blocks = parseRichText("- **@Jo Park** owns it", {
+      mentionNames: names,
+    });
+    assert.equal(blocks[0].kind, "bullet-list");
+    const item = blocks[0].kind === "bullet-list" ? blocks[0].items[0] : null;
+    assert.equal(item?.children[0].kind, "strong");
+    const inner = item?.children[0].kind === "strong" ? item.children[0].children : [];
+    assert.deepEqual(inner, [{ kind: "mention", name: "Jo Park" }]);
+  });
+
+  test("plain-text flattening keeps the @Name", () => {
+    assert.equal(
+      richTextToPlain("cc @Steph Benes"),
+      "cc @Steph Benes",
+    );
+  });
+
+  test("an email address is never a mention", () => {
+    assert.equal(
+      shape(parseInline("mail jo@Jo Park", { mentionNames: names })),
+      "mail jo@Jo Park",
+    );
   });
 });

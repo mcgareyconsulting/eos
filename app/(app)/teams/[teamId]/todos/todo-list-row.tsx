@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Archive, Lock, Star, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
@@ -9,8 +9,10 @@ import { dueToneClass } from "@/lib/due";
 import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
+import { EntityComments } from "@/components/entity-comments";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoModal } from "./edit-todo-modal";
+import { FollowButton } from "./follow-button";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
 import { Eyebrow } from "@/components/ui/text";
 
@@ -27,27 +29,45 @@ export type TodoListItem = {
   archived?: boolean;
   /** Local mm/dd/yyyy when archived (from archived_at). */
   closed_on?: string | null;
+  /** Who gets notified about it — see lib/notifications.ts. */
+  follower_ids?: string[] | null;
 };
 
 type Member = { user_id: string; full_name: string };
 
-// View-first row: click the title to expand description.
-// Checkbox / pencil / delete stay separate.
+// View-first row: click the title to expand description, follow control and
+// comments. Checkbox / pencil / delete stay separate.
 export function TodoListRow({
   teamId,
   todo,
   ownerName,
   members,
+  userId,
   /** Owner cards already name the owner — don't repeat it on every row. */
   hideOwner = false,
+  /** Deep-linked from a notification: open expanded and scroll into view. */
+  focused = false,
 }: {
   teamId: string;
   todo: TodoListItem;
   ownerName: string;
   members: Member[];
+  userId: string;
   hideOwner?: boolean;
+  focused?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(focused);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // One scroll, on arrival. `focused` only ever flips from the URL, and a
+  // live re-render of the list must not yank the page back here.
+  useEffect(() => {
+    if (!focused) return;
+    rootRef.current?.scrollIntoView({ block: "center" });
+  }, [focused]);
+
+  const followerIds = todo.follower_ids ?? [];
+  const following = followerIds.includes(userId);
   const remove = deleteTodo.bind(null, teamId, todo.id);
   const toggleArchive = setTodoArchived.bind(
     null,
@@ -79,10 +99,14 @@ export function TodoListRow({
 
   return (
     <div
+      ref={rootRef}
+      id={`todo-${todo.id}`}
       className={cn(
         "group px-4 py-2.5 text-sm",
         closedPending &&
           "bg-zinc-50/90 text-zinc-500 dark:bg-zinc-950/40 dark:text-zinc-400",
+        focused &&
+          "ring-2 ring-inset ring-hpb-blue/40 dark:ring-hpb-gold/40",
       )}
     >
       <div className="flex items-start gap-3">
@@ -260,6 +284,27 @@ export function TodoListRow({
               </div>
             )}
           </dl>
+
+          {/* Follow + comments: the surface the notifications feed off.
+              Private to-dos are the owner's alone, so no follow control —
+              they already follow their own. */}
+          {todo.visibility !== "private" && (
+            <FollowButton
+              teamId={teamId}
+              todoId={todo.id}
+              following={following}
+              followerCount={followerIds.length}
+              className="pt-1"
+            />
+          )}
+          <EntityComments
+            teamId={teamId}
+            entityType="todo"
+            entityId={todo.id}
+            userId={userId}
+            members={members}
+            className="pt-2"
+          />
         </div>
       )}
     </div>

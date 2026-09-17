@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { Video } from "lucide-react";
 import { entityHeaderControlBase } from "@/components/entity-page-header";
 import { cn } from "@/lib/utils";
 import { Timestamp } from "firebase-admin/firestore";
-import { requireTeamAccess } from "@/lib/firebase/teams";
+import { getTeamMembers, requireTeamAccess } from "@/lib/firebase/teams";
 import {
   normalizeAgendaItems,
   type AgendaItem,
@@ -12,6 +13,9 @@ import { SEGMENT_LABELS } from "@/lib/l10/segments";
 import { isStaleLiveMeeting } from "@/lib/l10/driver";
 import { AgendasPanel, StartMeetingPicker } from "./agendas";
 import { MeetingsList, type MeetingListDoc } from "./meetings-list";
+import { setMeetLink } from "./actions";
+import { SpeakingOrderEditor } from "./speaking-order-editor";
+import { Eyebrow } from "@/components/ui/text";
 
 type MeetingDoc = {
   team_id: string;
@@ -50,7 +54,7 @@ export default async function MeetingsPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { db, isAdmin, membershipRole } = await requireTeamAccess(tid);
+  const { db, team, isAdmin, membershipRole } = await requireTeamAccess(tid);
   // Starting a meeting is open to everyone on the team — whoever starts it
   // drives it (lib/l10/driver.ts). Leader/admin still gates *authoring*
   // agenda templates and deleting meeting history, which are not the same
@@ -100,6 +104,9 @@ export default async function MeetingsPage({
   // Which room (if any) the header should offer to join. See HeaderAction.
   const liveMeeting = resolveLiveMeeting(initialMeetings);
 
+  // Roster for the speaking-order editor; leaders only need it.
+  const members = isLeader ? await getTeamMembers(tid) : [];
+
   const ratingsByMeeting: Record<string, number | null> = {};
   await Promise.all(
     initialMeetings.map(async (m) => {
@@ -138,6 +145,53 @@ export default async function MeetingsPage({
       </header>
 
       {isLeader && <AgendasPanel teamId={tid} customs={customs} />}
+
+      {isLeader && (
+        <section className="space-y-2">
+          <Eyebrow as="h2" size="md">
+            Meeting settings
+          </Eyebrow>
+          <div className="space-y-4 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+            <form action={setMeetLink.bind(null, tid)}>
+              <label
+                htmlFor="meet_link"
+                className="flex items-center gap-1.5 text-sm font-medium"
+              >
+                <Video className="h-4 w-4 text-hpb-green" />
+                Google Meet link
+              </label>
+              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                The standing Meet room for this team&rsquo;s L10. Members join it
+                from the live meeting.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  id="meet_link"
+                  name="meet_link"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://meet.google.com/abc-defg-hij"
+                  defaultValue={team.meetLink ?? ""}
+                  className="flex-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+
+            <SpeakingOrderEditor
+              teamId={tid}
+              members={members}
+              storedOrder={team.speakingOrder}
+              canEdit
+            />
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold tracking-tight">History</h2>

@@ -11,7 +11,6 @@ import {
   getOrgTeams,
   getImportableTeams,
   getOrgAdmins,
-  getOrgDirectory,
 } from "./teams";
 
 // requireFirebaseUser()'s shape, trimmed to what teams.ts reads.
@@ -312,29 +311,5 @@ describe("getOrgAdmins", () => {
       admins.map((a) => a.uid),
       ["a1", "a2"],
     );
-  });
-});
-
-describe("getOrgDirectory", () => {
-  test("groups members by team, leaders first, alpha within role", async () => {
-    const db = new FakeFirestore();
-    seedTeam(db, "t1", "Leadership");
-    // The leader sorts AFTER the member alphabetically, so this only passes
-    // if role ordering is applied before the name sort.
-    seedMembership(db, "t1", "u1", "member");
-    seedMembership(db, "t1", "u2", "leader");
-    db.seed("users", "u1", { display_name: "Amir" });
-    db.seed("users", "u2", { display_name: "Zoe" });
-
-    const directory = await getOrgDirectory({
-      user: fakeUser({ uid: "u1", isAdmin: false, db }),
-    });
-    const team = directory.find((t) => t.id === "t1");
-    assert.ok(team);
-    assert.deepEqual(
-      team!.members.map((m) => m.full_name),
-      ["Zoe", "Amir"],
-    );
-    assert.equal(team!.members[0].role, "leader");
   });
 });

@@ -17,7 +17,7 @@ import {
   AlertCircle,
   Megaphone,
   Calendar,
-  Users,
+  BookUser,
   Upload,
   ChevronDown,
   Check,
@@ -44,14 +44,13 @@ const TEAM_SECTIONS = [
   "issues",
   "headlines",
   "meetings",
-  "members",
   "import",
 ] as const;
 
 type TeamSection = (typeof TEAM_SECTIONS)[number];
 
 const NAV_ITEMS: {
-  section: TeamSection;
+  section: TeamSection | "directory";
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
@@ -61,7 +60,9 @@ const NAV_ITEMS: {
   { section: "issues", label: "Issues", icon: AlertCircle },
   { section: "headlines", label: "Headlines", icon: Megaphone },
   { section: "meetings", label: "Meetings", icon: Calendar },
-  { section: "members", label: "Members", icon: Users },
+  // Org-wide, not team-scoped: one Directory replaces the per-team Members
+  // page, so it sits in that slot and links out of the team path.
+  { section: "directory", label: "Directory", icon: BookUser },
   { section: "import", label: "Import", icon: Upload },
 ];
 
@@ -390,7 +391,7 @@ export function TeamNav({
         ).map((item) => (
           <NavLink
             key={item.section}
-            href={`${teamPath}/${item.section}`}
+            href={item.section === "directory" ? "/directory" : `${teamPath}/${item.section}`}
             icon={item.icon}
             label={item.label}
           />

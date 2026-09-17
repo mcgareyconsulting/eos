@@ -491,7 +491,7 @@ export default async function HomePage() {
               href="/directory"
               className="font-medium text-hpb-blue underline-offset-2 hover:underline dark:text-hpb-gold"
             >
-              Browse the Members directory
+              Browse the Directory
             </Link>{" "}
             — a leader will invite you when ready.
           </p>

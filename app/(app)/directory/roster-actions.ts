@@ -1,5 +1,9 @@
 "use server";
 
+// Roster changes on one team: add, remove, promote/demote. Leader-or-admin,
+// enforced by requireTeamLeader. These used to live under the team Members
+// page; the Directory is the only roster surface now.
+
 import { revalidatePath } from "next/cache";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import {
@@ -11,29 +15,6 @@ import {
   ensureAuthUser,
   writeMembership,
 } from "@/lib/team-invite";
-
-function pathFor(teamId: string) {
-  return `/teams/${teamId}/members`;
-}
-
-/**
- * Durable L10 speaking order on the team. Leaders only (or org admin).
- * Must be a full permutation of the current roster.
- */
-export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
-  const { db } = await requireTeamLeader(teamId);
-  const members = await getTeamMembers(teamId);
-  const memberIds = new Set(members.map((m) => m.user_id));
-  const unique = new Set(uids);
-  const isPermutation =
-    uids.length === members.length &&
-    unique.size === uids.length &&
-    uids.every((uid) => memberIds.has(uid));
-  if (!isPermutation) throw new Error("Invalid speaking order");
-
-  await db.collection("teams").doc(teamId).update({ speaking_order: uids });
-  revalidatePath(pathFor(teamId));
-}
 
 // Leader-initiated add: create (or reuse) a Firebase Auth account for the
 // given email, hydrate /users/{uid}, and write team_members. Mirrors the
@@ -69,8 +50,6 @@ export async function addTeamMember(teamId: string, formData: FormData) {
     email,
   });
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`${pathFor(teamId)}?tab=directory`);
   revalidatePath("/directory");
 }
 
@@ -118,47 +97,14 @@ export async function removeTeamMember(teamId: string, userId: string) {
 
   await batch.commit();
 
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`${pathFor(teamId)}?tab=directory`);
   revalidatePath("/directory");
-}
-
-// Save the team's standing Google Meet URL used by the live-meeting Join
-// button. DEMO: a leader pastes a Meet link here. In the real integration this
-// is where the Meet REST API `spaces.create` would mint a per-meeting link at
-// meeting start instead of a fixed team-level URL. Leaders only.
-export async function setMeetLink(teamId: string, formData: FormData) {
-  const { db } = await requireTeamLeader(teamId);
-  const raw = String(formData.get("meet_link") ?? "").trim();
-
-  // Accept a Meet URL or a blank (to clear). Reject anything that isn't a
-  // Google Meet link so the Join button can't be pointed at arbitrary hosts.
-  let meetLink: string | null = null;
-  if (raw) {
-    let host: string;
-    try {
-      host = new URL(raw).hostname;
-    } catch {
-      throw new Error("Enter a valid URL");
-    }
-    if (host !== "meet.google.com") {
-      throw new Error("Link must be a meet.google.com URL");
-    }
-    meetLink = raw;
-  }
-
-  await db
-    .collection("teams")
-    .doc(teamId)
-    .set({ meet_link: meetLink }, { merge: true });
-  revalidatePath(pathFor(teamId));
 }
 
 /**
  * Promote a member to leader, or demote a leader to member.
  * Team leaders or org admins. A team must keep at least one leader — demoting
  * the last leader (including yourself) is rejected so the team can't lock
- * itself out of Members management.
+ * itself out of roster management.
  */
 export async function setMemberRole(
   teamId: string,
@@ -179,7 +125,7 @@ export async function setMemberRole(
 
   const currentRole = (memberSnap.data()?.role as string) ?? "member";
   if (currentRole === role) {
-    revalidatePath(pathFor(teamId));
+    revalidatePath("/directory");
     return;
   }
 
@@ -201,7 +147,5 @@ export async function setMemberRole(
     },
     { merge: true },
   );
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`${pathFor(teamId)}?tab=directory`);
   revalidatePath("/directory");
 }

@@ -1,9 +1,8 @@
 import { requireAdmin, requireTeamAccess } from "@/lib/firebase/teams";
-import { CreateTeamWizard } from "../create-team-wizard";
+import { CreateTeamWizard } from "./create-team-wizard";
 
 /**
- * Admin create-team flow, nested under Members so it sits with the
- * "All teams" directory tab.
+ * Admin create-team flow, reached from the Directory with a team context.
  */
 export default async function NewTeamUnderMembersPage({
   params,
@@ -17,8 +16,8 @@ export default async function NewTeamUnderMembersPage({
 
   return (
     <CreateTeamWizard
-      backHref={`/teams/${teamId}/members?tab=directory`}
-      backLabel="All teams"
+      backHref="/directory"
+      backLabel="Directory"
     />
   );
 }

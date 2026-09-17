@@ -1,39 +1,35 @@
-import { redirect } from "next/navigation";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
-import { getOrgAdmins, getOrgDirectory } from "@/lib/firebase/teams";
-import { OrgDirectoryPanel } from "@/app/(app)/teams/[teamId]/members/org-directory-panel";
+import { getDirectoryPeople } from "@/lib/firebase/directory";
+import { getOrgTeams } from "@/lib/firebase/teams";
+import { DirectoryTable } from "./directory-table";
 
 /**
- * Legacy /directory route. Prefer Members → All teams when the user has a
- * team context. Teamless users still land here (no teamId for Members).
+ * The org Directory: everyone, one row each, in the seed file's own columns.
+ * Replaces the admin People and Teams tabs and the Members → All teams tab,
+ * which were three views of the same roster.
  */
 export default async function DirectoryPage() {
-  const { teams, isAdmin, membershipTeamIds, user } =
-    await getUserTeamsFirebase();
+  const [{ teams: openableTeams, isAdmin, user }, people, teams] =
+    await Promise.all([getUserTeamsFirebase(), getDirectoryPeople(), getOrgTeams()]);
 
-  if (teams.length > 0) {
-    redirect(`/teams/${teams[0].id}/members?tab=directory`);
-  }
-
-  // No team yet (common for brand-new admins before first create).
-  const [directory, orgAdmins] = await Promise.all([
-    getOrgDirectory(),
-    getOrgAdmins(),
-  ]);
   return (
-    <div className="space-y-6">
+    // Wide: five columns, and the Team cell wraps chips for people on several
+    // teams.
+    <div className="mx-auto max-w-6xl space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Org directory — you are not on a team yet.
+        <h1 className="text-2xl font-semibold tracking-tight">Directory</h1>
+        <p className="mt-1 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
+          Everyone in the organization and the teams they are on. Opening a
+          team&rsquo;s data requires membership
+          {isAdmin ? " (you have admin access to every team)" : ""}.
         </p>
       </header>
-      <OrgDirectoryPanel
-        directory={directory}
-        membershipTeamIds={membershipTeamIds}
+      <DirectoryTable
+        people={people}
+        teams={teams}
+        openableTeamIds={openableTeams.map((t) => t.id)}
         currentUserId={user.id}
         isAdmin={isAdmin}
-        orgAdmins={orgAdmins}
       />
     </div>
   );

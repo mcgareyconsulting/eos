@@ -69,8 +69,7 @@ export async function importSeedFile(
     });
 
     if (!dryRun) {
-      revalidatePath("/admin/people");
-      revalidatePath("/admin/teams");
+      revalidatePath("/directory");
       revalidatePath("/admin/import");
       revalidatePath("/directory");
       revalidatePath("/home");

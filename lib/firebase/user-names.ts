@@ -1,7 +1,7 @@
 import { userDisplayName, type UserDocData } from "@/lib/user-name";
 
 // `db.getAll` is capped (~10–30 depending on client), so ids are chunked the
-// same way `getOrgDirectory` chunks them.
+// same way `getDirectoryPeople` reads users in bulk.
 const CHUNK = 100;
 
 /**

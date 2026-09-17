@@ -79,17 +79,13 @@ export function AppShell({
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
-              {/* Org-wide people/teams management and the seed-file import.
-                  Admin-only: every page under /admin calls requireAdmin() and
-                  404s regardless, so this only hides a dead end. */}
-              {isAdmin && <NavLink href="/admin/people" icon={Shield} label="Admin" />}
             </nav>
 
             {membershipCount === 0 && !isAdmin && (
               <div className="mx-2 mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-800 group-data-[sidebar-collapsed]/shell:hidden dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 You&apos;re not on a team yet. Open{" "}
                 <Link href="/directory" className="font-medium underline">
-                  Members directory
+                  the Directory
                 </Link>{" "}
                 — a leader will add you when ready.
               </div>
@@ -97,12 +93,19 @@ export function AppShell({
 
             {membershipCount === 0 && isAdmin && teams.length === 0 && (
               <div className="mx-2 mb-2 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[11px] leading-snug text-zinc-700 group-data-[sidebar-collapsed]/shell:hidden dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-300">
-                No teams yet.{" "}
+                No teams yet. Open the{" "}
+                <Link
+                  href="/directory"
+                  className="font-medium text-hpb-blue underline dark:text-hpb-gold"
+                >
+                  Directory
+                </Link>{" "}
+                or{" "}
                 <Link
                   href="/directory/new"
                   className="font-medium text-hpb-blue underline dark:text-hpb-gold"
                 >
-                  Create a team
+                  create a team
                 </Link>
                 .
               </div>

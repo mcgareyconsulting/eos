@@ -96,7 +96,6 @@ export async function createTeamWithLeader(
 
     revalidatePath("/home");
     revalidatePath("/directory");
-    revalidatePath(`/teams/${teamRef.id}/members`);
 
     return { ok: true, teamId: teamRef.id, teamName };
   } catch (err) {

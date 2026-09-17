@@ -689,3 +689,56 @@ export async function deleteMeeting(teamId: string, meetingId: string) {
   revalidatePath(listPath(teamId));
 }
 
+// ---------------------------------------------------------------------------
+// Meeting settings (moved here from the team Members page)
+// ---------------------------------------------------------------------------
+
+/**
+ * Durable L10 speaking order on the team. Leaders only (or org admin).
+ * Must be a full permutation of the current roster.
+ */
+export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
+  const { db } = await requireTeamLeader(teamId);
+  const members = await getTeamMembers(teamId);
+  const memberIds = new Set(members.map((m) => m.user_id));
+  const unique = new Set(uids);
+  const isPermutation =
+    uids.length === members.length &&
+    unique.size === uids.length &&
+    uids.every((uid) => memberIds.has(uid));
+  if (!isPermutation) throw new Error("Invalid speaking order");
+
+  await db.collection("teams").doc(teamId).update({ speaking_order: uids });
+  revalidatePath(`/teams/${teamId}/meetings`);
+}
+
+// Save the team's standing Google Meet URL used by the live-meeting Join
+// button. DEMO: a leader pastes a Meet link here. In the real integration this
+// is where the Meet REST API `spaces.create` would mint a per-meeting link at
+// meeting start instead of a fixed team-level URL. Leaders only.
+export async function setMeetLink(teamId: string, formData: FormData) {
+  const { db } = await requireTeamLeader(teamId);
+  const raw = String(formData.get("meet_link") ?? "").trim();
+
+  // Accept a Meet URL or a blank (to clear). Reject anything that isn't a
+  // Google Meet link so the Join button can't be pointed at arbitrary hosts.
+  let meetLink: string | null = null;
+  if (raw) {
+    let host: string;
+    try {
+      host = new URL(raw).hostname;
+    } catch {
+      throw new Error("Enter a valid URL");
+    }
+    if (host !== "meet.google.com") {
+      throw new Error("Link must be a meet.google.com URL");
+    }
+    meetLink = raw;
+  }
+
+  await db
+    .collection("teams")
+    .doc(teamId)
+    .set({ meet_link: meetLink }, { merge: true });
+  revalidatePath(`/teams/${teamId}/meetings`);
+}

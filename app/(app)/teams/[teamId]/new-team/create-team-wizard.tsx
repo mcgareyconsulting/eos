@@ -12,13 +12,13 @@ type Step = 1 | 2 | 3;
 
 /**
  * Admin happy path: team name → invite leader (pre-provision) → Done.
- * Opened from Members → All teams → New team.
+ * Opened from the Directory → New team.
  */
 export function CreateTeamWizard({
   backHref,
-  backLabel = "All teams",
+  backLabel = "Directory",
 }: {
-  /** e.g. /teams/{id}/members?tab=directory */
+  /** e.g. /directory */
   backHref: string;
   backLabel?: string;
 }) {
@@ -196,13 +196,13 @@ export function CreateTeamWizard({
                 <span className="font-medium text-zinc-800 dark:text-zinc-200">
                   {created.teamName}
                 </span>{" "}
-                is ready. The leader can sign in and invite members from the
-                team&rsquo;s Members page.
+                is ready. The leader can sign in and add members from the
+                Directory.
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               <Link
-                href={`/teams/${created.teamId}/members`}
+                href={`/teams/${created.teamId}/scorecard`}
                 className="inline-flex items-center justify-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110"
               >
                 <Users className="h-4 w-4" />

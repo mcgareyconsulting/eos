@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-16
+updated: 2026-09-18
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -1537,7 +1537,44 @@ description, but we do do that a lot").
 - 2026-08-15 · client · src l10-2026-08-12-transcript — origin: Steph wants a discussion-notes home other than the description; Jessica points at comments; demarcation resolves it without a new field
 
 ### N31 · Issue-discussion notification — internal, not email
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-09-10*
+*W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-09-18*
+
+**Built 2026-09-18 (`claude/keen-cray-uhdhuo`, unmerged) — issues on the
+N61 model, plus the plumbing generalised so the next entity is a switch
+arm, not a rebuild.** daniel: *"Issues are the clear next following,
+mentions, activities next steps."*
+
+- **Plumbing (step A).** `NotificationEntityType` / `ActivityEntityType`
+  are a union (`todo | issue`); verbs, hub deep links, tab labels and the
+  trace's wording are per type; `FollowButton` moved to `components/` and
+  takes its server action as a prop; `EntityActivity` reads any traced
+  type; the hub's peek dispatches by type. Rows written before this carry
+  no `entity_type` and read as to-dos. The Google Tasks completion pull now
+  writes the trace row it never did.
+- **The room (step A, the noise lever).** An event that happens while the
+  team's L10 is live tells nobody sitting in it: `recipientsFor` takes
+  `inRoomIds`, which `lib/firebase/meeting-room.ts` derives from the live
+  meeting's roster minus `absent_user_ids` (the meeting's own attendance,
+  since N25 presence is not built). Mentions and "assigned you" still get
+  through — those are addressed to you. The trace is written regardless.
+  Applied to to-dos and issues alike.
+- **Issues (step B).** `created_by` + `follower_ids` seeded creator +
+  owner on `addIssue` — the subscribe shape, which Nancy's use of follow in
+  ninety already argued for; Steph's participants-vs-owner answer, if it
+  ever comes, changes only the seed. Reassign adds the new owner. Follow /
+  Unfollow lives on the issue detail (tab and L10 alike). Fan-out:
+  `assigned`, `updated` (title / owner / priority / term summary),
+  `completed` (worded "solved"), `dropped`, `reopened` (from a closed
+  state only), `moved`, `comment`, `mention`. **Votes write nothing** —
+  bursts during IDS, and Solving is traced but not told. Archive / restore
+  are traced only. @mentions now resolve in issue comments too.
+  Notifications deep-link to `/teams/{id}/issues?issue=` (opens the
+  detail, switching to Archived / Long-term as needed) and open in place
+  in the hub via an issue peek with the trace beside it.
+- **Not built:** rocks and milestones (step C — the status-history merge
+  and the shared-rock rules branch come first), headlines mentions (E),
+  a followers picker on the issue form (to-dos have one; issues opt in
+  from the detail for now).
 
 Effort M. Steph wants to know when there's discussion on a particular issue
 — her current system distributes that as an **email**. We have freedom to
@@ -1566,6 +1603,8 @@ this replaces email volume rather than adding to it.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
 - 2026-09-10 · note · src feedback-2026-09-10 — **N61** arrived asking for the same thing on to-dos (follow + notify-on-complete). Design the two as one model over `entity_type`. Nancy using follow in ninety today is evidence for the subscribe shape, but the participants-vs-owner answer above is still owed
 - 2026-09-16 · build · src session-2026-09-16 — the transport now exists: N61 shipped `follower_ids` + a `notifications` collection + the `/notifications` hub, to-dos only. Extending to issues is a `follower_ids` seed on `addIssue` plus the same `notify()` calls in the issue actions — but the subscribe-vs-broadcast answer above still decides *who* gets seeded, so this stays parked on Steph
+- 2026-09-18 · decision · src session-2026-09-18 — daniel: issues are the next entity for following / mentions / activity; build on the subscribe seed (creator + owner) without waiting on Steph's answer, which would only change the seed
+- 2026-09-18 · build · src session-2026-09-18 — plumbing generalised over `entity_type`; issues wired (follow, fan-out, trace, mentions, deep link, hub peek); in-room suppression via the live meeting's `absent_user_ids`; votes deliberately silent. 722 tests pass, tsc + lint + build clean
 
 ### N32 · Meeting rating stays editable after the meeting ends
 *W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-19*

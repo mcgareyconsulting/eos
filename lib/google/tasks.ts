@@ -27,6 +27,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { notify } from "@/lib/firebase/notifications";
+import { recordActivity } from "@/lib/firebase/activity";
 import { recipientsFor } from "@/lib/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
 
@@ -650,6 +651,23 @@ export async function pullCompletionsForOwner(
             id: todoId,
             title: String(before.title ?? "To-do"),
           },
+          actor: { id: ownerUid },
+          detail: "Completed from Google Tasks",
+        });
+      }
+      // The trace records it whether or not anyone was told — this was the
+      // one completion path that left no row.
+      if (typeof before.team_id === "string") {
+        await recordActivity({
+          db,
+          teamId: before.team_id,
+          entity: {
+            type: "todo",
+            id: todoId,
+            visibility: before.visibility,
+            ownerId: before.owner_id,
+          },
+          kind: "completed",
           actor: { id: ownerUid },
           detail: "Completed from Google Tasks",
         });

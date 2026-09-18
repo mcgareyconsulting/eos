@@ -3,31 +3,48 @@
 // One model over `entity_type`, per the N31/N61 decision: a *follow* is a
 // list of uids on the entity doc (`follower_ids`), and an *event* on that
 // entity fans out one `notifications` row per follower who did not cause it.
-// To-dos are the first (and for now only) entity wired up; issues get the
-// same shape once the subscribe-vs-broadcast question N31 is waiting on is
-// answered. Nothing here sends email — the bell replaces that volume, it
-// does not add to it.
+// To-dos came first (N61); issues followed (N31) on the same shape, seeded
+// creator + owner — the subscribe model Nancy already works in. Nothing here
+// sends email — the bell replaces that volume, it does not add to it.
 //
 // Firestore writes live in lib/firebase/notifications.ts. This file is the
 // part worth unit-testing: who follows what, who gets told, and what the row
 // says.
 
-export type NotificationEntityType = "todo";
+/**
+ * Entities that carry `follower_ids`. Widen this union to add one; every
+ * `switch` below is exhaustive, so the compiler lists what else to teach.
+ */
+export type NotificationEntityType = "todo" | "issue";
+
+/** "to-do" / "issue" — the word the hub and the trace use for one. */
+export function entityNoun(type: NotificationEntityType): string {
+  switch (type) {
+    case "todo":
+      return "to-do";
+    case "issue":
+      return "issue";
+  }
+}
 
 export type NotificationKind =
   /** Someone commented on an entity you follow. */
   | "comment"
   /** Someone @mentioned you in a comment (supersedes `comment`). */
   | "mention"
-  /** An entity you follow was checked off. */
+  /** An entity you follow was checked off (a to-do) or solved (an issue). */
   | "completed"
-  /** …and un-checked again. */
+  /** …and un-checked / reopened again. */
   | "reopened"
-  /** Title / owner / due date changed on an entity you follow. */
+  /** An issue you follow was dropped. */
+  | "dropped"
+  /** An issue you follow moved between short-term and long-term. */
+  | "moved"
+  /** Title / owner / due date (/ priority) changed on an entity you follow. */
   | "updated"
   /** You were made the owner. */
   | "assigned"
-  /** Someone added you as a follower when they created the to-do. */
+  /** Someone added you as a follower when they created the entity. */
   | "following";
 
 /** Stored shape of a `/notifications/{id}` row. */
@@ -64,9 +81,9 @@ function uniq(ids: readonly (string | null | undefined)[]): string[] {
 }
 
 /**
- * Followers a brand-new to-do starts with: whoever created it, whoever it
+ * Followers a brand-new entity starts with: whoever created it, whoever it
  * was assigned to, and anyone the creator picked under "Add followers".
- * Creating a to-do for yourself yields one follower, not two copies of you;
+ * Creating one for yourself yields one follower, not two copies of you;
  * naming the owner again as a follower does not double them either.
  */
 export function initialFollowers(args: {
@@ -149,13 +166,30 @@ export type RecipientArgs = {
   /** Never notified about their own action. */
   actorId: string;
   /** A private to-do is readable by its owner only, so only they can be told. */
-  visibility: "team" | "private" | string | null | undefined;
+  visibility?: "team" | "private" | string | null | undefined;
   ownerId: string | null | undefined;
+  /**
+   * People who watched it happen — the room of a live L10 on this team
+   * (`presentInRoom`). They get no row: a bell for the status flip the whole
+   * room just made is exactly the noise the client asked us not to add. The
+   * activity trace still records it; only the inbox goes quiet.
+   */
+  inRoomIds?: ReadonlySet<string> | readonly string[] | null;
 };
+
+function excluded(
+  ids: ReadonlySet<string> | readonly string[] | null | undefined,
+): ReadonlySet<string> {
+  if (!ids) return new Set();
+  return ids instanceof Set ? ids : new Set(ids as readonly string[]);
+}
 
 /** Followers who should hear about an event, given who caused it. */
 export function recipientsFor(args: RecipientArgs): string[] {
-  let ids = uniq(args.followerIds ?? []).filter((id) => id !== args.actorId);
+  const room = excluded(args.inRoomIds);
+  let ids = uniq(args.followerIds ?? []).filter(
+    (id) => id !== args.actorId && !room.has(id),
+  );
   if (args.visibility === "private") {
     ids = ids.filter((id) => id === args.ownerId);
   }
@@ -166,14 +200,45 @@ export function recipientsFor(args: RecipientArgs): string[] {
  * Fan-out for a new comment. Mentioned people get a `mention` row; every
  * other follower gets a `comment` row. A mentioned follower gets only the
  * mention — one event, one row per person.
+ *
+ * A mention reaches you even in the room: being named is deliberate, and
+ * the Mentions column is where "someone wants you on this" lives. Only the
+ * ambient `comment` rows are quieted for people who were there.
  */
 export function commentRecipients(
   args: RecipientArgs & { mentionedIds: readonly string[] },
 ): { mention: string[]; comment: string[] } {
-  const mention = recipientsFor({ ...args, followerIds: args.mentionedIds });
+  const mention = recipientsFor({
+    ...args,
+    followerIds: args.mentionedIds,
+    inRoomIds: null,
+  });
   const mentionSet = new Set(mention);
   const comment = recipientsFor(args).filter((id) => !mentionSet.has(id));
   return { mention, comment };
+}
+
+// ---------------------------------------------------------------------------
+// The room
+// ---------------------------------------------------------------------------
+
+/**
+ * Who is in the room of a live L10: the roster minus whoever the meeting
+ * marked absent (`meetings/{id}.absent_user_ids`). Null when the team has no
+ * live meeting — nobody is "in the room", everyone is told as usual.
+ *
+ * Attendance is the meeting's own record of who is there, kept by the
+ * driver for the speaking order; it is the honest signal this app has
+ * (there is no presence heartbeat yet, N25). Someone marked present but
+ * dialled out still misses the bell — the trace has it for them.
+ */
+export function presentInRoom(
+  rosterIds: readonly string[],
+  meeting: { absent_user_ids?: readonly string[] | null } | null | undefined,
+): Set<string> | null {
+  if (!meeting) return null;
+  const absent = new Set(meeting.absent_user_ids ?? []);
+  return new Set(rosterIds.filter((id) => !absent.has(id)));
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +276,53 @@ export function summarizeTodoChanges(
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+export type IssueFieldsForDiff = {
+  title: string;
+  owner_id: string | null;
+  priority: string | null;
+  type: string | null;
+};
+
+const PRIORITY_WORD: Record<string, string> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+/**
+ * The issue counterpart of `summarizeTodoChanges`: title, owner, priority
+ * and term. Status has its own rows (`completed` / `dropped` / `reopened`)
+ * and votes are never summarised — they move in bursts during IDS and say
+ * nothing a follower needs to be told.
+ */
+export function summarizeIssueChanges(
+  before: IssueFieldsForDiff,
+  after: IssueFieldsForDiff,
+  nameOf: (uid: string) => string | null | undefined,
+): string | null {
+  const parts: string[] = [];
+  if (before.title.trim() !== after.title.trim()) {
+    parts.push(`Renamed to “${after.title.trim()}”`);
+  }
+  if ((before.owner_id ?? null) !== (after.owner_id ?? null)) {
+    const name = after.owner_id ? nameOf(after.owner_id) : null;
+    parts.push(`Owner ${name?.trim() || (after.owner_id ? "—" : "Unassigned")}`);
+  }
+  if ((before.priority ?? null) !== (after.priority ?? null)) {
+    parts.push(
+      after.priority
+        ? `Priority ${PRIORITY_WORD[after.priority] ?? after.priority}`
+        : "Priority cleared",
+    );
+  }
+  const term = (t: string | null) => (t === "long" ? "long" : "short");
+  if (term(before.type) !== term(after.type)) {
+    parts.push(term(after.type) === "long" ? "Moved to long-term" : "Moved to short-term");
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 /** Comment bodies are stored whole; the row carries a short preview. */
 export function snippetOf(body: string, max = 140): string {
   const flat = body.replace(/\s+/g, " ").trim();
@@ -218,21 +330,32 @@ export function snippetOf(body: string, max = 140): string {
   return `${flat.slice(0, max - 1).trimEnd()}…`;
 }
 
-/** The sentence the hub shows, minus the actor's name (rendered bold). */
+/**
+ * The sentence the hub shows, minus the actor's name (rendered bold). Worded
+ * per entity where the same event has a different name: a to-do is
+ * completed, an issue is solved. Rows written before issues existed carry
+ * no `entity_type`; they are to-dos.
+ */
 export function notificationVerb(n: {
   kind: NotificationKind;
+  entity_type?: NotificationEntityType;
   entity_title: string;
 }): string {
   const title = `“${n.entity_title}”`;
+  const issue = n.entity_type === "issue";
   switch (n.kind) {
     case "comment":
       return `commented on ${title}`;
     case "mention":
       return `mentioned you on ${title}`;
     case "completed":
-      return `completed ${title}`;
+      return issue ? `solved ${title}` : `completed ${title}`;
     case "reopened":
       return `reopened ${title}`;
+    case "dropped":
+      return `dropped ${title}`;
+    case "moved":
+      return `moved ${title}`;
     case "updated":
       return `updated ${title}`;
     case "assigned":
@@ -255,14 +378,30 @@ export function notificationColumn(n: {
   return n.kind === "mention" ? "mentions" : "activity";
 }
 
-/** Where a row takes you. `?todo=` opens that row on the To-Dos tab. */
+/**
+ * Where a row takes you. `?todo=` opens that row on the To-Dos tab;
+ * `?issue=` opens that issue's detail on the Issues tab.
+ */
 export function notificationHref(n: {
   team_id: string;
   entity_type: NotificationEntityType;
   entity_id: string;
 }): string {
+  const id = encodeURIComponent(n.entity_id);
   switch (n.entity_type) {
     case "todo":
-      return `/teams/${n.team_id}/todos?todo=${encodeURIComponent(n.entity_id)}`;
+      return `/teams/${n.team_id}/todos?todo=${id}`;
+    case "issue":
+      return `/teams/${n.team_id}/issues?issue=${id}`;
+  }
+}
+
+/** Label for the "open on its tab" link beside a row. */
+export function notificationTabLabel(type: NotificationEntityType): string {
+  switch (type) {
+    case "todo":
+      return "To-Dos";
+    case "issue":
+      return "Issues";
   }
 }

@@ -10,10 +10,15 @@ import { normalizeDescription } from "@/lib/csv-import";
 import { RichText } from "@/components/rich-text";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { EntityComments } from "@/components/entity-comments";
+import { FollowButton } from "@/components/follow-button";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoModal } from "./edit-todo-modal";
-import { FollowButton } from "./follow-button";
-import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
+import {
+  deleteTodo,
+  setTodoArchived,
+  setTodoFollowing,
+  toggleWeeklyFocus,
+} from "./actions";
 import { Eyebrow } from "@/components/ui/text";
 
 export type TodoListItem = {
@@ -301,10 +306,10 @@ export function TodoListRow({
               they already follow their own. */}
           {todo.visibility !== "private" && (
             <FollowButton
-              teamId={teamId}
-              todoId={todo.id}
+              entityType="todo"
               following={following}
               followerCount={followerIds.length}
+              toggle={(next) => setTodoFollowing(teamId, todo.id, next)}
               className="pt-1"
             />
           )}

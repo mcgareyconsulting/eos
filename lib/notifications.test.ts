@@ -4,13 +4,17 @@ import {
   addedFollowerRecipients,
   applyFollowerEdit,
   commentRecipients,
+  entityNoun,
   followersAfterOwnerChange,
   initialFollowers,
   notificationColumn,
   notificationHref,
+  notificationTabLabel,
   notificationVerb,
+  presentInRoom,
   recipientsFor,
   snippetOf,
+  summarizeIssueChanges,
   summarizeTodoChanges,
   toggleFollower,
 } from "./notifications";
@@ -122,6 +126,54 @@ describe("who gets told", () => {
     );
   });
 
+  test("people in the room hear nothing; an issue has no private form", () => {
+    assert.deepEqual(
+      recipientsFor({
+        followerIds: ["me", "you", "them"],
+        actorId: "me",
+        ownerId: "you",
+        inRoomIds: new Set(["you"]),
+      }),
+      ["them"],
+    );
+    // Arrays work too, and no room means everyone.
+    assert.deepEqual(
+      recipientsFor({
+        followerIds: ["a", "b"],
+        actorId: "z",
+        ownerId: null,
+        inRoomIds: ["a"],
+      }),
+      ["b"],
+    );
+    assert.deepEqual(
+      recipientsFor({ followerIds: ["a", "b"], actorId: "z", ownerId: null, inRoomIds: null }),
+      ["a", "b"],
+    );
+  });
+
+  test("a mention reaches you in the room; the ambient comment row does not", () => {
+    const r = commentRecipients({
+      followerIds: ["author", "owner", "watcher"],
+      mentionedIds: ["owner"],
+      actorId: "author",
+      ownerId: "owner",
+      inRoomIds: new Set(["owner", "watcher"]),
+    });
+    assert.deepEqual(r.mention, ["owner"]);
+    assert.deepEqual(r.comment, []);
+  });
+
+  test("the room is the roster minus the meeting's absentees", () => {
+    assert.equal(presentInRoom(["a", "b"], null), null);
+    assert.equal(presentInRoom(["a", "b"], undefined), null);
+    assert.deepEqual(
+      [...presentInRoom(["a", "b", "c"], { absent_user_ids: ["b"] })!],
+      ["a", "c"],
+    );
+    assert.deepEqual([...presentInRoom(["a"], {})!], ["a"]);
+  });
+
   test("a mentioned follower gets the mention, not a second comment row", () => {
     const r = commentRecipients({
       followerIds: ["author", "owner", "watcher"],
@@ -169,6 +221,33 @@ describe("what the row says", () => {
     );
   });
 
+  test("summarises issue title, owner, priority and term; never status or votes", () => {
+    assert.equal(
+      summarizeIssueChanges(
+        { title: "A", owner_id: null, priority: null, type: "short" },
+        { title: "B", owner_id: "s", priority: "high", type: "long" },
+        nameOf,
+      ),
+      "Renamed to “B” · Owner Steph Benes · Priority High · Moved to long-term",
+    );
+    assert.equal(
+      summarizeIssueChanges(
+        { title: "A", owner_id: "s", priority: "high", type: null },
+        { title: "A", owner_id: null, priority: null, type: "short" },
+        nameOf,
+      ),
+      "Owner Unassigned · Priority cleared",
+    );
+    assert.equal(
+      summarizeIssueChanges(
+        { title: "A", owner_id: "s", priority: "low", type: "short" },
+        { title: "A ", owner_id: "s", priority: "low", type: "short" },
+        nameOf,
+      ),
+      null,
+    );
+  });
+
   test("snippets collapse whitespace and truncate with an ellipsis", () => {
     assert.equal(snippetOf("  hello\n\n  world "), "hello world");
     const long = "x".repeat(200);
@@ -186,6 +265,32 @@ describe("what the row says", () => {
       notificationHref({ team_id: "t1", entity_type: "todo", entity_id: "a b" }),
       "/teams/t1/todos?todo=a%20b",
     );
+    assert.equal(
+      notificationHref({ team_id: "t1", entity_type: "issue", entity_id: "i1" }),
+      "/teams/t1/issues?issue=i1",
+    );
+    assert.equal(notificationTabLabel("todo"), "To-Dos");
+    assert.equal(notificationTabLabel("issue"), "Issues");
+    assert.equal(entityNoun("issue"), "issue");
+  });
+
+  test("verbs are worded per entity, and legacy rows read as to-dos", () => {
+    assert.equal(
+      notificationVerb({ kind: "completed", entity_type: "issue", entity_title: "Slow ATM" }),
+      "solved “Slow ATM”",
+    );
+    assert.equal(
+      notificationVerb({ kind: "completed", entity_title: "Call Jane" }),
+      "completed “Call Jane”",
+    );
+    assert.equal(
+      notificationVerb({ kind: "dropped", entity_type: "issue", entity_title: "X" }),
+      "dropped “X”",
+    );
+    assert.equal(
+      notificationVerb({ kind: "moved", entity_type: "issue", entity_title: "X" }),
+      "moved “X”",
+    );
   });
 });
 
@@ -196,6 +301,8 @@ describe("hub columns", () => {
       "comment",
       "completed",
       "reopened",
+      "dropped",
+      "moved",
       "updated",
       "assigned",
       "following",

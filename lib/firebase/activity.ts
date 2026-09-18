@@ -6,17 +6,22 @@
 // swallows rather than failing the action that called it.
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
-import type { ActivityDoc, ActivityKind } from "@/lib/activity";
+import type {
+  ActivityDoc,
+  ActivityEntityType,
+  ActivityKind,
+} from "@/lib/activity";
 import { resolveActorName } from "./notifications";
 
 export type RecordActivityArgs = {
   db: Firestore;
   teamId: string;
   entity: {
-    type: "todo";
+    type: ActivityEntityType;
     id: string;
-    /** The entity's *current* visibility and owner — see ActivityDoc. */
-    visibility: string | null | undefined;
+    /** The entity's *current* visibility and owner — see ActivityDoc. An
+     *  issue has no visibility; leave it out and the row says "team". */
+    visibility?: string | null | undefined;
     ownerId: string | null | undefined;
   };
   kind: ActivityKind;

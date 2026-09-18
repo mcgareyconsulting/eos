@@ -12,6 +12,7 @@ import {
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeftRight,
   AtSign,
   Bell,
   BellPlus,
@@ -22,13 +23,16 @@ import {
   RotateCcw,
   Trash2,
   UserPlus,
+  XCircle,
 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
   notificationColumn,
   notificationHref,
+  notificationTabLabel,
   notificationVerb,
+  type NotificationEntityType,
   type NotificationKind,
 } from "@/lib/notifications";
 import { EmptyState } from "@/components/empty-state";
@@ -45,6 +49,7 @@ import {
   restoreNotification,
 } from "./actions";
 import { TodoPeekModal } from "./todo-peek-modal";
+import { IssuePeekModal } from "./issue-peek-modal";
 
 type MaybeTimestamp = { toMillis: () => number } | number | null | undefined;
 
@@ -53,7 +58,7 @@ export type NotificationRow = {
   id: string;
   team_id: string;
   team_name: string;
-  entity_type: "todo";
+  entity_type: NotificationEntityType;
   entity_id: string;
   entity_title: string;
   kind: NotificationKind;
@@ -89,6 +94,8 @@ const KIND_ICON: Record<
   mention: AtSign,
   completed: CheckCircle2,
   reopened: RotateCcw,
+  dropped: XCircle,
+  moved: ArrowLeftRight,
   updated: Pencil,
   assigned: UserPlus,
   following: BellPlus,
@@ -99,6 +106,8 @@ const KIND_TONE: Record<NotificationKind, string> = {
   mention: "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold",
   completed: "bg-hpb-green/10 text-hpb-green",
   reopened: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+  dropped: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  moved: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   updated: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   assigned: "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold",
   following: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
@@ -147,15 +156,15 @@ export function NotificationsHub({
   const shown = showArchived ? archived : inbox;
   const unread = inbox.filter((n) => n.read_at == null);
   const read = inbox.length - unread.length;
-  // Two columns: ambient activity on to-dos you own or follow, and the rows
-  // that name you.
+  // Two columns: ambient activity on to-dos and issues you own or follow,
+  // and the rows that name you.
   const activity = shown.filter((n) => notificationColumn(n) === "activity");
   const mentions = shown.filter((n) => notificationColumn(n) === "mentions");
 
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  // The to-do a clicked row opens in place — see TodoPeekModal.
+  // The to-do or issue a clicked row opens in place — see the peek modals.
   const [peek, setPeek] = useState<NotificationRow | null>(null);
 
   function markAll() {
@@ -229,12 +238,13 @@ export function NotificationsHub({
       </header>
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Comments, completions and edits on to-dos you own or follow on the
-        left; anywhere you&apos;re @mentioned on the right. You follow a
-        to-do you create, own or were added to; use Follow on any other to-do
-        to opt in. Click a row to open the to-do here. Rows stay in the
-        inbox until you archive them — read ones just go quiet — and stay
-        findable on Archived until deleted from there.
+        Comments, completions, solves and edits on to-dos and issues you own
+        or follow on the left; anywhere you&apos;re @mentioned on the right.
+        You follow what you create, own or were added to; use Follow on
+        anything else to opt in. Nothing lands here for what happened in an
+        L10 you were in. Click a row to open it here. Rows stay in the inbox
+        until you archive them — read ones just go quiet — and stay findable
+        on Archived until deleted from there.
       </p>
 
       {error && (
@@ -250,7 +260,7 @@ export function NotificationsHub({
           emptyHint={
             showArchived
               ? "Rows you archive from the inbox land here."
-              : "When someone comments on, completes or reassigns a to-do you own or follow, it lands here."
+              : "When someone comments on, completes, solves or reassigns a to-do or issue you own or follow, it lands here."
           }
         />
         <HubColumn
@@ -262,14 +272,16 @@ export function NotificationsHub({
           emptyHint={
             showArchived
               ? "Mentions you archive from the inbox land here."
-              : "When someone @mentions you in a to-do comment, it lands here."
+              : "When someone @mentions you in a to-do or issue comment, it lands here."
           }
         />
       </div>
 
-      {peek && (
+      {peek && peek.entity_type === "issue" ? (
+        <IssuePeekModal n={peek} userId={userId} onClose={() => setPeek(null)} />
+      ) : peek ? (
         <TodoPeekModal n={peek} userId={userId} onClose={() => setPeek(null)} />
-      )}
+      ) : null}
 
       {sorted.length >= HUB_LIMIT && (
         <p className="text-xs text-zinc-500">
@@ -406,7 +418,7 @@ function NotificationItem({
             href={notificationHref(n)}
             onClick={markRead}
             className="hover:underline"
-            title="Open on the To-Dos tab"
+            title={`Open on the ${notificationTabLabel(n.entity_type)} tab`}
           >
             {n.team_name}
           </Link>

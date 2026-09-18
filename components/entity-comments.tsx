@@ -93,10 +93,11 @@ export function EntityComments({
     return members.find((m) => m.user_id === id)?.full_name ?? "—";
   };
 
-  // @mentions are a to-do feature for now — the client asked for exactly
-  // that scope. The same roster drives the picker and the read-side
-  // highlight, so what you picked is what gets lit up.
-  const mentionsOn = entityType === "todo";
+  // @mentions ride with followers: to-dos and issues have people to tell,
+  // rocks do not yet (entity-comments/actions.ts `followable`). The same
+  // roster drives the picker and the read-side highlight, so what you
+  // picked is what gets lit up.
+  const mentionsOn = entityType === "todo" || entityType === "issue";
   const mentionCandidates = useMemo(
     () =>
       mentionsOn

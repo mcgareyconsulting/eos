@@ -260,8 +260,8 @@ service cloud.firestore {
 
     // ---------- in-app notifications (per-user inbox) ----------
     // One row per recipient × event, written only by server actions (Admin
-    // SDK — lib/firebase/notifications.ts) when a followed to-do is
-    // commented on, completed, edited or reassigned. The client subscribes
+    // SDK — lib/firebase/notifications.ts) when a followed to-do or issue is
+    // commented on, completed / solved, edited or reassigned. The client subscribes
     // to its own rows for the sidebar badge and the /notifications hub;
     // marking read goes through a server action, so there is no client
     // write path at all — a hand-rolled client can neither forge a row for
@@ -347,11 +347,12 @@ service cloud.firestore {
     }
 
     // ---------- per-entity activity trace ----------
-    // One row per event on a to-do (created, edited, checked off, followed,
-    // commented on — lib/activity.ts), written only by server actions.
-    // Readable on the same terms as the to-do itself: members see a
-    // team-visible to-do's trace; a private one's is its owner's alone. A
-    // list query must constrain `visibility` (and `owner_id` when private)
+    // One row per event on a to-do or issue (created, edited, checked off /
+    // solved, followed, commented on — lib/activity.ts), written only by
+    // server actions. Readable on the same terms as the entity itself:
+    // members see a team-visible to-do's trace; a private one's is its
+    // owner's alone; an issue has no private form and always writes "team".
+    // A list query must constrain `visibility` (and `owner_id` when private)
     // or the rule rejects it outright.
     match /entity_activity/{id} {
       allow read:  if admin()

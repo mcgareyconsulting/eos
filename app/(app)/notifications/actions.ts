@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTeamMembers, requireTeamAccess } from "@/lib/firebase/teams";
 import type { TodoBoardDoc } from "@/app/(app)/teams/[teamId]/todos/todos-board";
+import type { IssueDetailData } from "@/app/(app)/teams/[teamId]/issues/issue-detail-modal";
 
 /** Admin-SDK Timestamp → millis, so the value can cross the RSC boundary. */
 function toMillis(v: unknown): number | null {
@@ -53,6 +54,46 @@ export async function loadTodoPeek(
       source_rock_id: (d.source_rock_id as string | null) ?? null,
       follower_ids: Array.isArray(d.follower_ids) ? d.follower_ids : null,
     },
+    members,
+  };
+}
+
+/** What the hub's peek modal needs to render one issue in place. */
+export type IssuePeek = {
+  issue: IssueDetailData;
+  ownerId: string | null;
+  members: { user_id: string; full_name: string }[];
+};
+
+/**
+ * The issue behind a notification, for opening it in place. Same posture as
+ * `loadTodoPeek`: an issue on another team is "not found" rather than
+ * forbidden, and a team the caller has left throws in requireTeamAccess.
+ */
+export async function loadIssuePeek(
+  teamId: string,
+  issueId: string,
+): Promise<IssuePeek | null> {
+  const { db } = await requireTeamAccess(teamId);
+  const snap = await db.collection("issues").doc(issueId).get();
+  const d = snap.data();
+  if (!snap.exists || !d || d.team_id !== teamId) return null;
+  const members = (await getTeamMembers(teamId)).map((m) => ({
+    user_id: m.user_id,
+    full_name: m.full_name,
+  }));
+  return {
+    issue: {
+      id: snap.id,
+      title: String(d.title ?? ""),
+      description: (d.description as string | null) ?? null,
+      priority: (d.priority as IssueDetailData["priority"]) ?? null,
+      votes: Number(d.votes ?? 0),
+      type: d.type === "long" ? "long" : "short",
+      status: (d.status as IssueDetailData["status"]) ?? "open",
+      follower_ids: Array.isArray(d.follower_ids) ? d.follower_ids : null,
+    },
+    ownerId: (d.owner_id as string | null) ?? null,
     members,
   };
 }

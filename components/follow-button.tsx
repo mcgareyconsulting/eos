@@ -3,27 +3,29 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { Bell, BellOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { setTodoFollowing } from "./actions";
+import { entityNoun, type NotificationEntityType } from "@/lib/notifications";
 
 /**
- * Follow / Unfollow toggle for a to-do.
+ * Follow / Unfollow toggle for anything that carries `follower_ids`.
  *
  * Following means in-app notifications for comments, completion and edits
  * (lib/notifications.ts). The creator and owner follow automatically; this
  * is how anyone else opts in, and how anyone opts out. Optimistic so the
- * label flips on click rather than after the round trip.
+ * label flips on click rather than after the round trip. The caller hands
+ * in the server action for its entity — the button knows nothing about
+ * which collection it is toggling.
  */
 export function FollowButton({
-  teamId,
-  todoId,
+  entityType,
   following,
   followerCount,
+  toggle,
   className,
 }: {
-  teamId: string;
-  todoId: string;
+  entityType: NotificationEntityType;
   following: boolean;
   followerCount: number;
+  toggle: (following: boolean) => Promise<void>;
   className?: string;
 }) {
   const [, start] = useTransition();
@@ -32,14 +34,15 @@ export function FollowButton({
     following,
     (_state, next: boolean) => next,
   );
+  const noun = entityNoun(entityType);
 
-  function toggle() {
+  function onClick() {
     const next = !optimistic;
     start(async () => {
       setOptimistic(next);
       try {
         setError(null);
-        await setTodoFollowing(teamId, todoId, next);
+        await toggle(next);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -56,12 +59,12 @@ export function FollowButton({
     <div className={cn("flex items-center gap-2", className)}>
       <button
         type="button"
-        onClick={toggle}
+        onClick={onClick}
         aria-pressed={optimistic}
         title={
           optimistic
-            ? "Stop getting notified about this to-do"
-            : "Get notified about comments and updates on this to-do"
+            ? `Stop getting notified about this ${noun}`
+            : `Get notified about comments and updates on this ${noun}`
         }
         className={cn(
           "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",

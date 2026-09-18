@@ -24,11 +24,15 @@ export default async function IssuesPage({
   searchParams,
 }: {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ archived?: string; owner?: string }>;
+  searchParams: Promise<{ archived?: string; owner?: string; issue?: string }>;
 }) {
   const { teamId: tid } = await params;
-  const { archived: archivedParam, owner: ownerParam } = await searchParams;
-  const showArchived = archivedParam === "1" || archivedParam === "true";
+  const {
+    archived: archivedParam,
+    owner: ownerParam,
+    issue: issueParam,
+  } = await searchParams;
+  let showArchived = archivedParam === "1" || archivedParam === "true";
   const { uid, db } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
@@ -36,6 +40,18 @@ export default async function IssuesPage({
     .collection("issues")
     .where("team_id", "==", tid)
     .get();
+
+  // `?issue=` from a notification: open that issue's detail on arrival,
+  // switching to Archived if it has been archived. Another team's id is
+  // simply not here — nothing to focus.
+  let focusIssueId: string | null = null;
+  if (issueParam) {
+    const focus = issuesSnap.docs.find((d) => d.id === issueParam);
+    if (focus) {
+      focusIssueId = focus.id;
+      if (isArchivedIssue(focus.data())) showArchived = true;
+    }
+  }
 
   const allIssues: IssueDoc[] = issuesSnap.docs.map((d) => {
     const x = d.data();
@@ -50,6 +66,7 @@ export default async function IssuesPage({
       votes: Number(x.votes ?? 0),
       type: x.type,
       status: x.status,
+      follower_ids: Array.isArray(x.follower_ids) ? x.follower_ids : null,
       archived,
       closed_on: archived ? formatClosedOn(x.archived_at) : null,
     };
@@ -101,6 +118,7 @@ export default async function IssuesPage({
         initialIssues={initialIssues}
         showArchived={showArchived}
         ownerFilter={ownerFilter}
+        focusIssueId={focusIssueId}
       />
     </div>
   );

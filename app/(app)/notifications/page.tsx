@@ -1,5 +1,11 @@
 import { requireFirebaseUser } from "@/lib/firebase/auth";
+import type { NotificationEntityType } from "@/lib/notifications";
 import { NotificationsHub, type NotificationRow } from "./notifications-hub";
+
+/** Rows written before issues existed carry no `entity_type`; they are to-dos. */
+function entityTypeOf(v: unknown): NotificationEntityType {
+  return v === "issue" ? "issue" : "todo";
+}
 
 /** Admin-SDK Timestamp → millis, so the value can cross the RSC boundary. */
 function toMillis(v: unknown): number | null {
@@ -14,10 +20,11 @@ const HUB_LIMIT = 200;
 /**
  * Notifications hub — the one page where in-app notifications land.
  *
- * Rows are written by server actions when a to-do you follow is commented
- * on, completed, edited or assigned to you, and when someone @mentions you
- * in a to-do comment (lib/notifications.ts). Nothing here is email, and
- * nothing here is team-scoped: it is *your* inbox across every team.
+ * Rows are written by server actions when a to-do or issue you follow is
+ * commented on, completed or solved, edited or assigned to you, and when
+ * someone @mentions you in a comment (lib/notifications.ts). Nothing here
+ * is email, and nothing here is team-scoped: it is *your* inbox across
+ * every team.
  *
  * Same shape as the To-Dos tab: this server pass paints the first frame and
  * `NotificationsHub` holds the realtime subscription, so a row that lands
@@ -39,7 +46,7 @@ export default async function NotificationsPage() {
       id: d.id,
       team_id: String(n.team_id ?? ""),
       team_name: String(n.team_name ?? "Team"),
-      entity_type: "todo",
+      entity_type: entityTypeOf(n.entity_type),
       entity_id: String(n.entity_id ?? ""),
       entity_title: String(n.entity_title ?? ""),
       kind: n.kind,

@@ -100,6 +100,14 @@ export type IssueDoc = {
   archived?: boolean;
   // Live client docs may carry a Firestore Timestamp.
   archived_at?: unknown;
+  // Who raised it. Written by addIssue since the follow feature reached
+  // issues; absent on older docs and on imports, so only ever read as optional.
+  created_by?: string | null;
+  // Who gets in-app notifications about comments, status and edits — see
+  // lib/notifications.ts. Seeded with creator + owner on create, grows with
+  // each reassignment, and toggled by the Follow control on the detail.
+  // Absent on docs that predate the feature (treated as nobody following).
+  follower_ids?: string[] | null;
 };
 
 // ---------------------------------------------------------------------------

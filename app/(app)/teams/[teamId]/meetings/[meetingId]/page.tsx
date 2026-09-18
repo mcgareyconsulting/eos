@@ -875,6 +875,7 @@ async function SegmentContent({
         votes: x.votes ?? 0,
         type: x.type ?? "short",
         status: x.status ?? "open",
+        follower_ids: Array.isArray(x.follower_ids) ? x.follower_ids : null,
         archived_at: x.archived_at ? true : null,
       };
     });

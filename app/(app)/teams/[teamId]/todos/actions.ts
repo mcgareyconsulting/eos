@@ -16,6 +16,7 @@ import {
 import { selectTodosCompletedDuringMeeting } from "@/lib/todos-archive";
 import { notify } from "@/lib/firebase/notifications";
 import { recordActivity } from "@/lib/firebase/activity";
+import { liveMeetingRoom } from "@/lib/firebase/meeting-room";
 import { joinNames } from "@/lib/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
@@ -144,6 +145,9 @@ export async function addTodo(teamId: string, formData: FormData) {
     created_at: FieldValue.serverTimestamp(),
   });
 
+  // Being assigned or added is addressed to you — it reaches you even if
+  // you are sitting in the L10 where it happened; only ambient updates
+  // below are quieted for the room.
   const target = notifyTarget(teamId, team.name, ref.id, { title });
   const dueDetail = due_date ? `Due ${formatDateOnly(due_date)}` : null;
   if (owner_id !== uid) {
@@ -228,6 +232,7 @@ export async function toggleTodo(
       actorId: uid,
       visibility: data.visibility,
       ownerId: data.owner_id,
+      inRoomIds: await liveMeetingRoom(db, teamId),
     }),
     kind: nowComplete ? "completed" : "reopened",
     ...notifyTarget(teamId, team.name, todoId, data),
@@ -366,6 +371,7 @@ export async function updateTodoMeta(
       actorId: uid,
       visibility,
       ownerId: owner_id,
+      inRoomIds: await liveMeetingRoom(db, teamId),
     });
     const assigned = reassigned && owner_id !== uid ? [owner_id] : [];
     await notify({

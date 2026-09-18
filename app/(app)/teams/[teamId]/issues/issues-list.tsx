@@ -63,6 +63,7 @@ export function IssuesList({
   initialIssues,
   showArchived = false,
   ownerFilter = "all",
+  focusIssueId = null,
 }: {
   teamId: string;
   userId: string;
@@ -70,6 +71,8 @@ export function IssuesList({
   initialIssues: IssueDoc[];
   showArchived?: boolean;
   ownerFilter?: string;
+  /** Deep-linked from a notification: open this issue's detail on arrival. */
+  focusIssueId?: string | null;
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
@@ -91,6 +94,13 @@ export function IssuesList({
   const { short, long } = splitIssuesByTerm(issues);
   const rankedShort = rankShortTerm(short);
   const rankedLong = rankLongTerm(long);
+
+  // A deep-linked long-term issue lives on the other tab; land there once.
+  const [landed, setLanded] = useState<string | null>(null);
+  if (focusIssueId && landed !== focusIssueId) {
+    setLanded(focusIssueId);
+    if (rankedLong.some((i) => i.id === focusIssueId)) setTab("long");
+  }
   const list = tab === "short" ? rankedShort : rankedLong;
 
   const ownerName = (id: string | null) =>
@@ -154,6 +164,7 @@ export function IssuesList({
               ownerName={ownerName}
               showVoteCount={tab === "short" && !showArchived}
               showArchived={showArchived}
+              focused={issue.id === focusIssueId}
               onEdit={() => setEditing(issue)}
             />
           ))}
@@ -186,6 +197,7 @@ function IssueRow({
   ownerName,
   showVoteCount = false,
   showArchived = false,
+  focused = false,
   onEdit,
 }: {
   teamId: string;
@@ -195,6 +207,7 @@ function IssueRow({
   ownerName: (id: string | null) => string;
   showVoteCount?: boolean;
   showArchived?: boolean;
+  focused?: boolean;
   onEdit: () => void;
 }) {
   const remove = deleteIssue.bind(null, teamId, issue.id);
@@ -248,6 +261,7 @@ function IssueRow({
           teamId={teamId}
           userId={userId}
           members={members}
+          defaultOpen={focused}
           className={cn(
             "mt-1 block max-w-full truncate text-left font-medium hover:text-hpb-blue dark:hover:text-hpb-gold",
             closedPending && "text-zinc-500 dark:text-zinc-400",

@@ -10,6 +10,7 @@ import {
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeftRight,
   Bell,
   BellOff,
   CheckCircle2,
@@ -24,10 +25,16 @@ import {
   Trash2,
   UserMinus,
   UserPlus,
+  Wrench,
+  XCircle,
 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { activityVerb, type ActivityKind } from "@/lib/activity";
+import {
+  activityVerb,
+  type ActivityEntityType,
+  type ActivityKind,
+} from "@/lib/activity";
 import { LocalTime } from "@/components/local-time";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +71,10 @@ const KIND_ICON: Record<
   description: FileText,
   completed: CheckCircle2,
   reopened: RotateCcw,
+  dropped: XCircle,
+  solving: Wrench,
+  term_short: ArrowLeftRight,
+  term_long: ArrowLeftRight,
   archived: Archive,
   restored: ArchiveRestore,
   weekly_focus_on: Star,
@@ -87,27 +98,28 @@ const DEFAULT_TONE =
   "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
 
 /**
- * The activity trace for one to-do, newest first — every event the server
- * actions recorded (lib/activity.ts), live.
+ * The activity trace for one to-do or issue, newest first — every event the
+ * server actions recorded (lib/activity.ts), live.
  *
  * The query mirrors the `entity_activity` rule: it always pins `visibility`,
  * and for a private to-do pins `owner_id` too, because the rule rejects a
  * list it cannot prove is readable. `visibility` / `ownerId` come from the
- * to-do as the caller currently sees it.
+ * entity as the caller currently sees it; an issue has no private form and
+ * leaves `visibility` out.
  */
 export function EntityActivity({
   teamId,
   entityType,
   entityId,
-  visibility,
+  visibility = "team",
   ownerId,
   userId,
   className,
 }: {
   teamId: string;
-  entityType: "todo";
+  entityType: ActivityEntityType;
   entityId: string;
-  visibility: "team" | "private";
+  visibility?: "team" | "private";
   ownerId: string | null;
   userId: string;
   className?: string;
@@ -176,7 +188,7 @@ export function EntityActivity({
                     <span className="font-semibold">
                       {r.actor_id === userId ? "You" : r.actor_name}
                     </span>{" "}
-                    {activityVerb(r.kind)}
+                    {activityVerb(r.kind, entityType)}
                   </p>
                   {r.detail && (
                     <p className="mt-0.5 line-clamp-3 text-[11px] text-zinc-600 dark:text-zinc-400">

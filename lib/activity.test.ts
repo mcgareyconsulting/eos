@@ -12,6 +12,10 @@ describe("activity trace", () => {
       "description",
       "completed",
       "reopened",
+      "dropped",
+      "solving",
+      "term_short",
+      "term_long",
       "archived",
       "restored",
       "weekly_focus_on",
@@ -23,7 +27,17 @@ describe("activity trace", () => {
       "commented",
       "comment_deleted",
     ];
-    for (const k of kinds) assert.ok(activityVerb(k).length > 0, k);
+    for (const k of kinds) {
+      assert.ok(activityVerb(k).length > 0, k);
+      assert.ok(activityVerb(k, "issue").length > 0, `${k} (issue)`);
+    }
+  });
+
+  test("the same event is worded per entity", () => {
+    assert.equal(activityVerb("created"), "created this to-do");
+    assert.equal(activityVerb("created", "issue"), "raised this issue");
+    assert.equal(activityVerb("completed", "todo"), "completed it");
+    assert.equal(activityVerb("completed", "issue"), "solved it");
   });
 
   test("joinNames falls back per person and is null when empty", () => {
@@ -50,5 +64,21 @@ describe("activity trace", () => {
     assert.equal(rows[0].actor_name, "Steph Benes");
     assert.equal(rows[0].kind, "completed");
     assert.equal(rows[0].detail, null);
+  });
+
+  test("an issue row has no private form and says team", async () => {
+    const fake = new FakeFirestore();
+    await writeActivity({
+      db: fake.asFirestore(),
+      teamId: "t1",
+      entity: { type: "issue", id: "issue-1", ownerId: null },
+      kind: "dropped",
+      actor: { id: "ghost" },
+    });
+    const row = fake.docsIn("entity_activity")[0].data;
+    assert.equal(row.entity_type, "issue");
+    assert.equal(row.visibility, "team");
+    assert.equal(row.owner_id, null);
+    assert.equal(row.actor_name, "Someone");
   });
 });

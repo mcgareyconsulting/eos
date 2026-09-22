@@ -20,7 +20,7 @@ export type MultiSelectOption = { value: string; label: string };
  *
  * Also doubles as a picker (e.g. share-with-teams): `triggerText` pins the
  * trigger copy when the caller renders the selection elsewhere, and `max`
- * disables unchecked rows once the cap is reached.
+ * disables unchecked rows once the cap is reached — silently until it does.
  *
  * `portal` renders the menu into document.body at a fixed position — for a
  * trigger inside a dialog's scrolling body, where an absolute menu is clipped
@@ -249,17 +249,15 @@ export function MultiSelect({
               );
             })}
           </ul>
-          {(active || max !== undefined) && (
+          {(active || atCap) && (
             <div className="flex items-center justify-between border-t border-zinc-200 px-2.5 py-1.5 dark:border-zinc-700">
-              {max !== undefined && (
-                <span
-                  className={cn(
-                    "text-xs tabular-nums",
-                    atCap ? "text-amber-600 dark:text-amber-400" : "text-zinc-500",
-                  )}
-                >
-                  {value.size} of {max}
-                  {atCap ? " — limit reached" : ""}
+              {/* No running count: a cap nobody is near ("0 of 8") is a number
+                  the picker has no reason to show. It speaks up only once the
+                  cap actually bites, because that is when the unchecked rows
+                  go inert and otherwise look broken. */}
+              {atCap && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  Limit reached
                 </span>
               )}
               {active && (

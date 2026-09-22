@@ -11,6 +11,8 @@ import { RichText } from "@/components/rich-text";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { EntityComments } from "@/components/entity-comments";
 import { FollowButton } from "@/components/follow-button";
+import { EntityActivity } from "@/components/entity-activity";
+import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoModal } from "./edit-todo-modal";
 import {
@@ -40,8 +42,8 @@ export type TodoListItem = {
 
 type Member = { user_id: string; full_name: string };
 
-// View-first row: click the title to expand description, follow control and
-// comments. Checkbox / pencil / delete stay separate.
+// View-first row: click the title to expand description, follow control,
+// comments and the activity trace. Checkbox / pencil / delete stay separate.
 export function TodoListRow({
   teamId,
   todo,
@@ -55,7 +57,15 @@ export function TodoListRow({
   /** Start expanded without the deep-link ring or scroll (the peek modal). */
   defaultExpanded = false,
   /** "collapsed" hides the comment editor behind a + Comment button. */
-  commentComposer = "inline",
+  commentComposer = "collapsed",
+  /** The peek modal renders the trace in its own side panel instead. */
+  showActivity = true,
+  /**
+   * Where the row is rendered. In the L10 the list already has a "Done"
+   * divider, so the per-row archiving line is noise, and the timing it would
+   * name is wrong anyway: everything closed by Finish goes then, not Monday.
+   */
+  surface = "page",
 }: {
   teamId: string;
   todo: TodoListItem;
@@ -66,6 +76,8 @@ export function TodoListRow({
   focused?: boolean;
   defaultExpanded?: boolean;
   commentComposer?: "inline" | "collapsed";
+  showActivity?: boolean;
+  surface?: "page" | "meeting";
 }) {
   const [expanded, setExpanded] = useState(focused || defaultExpanded);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -161,6 +173,11 @@ export function TodoListRow({
               Closed {todo.closed_on ?? "—"}
             </span>
           )}
+          {closedPending && surface === "page" && (
+            <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+              {pendingArchiveLabel(todo.visibility)}
+            </span>
+          )}
         </button>
 
         {!hideOwner && (
@@ -229,11 +246,21 @@ export function TodoListRow({
             <button
               type="submit"
               className="rounded p-1 text-zinc-300 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-              aria-label={archived ? "Restore to-do" : "Archive to-do"}
+              aria-label={
+                archived
+                  ? "Restore to-do"
+                  : todo.completed
+                    ? "Archive to-do"
+                    : "Close and archive to-do"
+              }
               title={
                 archived
                   ? "Restore to Active"
-                  : "Archive now (done items also archive when the L10 ends)"
+                  : !todo.completed
+                    ? "Close it and archive now"
+                    : surface === "meeting"
+                      ? "Archive now (done to-dos archive when this meeting ends)"
+                      : "Archive now (done items also archive on their own)"
               }
             >
               <Archive className="h-4 w-4" />
@@ -322,6 +349,17 @@ export function TodoListRow({
             composer={commentComposer}
             className="pt-2"
           />
+          {showActivity && (
+            <EntityActivity
+              teamId={teamId}
+              entityType="todo"
+              entityId={todo.id}
+              visibility={todo.visibility}
+              ownerId={todo.owner_id}
+              userId={userId}
+              className="border-t border-zinc-200 pt-3 dark:border-zinc-800"
+            />
+          )}
         </div>
       )}
     </div>

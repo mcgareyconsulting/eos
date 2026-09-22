@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   getTeamMembers,
@@ -13,11 +14,12 @@ import {
   deleteTaskForTodo,
   type TodoMirror,
 } from "@/lib/google/tasks";
-import { selectTodosCompletedDuringMeeting } from "@/lib/todos-archive";
+import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
+import { canTickMilestone } from "@/lib/rocks-share";
 import { notify } from "@/lib/firebase/notifications";
 import { recordActivity } from "@/lib/firebase/activity";
 import { liveMeetingRoom } from "@/lib/firebase/meeting-room";
-import { joinNames } from "@/lib/activity";
+import { autoArchiveActivity, joinNames } from "@/lib/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
 import {
@@ -209,14 +211,64 @@ export async function addTodo(teamId: string, formData: FormData) {
   revalidatePath("/home");
 }
 
+/**
+ * The to-do a tick from `teamId` may complete. A plain to-do must live on
+ * that team. A milestone goes through the sharing rule instead
+ * (`canTickMilestone`): the parent team (or an admin) ticks anything, and
+ * anyone else — a shared team's member, or an assignee from any team — ticks
+ * only their own milestone or one on a rock they own. Admin SDK bypasses firestore.rules, so this is the real gate.
+ */
+async function requireTickableTodo(
+  db: FirebaseFirestore.Firestore,
+  todoId: string,
+  teamId: string,
+  uid: string,
+  isAdmin: boolean,
+) {
+  const snap = await db.collection("todos").doc(todoId).get();
+  if (!snap.exists) notFound();
+  const data = snap.data() ?? {};
+  const rockId = data.source_rock_id as string | null | undefined;
+  if (!rockId) {
+    if (data.team_id !== teamId) notFound();
+    return snap;
+  }
+  const rockSnap = await db.collection("rocks").doc(rockId).get();
+  const rock = rockSnap.data();
+  if (!rock) {
+    if (data.team_id !== teamId) notFound();
+    return snap;
+  }
+  const rockTeamId = String(rock.team_id ?? "");
+  const ok = canTickMilestone(
+    {
+      team_id: rockTeamId,
+      owner_id: (rock.owner_id as string | null) ?? null,
+      shared_team_ids: (rock.shared_team_ids as string[] | null) ?? [],
+    },
+    { owner_id: (data.owner_id as string | null) ?? null },
+    { uid, fullAccess: isAdmin || rockTeamId === teamId },
+  );
+  if (!ok) notFound();
+  return snap;
+}
+
 export async function toggleTodo(
   teamId: string,
   todoId: string,
   currentlyComplete: boolean,
 ) {
-  const { uid, db, team } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  const snap = await requireTickableTodo(db, todoId, teamId, uid, isAdmin);
   const data = snap.data() ?? {};
+  // A milestone ticked from another team's page (its assignee, from their
+  // own team) is still an event on the rock's team: file the notification
+  // and the activity row there, as that user — not under the viewing team.
+  const homeTeamId = String(data.team_id ?? teamId);
+  const homeTeam =
+    homeTeamId === teamId
+      ? team
+      : { name: String((await db.collection("teams").doc(homeTeamId).get()).data()?.name ?? "Team") };
   const nowComplete = !currentlyComplete;
   await db
     .collection("todos")
@@ -232,15 +284,16 @@ export async function toggleTodo(
       actorId: uid,
       visibility: data.visibility,
       ownerId: data.owner_id,
-      inRoomIds: await liveMeetingRoom(db, teamId),
+      // The room is the home team's — that is where the event is filed.
+      inRoomIds: await liveMeetingRoom(db, homeTeamId),
     }),
     kind: nowComplete ? "completed" : "reopened",
-    ...notifyTarget(teamId, team.name, todoId, data),
+    ...notifyTarget(homeTeamId, homeTeam.name, todoId, data),
     actor: { id: uid },
   });
   await recordActivity({
     db,
-    teamId,
+    teamId: homeTeamId,
     entity: {
       type: "todo",
       id: todoId,
@@ -260,6 +313,13 @@ export async function toggleTodo(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
   revalidatePath(pathFor(teamId));
+  if (data.source_rock_id) {
+    // A milestone ticked from a guest team: both teams' rock lists show it.
+    revalidatePath(`/teams/${teamId}/rocks`);
+    if (data.team_id && data.team_id !== teamId) {
+      revalidatePath(`/teams/${data.team_id}/rocks`);
+    }
+  }
   revalidatePath("/home");
 }
 
@@ -534,6 +594,12 @@ export async function deleteTodo(teamId: string, todoId: string) {
 /**
  * Soft-archive or restore a pure to-do (not rock milestones).
  *
+ * Archiving one that is still open closes it first: it lands in Archived
+ * reading "Closed <date>", which has to be true, and both sweeps define a
+ * sweepable to-do as one carrying `completed_at`. So the archive is a
+ * completion plus an archive — followers hear about it, the trace records
+ * both, and Google Tasks sees the check — and restore reverses both halves.
+ *
  * Restore un-checks it. A to-do is archived because it was completed, and
  * both the Finish sweep and the Monday worker re-archive anything still
  * carrying `completed_at` — so clearing only `archived_at` would let a to-do
@@ -545,20 +611,67 @@ export async function setTodoArchived(
   todoId: string,
   archived: boolean,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, team } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
   if (data.source_rock_id) {
     throw new Error("Milestones are managed under Rocks, not archived here");
   }
+  // Archiving something nobody checked off: close it in the same write.
+  const closingNow = archived && data.completed_at == null;
   await db
     .collection("todos")
     .doc(todoId)
     .update(
       archived
-        ? { archived_at: FieldValue.serverTimestamp() }
+        ? closingNow
+          ? {
+              completed_at: FieldValue.serverTimestamp(),
+              archived_at: FieldValue.serverTimestamp(),
+            }
+          : { archived_at: FieldValue.serverTimestamp() }
         : { archived_at: null, completed_at: null },
     );
+
+  if (closingNow) {
+    await notify({
+      db,
+      recipientIds: recipientsFor({
+        followerIds: followerIdsOf(data),
+        actorId: uid,
+        visibility: data.visibility,
+        ownerId: data.owner_id,
+        inRoomIds: await liveMeetingRoom(db, teamId),
+      }),
+      kind: "completed",
+      ...notifyTarget(teamId, team.name, todoId, data),
+      actor: { id: uid },
+    });
+    await recordActivity({
+      db,
+      teamId,
+      entity: {
+        type: "todo",
+        id: todoId,
+        visibility: data.visibility,
+        ownerId: data.owner_id,
+      },
+      kind: "completed",
+      actor: { id: uid },
+    });
+    const taskId = await upsertTaskForTodo(
+      ownerUidOf(data),
+      mirrorFrom(data, { completed: true }),
+      data.google_task_id,
+    );
+    if (taskId && taskId !== data.google_task_id) {
+      await db
+        .collection("todos")
+        .doc(todoId)
+        .update({ google_task_id: taskId });
+    }
+  }
+
   await recordActivity({
     db,
     teamId,
@@ -577,33 +690,21 @@ export async function setTodoArchived(
 }
 
 /**
- * Archive pure to-dos completed *during this L10* (not all done items).
- * Called from endMeeting. Earlier-in-the-week completions stay checked on
- * Active until the Monday morning sweep (or manual archive).
+ * Archive every pure team to-do closed by the end of this L10 — in the room
+ * or earlier in the week (selectTodosClosedByMeetingEnd). Called from
+ * endMeeting. Each archive leaves an activity row saying the Finish did it.
  */
-export async function archiveTodosCompletedDuringMeeting(
+export async function archiveTodosAtMeetingFinish(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
   const { db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
-  const startMs =
-    typeof m.started_at?.toMillis === "function"
-      ? m.started_at.toMillis()
-      : 0;
   const endMs =
     typeof m.ended_at?.toMillis === "function"
       ? m.ended_at.toMillis()
       : Date.now();
-
-  if (!startMs) {
-    console.error(
-      "[archiveTodosCompletedDuringMeeting] meeting missing started_at",
-      meetingId,
-    );
-    return 0;
-  }
 
   const snap = await db
     .collection("todos")
@@ -611,17 +712,27 @@ export async function archiveTodosCompletedDuringMeeting(
     .get();
 
   const candidates = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const ids = new Set(
-    selectTodosCompletedDuringMeeting(candidates, startMs, endMs),
-  );
+  const ids = new Set(selectTodosClosedByMeetingEnd(candidates, endMs));
   if (ids.size === 0) return 0;
 
-  const batch = db.batch();
-  for (const d of snap.docs) {
-    if (!ids.has(d.id)) continue;
-    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+  // Archive + its activity row commit together; 2 writes per to-do keeps
+  // each batch under Firestore's 500.
+  const due = snap.docs.filter((d) => ids.has(d.id));
+  for (let i = 0; i < due.length; i += 200) {
+    const batch = db.batch();
+    for (const d of due.slice(i, i + 200)) {
+      batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+      batch.set(
+        db.collection("entity_activity").doc(),
+        autoArchiveActivity(
+          { id: d.id, team_id: teamId, ...d.data() },
+          "finish",
+          FieldValue.serverTimestamp(),
+        ),
+      );
+    }
+    await batch.commit();
   }
-  await batch.commit();
   revalidatePath(pathFor(teamId));
   revalidatePath("/home");
   return ids.size;

@@ -38,6 +38,7 @@ export function ScorecardPanel({
   entryByMetricWeek,
   members,
   showManage = true,
+  showArchiveControl = false,
   groups = [],
   compact = false,
   /** L10: when set, Default order walks owner speaking order. */
@@ -57,6 +58,8 @@ export function ScorecardPanel({
   entryByMetricWeek: Record<string, number | null>;
   members: ScorecardMember[];
   showManage?: boolean;
+  /** Archive / Restore only — see ScorecardGrid. */
+  showArchiveControl?: boolean;
   /** Team's scorecard groups; ordering + period for the group headers. */
   groups?: ScorecardGroup[];
   /** L10 segment: weekly-only, no period tabs. */
@@ -300,6 +303,7 @@ export function ScorecardPanel({
         entryByMetricWeek={entryMap}
         members={members}
         showManage={showManage}
+        showArchiveControl={showArchiveControl}
         groups={groups}
         interval={period}
         compact={compact}

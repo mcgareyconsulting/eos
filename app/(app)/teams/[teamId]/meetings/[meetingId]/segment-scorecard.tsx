@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import {
+  canArchiveMetric,
   canEditMetricValues,
   isArchivedMetric,
   metricGroupForTeam,
@@ -58,6 +59,7 @@ export function SegmentScorecard({
   speakingOrder: speakingOrderProp,
   absentUserIds = [],
   isAdmin = false,
+  viewerId,
   teamNameById = {},
   ownerNameById = {},
 }: {
@@ -76,6 +78,8 @@ export function SegmentScorecard({
   absentUserIds?: string[];
   /** Org admins may log values on a borrowed measurable; nobody else may. */
   isAdmin?: boolean;
+  /** Archive / Restore in the room is owner-or-admin, as on the tab. */
+  viewerId: string;
   /**
    * Team id → name, and uid → display name, for labelling borrowed rows.
    *
@@ -153,10 +157,16 @@ export function SegmentScorecard({
           sectionName:
             metricGroupForTeam(m, teamId) ??
             defaultGroupName(normalizeMetricInterval(interval)),
+          canManage: canArchiveMetric({
+            metric: m,
+            teamId,
+            uid: viewerId,
+            isAdmin,
+          }),
           isArchived: isArchivedMetric(m),
         };
       });
-  }, [owned, sharedIn, teamId, teamNameById, ownerNameById, isAdmin]);
+  }, [owned, sharedIn, teamId, teamNameById, ownerNameById, isAdmin, viewerId]);
 
   // Counted across both views so the toggle's numbers hold steady, the same
   // way the standalone tabs count regardless of the period tab.
@@ -247,6 +257,7 @@ export function SegmentScorecard({
       entryByMetricWeek={entryRecord}
       members={members}
       showManage={false}
+      showArchiveControl
       groups={groups}
       compact
       speakingOrder={speakingOrder}

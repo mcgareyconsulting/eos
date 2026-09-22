@@ -1,5 +1,5 @@
 // Pure rules for when a pure to-do should leave Active → Archived.
-// Used by endMeeting (in-meeting completions) and the Monday morning sweep
+// Used by endMeeting (everything closed by Finish) and the Monday morning sweep
 // (prior-week leftovers). Keep selection logic out of server actions so it
 // can be unit-tested without Firestore.
 
@@ -24,37 +24,38 @@ export function isPureActiveCompleted(
 }
 
 /**
- * Archive when the L10 finishes: pure to-dos completed during this meeting's
- * window (started_at → endMs). Items completed earlier in the week stay on
- * Active (checked) until the Monday morning sweep.
+ * Archive when the L10 finishes: every pure to-do closed by the end of this
+ * meeting — checked off in the room, or earlier in the week outside it. The
+ * room has seen it checked, so Finish clears it; whatever closes after
+ * Finish waits for the Monday sweep or the next Finish, whichever comes
+ * first (the row says so — `pendingArchiveLabel`).
  *
- * Private to-dos are excluded: they never appear in the L10, so an owner
- * checking one off from their own tab mid-meeting is a "closed outside the
- * meeting" event — it stays visible (grayed) until the Monday sweep.
- *
- * Known limitation (accepted): actor context isn't tracked, so a TEAM to-do
- * checked off from the standalone tab while an L10 happens to be running is
- * indistinguishable from an in-meeting check and still archives on Finish —
- * the window is wall-clock only.
+ * Private to-dos are excluded: they never appear in the L10, so the room
+ * never reviewed them — the Monday sweep is their only auto-archive path.
  */
-export function selectTodosCompletedDuringMeeting(
+export function selectTodosClosedByMeetingEnd(
   todos: TodoArchiveCandidate[],
-  meetingStartMs: number,
   meetingEndMs: number,
 ): string[] {
-  if (!Number.isFinite(meetingStartMs) || !Number.isFinite(meetingEndMs)) {
-    return [];
-  }
+  if (!Number.isFinite(meetingEndMs)) return [];
   // Small grace so a checkbox right before Finish still counts.
   const end = meetingEndMs + 60_000;
   return todos
     .filter(isPureActiveCompleted)
     .filter((t) => t.visibility !== "private")
-    .filter((t) => {
-      const c = t.completed_at.toMillis();
-      return c >= meetingStartMs && c <= end;
-    })
+    .filter((t) => t.completed_at.toMillis() <= end)
     .map((t) => t.id);
+}
+
+/**
+ * What a completed, not-yet-archived to-do tells the room about when it
+ * leaves Active. Team to-dos go at the next Finish or the Monday sweep;
+ * private ones only on Monday (see selectTodosClosedByMeetingEnd).
+ */
+export function pendingArchiveLabel(visibility: string | null | undefined) {
+  return visibility === "private"
+    ? "Archiving Monday"
+    : "Archiving Monday or after next meeting";
 }
 
 /**
@@ -63,7 +64,7 @@ export function selectTodosCompletedDuringMeeting(
  * Active. Leaves "done this week" visible until next Monday.
  *
  * Private to-dos ARE included here — the sweep is their only auto-archive
- * path (Finish deliberately skips them; see selectTodosCompletedDuringMeeting).
+ * path (Finish deliberately skips them; see selectTodosClosedByMeetingEnd).
  *
  * @param weekStartMs — local Monday 00:00 of the current week, as ms epoch
  */

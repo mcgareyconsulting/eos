@@ -66,6 +66,9 @@ export type TodoBoardDoc = {
   weekly_focus?: boolean;
   source_rock_id: string | null;
   follower_ids?: string[] | null;
+  /** Set on the viewer's milestones from other teams' rocks; absent on
+   *  this team's own rows. */
+  team_id?: string;
 };
 
 export type RockBoardDoc = {
@@ -181,6 +184,7 @@ export function TodosBoard({
   tasksStatus,
   initialTodos,
   initialRocks,
+  extraRocks = [],
   focusTodoId = null,
 }: {
   teamId: string;
@@ -193,6 +197,9 @@ export function TodosBoard({
   tasksStatus: { configured: boolean; connected: boolean; revoked: boolean };
   initialTodos: TodoBoardDoc[];
   initialRocks: RockBoardDoc[];
+  /** Parent rocks of the viewer's milestones on other teams — static; the
+   *  rocks subscription is this team's only. */
+  extraRocks?: RockBoardDoc[];
   /** `?todo=` — the row a notification linked to; opens expanded and scrolled to. */
   focusTodoId?: string | null;
 }) {
@@ -221,6 +228,14 @@ export function TodosBoard({
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
   );
+  // The viewer's milestones on other teams' rocks. Any of their own to-dos
+  // is readable (todos rule, owner clause); narrowed to off-team milestones
+  // in memory — a plain to-do on a team they left has no place here.
+  const elsewhereQuery = useMemo(
+    () =>
+      fsQuery(collection(db, "todos"), where("owner_id", "==", userId)),
+    [db, userId],
+  );
 
   const initialTeam = useMemo(
     () => initialTodos.filter((t) => t.visibility === "team"),
@@ -229,14 +244,40 @@ export function TodosBoard({
   const initialMine = useMemo(
     () =>
       initialTodos.filter(
-        (t) => t.visibility === "private" && t.owner_id === userId,
+        (t) =>
+          t.visibility === "private" &&
+          t.owner_id === userId &&
+          (!t.team_id || t.team_id === teamId),
       ),
-    [initialTodos, userId],
+    [initialTodos, userId, teamId],
+  );
+  const initialElsewhere = useMemo(
+    () => initialTodos.filter((t) => t.team_id && t.team_id !== teamId),
+    [initialTodos, teamId],
   );
 
   const teamTodos = useCollection<TodoBoardDoc>(teamQuery, initialTeam, "todos-team");
   const myTodos = useCollection<TodoBoardDoc>(mineQuery, initialMine, "todos-mine");
-  const rocks = useCollection<RockBoardDoc>(rocksQuery, initialRocks, "todos-rocks");
+  const elsewhereRaw = useCollection<TodoBoardDoc>(
+    elsewhereQuery,
+    initialElsewhere,
+    "todos-elsewhere",
+  );
+  const elsewhere = useMemo(
+    () =>
+      elsewhereRaw.filter(
+        (t) => !!t.source_rock_id && t.team_id && t.team_id !== teamId,
+      ),
+    [elsewhereRaw, teamId],
+  );
+  const rocksLive = useCollection<RockBoardDoc>(rocksQuery, initialRocks, "todos-rocks");
+  const rocks = useMemo(
+    () => [
+      ...rocksLive,
+      ...extraRocks.filter((r) => !rocksLive.some((x) => x.id === r.id)),
+    ],
+    [rocksLive, extraRocks],
+  );
 
   const rockById = useMemo(
     () =>
@@ -254,8 +295,8 @@ export function TodosBoard({
   );
 
   const allRaw = useMemo(
-    () => [...teamTodos, ...myTodos],
-    [teamTodos, myTodos],
+    () => [...teamTodos, ...myTodos, ...elsewhere],
+    [teamTodos, myTodos, elsewhere],
   );
 
   // Split the subscription into the two lists the page renders. Milestones

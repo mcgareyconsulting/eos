@@ -15,5 +15,5 @@
     "resolveJsonModule": true
   },
   "compileOnSave": true,
-  "include": ["src/**/*", "../lib/todos-archive.ts"]
+  "include": ["src/**/*", "../lib/todos-archive.ts", "../lib/activity.ts"]
 }

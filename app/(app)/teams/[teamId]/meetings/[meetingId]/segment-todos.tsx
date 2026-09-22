@@ -511,6 +511,7 @@ export function SegmentTodos({
                   members={members}
                   userId={userId}
                   hideOwner
+                  surface="meeting"
                 />,
               ])}
             </div>

@@ -69,9 +69,17 @@ export default async function TodosPage({
   const members = await getTeamMembers(tid);
   const speakingOrder = reconcileSpeakingOrder(team.speakingOrder, members);
 
-  const [snap, rocksSnap] = await Promise.all([
+  const [snap, rocksSnap, mineSnap] = await Promise.all([
     db.collection("todos").where("team_id", "==", tid).get(),
     db.collection("rocks").where("team_id", "==", tid).get(),
+    // Milestones assigned to the viewer on other teams' rocks
+    // (docs/ROCK_SHARING_RULES.md): the To-Dos page carries every
+    // milestone that is yours, wherever its rock lives.
+    db
+      .collection("todos")
+      .where("owner_id", "==", uid)
+      .where("completed_at", "==", null)
+      .get(),
   ]);
 
   // Project plain fields — Timestamps can't cross the RSC boundary — and drop
@@ -102,15 +110,52 @@ export default async function TodosPage({
     });
   }
 
-  const initialRocks: RockBoardDoc[] = rocksSnap.docs.map((d) => {
-    const x = d.data();
-    return {
-      id: d.id,
-      title: String(x.title ?? "Rock"),
-      status: String(x.status ?? ""),
-      archived_at: toMillis(x.archived_at),
-    };
+  const teamTodoIds = new Set(snap.docs.map((d) => d.id));
+  const myElsewhere = mineSnap.docs.filter((d) => {
+    const t = d.data();
+    return !teamTodoIds.has(d.id) && !!t.source_rock_id && t.archived_at == null;
   });
+  for (const d of myElsewhere) {
+    const t = d.data() as TodoDoc;
+    initialTodos.push({
+      id: d.id,
+      team_id: t.team_id,
+      title: t.title,
+      description: t.description ?? null,
+      owner_id: t.owner_id ?? null,
+      due_date: t.due_date ?? null,
+      completed_at: toMillis(t.completed_at),
+      archived_at: toMillis(t.archived_at),
+      visibility: "team",
+      weekly_focus: false,
+      source_rock_id: t.source_rock_id ?? null,
+      follower_ids: t.follower_ids ?? null,
+    });
+  }
+
+  const toRockBoardDoc = (id: string, x: FirebaseFirestore.DocumentData) => ({
+    id,
+    title: String(x.title ?? "Rock"),
+    status: String(x.status ?? ""),
+    archived_at: toMillis(x.archived_at),
+  });
+  const initialRocks: RockBoardDoc[] = rocksSnap.docs.map((d) =>
+    toRockBoardDoc(d.id, d.data()),
+  );
+  // Parent rocks of those milestones, so the rows can name their rock.
+  const extraRockIds = [
+    ...new Set(myElsewhere.map((d) => d.data().source_rock_id as string)),
+  ].filter((id) => !rocksSnap.docs.some((d) => d.id === id));
+  const extraRocks: RockBoardDoc[] =
+    extraRockIds.length === 0
+      ? []
+      : (
+          await db.getAll(
+            ...extraRockIds.map((id) => db.collection("rocks").doc(id)),
+          )
+        )
+          .filter((d) => d.exists)
+          .map((d) => toRockBoardDoc(d.id, d.data() ?? {}));
 
   const rosterIds = new Set(members.map((m) => m.user_id));
   const filterRaw = ownerParam || "all";
@@ -133,6 +178,7 @@ export default async function TodosPage({
       tasksStatus={tasksStatus}
       initialTodos={initialTodos}
       initialRocks={initialRocks}
+      extraRocks={extraRocks}
       focusTodoId={focusTodoId}
     />
   );

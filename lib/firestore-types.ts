@@ -39,6 +39,13 @@ export type RockDoc = {
   // modal seeds its share picker from it, and saving without it wipes the
   // field on the rock doc.
   shared_team_ids?: string[] | null;
+  // "Keep on this team" (lib/rocks-share.ts): every milestone treated as
+  // locked, and no team shares. Absent reads as off.
+  team_only?: boolean;
+  // Owners of every milestone on the rock, rewritten on each save. Lets
+  // firestore.rules grant assignees what lib/rocks-share.ts hasFullRockView
+  // grants server-side (the rock doc, its comments, its status history).
+  milestone_owner_ids?: string[];
   // Timestamp from onSnapshot, absent from the server prefetch (which
   // filters archived rocks out entirely) or on legacy docs created before the
   // field existed. Only ever read as truthy.
@@ -47,7 +54,7 @@ export type RockDoc = {
 
 // ---------------------------------------------------------------------------
 // todos (also used for rock milestones, which are todos with source_rock_id
-// set and visibility "team")
+// set; a milestone's sharing lock is `team_hidden`, not visibility)
 // ---------------------------------------------------------------------------
 
 export type TodoDoc = {
@@ -67,6 +74,9 @@ export type TodoDoc = {
   // (treat as active either way).
   archived_at?: { toDate: () => Date; toMillis: () => number } | null;
   visibility: "team" | "private";
+  // Milestones only: locked — not passed on to the assignee's teams
+  // (lib/rocks-share.ts). Absent reads as unlocked.
+  team_hidden?: boolean;
   weekly_focus?: boolean;
   source_issue_id: string | null;
   source_meeting_id: string | null;

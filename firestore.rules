@@ -164,6 +164,23 @@ service cloud.firestore {
     function rockSharedToMe() {
       return listSharedToMe(resource.data);
     }
+    // The whole rock, client half of lib/rocks-share.ts hasFullRockView:
+    // parent team, a shared team, the rock's owner, or an assignee (the
+    // rock carries `milestone_owner_ids`, rewritten on every save). Gates
+    // the rock doc, its status history and its comments.
+    function rockFullAccess(data) {
+      return isMember(data.team_id)
+        || listSharedToMe(data)
+        || (authed()
+            && (data.owner_id == request.auth.uid
+                || data.get('milestone_owner_ids', []).hasAny([request.auth.uid])));
+    }
+    function rockFullAccessById(rockId) {
+      return rockId is string
+        && rockId != ''
+        && exists(/databases/$(db)/documents/rocks/$(rockId))
+        && rockFullAccess(get(/databases/$(db)/documents/rocks/$(rockId)).data);
+    }
     function sourceRockVisibleToMe(rockId) {
       return rockId is string
         && rockId != ''
@@ -174,7 +191,7 @@ service cloud.firestore {
         );
     }
     match /rocks/{id} {
-      allow read:   if admin() || isMember(resource.data.team_id) || rockSharedToMe();
+      allow read:   if admin() || rockFullAccess(resource.data);
       allow update, delete: if admin() || isMember(resource.data.team_id);
       allow create: if admin() || isMember(request.resource.data.team_id);
     }
@@ -183,7 +200,7 @@ service cloud.firestore {
     match /rock_status_updates/{id} {
       allow read:   if admin()
                     || isMember(resource.data.team_id)
-                    || sourceRockVisibleToMe(resource.data.rock_id);
+                    || rockFullAccessById(resource.data.rock_id);
       allow create: if admin()
                     || (isMember(request.resource.data.team_id)
                         && request.resource.data.user_id == request.auth.uid);
@@ -202,11 +219,16 @@ service cloud.firestore {
           .hasAny(["archived_at", "completed_at"]) == false;
       }
       allow read: if admin()
+                  // Your own to-do or milestone, from any team — a guest-team
+                  // member assigned a milestone on another team's rock.
+                  || (authed() && resource.data.owner_id == request.auth.uid)
                   || (isMember(resource.data.team_id)
-                      && (resource.data.visibility == "team"
-                          || resource.data.owner_id == request.auth.uid))
+                      && resource.data.visibility == "team")
                   // Guest team can see team-visible milestones of a rock
-                  // shared into them (parent team_id is not theirs).
+                  // shared into them (parent team_id is not theirs). Every
+                  // team share is full (lib/rocks-share.ts); a team that sees
+                  // a rock only through its people's milestones gets them
+                  // server-side, not through a client read.
                   || (resource.data.visibility == "team"
                       && sourceRockVisibleToMe(resource.data.source_rock_id));
       allow update: if admin()
@@ -248,9 +270,18 @@ service cloud.firestore {
     // Writes go through server actions (admin SDK); client rules cover live
     // reads + defense-in-depth if a client write path is added later.
     match /entity_comments/{id} {
-      allow read:   if admin() || isMember(resource.data.team_id);
+      // A rock has one thread, filed under its parent team, readable by
+      // everyone with the whole rock (docs/ROCK_SHARING_RULES.md). Other
+      // entities stay team-scoped.
+      function rockThread(data) {
+        return data.entity_type == 'rock' && rockFullAccessById(data.entity_id);
+      }
+      allow read:   if admin()
+                    || isMember(resource.data.team_id)
+                    || rockThread(resource.data);
       allow create: if admin()
-                    || (isMember(request.resource.data.team_id)
+                    || ((isMember(request.resource.data.team_id)
+                         || rockThread(request.resource.data))
                         && request.resource.data.author_id == request.auth.uid);
       allow update: if false; // append-only; edit = delete + re-post
       allow delete: if admin()

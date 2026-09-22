@@ -106,6 +106,8 @@ export function MetricExpand({
     isShared?: boolean;
     /** Already archived: Restore replaces Archive, and Delete stays available. */
     isArchived?: boolean;
+    /** Only the Archive / Restore control (the live L10). */
+    archiveOnly?: boolean;
   };
 }) {
   const status = trendStatus(values, metric.goal, metric.direction);
@@ -188,7 +190,20 @@ export function MetricExpand({
           />
         </div>
 
-        {manage && (
+        {manage?.archiveOnly ? (
+          // The L10's bar: Archive / Restore and nothing else. Edit, Group and
+          // Delete are set-up work and stay on the Scorecard tab.
+          manage.canManage &&
+          manage.isShared !== true && (
+            <div className="flex items-center justify-end border-t border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+              <ArchiveToggle
+                teamId={manage.teamId}
+                metricId={metric.id}
+                isArchived={manage.isArchived === true}
+              />
+            </div>
+          )
+        ) : manage && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
             <span className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-zinc-400">
               Group
@@ -252,35 +267,11 @@ export function MetricExpand({
                       the button can say in the space it has. */}
                   {manage.canManage && (
                     <>
-                      {/* Reversible, so no confirm — same as setRockArchived. */}
-                      <form
-                        action={setMetricArchived.bind(
-                          null,
-                          manage.teamId,
-                          metric.id,
-                          !manage.isArchived,
-                        )}
-                      >
-                        <button
-                          type="submit"
-                          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                        >
-                          {manage.isArchived ? (
-                            <>
-                              <ArchiveRestore
-                                className="h-3.5 w-3.5"
-                                aria-hidden
-                              />
-                              Restore measurable
-                            </>
-                          ) : (
-                            <>
-                              <Archive className="h-3.5 w-3.5" aria-hidden />
-                              Archive measurable
-                            </>
-                          )}
-                        </button>
-                      </form>
+                      <ArchiveToggle
+                        teamId={manage.teamId}
+                        metricId={metric.id}
+                        isArchived={manage.isArchived === true}
+                      />
                       <ConfirmSubmitForm
                         action={deleteMetric.bind(null, manage.teamId, metric.id)}
                         title="Delete measurable"
@@ -304,6 +295,38 @@ export function MetricExpand({
         )}
       </div>
     </div>
+  );
+}
+
+/** Reversible, so no confirm — same as setRockArchived. */
+function ArchiveToggle({
+  teamId,
+  metricId,
+  isArchived,
+}: {
+  teamId: string;
+  metricId: string;
+  isArchived: boolean;
+}) {
+  return (
+    <form action={setMetricArchived.bind(null, teamId, metricId, !isArchived)}>
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        {isArchived ? (
+          <>
+            <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
+            Restore measurable
+          </>
+        ) : (
+          <>
+            <Archive className="h-3.5 w-3.5" aria-hidden />
+            Archive measurable
+          </>
+        )}
+      </button>
+    </form>
   );
 }
 

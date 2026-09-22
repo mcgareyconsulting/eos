@@ -36,7 +36,7 @@ import {
 } from "@/lib/l10/driver";
 import { archiveHeadlinesDiscussedDuringMeeting } from "../headlines/actions";
 import { archiveIssuesClosedDuringMeeting } from "../issues/actions";
-import { archiveTodosCompletedDuringMeeting } from "../todos/actions";
+import { archiveTodosAtMeetingFinish } from "../todos/actions";
 import {
   RATING_LOCKED_MESSAGE,
   ratingWriteAllowed,
@@ -569,10 +569,10 @@ export async function endMeeting(teamId: string, meetingId: string) {
       );
     }
     try {
-      await archiveTodosCompletedDuringMeeting(teamId, meetingId);
+      await archiveTodosAtMeetingFinish(teamId, meetingId);
     } catch (e) {
       console.error(
-        "[endMeeting] archiveTodosCompletedDuringMeeting failed:",
+        "[endMeeting] archiveTodosAtMeetingFinish failed:",
         e,
       );
     }

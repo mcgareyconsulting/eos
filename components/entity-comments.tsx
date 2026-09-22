@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   collection,
   query as fsQuery,
@@ -12,6 +12,7 @@ import { useCollection } from "@/lib/firebase/use-collection";
 import {
   addEntityComment,
   deleteEntityComment,
+  loadCommentAuthorNames,
   type CommentEntityType,
 } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
 import { RichText } from "@/components/rich-text";
@@ -68,14 +69,23 @@ export function EntityComments({
   className?: string;
 }) {
   const db = getClientDb();
+  // A rock has one thread across every team that has it, so its query is
+  // by entity alone (the rule gates who may read it); other entities stay
+  // team-scoped.
   const q = useMemo(
     () =>
-      fsQuery(
-        collection(db, "entity_comments"),
-        where("team_id", "==", teamId),
-        where("entity_type", "==", entityType),
-        where("entity_id", "==", entityId),
-      ),
+      entityType === "rock"
+        ? fsQuery(
+            collection(db, "entity_comments"),
+            where("entity_type", "==", "rock"),
+            where("entity_id", "==", entityId),
+          )
+        : fsQuery(
+            collection(db, "entity_comments"),
+            where("team_id", "==", teamId),
+            where("entity_type", "==", entityType),
+            where("entity_id", "==", entityId),
+          ),
     [db, teamId, entityType, entityId],
   );
   const comments = useCollection<CommentDoc>(q, []);
@@ -88,9 +98,39 @@ export function EntityComments({
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(composer === "inline");
 
+  // Authors off this roster (a rock's thread spans teams) are named on
+  // demand.
+  const [extraNames, setExtraNames] = useState<Record<string, string>>({});
+  const unknownAuthors = useMemo(
+    () =>
+      [...new Set(comments.map((c) => c.author_id))].filter(
+        (id) =>
+          id !== userId &&
+          !members.some((m) => m.user_id === id) &&
+          !(id in extraNames),
+      ),
+    [comments, members, userId, extraNames],
+  );
+  useEffect(() => {
+    if (unknownAuthors.length === 0) return;
+    let cancelled = false;
+    loadCommentAuthorNames(teamId, unknownAuthors)
+      .then((got) => {
+        if (cancelled) return;
+        // Remember misses too, so an unnamed author isn't refetched forever.
+        const filled = Object.fromEntries(unknownAuthors.map((id) => [id, "—"]));
+        setExtraNames((prev) => ({ ...prev, ...filled, ...got }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId, unknownAuthors]);
   const authorName = (id: string) => {
     if (id === userId) return "You";
-    return members.find((m) => m.user_id === id)?.full_name ?? "—";
+    return (
+      members.find((m) => m.user_id === id)?.full_name ?? extraNames[id] ?? "—"
+    );
   };
 
   // @mentions ride with followers: to-dos and issues have people to tell,

@@ -8,7 +8,8 @@ import {
   selectIssuesClosedDuringMeeting,
   selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
-  selectTodosCompletedDuringMeeting,
+  selectTodosClosedByMeetingEnd,
+  pendingArchiveLabel,
   type RockArchiveCandidate,
   type TodoArchiveCandidate,
 } from "./todos-archive";
@@ -28,26 +29,25 @@ function todo(
   };
 }
 
-describe("selectTodosCompletedDuringMeeting", () => {
+describe("selectTodosClosedByMeetingEnd", () => {
   const start = 1_000_000;
   const end = 1_090_000;
 
-  test("archives pure todos completed inside the meeting window", () => {
-    const ids = selectTodosCompletedDuringMeeting(
+  test("archives pure todos closed by meeting end, in or out of the meeting", () => {
+    const ids = selectTodosClosedByMeetingEnd(
       [
         todo({ id: "in", completed_at: ts(start + 5_000) }),
-        todo({ id: "before", completed_at: ts(start - 1) }),
+        todo({ id: "before", completed_at: ts(start - 86_400_000) }),
         todo({ id: "after", completed_at: ts(end + 120_000) }),
         todo({ id: "open", completed_at: null }),
       ],
-      start,
       end,
     );
-    assert.deepEqual(ids, ["in"]);
+    assert.deepEqual(ids, ["in", "before"]);
   });
 
   test("skips milestones and already-archived", () => {
-    const ids = selectTodosCompletedDuringMeeting(
+    const ids = selectTodosClosedByMeetingEnd(
       [
         todo({
           id: "ms",
@@ -60,25 +60,23 @@ describe("selectTodosCompletedDuringMeeting", () => {
           archived_at: ts(end),
         }),
       ],
-      start,
       end,
     );
     assert.deepEqual(ids, []);
   });
 
   test("allows a 60s grace past meeting end", () => {
-    const ids = selectTodosCompletedDuringMeeting(
+    const ids = selectTodosClosedByMeetingEnd(
       [todo({ id: "edge", completed_at: ts(end + 30_000) })],
-      start,
       end,
     );
     assert.deepEqual(ids, ["edge"]);
   });
 
-  test("leaves private todos for the Monday sweep even inside the window", () => {
-    // A member checking off their own private to-do mid-meeting is a
-    // "closed outside the meeting" event — Finish must not archive it.
-    const ids = selectTodosCompletedDuringMeeting(
+  test("leaves private todos for the Monday sweep", () => {
+    // Private to-dos never appear in the L10, so the room never reviewed
+    // them — Finish must not archive them.
+    const ids = selectTodosClosedByMeetingEnd(
       [
         todo({
           id: "priv",
@@ -92,10 +90,23 @@ describe("selectTodosCompletedDuringMeeting", () => {
         }),
         todo({ id: "unset", completed_at: ts(start + 5_000) }),
       ],
-      start,
       end,
     );
     assert.deepEqual(ids, ["team", "unset"]);
+  });
+});
+
+describe("pendingArchiveLabel", () => {
+  test("team to-dos leave at Finish or Monday; private only Monday", () => {
+    assert.equal(
+      pendingArchiveLabel("team"),
+      "Archiving Monday or after next meeting",
+    );
+    assert.equal(
+      pendingArchiveLabel(undefined),
+      "Archiving Monday or after next meeting",
+    );
+    assert.equal(pendingArchiveLabel("private"), "Archiving Monday");
   });
 });
 
@@ -175,13 +186,13 @@ describe("restore survives the Finish sweep", () => {
   test("a restored to-do is not re-archived (completed_at cleared)", () => {
     const restored = todo({ id: "t", archived_at: null, completed_at: null });
     assert.deepEqual(
-      selectTodosCompletedDuringMeeting([restored], start, end),
+      selectTodosClosedByMeetingEnd([restored], end),
       [],
     );
     // Guard the test itself: with completed_at still set it WOULD be swept.
     const notCleared = todo({ id: "t", completed_at: ts(start + 1) });
     assert.deepEqual(
-      selectTodosCompletedDuringMeeting([notCleared], start, end),
+      selectTodosClosedByMeetingEnd([notCleared], end),
       ["t"],
     );
   });

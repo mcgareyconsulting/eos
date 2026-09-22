@@ -68,6 +68,47 @@ export type ActivityDoc = {
 };
 
 /**
+ * Actor for rows no person caused — the Finish and Monday archive sweeps.
+ * The feed renders these without a name ("Archived automatically").
+ */
+export const SYSTEM_ACTOR_ID = "system";
+
+export type AutoArchiveReason = "finish" | "monday";
+
+/**
+ * The `archived` row an automatic sweep writes, so the trace says why a
+ * to-do left Active without anyone touching it. `createdAt` is the caller's
+ * server timestamp — the app and the Functions bundle each bring their own
+ * firebase-admin.
+ */
+export function autoArchiveActivity(
+  todo: {
+    id: string;
+    team_id: string;
+    visibility?: string | null;
+    owner_id?: string | null;
+  },
+  reason: AutoArchiveReason,
+  createdAt: unknown,
+): ActivityDoc {
+  return {
+    team_id: todo.team_id,
+    entity_type: "todo",
+    entity_id: todo.id,
+    visibility: todo.visibility === "private" ? "private" : "team",
+    owner_id: todo.owner_id || null,
+    kind: "archived",
+    actor_id: SYSTEM_ACTOR_ID,
+    actor_name: "EOS",
+    detail:
+      reason === "finish"
+        ? "Closed out when the L10 finished"
+        : "Closed out by the Monday sweep",
+    created_at: createdAt,
+  };
+}
+
+/**
  * The sentence the feed shows after the actor's name (rendered bold).
  * Rows written before issues existed carry no `entity_type`; they are
  * to-dos, and the default keeps their wording.

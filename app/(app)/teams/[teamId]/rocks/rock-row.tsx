@@ -25,6 +25,7 @@ import { STATUS_BAR, isRockStatus, type RockStatus } from "./status";
 import {
   MilestoneChecklist,
   MilestoneProgress,
+  OnlyYouTag,
   type MilestoneSerialized,
 } from "./milestone-checklist";
 import { type StatusUpdateSerialized } from "./status-history";
@@ -41,6 +42,7 @@ type Rock = {
   rock_type: string | null;
   is_company_rock?: boolean | null;
   shared_team_ids?: string[] | null;
+  team_only?: boolean | null;
   archived_at?: unknown | null;
 };
 
@@ -66,6 +68,9 @@ export function RockRow({
   canFlagCompany = false,
   access = "edit",
   fromTeamName,
+  carrierView = false,
+  viewerOnly = false,
+  fullMilestones,
 }: {
   teamId: string;
   userId: string;
@@ -94,6 +99,18 @@ export function RockRow({
    * is what says so.
    */
   fromTeamName?: string;
+  /**
+   * An assignment row (lib/rocks-share.ts assignmentCarriers): the team sees
+   * the rock only through one of its people's milestones. `milestones` is
+   * that person's; progress is hidden — it belongs to full views.
+   */
+  carrierView?: boolean;
+  /** An assignment row that exists only for the viewer — their locked
+   *  milestones; the rest of the team doesn't see it. Greyed. */
+  viewerOnly?: boolean;
+  /** The whole rock's milestones, when the viewer has it in full — used by
+   *  the detail and edit views of an assignment row. */
+  fullMilestones?: MilestoneSerialized[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -131,21 +148,29 @@ export function RockRow({
   const archivedRow = rock.archived_at != null;
   const toggleArchive = setRockArchived.bind(null, teamId, rock.id, !archivedRow);
 
-  const detailMilestones = milestones.map((m) => ({
+  // Detail and edit show the whole rock to anyone who has it in full.
+  const wholeRock = fullMilestones ?? milestones;
+  const detailMilestones = wholeRock.map((m) => ({
     id: m.id,
     title: m.title,
     due_date: m.due_date,
     completed: m.completed,
     owner_name: m.owner_id
-      ? (members.find((x) => x.user_id === m.owner_id)?.full_name ?? null)
+      ? (m.owner_label ??
+        members.find((x) => x.user_id === m.owner_id)?.full_name ??
+        null)
       : null,
   }));
 
   return (
-    <div className="group flex items-stretch">
+    <div
+      className={cn("group flex items-stretch", viewerOnly && "bg-zinc-50/70 dark:bg-zinc-900/40")}
+    >
       <div className={cn("w-[3px] shrink-0", STATUS_BAR[status])} aria-hidden />
 
-      <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
+      <div
+        className={cn("min-w-0 flex-1 py-2.5 pl-3 pr-4", viewerOnly && "opacity-70")}
+      >
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -191,13 +216,14 @@ export function RockRow({
                   from {fromTeamName}
                 </span>
               ) : null}
+              {viewerOnly ? <OnlyYouTag /> : null}
             </div>
 
             <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
               <span className="truncate">{displayOwner}</span>
               <span className="text-zinc-300 dark:text-zinc-600">·</span>
               <span className="tabular-nums">{rock.quarter || "—"}</span>
-              {milestones.length > 0 ? (
+              {milestones.length > 0 && !carrierView ? (
                 <>
                   <span className="text-zinc-300 dark:text-zinc-600">·</span>
                   <MilestoneProgress
@@ -249,7 +275,7 @@ export function RockRow({
               teamId={teamId}
               rock={rock}
               members={members}
-              milestones={milestones}
+              milestones={wholeRock}
               defaultDue={defaultDue}
               currentUserId={currentUserId}
               teamName={teamName}
@@ -309,9 +335,11 @@ export function RockRow({
                 </span>
               </Fact>
               <Fact label="Milestones" last>
-                {milestones.length === 0
-                  ? "None"
-                  : `${doneCount} of ${milestones.length} done`}
+                {carrierView
+                  ? `${milestones.length} assigned here`
+                  : milestones.length === 0
+                    ? "None"
+                    : `${doneCount} of ${milestones.length} done`}
               </Fact>
             </dl>
 
@@ -349,6 +377,8 @@ export function RockRow({
                 members={members}
                 milestones={milestones}
                 readOnly={!canEdit}
+                currentUserId={currentUserId}
+                rockOwnerId={rock.owner_id}
               />
 
               <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
@@ -357,7 +387,7 @@ export function RockRow({
                   teamId={teamId}
                   rock={rock}
                   members={members}
-                  milestones={milestones}
+                  milestones={wholeRock}
                   defaultDue={defaultDue}
                   currentUserId={currentUserId}
                   teamName={teamName}

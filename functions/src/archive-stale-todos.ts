@@ -15,6 +15,7 @@ import {
   selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
 } from "../../lib/todos-archive";
+import { autoArchiveActivity } from "../../lib/activity";
 
 const TIME_ZONE = "America/Chicago";
 const BATCH_SIZE = 400;
@@ -43,6 +44,39 @@ async function archiveCollection(
     written += chunk.length;
   }
   return written;
+}
+
+/**
+ * To-dos also get an activity row per archive, in the same batch, so the
+ * to-do's trace says the Monday sweep closed it out (lib/activity.ts).
+ * Two writes per to-do, so half the chunk size.
+ */
+async function archiveTodos(
+  db: FirebaseFirestore.Firestore,
+  docs: FirebaseFirestore.QueryDocumentSnapshot[],
+  ids: Set<string>,
+): Promise<number> {
+  const due = docs.filter((d) => ids.has(d.id));
+  const chunkSize = BATCH_SIZE / 2;
+  for (let i = 0; i < due.length; i += chunkSize) {
+    const batch = db.batch();
+    for (const d of due.slice(i, i + chunkSize)) {
+      const data = d.data();
+      batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+      if (typeof data.team_id === "string" && data.team_id) {
+        batch.set(
+          db.collection("entity_activity").doc(),
+          autoArchiveActivity(
+            { ...data, id: d.id, team_id: data.team_id },
+            "monday",
+            FieldValue.serverTimestamp(),
+          ),
+        );
+      }
+    }
+    await batch.commit();
+  }
+  return due.length;
 }
 
 export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
@@ -94,7 +128,7 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
   );
 
   const [todos, issues, headlines, rocks] = await Promise.all([
-    archiveCollection(db, "todos", todoIds),
+    archiveTodos(db, todosSnap.docs, new Set(todoIds)),
     archiveCollection(db, "issues", issueIds),
     archiveCollection(db, "headlines", headlineIds),
     archiveCollection(db, "rocks", rockIds),

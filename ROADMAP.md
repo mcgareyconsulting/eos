@@ -1,6 +1,6 @@
 ---
 project: HPB
-updated: 2026-09-16
+updated: 2026-09-17
 verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
@@ -2111,7 +2111,23 @@ display formatter is *not* substitutable.
 - 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox** on a self-created measurable: form seeds `1234.56` while the grid behind it shows `>= $1,235`; renaming and saving left the stored goal at `1234.56` (checked in Firestore, not just in the UI); interval free when ungrouped or free-labelled, and **disabled at `monthly` naming the group** once assigned to a defined monthly group. Probe metric and group deleted; sandbox back to 5 metrics / 0 groups
 
 ### N54 · Directory as a person-per-row table (ninety parity)
-*W3 · not-started · due — · deps N38, P2-7, N35 · owner daniel · src session-2026-09-04 · upd 2026-09-10*
+*W3 · in-progress · due — · deps N38, P2-7, N35 · owner daniel · src session-2026-09-04 · upd 2026-09-17*
+
+**2026-09-17 — built on the working tree, not yet committed.** `/directory`
+is now the one people surface: a fixed-layout table in the seed file's own
+columns (First · Last · Team · Role access · Email), search, custom
+multi-select Role and Team filters (`components/ui/multi-select.tsx`), and —
+admin-only — a per-row ⋯ menu (Edit teams & access: team checklist with a
+Leader toggle per team plus an Org-admin switch; Revoke access) and header
+actions (Add person, New team, Import seed file). It **replaced** the admin
+People/Teams tabs, the Members → All teams tab, and the per-team Members
+page itself: Directory took Members' slot in the team nav; Meet link and
+speaking order moved to Meetings as "Meeting settings"; the leader-side
+roster actions moved to `app/(app)/directory/roster-actions.ts` with no UI
+yet (leaders currently manage rosters only through an admin). Rename team
+has an action but no UI. Data: `lib/firebase/directory.ts`
+(`getDirectoryPeople`, union of `/users` and Identity Platform, tested).
+Not done: avatars, sort controls, leader-side roster UI.
 
 Effort M. daniel, with a ninety screenshot: "we want our directory view to
 match the content/columns in this table, obviously keeping our good styling."
@@ -2764,7 +2780,93 @@ tokens + webhook secret in Secret Manager.
 
 ---
 
-## Intake — 2026-09-10 Steph tracker rows
+## Intake — 2026-09-17 To-Dos demo feedback
+
+**Not workstream items yet, and deliberately not in `queue`.** Seven lines
+from daniel after the 2026-09-17 to-dos demo ("went great"). Six became items
+(N62–N67); one is a follow-up, not an item: **driver enforcement (N59)
+appeared to work in the demo — needs a Joe follow-up to confirm from his
+seat.** Each item carries a code finding made 2026-09-17, before scoping;
+none has been ordered.
+
+### N62 · To-do archive controls audit + archive note + "Archiving Monday" on closed-out to-dos
+*W3 · not-started · due — · deps N45 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+Three asks on one mechanism: (a) audit the archive controls on to-dos, (b) an
+archive note on the to-do, (c) a completed-but-not-yet-archived to-do should
+say **"Archiving Monday"** so the room knows it will leave on its own.
+
+Finding: the mechanism is two sweeps with one predicate (`lib/todos-archive.ts`,
+`isPureActiveCompleted`): the Finish sweep at `endMeeting` archives to-dos
+completed *during* the meeting window, and the Monday sweep takes the rest of
+the week's completions. So "Archiving Monday" is a pure display rule — a
+completed, unarchived, pure to-do (not a milestone) is by definition one the
+Monday sweep will take. (c) is S. (a) needs the archive/restore paths
+re-read against N45's restore semantics (`archived_at` + `completed_at`
+cleared together). (b) is a field on the doc and a line in the edit view —
+decide whether it is free text or the sweep's own reason (`finish` /
+`monday` / manual), which is also what an audit-log row would want.
+**Confirm where the Monday sweep actually runs** before building on it — the
+code names it, but this pass did not locate the scheduled job.
+
+### N63 · Archive a scorecard measurable from inside the L10
+*W3 · not-started · due — · deps N48 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+Archive exists on the Scorecard tab (`scorecard/actions.ts`, N48 made the
+delete/archive control visible); the ask is the same control reachable
+during the live meeting's scorecard segment. Likely S once the L10
+scorecard segment renders the same row component as the tab (see N40);
+otherwise it is a second entry point to one action.
+
+### N64 · To-Dos page: expansion view instead of modal, comment collapsed behind "+ Comment", activity feed
+*W3 · not-started · due — · deps N61, N22 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+daniel: keep the **expansion view** on the actual To-Dos page instead of the
+edit modal (`todos/edit-todo-modal.tsx`); collapse the rich-text comment
+editor behind a **+ Comment** button; add the **activity feed**. Finding:
+comments already accept to-dos (`CommentEntityType` is now
+`"issue" | "rock" | "todo"`, entity-comments/actions.ts) and an activity model
+exists (`lib/activity.ts`, `lib/firebase/activity.ts`) — so this is layout
+and wiring, not a new surface. M: the expansion row replaces a modal that
+also hosts the form fields (`todo-form-fields.tsx`), so the edit affordances
+have to survive the move.
+
+### N65 · Confirm the three-tier rock sharing model
+*W3 · not-started · due — · deps N4, N20 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+To confirm with the client, verbatim: **(1) full**, **(2) team sees the rock
+but only the teammate's milestones**, **(3) fully private to the assignee**.
+Finding: today's model is not tiered by visibility. A rock has a parent
+`team_id` plus optional `shared_team_ids` (cross-team share, `lib/rocks-share.ts`;
+access is by the viewer's membership, mirrored in `firestore.rules`), and
+`rocks/actions.ts` writes a fixed `visibility: "team"`. Only **to-dos** carry
+`"team" | "private"` (`lib/firestore-types.ts`). Tier 2 is the new concept —
+a rock visible to the team with milestone visibility narrowed to the owner —
+and it touches the rules read grant, so it sits with N20, not just the UI.
+
+### N66 · Milestone assignment open to the whole org
+*W3 · not-started · due — · deps N54, N4 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+Milestone owner pickers take the team roster (`rock-modal.tsx` and
+`milestone-checklist.tsx` both receive `members`). The ask is any person in
+the org. Finding: N54's `getDirectoryPeople` is the org-wide list; the
+picker becomes a searchable person select over it. What it changes
+downstream: a milestone (a `todos` doc with `source_rock_id`) owned by
+someone off the rock's team has to surface on *their* Home / To-Dos
+(`lib/home-board.ts` filters by team membership) and pass the rules — the
+same viewer-vs-team question N4 answered for shared rocks.
+
+### N67 · Improved role designation — per team?
+*W3 · not-started · due — · deps P2-7 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+
+Recorded as a question, not a design: "Improved role designation? Per team?"
+Finding: roles are exactly `leader | member` on `team_members`, plus the
+org-admin claim — three levels, nothing per-team beyond leader. The seed
+file's *Role access* column carried ninety's `Manager` / `Managee`, which the
+importer flattens to member (only `Admin` grants anything). Decide what a
+finer role would *permit* before adding one; a label that grants nothing is
+the `title` field, which already exists.
+
 
 **Not workstream items yet, and deliberately not in `queue`.** Four rows
 dated 2026-09-10, all Steph Benes, one per area — Issues, Meetings, Import,
@@ -3443,6 +3545,7 @@ distinct from Trail entries, which carry a layer + src.*
 | feedback-2026-09-10 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes feedback dated 2026-09-10, four rows; anchors are the reporter + area (Issues / Meetings / Import / To-Dos). N59 / N60 / N61, plus a second report on N10 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
+| demo-2026-09-17 | (daniel's notes after the to-dos demo, this session — not a repo artifact) | Seven lines; anchors are the line topics (archive / driver / scorecard / to-dos page / rock sharing / milestones / roles). N62–N67 |
 
 `src pr#NN` refs resolve to pull requests on the project's GitHub origin
 (`mcgareyconsulting`); the Bitbucket move (N19) will change that home.

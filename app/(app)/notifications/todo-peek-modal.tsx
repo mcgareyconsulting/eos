@@ -163,7 +163,7 @@ function LiveRow({
           members={members}
           userId={userId}
           defaultExpanded
-          commentComposer="collapsed"
+          showActivity={false}
         />
       </div>
       <aside className="min-h-0 overflow-y-auto border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 lg:border-l lg:border-t-0">

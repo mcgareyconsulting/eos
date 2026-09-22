@@ -27,7 +27,11 @@ import {
 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
-import { activityVerb, type ActivityKind } from "@/lib/activity";
+import {
+  activityVerb,
+  SYSTEM_ACTOR_ID,
+  type ActivityKind,
+} from "@/lib/activity";
 import { LocalTime } from "@/components/local-time";
 import { cn } from "@/lib/utils";
 
@@ -152,8 +156,8 @@ export function EntityActivity({
 
       {sorted.length === 0 ? (
         <p className="text-xs text-zinc-500">
-          Nothing recorded yet. Edits, completions, follows and comments
-          from here on will show up in order.
+          Nothing recorded yet. Edits, completions, archives, follows and
+          comments from here on will show up in order.
         </p>
       ) : (
         <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[11px] before:top-2 before:w-px before:bg-zinc-200 dark:before:bg-zinc-800">
@@ -173,10 +177,19 @@ export function EntityActivity({
                 </span>
                 <div className="min-w-0 flex-1 pt-0.5">
                   <p className="text-xs text-zinc-800 dark:text-zinc-200">
-                    <span className="font-semibold">
-                      {r.actor_id === userId ? "You" : r.actor_name}
-                    </span>{" "}
-                    {activityVerb(r.kind)}
+                    {r.actor_id === SYSTEM_ACTOR_ID ? (
+                      // A sweep, not a person — no name to bold.
+                      <span className="font-semibold">
+                        Archived automatically
+                      </span>
+                    ) : (
+                      <>
+                        <span className="font-semibold">
+                          {r.actor_id === userId ? "You" : r.actor_name}
+                        </span>{" "}
+                        {activityVerb(r.kind)}
+                      </>
+                    )}
                   </p>
                   {r.detail && (
                     <p className="mt-0.5 line-clamp-3 text-[11px] text-zinc-600 dark:text-zinc-400">

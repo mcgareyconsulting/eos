@@ -160,6 +160,7 @@ export function ScorecardGrid({
   entryByMetricWeek,
   members,
   showManage = false,
+  showArchiveControl = false,
   groups = [],
   interval = "weekly",
   compact = false,
@@ -177,6 +178,11 @@ export function ScorecardGrid({
   members: ScorecardMember[];
   /** Row manage controls (group + delete), shown inside the expand panel. */
   showManage?: boolean;
+  /**
+   * Archive / Restore only, for rows the viewer may archive (`canManage`).
+   * The live L10 uses it; ignored when `showManage` is on.
+   */
+  showArchiveControl?: boolean;
   /** Team's group docs — supply position so Compliance can sit below Weekly. */
   groups?: ScorecardGroup[];
   /** Which period this grid is showing; groups are per-period. */
@@ -476,7 +482,7 @@ export function ScorecardGrid({
                   columns={columns}
                   values={values}
                   manage={
-                    showManage
+                    showManage || showArchiveControl
                       ? {
                           teamId,
                           group: m.group ?? null,
@@ -486,6 +492,7 @@ export function ScorecardGrid({
                           canManage: m.canManage === true,
                           isArchived: m.isArchived === true,
                           isShared: !!m.sharedFrom,
+                          archiveOnly: !showManage,
                         }
                       : undefined
                   }
@@ -639,7 +646,14 @@ export function ScorecardGrid({
           // trapped every bit of travel inside the grid, and the bottom of an
           // expanded trend chart could sit below the fold with the inner box
           // already at its limit (client, 8/31).
-          compact && "max-h-[min(60vh,28rem)] overflow-y-auto overflow-x-hidden",
+          //
+          // The cap lifts while a row is open: the trend panel is taller than
+          // the box, so capping it shows a chart sliced in half (client,
+          // 9/22). Opening a row is a deliberate act and closing it puts the
+          // box back, which is not the same as a segment sprawling on its own.
+          compact &&
+            openIds.size === 0 &&
+            "max-h-[min(60vh,28rem)] overflow-y-auto overflow-x-hidden",
         )}
       >
         {sections.length === 0 ? (

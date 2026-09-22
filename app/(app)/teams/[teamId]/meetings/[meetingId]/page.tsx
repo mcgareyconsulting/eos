@@ -560,7 +560,7 @@ async function SegmentContent({
     );
   }
 
-  const { db, team, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
 
   if (segment === "scorecard") {
     // Owned *and* borrowed, exactly as the standalone Scorecard page loads
@@ -655,6 +655,7 @@ async function SegmentContent({
         initialEntries={initialEntries}
         members={members}
         isAdmin={isAdmin}
+        viewerId={uid}
         teamNameById={Object.fromEntries(teamNameById)}
         ownerNameById={Object.fromEntries(resolvedOwner)}
         speakingOrder={speakingOrder}

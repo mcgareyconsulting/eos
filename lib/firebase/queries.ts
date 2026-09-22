@@ -9,6 +9,7 @@
 
 import type {
   DocumentData,
+  DocumentSnapshot,
   Firestore,
   QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
@@ -116,4 +117,84 @@ export async function loadMilestonesForRocks(
     ),
   );
   return snaps.flatMap((s) => s.docs);
+}
+
+/**
+ * Rocks a team sees only through assignments (lib/rocks-share.ts
+ * `assignmentCarriers`): rocks outside `excludeRockIds` (the team's own and
+ * shared-in rocks — full wins) on which someone on `rosterIds` carries a
+ * milestone. Returns the active rocks and ALL their milestones: the caller
+ * narrows to each carrier's unlocked ones for the team view, and keeps the
+ * full list for a viewer who has the rock in full.
+ *
+ * One `owner_id in` query per 30 roster ids; milestones are filtered from
+ * the owners' to-dos in memory rather than with a second inequality that
+ * would need a new composite index.
+ */
+export async function loadAssignedRocks(
+  db: Firestore,
+  rosterIds: readonly string[],
+  excludeRockIds: ReadonlySet<string>,
+): Promise<{
+  rocks: DocumentSnapshot[];
+  milestones: QueryDocumentSnapshot[];
+  /** Per rock: which roster members sit on its parent team — their
+   *  milestones never travel (lib/rocks-share.ts assignmentCarriers). */
+  parentMembers: Map<string, Set<string>>;
+}> {
+  const snaps = await Promise.all(
+    chunkForInQuery(rosterIds).map((ids) =>
+      db.collection("todos").where("owner_id", "in", ids).get(),
+    ),
+  );
+  const rockIds = new Set<string>();
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      const x = d.data();
+      const rid = x.source_rock_id as string | null | undefined;
+      if (rid && x.archived_at == null && !excludeRockIds.has(rid)) {
+        rockIds.add(rid);
+      }
+    }
+  }
+  if (rockIds.size === 0) {
+    return { rocks: [], milestones: [], parentMembers: new Map() };
+  }
+  const rocks = (
+    await db.getAll(...[...rockIds].map((id) => db.collection("rocks").doc(id)))
+  ).filter((d) => d.exists && d.data()?.archived_at == null);
+  const milestones = await loadMilestonesForRocks(
+    db,
+    rocks.map((d) => d.id),
+  );
+
+  // Membership docs are `${teamId}__${uid}`: one getAll for every (parent
+  // team, roster carrier) pair on these rocks.
+  const roster = new Set(rosterIds);
+  const teamOf = new Map(rocks.map((d) => [d.id, d.data()?.team_id as string]));
+  const pairs = new Map<string, { rockId: string; uid: string }>();
+  for (const d of milestones) {
+    const rid = d.data().source_rock_id as string;
+    const uid = d.data().owner_id as string | null;
+    const tid = teamOf.get(rid);
+    if (!uid || !tid || !roster.has(uid)) continue;
+    pairs.set(`${rid}|${uid}`, { rockId: rid, uid });
+  }
+  const parentMembers = new Map<string, Set<string>>();
+  const list = [...pairs.values()];
+  if (list.length > 0) {
+    const snaps = await db.getAll(
+      ...list.map((p) =>
+        db.collection("team_members").doc(`${teamOf.get(p.rockId)}__${p.uid}`),
+      ),
+    );
+    snaps.forEach((snap, i) => {
+      if (!snap.exists) return;
+      const { rockId, uid } = list[i];
+      const set = parentMembers.get(rockId) ?? new Set<string>();
+      set.add(uid);
+      parentMembers.set(rockId, set);
+    });
+  }
+  return { rocks, milestones, parentMembers };
 }

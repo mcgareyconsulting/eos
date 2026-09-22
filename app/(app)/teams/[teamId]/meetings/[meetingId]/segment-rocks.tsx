@@ -44,11 +44,34 @@ type RockDoc = WithId<RockDocRecord>;
 type TodoDoc = WithId<
   Pick<
     TodoDocRecord,
-    "team_id" | "title" | "owner_id" | "due_date" | "source_rock_id" | "description"
+    | "team_id"
+    | "title"
+    | "owner_id"
+    | "due_date"
+    | "source_rock_id"
+    | "description"
+    | "team_hidden"
   >
 > & {
   completed_at: TodoDocRecord["completed_at"] | boolean;
 };
+
+/** A rock this room sees only through one person's milestones
+ *  (lib/rocks-share.ts assignmentCarriers). */
+export type AssignedRow = {
+  rock: RockDoc;
+  carrierId: string;
+  /** The carrier's unlocked milestones — what the room sees. */
+  milestones: TodoDoc[];
+  /** Every milestone, when the viewer has the rock in full; else null. */
+  full: TodoDoc[] | null;
+  /** The viewer's own milestones the room doesn't see — greyed. */
+  onlyViewerIds: string[];
+  /** The row exists only for the viewer. */
+  viewerOnly: boolean;
+};
+
+type CarrierEntry = RockDoc & { __carrier: AssignedRow };
 
 // created_at is a Firestore Timestamp over onSnapshot; toMillis() is the only
 // thing we read off it.
@@ -71,10 +94,12 @@ export function SegmentRocks({
   defaultDue,
   initialRocks,
   initialTodos,
+  initialAssigned = [],
   members,
   initialAbsentUserIds,
   initialSpeakingOrder,
   initialSpeakerIndex,
+  initialDriverId = null,
   teamName,
   shareTeams,
   allTeams = [],
@@ -90,10 +115,13 @@ export function SegmentRocks({
   defaultDue: string;
   initialRocks: RockDoc[];
   initialTodos: TodoDoc[];
+  initialAssigned?: AssignedRow[];
   members: Member[];
   initialAbsentUserIds: string[];
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
+  /** Who holds the wheel at render — see `presenting` below. */
+  initialDriverId?: string | null;
   teamName: string;
   shareTeams: { id: string; name: string }[];
   allTeams?: { id: string; name: string }[];
@@ -218,12 +246,14 @@ export function SegmentRocks({
     absent_user_ids?: string[];
     speaking_order?: string[];
     speaking_index?: number;
+    driver_id?: string | null;
   }>(
     meetingRef,
     {
       absent_user_ids: initialAbsentUserIds,
       speaking_order: initialSpeakingOrder,
       speaking_index: initialSpeakerIndex,
+      driver_id: initialDriverId,
     },
     "segment-rocks",
   );
@@ -246,18 +276,23 @@ export function SegmentRocks({
     teamIds: new Set(viewerTeamIds),
   };
 
+  const toMilestone = (t: TodoDoc): MilestoneSerialized => ({
+    id: t.id,
+    title: t.title,
+    owner_id: t.owner_id,
+    due_date: t.due_date,
+    completed: !!t.completed_at,
+    description: t.description ?? null,
+    locked: t.team_hidden === true,
+    // Always carry the name: a shared-in rock edited as its parent team
+    // renders with the parent's roster, which may not hold this owner.
+    owner_label: t.owner_id ? (nameById.get(t.owner_id) ?? null) : null,
+  });
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
   for (const t of todos) {
     if (!t.source_rock_id) continue;
     const list = milestonesByRock.get(t.source_rock_id) ?? [];
-    list.push({
-      id: t.id,
-      title: t.title,
-      owner_id: t.owner_id,
-      due_date: t.due_date,
-      completed: !!t.completed_at,
-      description: t.description ?? null,
-    });
+    list.push(toMilestone(t));
     milestonesByRock.set(t.source_rock_id, list);
   }
   for (const list of milestonesByRock.values()) {
@@ -306,8 +341,32 @@ export function SegmentRocks({
   // Department ladder — they are not this team's shared priorities.
   const { ownerOnRoster: sharedIntoSections, sharedBy: sharedRocksBelow } =
     partitionSharedRocks(sharedVisible, rosterIds);
-  const groups = groupRocksForL10(
-    [...homeVisible, ...sharedIntoSections],
+  // Assignment rows walk with their carrier's turn. Grouping reads owner_id,
+  // so each enters as the rock re-keyed to its carrier; it renders as the
+  // real rock (see the row below).
+  // The driver's screen is the room's screen (lib/l10/driver.ts): while the
+  // viewer holds the wheel, the "Only you" items they alone may see stay off
+  // it — a locked milestone, or a row that exists only for them.
+  const presenting = meeting.driver_id === userId;
+  const carrierEntries: CarrierEntry[] = showArchived
+    ? []
+    : initialAssigned
+        .filter((a) => a.rock.status !== "cancelled")
+        .map((a) =>
+          presenting
+            ? {
+                ...a,
+                milestones: a.milestones.filter(
+                  (t) => !a.onlyViewerIds.includes(t.id),
+                ),
+                onlyViewerIds: [],
+              }
+            : a,
+        )
+        .filter((a) => !(presenting && a.viewerOnly) && a.milestones.length > 0)
+        .map((a) => ({ ...a.rock, owner_id: a.carrierId, __carrier: a }));
+  const groups = groupRocksForL10<RockDoc | CarrierEntry>(
+    [...homeVisible, ...sharedIntoSections, ...carrierEntries],
     (r) => (r.team_id === teamId ? rockBucket(r) : "owner"),
     members,
     speakingOrder,
@@ -440,21 +499,48 @@ export function SegmentRocks({
             )}
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {g.rocks.map((r) => (
-              <RockRow
-                key={r.id}
-                {...rowProps(r)}
-                userId={userId}
-                rock={r}
-                ownerName={
-                  ownerLabel(r.owner_id, (id) => nameById.get(id))
-                }
-                milestones={milestonesByRock.get(r.id) ?? []}
-                defaultDue={defaultDue}
-                statusHistory={statusByRock.get(r.id) ?? []}
-                currentUserId={userId}
-              />
-            ))}
+            {g.rocks.map((r) => {
+              const carrier = "__carrier" in r ? r.__carrier : null;
+              if (carrier) {
+                const rock = carrier.rock;
+                return (
+                  <RockRow
+                    key={`${rock.id}:${carrier.carrierId}`}
+                    {...rowProps(rock)}
+                    userId={userId}
+                    rock={rock}
+                    ownerName={ownerLabel(rock.owner_id, (id) =>
+                      nameById.get(id),
+                    )}
+                    milestones={carrier.milestones.map((t) => ({
+                      ...toMilestone(t),
+                      only_you: carrier.onlyViewerIds.includes(t.id),
+                    }))}
+                    fullMilestones={carrier.full?.map(toMilestone)}
+                    carrierView
+                    viewerOnly={carrier.viewerOnly}
+                    defaultDue={defaultDue}
+                    statusHistory={[]}
+                    currentUserId={userId}
+                  />
+                );
+              }
+              return (
+                <RockRow
+                  key={r.id}
+                  {...rowProps(r)}
+                  userId={userId}
+                  rock={r}
+                  ownerName={
+                    ownerLabel(r.owner_id, (id) => nameById.get(id))
+                  }
+                  milestones={milestonesByRock.get(r.id) ?? []}
+                  defaultDue={defaultDue}
+                  statusHistory={statusByRock.get(r.id) ?? []}
+                  currentUserId={userId}
+                />
+              );
+            })}
           </div>
         </section>
       ))}

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
-import { getTeamMembers, requireTeamAccess } from "@/lib/firebase/teams";
+import { getTeamMembers } from "@/lib/firebase/teams";
 import type { TodoBoardDoc } from "@/app/(app)/teams/[teamId]/todos/todos-board";
 
 /** Admin-SDK Timestamp → millis, so the value can cross the RSC boundary. */
@@ -30,11 +30,20 @@ export async function loadTodoPeek(
   teamId: string,
   todoId: string,
 ): Promise<TodoPeek | null> {
-  const { uid, db } = await requireTeamAccess(teamId);
+  // Membership is the normal gate, but a milestone can be assigned to
+  // someone off the rock's team (docs/ROCK_SHARING_RULES.md) and its
+  // "assigned" notification must open for them: the owner may peek at
+  // their own row on any team.
+  const { uid, db, isAdmin } = await requireFirebaseUser();
   const snap = await db.collection("todos").doc(todoId).get();
   const d = snap.data();
   if (!snap.exists || !d || d.team_id !== teamId) return null;
-  if (d.visibility === "private" && d.owner_id !== uid) return null;
+  const isOwner = String(d.owner_id ?? "") === String(uid);
+  const member =
+    isAdmin ||
+    (await db.collection("team_members").doc(`${teamId}__${uid}`).get()).exists;
+  if (!member && !isOwner) return null;
+  if (d.visibility === "private" && !isOwner) return null;
   const members = (await getTeamMembers(teamId)).map((m) => ({
     user_id: m.user_id,
     full_name: m.full_name,

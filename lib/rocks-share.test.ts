@@ -7,6 +7,12 @@ import {
   canSetRockStatus,
   partitionSharedRocks,
   rockAccessFor,
+  isMilestoneLocked,
+  hasFullRockView,
+  assignmentCarriers,
+  canTickMilestone,
+  sharingChanges,
+  carriersForViewer,
 } from "./rocks-share";
 
 describe("isSharedIntoTeam", () => {
@@ -201,5 +207,221 @@ describe("partitionSharedRocks", () => {
     const c = { team_id: "esd", owner_id: "jordan", shared_team_ids: ["it"] };
     const { ownerOnRoster } = partitionSharedRocks([a, b, c], roster);
     assert.deepEqual(ownerOnRoster, [a, c]);
+  });
+});
+
+describe("isMilestoneLocked", () => {
+  test("team_hidden or legacy private", () => {
+    assert.equal(isMilestoneLocked({ owner_id: "a", team_hidden: true }), true);
+    assert.equal(isMilestoneLocked({ owner_id: "a", visibility: "private" }), true);
+    assert.equal(isMilestoneLocked({ owner_id: "a", visibility: "team" }), false);
+  });
+});
+
+describe("hasFullRockView", () => {
+  const rock = { team_id: "esd", owner_id: "owner", shared_team_ids: ["it"] };
+  const v = (uid: string, teams: string[], isAdmin = false) => ({
+    uid,
+    isAdmin,
+    teamIds: new Set(teams),
+  });
+  test("parent team, shared team, admin", () => {
+    assert.equal(hasFullRockView(rock, v("x", ["esd"]), []), true);
+    assert.equal(hasFullRockView(rock, v("x", ["it"]), []), true);
+    assert.equal(hasFullRockView(rock, v("x", [], true), []), true);
+  });
+  test("any assignee on the rock, locked or not", () => {
+    assert.equal(
+      hasFullRockView(rock, v("joe", ["ops"]), [{ owner_id: "joe", team_hidden: true }]),
+      true,
+    );
+  });
+  test("the rock's owner, even off the parent team", () => {
+    assert.equal(hasFullRockView(rock, v("owner", ["ops"]), []), true);
+  });
+  test("a teammate of the assignee does not", () => {
+    assert.equal(
+      hasFullRockView(rock, v("sam", ["ops"]), [{ owner_id: "joe" }]),
+      false,
+    );
+  });
+});
+
+describe("assignmentCarriers", () => {
+  const rock = { team_id: "esd", owner_id: "owner", shared_team_ids: ["it"] };
+  const ms = [
+    { id: "1", owner_id: "joe" },
+    { id: "2", owner_id: "joe", team_hidden: true },
+    { id: "3", owner_id: "sam" },
+    { id: "4", owner_id: "other" },
+  ];
+  test("each carrier on the roster gets their unlocked milestones", () => {
+    const got = assignmentCarriers(rock, "ops", new Set(["joe", "sam"]), ms, new Set());
+    assert.deepEqual([...got.keys()], ["joe", "sam"]);
+    assert.deepEqual(got.get("joe")!.map((m) => m.id), ["1"]);
+    assert.deepEqual(got.get("sam")!.map((m) => m.id), ["3"]);
+  });
+  test("only locked milestones → the team does not see the rock", () => {
+    const got = assignmentCarriers(rock, "ops", new Set(["joe"]), [ms[1]], new Set());
+    assert.equal(got.size, 0);
+  });
+  test("keep on this team: nothing travels", () => {
+    const got = assignmentCarriers(
+      { ...rock, team_only: true },
+      "ops",
+      new Set(["joe", "sam"]),
+      ms,
+      new Set(),
+    );
+    assert.equal(got.size, 0);
+  });
+  test("full wins: parent or shared team gets no assignment view", () => {
+    assert.equal(assignmentCarriers(rock, "esd", new Set(["joe"]), ms, new Set()).size, 0);
+    assert.equal(assignmentCarriers(rock, "it", new Set(["joe"]), ms, new Set()).size, 0);
+  });
+  test("a parent-team member's milestones don't travel to their other teams", () => {
+    const got = assignmentCarriers(rock, "ops", new Set(["joe"]), ms, new Set(["joe"]));
+    assert.equal(got.size, 0);
+  });
+});
+
+describe("canTickMilestone", () => {
+  const rock = { team_id: "esd", owner_id: "rockOwner", shared_team_ids: ["it"] };
+  test("full access ticks anything", () => {
+    assert.equal(canTickMilestone(rock, { owner_id: "x" }, { uid: "p", fullAccess: true }), true);
+  });
+  test("otherwise: own milestone, or a rock you own", () => {
+    assert.equal(canTickMilestone(rock, { owner_id: "casey" }, { uid: "casey", fullAccess: false }), true);
+    assert.equal(canTickMilestone(rock, { owner_id: "casey" }, { uid: "sam", fullAccess: false }), false);
+    assert.equal(canTickMilestone(rock, { owner_id: "casey" }, { uid: "rockOwner", fullAccess: false }), true);
+  });
+});
+
+describe("sharingChanges", () => {
+  const m = (ownerId: string, ownerTeamIds: string[], locked = false, title = "Vendor") => ({
+    title,
+    locked,
+    ownerId,
+    ownerName: ownerId,
+    ownerTeamIds,
+  });
+  const snap = (teams: string[], milestones: Record<string, ReturnType<typeof m>>) => ({
+    parentTeamId: "esd",
+    teams,
+    milestones,
+  });
+
+  test("no change → nothing", () => {
+    const s = snap(["it"], { a: m("joe", ["ops"]) });
+    assert.deepEqual(sharingChanges(s, s), []);
+  });
+  test("sharing a team", () => {
+    assert.deepEqual(sharingChanges(snap([], {}), snap(["it"], {})), [
+      { kind: "team-added", teamId: "it" },
+    ]);
+  });
+  test("assigning outside: the person gets the rock, their teams the milestone", () => {
+    assert.deepEqual(
+      sharingChanges(snap([], {}), snap([], { a: m("joe", ["ops", "it"]) })),
+      [
+        { kind: "assignee-added", ownerId: "joe", ownerName: "joe" },
+        { kind: "milestone-to-team", teamId: "ops", title: "Vendor", ownerName: "joe" },
+        { kind: "milestone-to-team", teamId: "it", title: "Vendor", ownerName: "joe" },
+      ],
+    );
+  });
+  test("locked: the person still gets the rock, their teams nothing", () => {
+    assert.deepEqual(
+      sharingChanges(snap([], {}), snap([], { a: m("joe", ["ops"], true) })),
+      [{ kind: "assignee-added", ownerId: "joe", ownerName: "joe" }],
+    );
+  });
+  test("unlocking reports the team once", () => {
+    assert.deepEqual(
+      sharingChanges(
+        snap([], { a: m("joe", ["ops"], true) }),
+        snap([], { a: m("joe", ["ops"]) }),
+      ),
+      [{ kind: "milestone-to-team", teamId: "ops", title: "Vendor", ownerName: "joe" }],
+    );
+  });
+  test("keep on this team: the assignee still gets the rock, teams nothing", () => {
+    const after = { ...snap([], { a: m("joe", ["ops"]) }), teamOnly: true };
+    assert.deepEqual(sharingChanges(snap([], {}), after), [
+      { kind: "assignee-added", ownerId: "joe", ownerName: "joe" },
+    ]);
+  });
+  test("turning keep-on-team off lets milestones travel", () => {
+    const before = { ...snap([], { a: m("joe", ["ops"]) }), teamOnly: true };
+    const after = snap([], { a: m("joe", ["ops"]) });
+    assert.deepEqual(sharingChanges(before, after), [
+      { kind: "milestone-to-team", teamId: "ops", title: "Vendor", ownerName: "joe" },
+    ]);
+  });
+  test("parent-team assignee on other teams: nothing travels", () => {
+    assert.deepEqual(
+      sharingChanges(snap([], {}), snap([], { a: m("dan", ["esd", "ops"]) })),
+      [],
+    );
+  });
+  test("assignee on a shared team is covered by the share", () => {
+    assert.deepEqual(
+      sharingChanges(snap(["ops"], {}), snap(["ops"], { a: m("joe", ["ops"]) })),
+      [],
+    );
+  });
+  test("unsharing a team that still carries a milestone", () => {
+    assert.deepEqual(
+      sharingChanges(
+        snap(["ops"], { a: m("joe", ["ops"]) }),
+        snap([], { a: m("joe", ["ops"]) }),
+      ),
+      [
+        { kind: "assignee-added", ownerId: "joe", ownerName: "joe" },
+        { kind: "still-sees", teamId: "ops", titles: ["Vendor"] },
+      ],
+    );
+  });
+});
+
+describe("carriersForViewer", () => {
+  const rock = { team_id: "esd", owner_id: "owner", shared_team_ids: [] };
+  const ms = [
+    { id: "1", owner_id: "joe" },
+    { id: "2", owner_id: "joe", team_hidden: true },
+    { id: "3", owner_id: "sam" },
+  ];
+  const roster = new Set(["joe", "sam"]);
+  test("joe sees his locked milestone too, flagged only-you", () => {
+    const got = carriersForViewer(rock, "ops", roster, ms, new Set(), "joe");
+    assert.deepEqual(got.carriers.get("joe")!.map((m) => m.id), ["1", "2"]);
+    assert.deepEqual([...got.onlyViewerIds], ["2"]);
+    assert.equal(got.viewerOnlyRow, false);
+  });
+  test("sam sees only what travels", () => {
+    const got = carriersForViewer(rock, "ops", roster, ms, new Set(), "sam");
+    assert.deepEqual(got.carriers.get("joe")!.map((m) => m.id), ["1"]);
+    assert.equal(got.onlyViewerIds.size, 0);
+  });
+  test("a row that exists only for the viewer", () => {
+    const got = carriersForViewer(rock, "ops", roster, [ms[1]], new Set(), "joe");
+    assert.deepEqual(got.carriers.get("joe")!.map((m) => m.id), ["2"]);
+    assert.equal(got.viewerOnlyRow, true);
+  });
+  test("keep on this team: the viewer still gets their own, all only-you", () => {
+    const got = carriersForViewer(
+      { ...rock, team_only: true },
+      "ops",
+      roster,
+      ms,
+      new Set(),
+      "joe",
+    );
+    assert.deepEqual([...got.onlyViewerIds].sort(), ["1", "2"]);
+    assert.equal(got.viewerOnlyRow, true);
+  });
+  test("a parent-team member gets nothing extra", () => {
+    const got = carriersForViewer(rock, "ops", roster, ms, new Set(["joe"]), "joe");
+    assert.equal(got.carriers.has("joe"), false);
   });
 });

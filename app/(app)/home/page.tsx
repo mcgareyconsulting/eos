@@ -117,7 +117,14 @@ export default async function HomePage() {
   const myTeamIds = new Set(myTeamIdsList);
   const teamChunks = chunkForInQuery(myTeamIdsList);
 
-  const [todoSnaps, rockSnaps, sharedRockSnaps, memberSnaps, myMetricsSnap] =
+  const [
+    todoSnaps,
+    rockSnaps,
+    sharedRockSnaps,
+    memberSnaps,
+    myMetricsSnap,
+    myMilestonesSnap,
+  ] =
     await Promise.all([
       // Open todos for the viewer's teams. Admin SDK can read everything; we
       // filter private rows in memory below (owner only). Prefer one query with
@@ -165,6 +172,14 @@ export default async function HomePage() {
       ),
       // Personal scorecard metrics I own (any team).
       db.collection("scorecard_metrics").where("owner_id", "==", user.id).get(),
+      // Milestones assigned to me on rocks outside my teams — a guest team's
+      // member owning a milestone on the parent team's rock. The team query
+      // above never sees them (their team_id is the rock's team).
+      db
+        .collection("todos")
+        .where("owner_id", "==", user.id)
+        .where("completed_at", "==", null)
+        .get(),
     ]);
 
   const memberUids = new Set<string>(
@@ -176,15 +191,23 @@ export default async function HomePage() {
   const nameByUserId = new Map<string, string>();
   await hydrateNames(db, [...memberUids], nameByUserId);
 
-  const todos = todoSnaps
-    .flatMap((snap) =>
-      snap.docs.map((d) => {
-        const data = d.data() as Omit<TodoRow, "id"> & {
-          archived_at?: unknown | null;
-        };
-        return { id: d.id, ...data };
-      }),
-    )
+  const teamTodoIds = new Set(
+    todoSnaps.flatMap((snap) => snap.docs.map((d) => d.id)),
+  );
+  const todos = [
+    ...todoSnaps.flatMap((snap) => snap.docs),
+    // Milestones only: a plain to-do on a team I have left has no business
+    // on my Home.
+    ...myMilestonesSnap.docs.filter(
+      (d) => !teamTodoIds.has(d.id) && !!d.data().source_rock_id,
+    ),
+  ]
+    .map((d) => {
+      const data = d.data() as Omit<TodoRow, "id"> & {
+        archived_at?: unknown | null;
+      };
+      return { id: d.id, ...data };
+    })
     .filter((t) => {
       // Active Home board: skip archived (can be incomplete if manual-archived).
       if (t.archived_at != null) return false;
@@ -298,6 +321,10 @@ export default async function HomePage() {
     // still counts as "loaded", which is what stops the openMilestones
     // fallback below from re-adding rows for that rock.
     for (const rockId of shownCandidateIds) allMsByRock.set(rockId, []);
+    // Every rock Home shows is one the viewer has in full — their own, one
+    // on or shared into their teams, or one they carry a milestone on
+    // (lib/rocks-share.ts hasFullRockView) — so every milestone, locked or
+    // not, and full progress.
     for (const d of await loadMilestonesForRocks(db, [...shownCandidateIds])) {
       const data = d.data() as Omit<TodoRow, "id">;
       const list = allMsByRock.get(data.source_rock_id ?? "");
@@ -396,6 +423,13 @@ export default async function HomePage() {
           title: m.title,
           due_date: m.due_date,
           isMine,
+          // Tick through the rock's team when the viewer is on it, else any
+          // of their teams (an admin with none still has the rock's team).
+          tickTeamId: isMine
+            ? myTeamIds.has(r.team_id)
+              ? r.team_id
+              : (myTeamIdsList[0] ?? r.team_id)
+            : undefined,
           ownerLabel: isMine
             ? "You"
             : (m.owner_id && nameByUserId.get(m.owner_id)) || "—",
@@ -512,7 +546,7 @@ export default async function HomePage() {
             ))}
           </BoardColumn>
 
-          {/* "Company Rocks", "My Rocks" and "Departmental Rocks" read as
+          {/* "Company Rocks", "My Rocks" and "Team Rocks" read as
               separate lists, not one mixed one — otherwise a viewer can't
               tell which rocks are actually theirs. Split by kind down the
               Company > Department > owner ladder, so a department rock the
@@ -538,7 +572,7 @@ export default async function HomePage() {
             {departmentalRocks.length > 0 && (
               <BoardColumn
                 scroll
-                title="Departmental Rocks"
+                title="Team Rocks"
                 count={departmentalRocks.length}
                 flush
               >

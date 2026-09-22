@@ -1,5 +1,10 @@
 # Rocks & Milestones — implementation plan
 
+> **Workstream B's sharing model is superseded (2026-09-22)** by
+> `docs/ROCK_SHARING_RULES.md` — team shares are full-only, and cross-team
+> milestone visibility follows the assignee. Workstream A (Company / Team
+> flags) stands as written.
+
 Source: two notes from Brian Otteman, 2026-09-09.
 
 > 1. A need to tag a rock as a Company Rock (and also keep "Team" designation)

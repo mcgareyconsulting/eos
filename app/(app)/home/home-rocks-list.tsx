@@ -12,6 +12,7 @@ import {
   isRockStatus,
   type RockStatus,
 } from "@/app/(app)/teams/[teamId]/rocks/status";
+import { TodoCheckbox } from "@/app/(app)/teams/[teamId]/todos/todo-row";
 
 export type HomeRockListItem = {
   id: string;
@@ -22,7 +23,7 @@ export type HomeRockListItem = {
   team_id: string;
   href: string;
   /**
-   * All three feed the Company / My / Departmental split (lib/rock-bucket.ts)
+   * All three feed the Company / My / Team split (lib/rock-bucket.ts)
    * — a legacy rock with no owner counts as departmental, so owner_id is not
    * optional here.
    */
@@ -43,6 +44,14 @@ export type HomeMilestoneListItem = {
   /** Resolved display name; "You" when viewer owns it */
   ownerLabel: string;
   isMine: boolean;
+  /**
+   * Set on the viewer's own milestones: the team the tick runs through
+   * (toggleTodo checks access to it; canTickMilestone lets an owner tick
+   * their own from any of their teams). Home is the one place every
+   * assignee reliably sees their milestone — a locked one from outside the
+   * rock's teams appears on no team page — so it is tickable here.
+   */
+  tickTeamId?: string;
 };
 
 const ROCK_COLS =
@@ -214,10 +223,19 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                         )}
                       >
                         <div className="flex justify-center">
-                          <span
-                            className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
-                            aria-hidden
-                          />
+                          {m.tickTeamId ? (
+                            <TodoCheckbox
+                              teamId={m.tickTeamId}
+                              todoId={m.id}
+                              completed={false}
+                              appearance="milestone"
+                            />
+                          ) : (
+                            <span
+                              className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
+                              aria-hidden
+                            />
+                          )}
                         </div>
                         <div className="min-w-0 truncate text-[12.5px] font-semibold text-zinc-600 dark:text-zinc-300">
                           {m.title}

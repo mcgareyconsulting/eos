@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { loadUserNames } from "@/lib/firebase/user-names";
 import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
@@ -51,13 +52,17 @@ export async function addEntityComment(
   formData: FormData,
 ) {
   if (!ENTITY_TYPES.includes(entityType)) throw new Error("Bad entity type");
-  const { uid, db, team } = await requireTeamAccess(teamId);
-  const parent = await requireTeamDoc(
-    db,
-    parentCollection(entityType),
-    entityId,
-    teamId,
-  );
+  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  // A rock has ONE thread, filed under its parent team, open to everyone
+  // with the whole rock (lib/rocks-share.ts hasFullRockView) — including an
+  // assignee posting from their own team's page, where `teamId` is not the
+  // rock's team. Other entities stay team-scoped.
+  const parent =
+    entityType === "rock"
+      ? await requireRockThreadAccess(db, entityId, teamId, uid, isAdmin)
+      : await requireTeamDoc(db, parentCollection(entityType), entityId, teamId);
+  const threadTeamId =
+    entityType === "rock" ? String(parent.data()?.team_id ?? teamId) : teamId;
 
   // A private to-do is its owner's alone — the same test the todos rule and
   // the To-Dos page apply to reading it, applied here to writing under it.
@@ -85,7 +90,7 @@ export async function addEntityComment(
   const mention_ids = mentionedIds(body, members);
 
   await db.collection("entity_comments").add({
-    team_id: teamId,
+    team_id: threadTeamId,
     entity_type: entityType,
     entity_id: entityId,
     body,
@@ -147,6 +152,52 @@ export async function addEntityComment(
   revalidatePath(`/teams/${teamId}/rocks`);
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath(`/teams/${teamId}/meetings`);
+  if (threadTeamId !== teamId) {
+    revalidatePath(`/teams/${threadTeamId}/rocks`);
+    revalidatePath(`/teams/${threadTeamId}/meetings`);
+  }
+}
+
+/**
+ * The rock behind a comment, for a caller viewing from `teamId` — parent
+ * team, a team it is shared with, the rock's owner, an assignee, or admin.
+ * Mirrors the `rockFullAccess` rule; the Admin SDK bypasses rules, so this
+ * is the gate.
+ */
+async function requireRockThreadAccess(
+  db: FirebaseFirestore.Firestore,
+  rockId: string,
+  teamId: string,
+  uid: string,
+  isAdmin: boolean,
+) {
+  const snap = await db.collection("rocks").doc(rockId).get();
+  const rock = snap.data();
+  if (!snap.exists || !rock) notFound();
+  const shared = (rock.shared_team_ids as string[] | null) ?? [];
+  const owners = (rock.milestone_owner_ids as string[] | null) ?? [];
+  const ok =
+    isAdmin ||
+    rock.team_id === teamId ||
+    shared.includes(teamId) ||
+    rock.owner_id === uid ||
+    owners.includes(uid);
+  if (!ok) notFound();
+  return snap;
+}
+
+/**
+ * Names for comment authors the viewer's roster doesn't hold — a rock's
+ * thread is one thread across teams, so its authors aren't all on the
+ * roster of whichever page it is read from.
+ */
+export async function loadCommentAuthorNames(
+  teamId: string,
+  ids: string[],
+): Promise<Record<string, string>> {
+  const { db } = await requireTeamAccess(teamId);
+  const names = await loadUserNames(db, [...new Set(ids)].slice(0, 100));
+  return Object.fromEntries(names);
 }
 
 export async function deleteEntityComment(
@@ -158,7 +209,12 @@ export async function deleteEntityComment(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Comment not found");
   const data = snap.data()!;
-  if (data.team_id !== teamId) throw new Error("Comment not found");
+  // A rock's thread is read from any team that has the rock, so its
+  // team_id is the rock's, not necessarily the caller's; the author check
+  // below is what protects it.
+  if (data.entity_type !== "rock" && data.team_id !== teamId) {
+    throw new Error("Comment not found");
+  }
   // Author can delete their own; leaders aren't special-cased here (keep simple).
   if (data.author_id !== uid) {
     throw new Error("Only the author can delete this comment");

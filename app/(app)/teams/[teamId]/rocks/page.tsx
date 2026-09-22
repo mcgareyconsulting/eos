@@ -11,6 +11,7 @@ import {
 } from "@/lib/firebase/teams";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import {
+  loadAssignedRocks,
   loadMilestonesForRocks,
   loadTeamRocks,
   loadUsersById,
@@ -23,6 +24,9 @@ import {
   isSharedIntoTeam,
   partitionSharedRocks,
   rockAccessFor,
+  carriersForViewer,
+  hasFullRockView,
+  isMilestoneLocked,
   type RockViewer,
 } from "@/lib/rocks-share";
 import { NewRockButton } from "./rock-modal";
@@ -72,6 +76,20 @@ function sortRocks<
     if (!b.due_date) return -1;
     return a.due_date.localeCompare(b.due_date);
   });
+}
+
+// Plain data for the client: TodoDoc.completed_at is a Firestore
+// Timestamp, which can't cross the Server → Client component boundary.
+function serializeMilestone(id: string, t: TodoDoc): MilestoneSerialized {
+  return {
+    id,
+    title: t.title,
+    owner_id: t.owner_id,
+    due_date: t.due_date,
+    completed: !!t.completed_at,
+    description: t.description ?? null,
+    locked: isMilestoneLocked(t),
+  };
 }
 
 export default async function RocksPage({
@@ -138,6 +156,7 @@ export default async function RocksPage({
       rock_type: (x.rock_type as string | null) ?? null,
       is_company_rock: x.is_company_rock === true,
       shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
+      team_only: x.team_only === true,
       // archived_at is a Firestore Timestamp — pass millis, the raw class
       // instance can't cross into the client RockRow.
       archived_at: archivedAtMillis(x.archived_at),
@@ -168,7 +187,8 @@ export default async function RocksPage({
         rock_type: (x.rock_type as string | null) ?? null,
         is_company_rock: x.is_company_rock === true,
         shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
-        archived_at: archivedAtMillis(x.archived_at),
+        team_only: x.team_only === true,
+          archived_at: archivedAtMillis(x.archived_at),
       };
     })
     .filter((r) => isSharedIntoTeam(r, teamId) && r.archived_at == null);
@@ -199,24 +219,18 @@ export default async function RocksPage({
     ),
   );
 
-  // Reshape to plain data: TodoDoc.completed_at is a Firestore Timestamp,
-  // which can't cross the Server → Client component boundary.
+  // Own and shared-in rocks are full views (lib/rocks-share.ts): every
+  // milestone, locked ones included. Only assignment rows (below) narrow.
   const milestonesByRock = new Map<string, MilestoneSerialized[]>();
-  for (const d of todosSnap.docs) {
-    const t = d.data() as TodoDoc;
-    if (!t.source_rock_id) continue;
-    const m: MilestoneSerialized = {
-      id: d.id,
-      title: t.title,
-      owner_id: t.owner_id,
-      due_date: t.due_date,
-      completed: !!t.completed_at,
-      description: t.description ?? null,
-    };
+  function addMilestone(id: string, t: TodoDoc) {
+    if (!t.source_rock_id) return;
+    const m = serializeMilestone(id, t);
     const list = milestonesByRock.get(t.source_rock_id) ?? [];
     list.push(m);
     milestonesByRock.set(t.source_rock_id, list);
   }
+
+  for (const d of todosSnap.docs) addMilestone(d.id, d.data() as TodoDoc);
   const statusByRock = new Map<string, StatusUpdateSerialized[]>();
   for (const d of statusSnap.docs) {
     const x = d.data();
@@ -254,21 +268,7 @@ export default async function RocksPage({
           .get(),
       ),
     );
-    for (const d of extraMilestones) {
-      const t = d.data() as TodoDoc;
-      if (!t.source_rock_id) continue;
-      const m: MilestoneSerialized = {
-        id: d.id,
-        title: t.title,
-        owner_id: t.owner_id,
-        due_date: t.due_date,
-        completed: !!t.completed_at,
-        description: t.description ?? null,
-      };
-      const list = milestonesByRock.get(t.source_rock_id) ?? [];
-      list.push(m);
-      milestonesByRock.set(t.source_rock_id, list);
-    }
+    for (const d of extraMilestones) addMilestone(d.id, d.data() as TodoDoc);
     for (const snap of extraStatusSnaps) {
       for (const d of snap.docs) {
         const x = d.data();
@@ -304,8 +304,106 @@ export default async function RocksPage({
     );
   }
 
+  // Rocks this team sees only because its people carry milestones on them
+  // (lib/rocks-share.ts assignmentCarriers). Each renders under the
+  // carrier's own section with only that carrier's unlocked milestones and
+  // no progress; a viewer who has the rock in full (parent/shared team,
+  // admin, or an assignee) still gets the whole rock in its detail and edit
+  // views. Active list only — they are not this team's to archive.
+  type CarrierInfo = {
+    rowKey: string;
+    realOwnerId: string | null;
+    milestones: MilestoneSerialized[];
+    full: MilestoneSerialized[] | null;
+    /** The row exists only for the viewer (their locked milestones). */
+    viewerOnly: boolean;
+  };
+  type CarrierRow = WithId<RockDoc> & { __carrier: CarrierInfo };
+  const carrierRows: CarrierRow[] = [];
+  if (!showArchived) {
+    const assigned = await loadAssignedRocks(
+      db,
+      [...rosterIds],
+      new Set([
+        ...teamRocks.own.map((d) => d.id),
+        ...teamRocks.shared.map((d) => d.id),
+      ]),
+    );
+    const msByRock = new Map<string, { id: string; t: TodoDoc }[]>();
+    for (const d of assigned.milestones) {
+      const t = d.data() as TodoDoc;
+      if (!t.source_rock_id) continue;
+      const list = msByRock.get(t.source_rock_id) ?? [];
+      list.push({ id: d.id, t });
+      msByRock.set(t.source_rock_id, list);
+    }
+    for (const d of assigned.rocks) {
+      const x = d.data() ?? {};
+      const rock = {
+        id: d.id,
+        team_id: x.team_id as string,
+        title: x.title as string,
+        owner_id: (x.owner_id as string | null) ?? null,
+        quarter: x.quarter as string,
+        due_date: (x.due_date as string | null) ?? null,
+        status: x.status as string,
+        description: (x.description as string | null) ?? null,
+        rock_type: (x.rock_type as string | null) ?? null,
+        is_company_rock: x.is_company_rock === true,
+        shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
+        team_only: x.team_only === true,
+        archived_at: null,
+      };
+      const ms = (msByRock.get(d.id) ?? []).map(({ id, t }) => ({
+        ...t,
+        id,
+      }));
+      const byDue = (a: MilestoneSerialized, b: MilestoneSerialized) =>
+        (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999");
+      const full = hasFullRockView(rock, viewer, ms)
+        ? ms.map((m) => serializeMilestone(m.id, m)).sort(byDue)
+        : null;
+      // Viewer's own milestones join their section, greyed where only
+      // they see them (lib/rocks-share.ts carriersForViewer).
+      const { carriers, onlyViewerIds, viewerOnlyRow } = carriersForViewer(
+        rock,
+        teamId,
+        rosterIds,
+        ms,
+        assigned.parentMembers.get(d.id) ?? new Set(),
+        uid,
+      );
+      for (const [carrierId, list] of carriers) {
+        carrierRows.push({
+          ...rock,
+          owner_id: carrierId,
+          __carrier: {
+            rowKey: `${d.id}:${carrierId}`,
+            realOwnerId: rock.owner_id,
+            milestones: list
+              .map((m) => ({
+                ...serializeMilestone(m.id, m),
+                only_you: onlyViewerIds.has(m.id),
+              }))
+              .sort(byDue),
+            full,
+            viewerOnly: carrierId === uid && viewerOnlyRow,
+          },
+        } as CarrierRow);
+      }
+    }
+  }
+
   const extraNameIds = [
     ...sharedRocksRaw.map((r) => r.owner_id),
+    ...carrierRows.flatMap((r) => [
+      r.__carrier.realOwnerId,
+      ...(r.__carrier.full ?? r.__carrier.milestones).map((m) => m.owner_id),
+    ]),
+    // Guest-team members can own milestones on this team's rocks now.
+    ...[...milestonesByRock.values()].flatMap((list) =>
+      list.map((m) => m.owner_id),
+    ),
     ...[...statusByRock.values()].flatMap((list) =>
       list.map((e) => e.user_id),
     ),
@@ -334,6 +432,22 @@ export default async function RocksPage({
       (x) =>
         members.find((m) => m.user_id === x)?.full_name ?? extraNameById.get(x),
     );
+
+  // Carry every milestone owner's name on the row. Rows resolve names from
+  // the roster they are handed, and that is not always this team's: a
+  // shared-in rock at "edit" renders with its PARENT roster (rowProps), so
+  // a milestone owned by someone on this team would otherwise read "—".
+  for (const list of [
+    ...milestonesByRock.values(),
+    ...carrierRows.flatMap((r) => [
+      r.__carrier.milestones,
+      r.__carrier.full ?? [],
+    ]),
+  ]) {
+    for (const m of list) {
+      if (m.owner_id) m.owner_label = ownerName(m.owner_id);
+    }
+  }
 
   for (const list of statusByRock.values()) {
     for (const e of list) {
@@ -434,7 +548,9 @@ export default async function RocksPage({
   }
 
   const sections = buildSections(
-    showArchived ? allRocks : [...allRocks, ...sharedIntoSections],
+    showArchived
+      ? allRocks
+      : [...allRocks, ...sharedIntoSections, ...carrierRows],
   );
 
   const sharedForView = showArchived
@@ -550,19 +666,42 @@ export default async function RocksPage({
             })),
           ].map((g) => (
             <RockSection key={g.key} title={g.title} count={g.rocks.length}>
-              {g.rocks.map((r) => (
-                <RockRow
-                  key={r.id}
-                  {...rowProps(r)}
-                  userId={uid}
-                  rock={r}
-                  ownerName={ownerName(r.owner_id)}
-                  milestones={milestonesByRock.get(r.id) ?? []}
-                  defaultDue={eoq}
-                  statusHistory={statusByRock.get(r.id) ?? []}
-                  currentUserId={uid}
-                />
-              ))}
+              {g.rocks.map((r) => {
+                const carrier = (r as Partial<CarrierRow>).__carrier;
+                if (carrier) {
+                  // Grouped under the carrier; rendered as the real rock.
+                  const rock = { ...r, owner_id: carrier.realOwnerId };
+                  return (
+                    <RockRow
+                      key={carrier.rowKey}
+                      {...rowProps(rock)}
+                      userId={uid}
+                      rock={rock}
+                      ownerName={ownerName(carrier.realOwnerId)}
+                      milestones={carrier.milestones}
+                      fullMilestones={carrier.full ?? undefined}
+                      carrierView
+                      viewerOnly={carrier.viewerOnly}
+                      defaultDue={eoq}
+                      statusHistory={[]}
+                      currentUserId={uid}
+                    />
+                  );
+                }
+                return (
+                  <RockRow
+                    key={r.id}
+                    {...rowProps(r)}
+                    userId={uid}
+                    rock={r}
+                    ownerName={ownerName(r.owner_id)}
+                    milestones={milestonesByRock.get(r.id) ?? []}
+                    defaultDue={eoq}
+                    statusHistory={statusByRock.get(r.id) ?? []}
+                    currentUserId={uid}
+                  />
+                );
+              })}
             </RockSection>
           ))}
         </>

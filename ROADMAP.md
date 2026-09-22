@@ -2832,7 +2832,7 @@ also hosts the form fields (`todo-form-fields.tsx`), so the edit affordances
 have to survive the move.
 
 ### N65 · Confirm the three-tier rock sharing model
-*W3 · not-started · due — · deps N4, N20 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+*W3 · in-progress · due — · deps N4, N20 · owner daniel · src demo-2026-09-17 · upd 2026-09-22*
 
 To confirm with the client, verbatim: **(1) full**, **(2) team sees the rock
 but only the teammate's milestones**, **(3) fully private to the assignee**.
@@ -2844,8 +2844,23 @@ access is by the viewer's membership, mirrored in `firestore.rules`), and
 a rock visible to the team with milestone visibility narrowed to the owner —
 and it touches the rules read grant, so it sits with N20, not just the UI.
 
+**2026-09-22 — ruleset confirmed with daniel and built (uncommitted, branch
+`fix/improved-rock-sharing`).** The three tiers became: team share = always
+the whole rock; assignment = the assignee sees the whole rock and, if they
+are off the parent team, their teams see just their milestones; lock
+(`team_hidden`) keeps a milestone off the assignee's teams; "Keep on this
+team" (`team_only`) locks a whole rock. Written up in
+`docs/ROCK_SHARING_RULES.md`, which supersedes the per-team share levels in
+`docs/ROCK_MILESTONE_PLAN.md`. Open for the client: assignment-row placement,
+and whether parent-team members' milestones travel (A built / B simpler).
+`firestore.rules` changed — deploy with the app.
+
+**Trail**
+- 2026-09-22 · decision · src session-2026-09-22 — daniel: team share is full-only; assignees see the whole rock; locked = don't travel; each person's section shows what they carry; "Shared by" is for full team shares only
+- 2026-09-22 · build · src session-2026-09-22 — ruleset built with save review, Sharing pane, Keep on this team; tests 736 passing; spec in docs/ROCK_SHARING_RULES.md
+
 ### N66 · Milestone assignment open to the whole org
-*W3 · not-started · due — · deps N54, N4 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
+*W3 · in-progress · due — · deps N54, N4 · owner daniel · src demo-2026-09-17 · upd 2026-09-22*
 
 Milestone owner pickers take the team roster (`rock-modal.tsx` and
 `milestone-checklist.tsx` both receive `members`). The ask is any person in
@@ -2855,6 +2870,14 @@ downstream: a milestone (a `todos` doc with `source_rock_id`) owned by
 someone off the rock's team has to surface on *their* Home / To-Dos
 (`lib/home-board.ts` filters by team membership) and pass the rules — the
 same viewer-vs-team question N4 answered for shared rocks.
+
+**2026-09-22 — built with N65 (uncommitted).** Owner picker with a
+parent-team tab and a Whole org tab (search by name or team), org list
+prefetched on modal open; Home picks up milestones assigned to you on other
+teams' rocks; rules let an assignee read their own milestone. Still open: the
+To-Dos page doesn't list them yet, and a locked milestone assigned from
+outside has nowhere to be ticked (no tick on Home). See
+`docs/ROCK_SHARING_RULES.md`.
 
 ### N67 · Improved role designation — per team?
 *W3 · not-started · due — · deps P2-7 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*

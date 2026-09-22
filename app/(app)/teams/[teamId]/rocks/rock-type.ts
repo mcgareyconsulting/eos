@@ -67,4 +67,4 @@ export function kindForForm(
 
 /** Section titles for the two leading blocks on Rocks / L10. */
 export const COMPANY_SECTION_TITLE = "Company";
-export const DEPARTMENT_SECTION_TITLE = "Department";
+export const DEPARTMENT_SECTION_TITLE = "Team";

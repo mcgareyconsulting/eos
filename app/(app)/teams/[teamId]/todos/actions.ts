@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   getTeamMembers,
@@ -14,6 +15,7 @@ import {
   type TodoMirror,
 } from "@/lib/google/tasks";
 import { selectTodosCompletedDuringMeeting } from "@/lib/todos-archive";
+import { canTickMilestone } from "@/lib/rocks-share";
 import { notify } from "@/lib/firebase/notifications";
 import { recordActivity } from "@/lib/firebase/activity";
 import { joinNames } from "@/lib/activity";
@@ -205,14 +207,64 @@ export async function addTodo(teamId: string, formData: FormData) {
   revalidatePath("/home");
 }
 
+/**
+ * The to-do a tick from `teamId` may complete. A plain to-do must live on
+ * that team. A milestone goes through the sharing rule instead
+ * (`canTickMilestone`): the parent team (or an admin) ticks anything, and
+ * anyone else — a shared team's member, or an assignee from any team — ticks
+ * only their own milestone or one on a rock they own. Admin SDK bypasses firestore.rules, so this is the real gate.
+ */
+async function requireTickableTodo(
+  db: FirebaseFirestore.Firestore,
+  todoId: string,
+  teamId: string,
+  uid: string,
+  isAdmin: boolean,
+) {
+  const snap = await db.collection("todos").doc(todoId).get();
+  if (!snap.exists) notFound();
+  const data = snap.data() ?? {};
+  const rockId = data.source_rock_id as string | null | undefined;
+  if (!rockId) {
+    if (data.team_id !== teamId) notFound();
+    return snap;
+  }
+  const rockSnap = await db.collection("rocks").doc(rockId).get();
+  const rock = rockSnap.data();
+  if (!rock) {
+    if (data.team_id !== teamId) notFound();
+    return snap;
+  }
+  const rockTeamId = String(rock.team_id ?? "");
+  const ok = canTickMilestone(
+    {
+      team_id: rockTeamId,
+      owner_id: (rock.owner_id as string | null) ?? null,
+      shared_team_ids: (rock.shared_team_ids as string[] | null) ?? [],
+    },
+    { owner_id: (data.owner_id as string | null) ?? null },
+    { uid, fullAccess: isAdmin || rockTeamId === teamId },
+  );
+  if (!ok) notFound();
+  return snap;
+}
+
 export async function toggleTodo(
   teamId: string,
   todoId: string,
   currentlyComplete: boolean,
 ) {
-  const { uid, db, team } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
+  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  const snap = await requireTickableTodo(db, todoId, teamId, uid, isAdmin);
   const data = snap.data() ?? {};
+  // A milestone ticked from another team's page (its assignee, from their
+  // own team) is still an event on the rock's team: file the notification
+  // and the activity row there, as that user — not under the viewing team.
+  const homeTeamId = String(data.team_id ?? teamId);
+  const homeTeam =
+    homeTeamId === teamId
+      ? team
+      : { name: String((await db.collection("teams").doc(homeTeamId).get()).data()?.name ?? "Team") };
   const nowComplete = !currentlyComplete;
   await db
     .collection("todos")
@@ -230,12 +282,12 @@ export async function toggleTodo(
       ownerId: data.owner_id,
     }),
     kind: nowComplete ? "completed" : "reopened",
-    ...notifyTarget(teamId, team.name, todoId, data),
+    ...notifyTarget(homeTeamId, homeTeam.name, todoId, data),
     actor: { id: uid },
   });
   await recordActivity({
     db,
-    teamId,
+    teamId: homeTeamId,
     entity: {
       type: "todo",
       id: todoId,
@@ -255,6 +307,13 @@ export async function toggleTodo(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
   revalidatePath(pathFor(teamId));
+  if (data.source_rock_id) {
+    // A milestone ticked from a guest team: both teams' rock lists show it.
+    revalidatePath(`/teams/${teamId}/rocks`);
+    if (data.team_id && data.team_id !== teamId) {
+      revalidatePath(`/teams/${data.team_id}/rocks`);
+    }
+  }
   revalidatePath("/home");
 }
 

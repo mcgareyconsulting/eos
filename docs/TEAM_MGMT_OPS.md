@@ -65,14 +65,19 @@ Restart `pnpm dev` after editing.
 
 **Cloud Run (deployed app)** — service `eos` in **`us-east1`** (not us-central1):
 
-```bash
-gcloud run services list --project=hpb-eos-prod
+Since Gate 2 the allowlist is a Secret Manager secret mounted into Cloud Run
+(`terraform/secrets.tf`). Don't use `--update-env-vars`: Terraform owns the
+service's env and would revert it. Add a new version, then roll a revision:
 
-gcloud run services update eos \
-  --project=hpb-eos-prod \
-  --region=us-east1 \
-  --update-env-vars "^|^SIGN_IN_ALLOWLIST=@highplainsbank.com,daniel@mcgareyconsulting.com"
+```bash
+printf '%s' '@highplainsbank.com,daniel@mcgareyconsulting.com' \
+  | gcloud secrets versions add SIGN_IN_ALLOWLIST --project=hpb-eos-prod --data-file=-
+pnpm ship    # or redeploy the running image — docs/SECRETS_RUNBOOK.md (e)
 ```
+
+Console: Security → Secret Manager → `SIGN_IN_ALLOWLIST` → **+ New version**.
+(Before the Gate 2 apply has run, the old `--update-env-vars` command still
+applies. Check `docs/HARDENING_LOG.md`.)
 
 Keep this string in lockstep with `inDomain()` in `firestore.rules`.
 

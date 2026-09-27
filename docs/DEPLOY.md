@@ -366,7 +366,7 @@ none of it has to be retyped. What it does for you:
 | **Refuses** an env file whose database id contains `sandbox` | The database id is compiled into the bundle; a sandbox-built image would serve test data from the client-facing URL. No override flag, deliberately. |
 | **Refuses** a `--project` that disagrees with the env file's project | Prevents shipping one project's Firebase config into another — nothing fails until sign-in does. |
 | Tags the image `$(git rev-parse --short HEAD)`, `-dirty` on an unclean tree | "What's running" always answers to "which commit." |
-| Doesn't pass `--set-env-vars` | Runtime config already on the service (`SIGN_IN_ALLOWLIST`, `ENV_LABEL`) survives the deploy. |
+| Never touches runtime env (no `--set-env-vars`, no post-deploy env sync) | Since Gate 2 the service's env is owned by Terraform (`terraform/cloud_run.tf`), with secrets as Secret Manager references (`terraform/secrets.tf`, `docs/SECRETS_RUNBOOK.md`). The image roll keeps whatever env the service has. `--sync-env` was removed and now refuses. |
 | Prints the service URL on success | Saves a `gcloud run services describe`. |
 
 Flags: `--project`, `--region` (default `us-east1`), `--env-file`,

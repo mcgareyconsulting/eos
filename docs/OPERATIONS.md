@@ -76,8 +76,17 @@ time with `pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db`.
 
 Deployments can carry a visible marker so you always know which one you're
 looking at: set `ENV_LABEL` (and optionally `ENV_LABEL_TONE`) on the Cloud Run
-service and a badge/banner appears in the UI. It's a runtime env var — adding,
-changing, or removing it is one command, no rebuild:
+service and a badge/banner appears in the UI. It's a runtime env var, so no
+rebuild is needed. On **`hpb-eos-prod`** Terraform owns the service's env
+(Gate 2), so set it in `terraform/prod.tfvars` and apply. A value set with
+gcloud there is removed by the next `terraform apply`:
+
+```hcl
+runtime_extra_env = { ENV_LABEL = "DEMO", ENV_LABEL_TONE = "amber" }   # {} to remove
+```
+
+On a project that isn't Terraform-managed (the trial), the one-liner still
+applies:
 
 ```bash
 gcloud run services update eos --region us-east1 --project <PROJECT_ID> \
@@ -115,16 +124,12 @@ git commit, and runs Cloud Build — which builds, pushes to Artifact Registry,
 and rolls the Cloud Run service. It refuses to deploy config for one project
 into another, and flags a dirty working tree in the image tag.
 
-After a successful roll it also **merges** a small allowlist of runtime keys
-from the same env file onto the Cloud Run service (today:
-`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
-`GOOGLE_OAUTH_REDIRECT_URI` — only keys that are set). Other service env
-(`SIGN_IN_ALLOWLIST`, `ENV_LABEL`, …) is left alone. To push those keys
-without a rebuild:
-
-```bash
-pnpm ship -- --sync-env
-```
+It does **not** touch the service's runtime env (Gate 2). The image roll
+keeps whatever env the service has, and env is owned by Terraform
+(`terraform/cloud_run.tf`), with secrets as Secret Manager references
+(`terraform/secrets.tf`). The former `--sync-env` step, which copied
+`GOOGLE_OAUTH_*` including the client secret from `.env.prod`, was removed,
+and `pnpm ship -- --sync-env` now refuses with a pointer here. See §2.
 
 Because images are tagged by commit, "what's running" always answers to
 "which commit," and rollback is redeploying a previous tag — old images stay
@@ -138,17 +143,30 @@ a branch against the sandbox, PR, merge, then ship.
 
 ### 2. Runtime configuration (no rebuild)
 
-Server-only settings — the sign-in allowlist, the environment label — are env
-vars on the Cloud Run service. Changing one takes effect on the next revision,
-about 30 seconds, no build:
+Server-only settings are env vars on the Cloud Run service. On
+`hpb-eos-prod` they come in two kinds since Gate 2. Neither needs a build.
+(This describes the service after the Gate 2 apply; check
+`docs/HARDENING_LOG.md` for whether it has run.)
 
-```bash
-gcloud run services update eos --region us-east1 --project <PROJECT_ID> \
-  --update-env-vars "^|^SIGN_IN_ALLOWLIST=@highplainsbank.com,daniel@mcgareyconsulting.com"
-```
+- **Secrets** (`SIGN_IN_ALLOWLIST`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+  `GOOGLE_TASKS_PULL_SECRET`) live in Secret Manager. To change one, add a
+  new version, then roll a revision. New instances read `latest` at
+  startup, and the roll moves every instance over:
 
-(The `^|^` prefix makes `|` the delimiter so the value's own commas survive —
-gcloud otherwise splits on them.)
+  ```bash
+  printf '%s' '@highplainsbank.com,daniel@mcgareyconsulting.com' \
+    | gcloud secrets versions add SIGN_IN_ALLOWLIST --project=hpb-eos-prod --data-file=-
+  pnpm ship    # or redeploy the running image — docs/SECRETS_RUNBOOK.md (e)
+  ```
+
+  Console: Security → Secret Manager → the secret → **+ New version**.
+  Full procedure, rotation cadence and rollback: `docs/SECRETS_RUNBOOK.md`.
+- **Plain config** (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_REDIRECT_URI`,
+  `ENV_LABEL`, …) lives in `terraform/prod.tfvars`. Change it there and run
+  `terraform apply`.
+
+Don't use `gcloud run services update --update-env-vars` on `hpb-eos-prod`:
+the next `terraform apply` reverts it.
 
 **The trap to know:** anything named `NEXT_PUBLIC_*` is **not** runtime config.
 Those values are baked into the JavaScript bundle when the image is built —
@@ -175,13 +193,18 @@ output is the review artifact:
 
 ```bash
 cd terraform
-terraform plan -var="project_id=<PROJECT_ID>" -var="region=us-east1" -out=change.tfplan
+terraform workspace select prod
+# prod.tfvars (gitignored): project_id, region, and since Gate 2
+# google_oauth_client_id + google_oauth_redirect_uri (non-secret).
+terraform plan -var-file=prod.tfvars -out=change.tfplan
 # read the plan — it says exactly what will be created/changed/destroyed
 terraform apply change.tfplan
 ```
 
-Never `apply` without reading the plan. Plan files embed state (including env
-vars), so they're gitignored — don't share them.
+Never `apply` without reading the plan. Plan files embed state, so they're
+gitignored and must not be shared. Before the Gate 2 apply, that state
+includes the plaintext Cloud Run env values. After it, secrets appear only as
+Secret Manager references.
 
 ## Data operations
 

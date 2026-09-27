@@ -148,7 +148,7 @@ Then spot-check in the console (see README.md "Backups and recovery
   weekly schedule, 14-week retention.
 - Cloud Storage → Buckets → `hpb-eos-prod-archive` exists, Archive class,
   versioning on.
-- Cloud Scheduler → Jobs → `eos-firestore-export` exists, next run Sunday
+- Cloud Scheduler → Jobs → `firebase-schedule-exportFirestore-us-east1` (us-east1, created by the function deploy) exists, next run Sunday
   03:00 America/Chicago.
 - Monitoring → Alerting → Policies → three new policies exist and are
   enabled.

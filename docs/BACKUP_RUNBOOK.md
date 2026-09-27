@@ -62,12 +62,19 @@ can never affect what's live.
 |---|---|---|---|
 | **PITR** (point-in-time recovery) | Accidental/bad writes or deletes in the last 7 days — surgical recovery (read old values, write them back) or a full clone at a timestamp | 7 days, minute granularity | `hpb-eos-prod-db` database setting (`point_in_time_recovery_enablement`), managed in `terraform/firestore.tf` |
 | **Scheduled backups** (daily + weekly) | Full-database loss/corruption beyond the PITR window | 14 weeks (98 days) — Firestore's backup-schedule maximum | Firestore-managed backups on `hpb-eos-prod-db`, `terraform/firestore.tf` (`google_firestore_backup_schedule.prod_daily` / `.prod_weekly`) |
-| **Weekly Firestore export** | Loss of Firestore itself (region incident, account-level issue) or need to go back further than 14 weeks; also feeds the eventual BigQuery load (`docs/ROADMAP.md`, deferred pending client conventions) | Governed by the bucket's retention policy (7 years, currently **unlocked** — see Decisions in `docs/HARDENING_LOG.md`) | `gs://hpb-eos-prod-archive/firestore/`, written by a weekly Cloud Scheduler job |
+| **Weekly Firestore export** | Loss of Firestore itself (region incident, account-level issue) or need to go back further than 14 weeks; also feeds the eventual BigQuery load (`docs/ROADMAP.md`, deferred pending client conventions) | Governed by the bucket's retention policy (7 years, currently **unlocked** — see Decisions in `docs/HARDENING_LOG.md`) | `gs://hpb-eos-prod-archive/firestore/`, one dated folder per run, written by the weekly `exportFirestore` Cloud Function (`firebase-schedule-exportFirestore-us-east1`) |
 | **Weekly Auth export** | Recovering Firebase Auth accounts/custom claims independent of Firestore (e.g. after a botched offboarding script or IdP issue) | Same bucket policy | `gs://hpb-eos-prod-archive/auth/<timestamp>-users.json` (firebase `auth:import` format), written by the weekly `exportAuthUsers` Cloud Function |
 | **Delete protection** | A `gcloud`/Console/API call deleting the whole database outright | Always on | `hpb-eos-prod-db` and `hpb-eos-sandbox-db` database setting (`delete_protection_state`), `terraform/firestore.tf` |
 | **Alerts** | Silent failure of the Firestore export, or someone flipping a backup schedule or a database setting outside Terraform. **Does not yet cover** a failed weekly Auth export (`exportAuthUsers`) — see §Alerts | N/A | Cloud Monitoring alert policies → `joe.creighton@highplainsbank.com`, `jessica.teichman@highplainsbank.com` |
 
 All of the above is on **`hpb-eos-prod-db`** only — see Sandbox policy.
+
+**Deploying the export functions:** both `exportFirestore` and
+`exportAuthUsers` need `functions/.env.hpb-eos-prod` (gitignored; sets
+`FIRESTORE_DATABASE_ID=hpb-eos-prod-db` and
+`ARCHIVE_BUCKET=hpb-eos-prod-archive`, both non-secret) present locally
+before running `firebase deploy --only functions:<name> --non-interactive`
+— without it the CLI can't resolve those params non-interactively.
 
 ## Sandbox policy
 
@@ -100,10 +107,13 @@ start of the quarterly test (f), or whenever the alerts in §Alerts below fire.
    schedule are listed, and that the most recent backup's timestamp is
    within the last 24 hours (daily) / 7 days (weekly).
 3. Firestore export: **Cloud Storage → Buckets → `hpb-eos-prod-archive`** →
-   `firestore/` prefix. Confirm the newest timestamped folder is within the
-   last 7–8 days. (You can also check **Cloud Scheduler → Jobs →
-   `eos-firestore-export`** for the last run's status, and trigger one
-   on-demand with its "Force run" action.)
+   `firestore/` prefix. Confirm the newest dated folder
+   (`<YYYY-MM-DD>T<HHMMSS>Z/`) is within the last 7–8 days. (You can also
+   check **Cloud Scheduler → Jobs →
+   `firebase-schedule-exportFirestore-us-east1`** (location `us-east1`) for
+   the last run's status and trigger one on-demand via ⋮ → "Force run", or
+   read the run's own output under **Cloud Run functions →
+   `exportFirestore` → Logs**.)
 4. Auth export: same bucket, `auth/` prefix. Confirm the newest
    `<date>T<hhmm>Z-users.json` object is within the last 7–8 days.
 5. Alert policies: **Monitoring → Alerting → Policies**. Confirm the three
@@ -314,7 +324,7 @@ Three Cloud Monitoring alert policies (Phase 0) email
 
 | Alert | Fires when | What to do |
 |---|---|---|
-| **Export failure** | The weekly Firestore export (`ExportDocuments`) call errors | Check the Cloud Scheduler job's (`eos-firestore-export`) run history for the error, fix the underlying cause (quota, permissions, bucket), then trigger a fresh export with the job's "Force run" action or `gcloud scheduler jobs run eos-firestore-export --location=us-central1`; this is the one alert that should page an engineer same-day — until it's fixed, the Firestore-export layer in the table above is stale. **Not yet covered:** `exportAuthUsers` (the weekly auth export) has no alert of its own yet — its own header comment (`functions/src/export-auth-users.ts`) flags this as a follow-up; check its Cloud Functions logs manually as part of procedure (a) until that's added |
+| **Export failure** | The weekly Firestore export (`ExportDocuments`) call, made by the `exportFirestore` Cloud Function, errors | Check **Cloud Run functions → `exportFirestore` → Logs** for the error (the function throws on failure, so it shows up as a Cloud Functions error, not a silent miss), fix the underlying cause (quota, permissions, bucket), then trigger a fresh export via the Scheduler job's "Force run" action or `gcloud scheduler jobs run firebase-schedule-exportFirestore-us-east1 --location=us-east1`; this is the one alert that should page an engineer same-day — until it's fixed, the Firestore-export layer in the table above is stale. **Not yet covered:** `exportAuthUsers` (the weekly auth export) has no alert of its own yet — its own header comment (`functions/src/export-auth-users.ts`) flags this as a follow-up; check its Cloud Functions logs manually as part of procedure (a) until that's added |
 | **Backup-schedule change** | `hpb-eos-prod-db`'s daily/weekly backup schedule is created, modified, or deleted outside Terraform | Compare against `terraform/firestore.tf` — if nobody ran `terraform apply` deliberately, treat as a possible unauthorized change and check Cloud Audit Logs for who made it |
 | **Database-settings change** | PITR, delete protection, or another `hpb-eos-prod-db` setting changes outside Terraform | Same as above — reconcile against `terraform/firestore.tf`; re-apply Terraform to restore the intended state if the change was accidental or unauthorized |
 

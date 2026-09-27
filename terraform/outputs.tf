@@ -23,7 +23,3 @@ output "backup_service_account_email" {
   value       = google_service_account.backup.email
 }
 
-output "firestore_export_scheduler_job" {
-  description = "Fully-qualified name of the Cloud Scheduler job that triggers the weekly Firestore export."
-  value       = google_cloud_scheduler_job.firestore_export.name
-}

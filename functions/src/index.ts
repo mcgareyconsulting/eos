@@ -10,7 +10,7 @@
  *    independently; uses FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
  *
  * 3) Weekly auth export — `exportAuthUsers` (scheduler, Sunday 4am
- *    America/Chicago, one hour after the Firestore export scheduler job):
+ *    America/Chicago, one hour after the Firestore export function):
  *    dumps every Firebase Auth user to Cloud Storage as a
  *    `firebase auth:import`-compatible JSON backup. Safe to deploy
  *    independently; uses ARCHIVE_BUCKET (default hpb-eos-prod-archive).
@@ -31,6 +31,10 @@ export { archiveStaleTodos } from "./archive-stale-todos";
 
 // Re-export scheduled Firebase Auth user export (Sunday 4am America/Chicago).
 export { exportAuthUsers } from "./export-auth-users";
+
+// 4) Weekly Firestore export (Sunday 3am America/Chicago) to a dated prefix
+//    in the archive bucket; runs as the eos-backup service account.
+export { exportFirestore } from "./export-firestore";
 
 initializeApp();
 

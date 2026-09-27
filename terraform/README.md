@@ -11,7 +11,7 @@ This directory contains the infrastructure-as-code for the EOS app's Cloud Run d
 - Cloud Build (handles image builds and deployments via cloudbuild.yaml)
 - Firebase Auth with Google sign-in restricted to the `allowed_domain`
 
-**Backups and recovery (Phase 0, always-on as of this pass):** Firestore PITR + delete protection on prod, daily/weekly managed backup schedules on prod, a long-term export archive bucket, a weekly Firestore export via Cloud Scheduler, and log-based alerting on backup/DR-relevant events. See "Backups and recovery (Phase 0)" below.
+**Backups and recovery (Phase 0, always-on as of this pass):** Firestore PITR + delete protection on prod, daily/weekly managed backup schedules on prod, a long-term export archive bucket, a weekly Firestore export via a scheduled Cloud Function, and log-based alerting on backup/DR-relevant events. See "Backups and recovery (Phase 0)" below.
 
 **Optional security levers (Tier 1, all default OFF):** Cloud Armor, CMEK, Data Access audit logs. See Tier 1 Security Levers section below. (Firestore PITR was a Tier 1 lever here; it's now a Phase 0 baseline setting on the imported database resources, not a toggle — see below.)
 
@@ -69,7 +69,6 @@ Run `terraform output` to see:
 - `artifact_registry_repository`: Fully-qualified Artifact Registry repository ID.
 - `archive_bucket_name`: Name of the long-term backup/export archive bucket.
 - `backup_service_account_email`: Email of the backup automation service account.
-- `firestore_export_scheduler_job`: Fully-qualified name of the weekly Firestore export Cloud Scheduler job.
 
 ## Core Resources
 
@@ -381,7 +380,7 @@ to guess at now.
 - **gcloud:**
   ```bash
   gcloud storage buckets create gs://hpb-eos-prod-archive \
-    --project=hpb-eos-prod --location=us-central1 \
+    --project=hpb-eos-prod --location=US \
     --default-storage-class=ARCHIVE --uniform-bucket-level-access \
     --public-access-prevention
 
@@ -438,7 +437,7 @@ Firestore service agent needs to actually perform it).
     --role="roles/datastore.importExportAdmin"
   ```
 
-### 6. Weekly Firestore export (Cloud Scheduler)
+### 6. Weekly Firestore export (scheduled Cloud Function)
 
 **What it is:** A second, independent copy of the production data, written
 out as a portable export to the archive bucket, on top of (not instead of)
@@ -448,28 +447,66 @@ is a set of files in GCS that can be imported into *any* Firestore database
 (useful for standing up a fresh sandbox from a known-good prod snapshot, or
 as a second, storage-independent copy of the data). Runs Sunday 03:00
 America/Chicago — matching the time zone convention already used by the
-existing scheduled function elsewhere in this project. Retries up to 3 times
-on failure.
+existing scheduled function elsewhere in this project.
 
-- **Terraform:** `google_cloud_scheduler_job.firestore_export` in
-  `backup.tf`.
-- **Console:** Cloud Scheduler → Jobs → `eos-firestore-export`. (Can also be
-  run on demand from here via "Force run.")
+**Why a Cloud Function and not a plain Cloud Scheduler HTTP job:** the
+original implementation was a Cloud Scheduler job (`eos-firestore-export`)
+that POSTed straight to Firestore's `exportDocuments` API with a fixed
+request body. A Scheduler job's request body is a static string, so it
+can't insert today's date — every weekly run wrote to the same undated
+prefix (`gs://hpb-eos-prod-archive/firestore/all_namespaces/...`), and the
+second run would have collided with the archive bucket's 7-year retention
+policy (retained objects can't be overwritten). That job was **removed
+2026-09-27**. The first, undated export it produced (2026-09-27 15:58Z)
+can't be deleted while retention holds and remains a valid one-off copy —
+see Decisions in `docs/HARDENING_LOG.md`.
+
+Replaced the same day by a scheduled Cloud Function, `exportFirestore`
+(`functions/src/export-firestore.ts`, region `us-east1`), which builds a
+**dated** prefix at run time —
+`gs://hpb-eos-prod-archive/firestore/<YYYY-MM-DD>T<HHMMSS>Z/` — so no two
+runs can ever collide, waits for the export operation to complete, and
+throws on failure (so a failure is a Cloud Functions error in the logs,
+which the "Firestore export (backup) failed" alert in §7 matches
+regardless of who/what called the export). Runs as the `eos-backup` service
+account (below). Firebase creates the function's own Cloud Scheduler job on
+deploy — `firebase-schedule-exportFirestore-us-east1` (location
+`us-east1`) — rather than one being hand-authored in Terraform.
+
+- **Terraform:** the function itself is deployed via `firebase deploy`, not
+  Terraform. `backup.tf` manages the IAM it needs:
+  `google_project_iam_member.backup_log_writer` (`roles/logging.logWriter`
+  at the project level — gen2 functions write their own logs),
+  `google_cloud_run_v2_service_iam_member.backup_invokes_export_firestore`
+  (`roles/run.invoker` on the `exportfirestore` Cloud Run service in
+  `us-east1` — gen2 functions run as Cloud Run services under the hood, and
+  the function's own Scheduler job invokes it over HTTP as `eos-backup`),
+  and `google_service_account_iam_member.backup_sa_deployers`
+  (`roles/iam.serviceAccountUser` on `eos-backup`, one binding per principal
+  in `var.backup_sa_deployers` — today just the consultant's account,
+  needed to deploy a function that runs as `eos-backup`; **temporary**,
+  removed once deploys move to a dedicated build service account,
+  hardening step 4/5).
+- **Console:** Cloud Scheduler → Jobs →
+  `firebase-schedule-exportFirestore-us-east1` (location `us-east1`) → ⋮ →
+  **Force run** to trigger on demand. Logs: Cloud Run functions →
+  `exportFirestore` → Logs.
 - **gcloud:**
   ```bash
-  gcloud scheduler jobs create http eos-firestore-export \
-    --project=hpb-eos-prod --location=us-central1 \
-    --schedule="0 3 * * 0" --time-zone="America/Chicago" \
-    --uri="https://firestore.googleapis.com/v1/projects/hpb-eos-prod/databases/hpb-eos-prod-db:exportDocuments" \
-    --http-method=POST \
-    --headers="Content-Type=application/json" \
-    --message-body='{"outputUriPrefix":"gs://hpb-eos-prod-archive/firestore"}' \
-    --oauth-service-account-email=eos-backup@hpb-eos-prod.iam.gserviceaccount.com \
-    --max-retry-attempts=3
+  # Trigger the scheduled export now, without waiting for Sunday
+  gcloud scheduler jobs run firebase-schedule-exportFirestore-us-east1 \
+    --location=us-east1 --project=hpb-eos-prod
+
+  # Tail the function's own logs
+  gcloud functions logs read exportFirestore \
+    --region=us-east1 --project=hpb-eos-prod
   ```
-  (To trigger an export manually right now, without waiting for the
-  schedule: `gcloud scheduler jobs run eos-firestore-export
-  --location=us-central1`.)
+
+**Deploying it:** `firebase deploy --only functions:exportFirestore
+--non-interactive` needs `functions/.env.hpb-eos-prod` (gitignored; sets
+`FIRESTORE_DATABASE_ID=hpb-eos-prod-db` and
+`ARCHIVE_BUCKET=hpb-eos-prod-archive`, both non-secret) present locally —
+without it the CLI can't resolve those params non-interactively.
 
 ### 7. Alerting on backup/DR-relevant events
 

@@ -125,39 +125,43 @@ resource "google_project_iam_member" "functions_sa_writer_project" {
 
 # --- Weekly Firestore export -------------------------------------------
 #
-# Cloud Scheduler → Firestore Admin API exportDocuments, direct HTTP call
-# with an OAuth token (no Cloud Function/Cloud Run hop needed for this one).
-# Sunday 03:00 America/Chicago — matches the existing scheduled function's
-# time zone convention elsewhere in this project.
-resource "google_cloud_scheduler_job" "firestore_export" {
+# Done by the scheduled Cloud Function `exportFirestore`
+# (functions/src/export-firestore.ts), Sunday 03:00 America/Chicago, running
+# as the eos-backup service account and writing to a DATED prefix
+# gs://<archive>/firestore/<stamp>/. The earlier Cloud Scheduler HTTP job was
+# removed 2026-09-27: its request body was a fixed string, so every run hit
+# the same object names and the second run collided with the bucket's
+# retention policy. Firebase creates the function's own Scheduler job
+# (`firebase-schedule-exportFirestore-us-east1`) on deploy.
+
+# Gen2 functions need to write their own logs.
+resource "google_project_iam_member" "backup_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.backup.email}"
+}
+
+# Whoever deploys `exportFirestore` must be allowed to attach eos-backup as
+# its runtime identity (iam.serviceAccounts.actAs). Today that is the
+# consultant's account; this grant is replaced by the build service account
+# when deploys move to Cloud Build (hardening step 4/5).
+resource "google_service_account_iam_member" "backup_sa_deployers" {
+  for_each = toset(var.backup_sa_deployers)
+
+  service_account_id = google_service_account.backup.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = each.value
+}
+
+# The function's Scheduler job (created by Firebase on deploy) invokes the
+# function over HTTP with an OIDC token minted for eos-backup. The compute
+# default SA gets run.invoker project-wide; eos-backup gets it only on this
+# one service. The service itself is Firebase-managed, so it is referenced
+# by name rather than as a Terraform resource.
+resource "google_cloud_run_v2_service_iam_member" "backup_invokes_export_firestore" {
   project  = var.project_id
-  region   = "us-central1"
-  name     = "eos-firestore-export"
-  schedule = "0 3 * * 0"
-
-  time_zone = "America/Chicago"
-
-  http_target {
-    uri         = "https://firestore.googleapis.com/v1/projects/${var.project_id}/databases/${var.prod_database_id}:exportDocuments"
-    http_method = "POST"
-
-    headers = {
-      "Content-Type" = "application/json"
-    }
-
-    body = base64encode(jsonencode({
-      outputUriPrefix = "gs://${google_storage_bucket.archive.name}/firestore"
-    }))
-
-    oauth_token {
-      service_account_email = google_service_account.backup.email
-      scope                 = "https://www.googleapis.com/auth/datastore"
-    }
-  }
-
-  retry_config {
-    retry_count = 3
-  }
-
-  depends_on = [google_project_service.required]
+  location = "us-east1"
+  name     = "exportfirestore"
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.backup.email}"
 }

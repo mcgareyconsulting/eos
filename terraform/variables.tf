@@ -132,3 +132,9 @@ variable "alert_emails" {
     "jessica.teichman@highplainsbank.com",
   ]
 }
+
+variable "backup_sa_deployers" {
+  description = "Principals allowed to deploy Cloud Functions that run as the eos-backup service account (iam.serviceAccountUser on that SA). Temporary until deploys move to a build service account."
+  type        = list(string)
+  default     = ["user:daniel@mcgareyconsulting.com"]
+}

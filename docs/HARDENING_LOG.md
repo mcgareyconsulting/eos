@@ -40,7 +40,9 @@ match.
 | Daily backup schedule, 14-week retention | I-07; Plan: item 5 | verified | 2026-09-27 | schedule 2eb3e684-baf9-4e02-9ecf-d08a61fdff7a, retention 8467200s, dailyRecurrence | Prod only — see Decisions |
 | Weekly backup schedule, 14-week retention | I-07; Plan: item 5 | verified | 2026-09-27 | schedule f8071207-aec9-4b2b-bb4a-ba12583e95fb, retention 8467200s, SUNDAY | Prod only |
 | Archive bucket `hpb-eos-prod-archive` (Cloud Storage, US multi-region, Archive class, 7-yr retention policy, unlocked) | I-07 | verified | 2026-09-27 | `gcloud storage buckets describe`: location US, ARCHIVE, versioning on, PAP enforced, retention 220752000s unlocked; IAM: firestore SA objectAdmin, eos-backup + compute SA objectCreator | First applied as us-central1; Firestore rejected exports to it (`INVALID_ARGUMENT`: a us-east1 database exports only to us-east1 or the US multi-region). Replaced the same day, while empty, with a US multi-region bucket — redundant across >=2 US regions, which is the stronger DR posture anyway. Retention policy unlocked — see Decisions |
-| Weekly Firestore export → `gs://hpb-eos-prod-archive/firestore/` | I-07 (extends beyond the literal PITR/backup ask) | applied | 2026-09-27 | Scheduler job eos-firestore-export force-run 2026-09-27 15:58Z: export SUCCESSFUL to gs://hpb-eos-prod-archive/firestore/all_namespaces/… — BUT prefix is undated, so the next run would collide with the retention policy; being replaced by a scheduled function with a dated prefix (see next row) | Direct Cloud Scheduler → Firestore `exportDocuments` HTTP call; feeds the eventual BigQuery load — see Decisions |
+| Weekly Firestore export → `gs://hpb-eos-prod-archive/firestore/` | I-07 (extends beyond the literal PITR/backup ask) | verified | 2026-09-27 | Function `exportFirestore` (us-east1, runs as `eos-backup@hpb-eos-prod.iam.gserviceaccount.com`); scheduler job `firebase-schedule-exportFirestore-us-east1`; first dated run `firestore/2026-09-27T1615Z/`, operation SUCCESSFUL | Cloud Scheduler HTTP job `eos-firestore-export` removed same day — its request body was a fixed string, so every run wrote the same undated prefix and the second run would have collided with the bucket's 7-yr retention policy; feeds the eventual BigQuery load — see Decisions |
+| `eos-backup` granted `roles/run.invoker` on Cloud Run service `exportfirestore` (us-east1) | I-07 | verified | 2026-09-27 | `terraform/backup.tf` `google_cloud_run_v2_service_iam_member.backup_invokes_export_firestore`; `gcloud run services get-iam-policy exportfirestore --region=us-east1` | Lets `exportFirestore`'s own Scheduler job invoke it over HTTP as `eos-backup` — gen2 functions run as Cloud Run services under the hood |
+| Consultant (`daniel@mcgareyconsulting.com`) granted `roles/iam.serviceAccountUser` on `eos-backup` | I-07 | verified | 2026-09-27 | `terraform/backup.tf` `google_service_account_iam_member.backup_sa_deployers` | **Temporary** deploy-time `actAs` grant so the consultant's account can deploy a function that runs as `eos-backup`; remove at hardening step 5 once deploys move to a dedicated build service account |
 | Weekly Auth export (`exportAuthUsers`) → `gs://hpb-eos-prod-archive/auth/` | I-07 | verified | 2026-09-27 | Deployed 2026-09-27 (us-central1, see Notes); force-run wrote auth/2026-09-27T1600Z-users.json + summary: userCount 85, adminCount 10 | Sunday 04:00 America/Chicago (1h after the Firestore export); `firebase auth:import` format incl. `role: admin` claim; see `docs/BACKUP_RUNBOOK.md` (e) |
 | Alert: export failure | I-07; Plan: item 5 (extension); I-08 | applied | 2026-09-27 | alertPolicies/9319997606588880846; channels: joe.creighton@, jessica.teichman@ | → joe.creighton@, jessica.teichman@highplainsbank.com (`terraform/variables.tf` `alert_emails`). Covers the Firestore export only — `exportAuthUsers` has no alert yet (flagged as a follow-up in its own file header); tracked as a gap, not yet a separate row |
 | Alert: backup-schedule change | I-07; I-08 | applied | 2026-09-27 | alertPolicies/14200065974670063424 | Same recipients |
@@ -50,6 +52,7 @@ match.
 | Terraform state → `gs://hpb-eos-tfstate` (us-east1, versioned, soft-delete 7d) | I-04; Plan step 5 (partial) | verified | 2026-09-27 | bucket created by hand in Console; `terraform init -migrate-state`; objects eos/terraform/state/prod.tfstate (+ empty default.tfstate); local copies deleted | Bucket-level IAM still project-default (Editor can read state, which holds the OAuth client secret until step 5) |
 | Cloud Run env vars guarded from Terraform (`ignore_changes` on container env) | I-03 | verified | 2026-09-27 | `terraform/cloud_run.tf`; plan showed 0 Cloud Run changes | First plan would have stripped SIGN_IN_ALLOWLIST + GOOGLE_OAUTH_* (set by deploy.sh). Remove the guard when env moves to Secret Manager refs |
 | First restore test | Plan: item 5 (verification) | planned | — | — | Needs the first scheduled backup (within 24h of 2026-09-27); run `pnpm backup:restore-test --apply` |
+| Region drift: `exportAuthUsers` + `archiveStaleTodos` deployed to `us-central1` vs. code declaring `us-east1` (`setGlobalOptions({ region: "us-east1" })` in `functions/src/index.ts`) | I-07 | planned | — | — | Harmless today (both functions still work), but the deployed region doesn't match the code's stated intent; fix together rather than one-off — likely an import/registration-order issue with `setGlobalOptions` |
 
 ## Later gates (placeholders)
 
@@ -80,3 +83,17 @@ match.
   Jack Henry → BigQuery migration conventions arrive (`docs/ROADMAP.md`
   Pass 10). The weekly export exists now so the data isn't lost while that
   decision is pending — it just isn't being loaded anywhere yet.
+- **The first, undated Firestore export stays in the archive bucket.** The
+  removed Cloud Scheduler job's force-run wrote
+  `gs://hpb-eos-prod-archive/firestore/all_namespaces/...` on 2026-09-27
+  15:58Z; it can't be deleted while the bucket's retention policy holds, and
+  it's a valid export in its own right — it just isn't part of the ongoing
+  dated-prefix pattern the `exportFirestore` function establishes going
+  forward.
+- **Archive bucket is `US` multi-region, not a single region.** Firestore
+  only allows exporting to a bucket in the *same* region as the database or
+  the `US` multi-region — `hpb-eos-prod-db` is in `us-east1`, and exporting
+  to a single other region (e.g. `us-central1`, the first location tried)
+  is rejected with `INVALID_ARGUMENT` (confirmed 2026-09-27). `US`
+  multi-region also gives redundancy across ≥2 US regions, which is the
+  stronger DR posture for backups anyway.

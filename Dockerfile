@@ -7,13 +7,31 @@
 # tree as pnpm-lock.yaml. Pinned to match package.json's "packageManager"
 # field (pnpm 10.x — the lockfile is still format v9 ("lockfileVersion:
 # 9.0"); pnpm 10 didn't bump the lockfile format from pnpm 9).
-FROM node:22-alpine AS base
+#
+# Pinned by digest (in addition to the tag) so a `node:22-alpine` re-push
+# upstream can't silently change what this build pulls. Tag kept alongside
+# for readability; digest is the index (multi-arch) digest, verified via
+# `docker buildx imagetools inspect node:22-alpine` on 2026-09-27.
+# Re-verify periodically with the same command and update both digest
+# occurrences (base + runner below) together.
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS base
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /app
 
 # ---- Dependencies -------------------------------------------------------
 # Installed in their own stage/layer so `pnpm install` is only re-run when
 # lockfile/manifests change, not on every source edit.
+#
+# Deliberately NOT `--prod`: this single install feeds BOTH the builder
+# stage (which needs typescript, tailwindcss/@tailwindcss/postcss, eslint —
+# all devDependencies — to run `pnpm build`) and, via
+# `COPY --from=deps /app/node_modules`, is the only node_modules the builder
+# stage gets. Adding `--prod` here would strip those dev deps and break the
+# build. It's still safe from an image-size/attack-surface standpoint: the
+# runner stage never copies from `deps` — it only copies
+# `.next/standalone` (Next's `output: "standalone"` trace, which prunes
+# node_modules down to runtime-only packages) plus `.next/static` and
+# `public/`. Dev dependencies never reach the final runtime image.
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -88,7 +106,8 @@ RUN mkdir -p public
 # (per Next.js docs) and must be copied in manually. proxy.ts (Next 16's
 # middleware replacement) runs on the Node.js runtime by default and IS part
 # of the standard server trace, so no separate handling is required for it.
-FROM node:22-alpine AS runner
+# Same pinned base + digest as above (see comment there) — keep both in sync.
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runner
 WORKDIR /app
 
 # Redeclared here so the same --build-arg lands in the runtime stage too:

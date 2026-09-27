@@ -58,7 +58,7 @@ match.
 
 | Item | Audit ref | Status | Date | Evidence | Notes |
 |---|---|---|---|---|---|
-| Next.js framework upgrade (16.2.6 → 16.2.11+) | C-01; Plan: item 1 | planned | — | — | `pnpm audit --prod` baseline is in the audit doc itself |
+| Next.js framework upgrade (16.2.6 → 16.3.6), firebase 12.19, firebase-admin 14.5 (app + functions), base image digest-pinned | C-01; Plan step 3 | in code | 2026-09-27 | `pnpm audit --prod`: 35 (3 critical, 18 high) → 6 (0 critical, 3 high, all transitive in google-gax/protobufjs/brace-expansion, no upstream fix yet); functions `npm audit`: 1 high + 12 moderate → 3 moderate; 743/743 tests, lint + tsc + `next build` clean; zero app code changes | Branch feat/gate1-framework-upgrade. Manual sandbox pass pending before ship. Remaining 6 advisories: leave for upstream rather than override Google SDK internals |
 | Secrets moved to Secret Manager + CMEK key | I-03; I-02(CMEK lever); Plan: items 11–14 | planned | — | — | Currently plain Cloud Run env vars in a laptop `.env.prod` |
 | Access-control fixes (meeting-delete leader check, `owner_id` validation) | C-02; C-03; Plan: item 1–2 (code fixes) | planned | — | — | Two HIGH/MEDIUM code findings, not infra |
 | Google refresh tokens encrypted with KMS | C-06; Plan: item 11 | planned | — | — | Currently plaintext in Firestore |

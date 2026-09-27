@@ -1,4 +1,5 @@
-# Cloud Run service. Image updates owned by cloudbuild.yaml; Terraform manages configuration.
+# Cloud Run service. Image updates owned by cloudbuild.yaml; Terraform manages configuration,
+# including ALL container env (Gate 2: secrets as Secret Manager refs, see secrets.tf).
 # Auth model: app-layer (Firebase) not GCP-layer. See README.md "Cloud Run Service".
 
 resource "google_cloud_run_v2_service" "app" {
@@ -21,22 +22,78 @@ resource "google_cloud_run_v2_service" "app" {
     containers {
       # Placeholder image. cloudbuild.yaml builds and deploys real images; ignore_changes below.
       image = "us-docker.pkg.dev/cloudrun/container/hello"
+
+      # --- Runtime env (Gate 2: Terraform owns ALL container env) ---------
+      #
+      # From Gate 2 on, Terraform is the only writer of this service's env.
+      # Anything set with `gcloud run services update --update-env-vars` is
+      # removed by the next apply: add it to var.runtime_extra_env instead.
+      # scripts/deploy.sh no longer pushes env, and cloudbuild.yaml's
+      # `gcloud run deploy --image=...` keeps whatever env the service has.
+
+      # Non-secret config: plain values, fine in plan output and state.
+      env {
+        name  = "GOOGLE_OAUTH_CLIENT_ID"
+        value = var.google_oauth_client_id
+      }
+      env {
+        name  = "GOOGLE_OAUTH_REDIRECT_URI"
+        value = var.google_oauth_redirect_uri
+      }
+
+      # Optional extra plain env (e.g. ENV_LABEL). Empty by default.
+      dynamic "env" {
+        for_each = var.runtime_extra_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      # Secrets: references to Secret Manager (secrets.tf), resolved by Cloud
+      # Run when an instance starts. Plan output, state and `gcloud run
+      # services describe` show only the secret name + version, never the
+      # value. "latest" means new instances pick up a newly added version;
+      # roll a new revision to move every instance onto it
+      # (docs/SECRETS_RUNBOOK.md).
+      dynamic "env" {
+        for_each = google_secret_manager_secret.runtime
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
 
   depends_on = [
     google_project_service.required,
     google_artifact_registry_repository.images,
+    # The runtime SA must be able to read every referenced secret before the
+    # new revision starts, or the revision fails to become ready.
+    google_secret_manager_secret_iam_member.runtime_accessor,
   ]
 
   lifecycle {
+    # Refuse to roll a revision that references a secret with no enabled
+    # version: such a revision fails to start. See secrets.tf.
+    precondition {
+      condition = alltrue([
+        for v in data.google_secret_manager_secret_version.runtime_latest : v.enabled
+      ])
+      error_message = "A secret in secrets.tf has no ENABLED latest version, so a Cloud Run revision referencing it would fail to start. Add a version first (docs/SECRETS_RUNBOOK.md step 2), then re-plan."
+    }
+
     ignore_changes = [
+      # Image is rolled by cloudbuild.yaml (via scripts/deploy.sh), not Terraform.
       template[0].containers[0].image,
-      # Runtime env vars (SIGN_IN_ALLOWLIST, GOOGLE_OAUTH_*) are set by
-      # scripts/deploy.sh --update-env-vars, not by Terraform. Without this,
-      # an apply strips them and breaks sign-in. Remove once they move to
-      # Secret Manager references managed here (hardening step 5).
-      template[0].containers[0].env,
+      # Gate 2: template[0].containers[0].env is deliberately NOT ignored
+      # any more. Terraform owns env; secrets are Secret Manager refs.
       client,
       client_version,
       # API always returns scaling zero-populated; ignore to prevent spurious diffs.

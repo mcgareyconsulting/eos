@@ -195,8 +195,10 @@ export const exportAuthUsers = onSchedule(
   {
     schedule: "0 4 * * 0",
     timeZone: TIME_ZONE,
-    // Region inherited from the global `setGlobalOptions({ region: "us-east1" })`
-    // in index.ts — do not pin a region here.
+    // Pinned explicitly: setGlobalOptions in index.ts runs after this module
+    // is evaluated (imports are hoisted), so the global region never applied
+    // and the first deploy (2026-09-27) landed in us-central1.
+    region: "us-east1",
     memory: "256MiB",
     timeoutSeconds: 540,
     retryCount: 1,

@@ -150,7 +150,10 @@ export const archiveStaleTodos = onSchedule(
   {
     schedule: "0 3 * * 1",
     timeZone: TIME_ZONE,
-    region: "us-central1",
+    // Pinned explicitly: setGlobalOptions in index.ts runs after this module
+    // is evaluated (imports are hoisted), so a per-function region is the
+    // only reliable way to land next to the database.
+    region: "us-east1",
     retryCount: 1,
   },
   async () => {

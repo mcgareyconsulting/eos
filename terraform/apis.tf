@@ -17,6 +17,9 @@ locals {
     "storage.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    # Gate 2 (kms.tf): application-level encryption key. Also what the
+    # enable_cmek lever (levers.tf) always needed but never enabled itself.
+    "cloudkms.googleapis.com",
   ]
 }
 

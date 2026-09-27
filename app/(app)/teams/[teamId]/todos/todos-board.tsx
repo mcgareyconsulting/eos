@@ -237,9 +237,18 @@ export function TodosBoard({
     [db, userId],
   );
 
+  // `myElsewhere` rows in initialTodos (page.tsx) carry a foreign team_id
+  // and have their visibility forced to "team" so they render; excluding
+  // them here (as the live teamQuery's team_id==teamId predicate already
+  // does) keeps this list disjoint from initialElsewhere below — otherwise
+  // the same doc paints in both lists until the live listeners settle,
+  // producing a duplicate React key.
   const initialTeam = useMemo(
-    () => initialTodos.filter((t) => t.visibility === "team"),
-    [initialTodos],
+    () =>
+      initialTodos.filter(
+        (t) => t.visibility === "team" && (!t.team_id || t.team_id === teamId),
+      ),
+    [initialTodos, teamId],
   );
   const initialMine = useMemo(
     () =>

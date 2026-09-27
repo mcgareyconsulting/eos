@@ -23,18 +23,35 @@ const nextConfig: NextConfig = {
   // Unset locally — `pnpm dev`/`pnpm build` keep today's behaviour.
   deploymentId: process.env.DEPLOYMENT_ID || undefined,
 
-  // Firebase Auth's signInWithPopup needs to interact with the popup window
-  // (to detect close + receive the auth result). Many hosts' default COOP
-  // header blocks that. "same-origin-allow-popups" keeps the page isolated
-  // from arbitrary cross-origin frames but allows the auth popup to communicate.
+  // Security headers on every response (C-08,
+  // docs/SECURITY_AUDIT_2026-09-08.md). The Content-Security-Policy is not
+  // here: it carries a per-request nonce, so proxy.ts sets it (report-only
+  // for now — see lib/csp.ts).
   async headers() {
     return [
       {
         source: "/(.*)",
         headers: [
+          // Firebase Auth's signInWithPopup needs to interact with the popup
+          // window (to detect close + receive the auth result). Many hosts'
+          // default COOP header blocks that. "same-origin-allow-popups" keeps
+          // the page isolated from arbitrary cross-origin frames but allows
+          // the auth popup to communicate.
           {
             key: "Cross-Origin-Opener-Policy",
             value: "same-origin-allow-popups",
+          },
+          // Two years, subdomains, preload-eligible. Browsers ignore it over
+          // plain http (local dev).
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
           },
         ],
       },

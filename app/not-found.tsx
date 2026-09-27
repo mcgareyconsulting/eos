@@ -1,8 +1,14 @@
 import Link from "next/link";
+import { connection } from "next/server";
 
 // Root not-found — what notFound() renders (missing/foreign team or meeting
 // ids, deleted docs). Without this, Next's unstyled default 404 appears.
-export default function NotFound() {
+//
+// Rendered per request (connection()) rather than prerendered: a static page
+// can't carry the CSP nonce proxy.ts mints, so Next's scripts on it would
+// violate the policy (lib/csp.ts).
+export default async function NotFound() {
+  await connection();
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-xl border border-zinc-300 bg-white p-6 text-center dark:border-zinc-800 dark:bg-zinc-900">

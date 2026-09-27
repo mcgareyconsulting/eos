@@ -5,7 +5,13 @@ import { NextResponse, type NextRequest } from "next/server";
 // cookie's presence — cryptographic verification happens at the page level
 // via requireFirebaseUser, which redirects to /login if the cookie is invalid.
 // Net effect: same security, no Edge-runtime conflicts.
-export function gateRequest(request: NextRequest): NextResponse {
+//
+// `requestHeaders` (proxy.ts) are forwarded to the render when the request
+// passes — that is how the CSP nonce reaches Next.
+export function gateRequest(
+  request: NextRequest,
+  requestHeaders?: Headers,
+): NextResponse {
   const { pathname } = request.nextUrl;
   // Session-less paths. /api/google/tasks/pull is called by Cloud Scheduler
   // (or curl) with Authorization: Bearer $GOOGLE_TASKS_PULL_SECRET — the
@@ -16,12 +22,15 @@ export function gateRequest(request: NextRequest): NextResponse {
   // it defeats itself: an expired session is one of the failures worth
   // logging, and gating it would redirect that report to /login — which the
   // boundary's fetch would follow and read as a successful report.
+  // /api/csp-report is the same kind of sink, for browser CSP reports (which
+  // are sent without the session cookie).
   const isPublic =
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/api/google/tasks/pull" ||
-    pathname === "/api/client-error";
+    pathname === "/api/client-error" ||
+    pathname === "/api/csp-report";
 
   const hasSession = request.cookies.has("__firebase_session");
 
@@ -32,5 +41,7 @@ export function gateRequest(request: NextRequest): NextResponse {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  return requestHeaders
+    ? NextResponse.next({ request: { headers: requestHeaders } })
+    : NextResponse.next();
 }

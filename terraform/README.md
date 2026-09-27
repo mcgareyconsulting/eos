@@ -357,9 +357,13 @@ than Firestore's own backup retention (14 weeks) — currently the weekly
 Firestore export (below) and, separately, a weekly Firebase Auth export
 written by a Cloud Function. `ARCHIVE` storage class (cheapest per-GB,
 priced for data you rarely touch), versioned (so an overwrite doesn't
-destroy the previous version), and deliberately in `US-CENTRAL1` — a
-different region from the databases' `us-east1` — so a regional problem
-affecting the database region doesn't also take out the backups of it.
+destroy the previous version), and in the `US` **multi-region**: Cloud
+Storage keeps multi-region data in at least two US regions more than 100
+miles apart, so a regional problem affecting the databases' `us-east1`
+doesn't also take out the backups of them. (A single *other* region such as
+`us-central1` is not an option: a `us-east1` Firestore database can only
+export to a bucket in `us-east1` or the `US` multi-region — anything else
+is rejected with `INVALID_ARGUMENT`, confirmed 2026-09-27.)
 Public access is blocked at the bucket level (`public_access_prevention =
 "enforced"`).
 

@@ -2,13 +2,17 @@
 # service accounts/IAM that let Firestore and Cloud Functions write to it.
 # See README.md "Backups and recovery (Phase 0)" and IMPORT_PHASE0.md.
 
-# Long-term archive bucket. Deliberately a different region (US-CENTRAL1)
-# from the Firestore databases (us-east1) so a regional outage or incident
-# affecting the database region doesn't also take out its backups.
+# Long-term archive bucket. US multi-region: Cloud Storage keeps multi-region
+# data redundantly in at least two US regions >=100 miles apart, so a
+# regional outage or incident in the database region (us-east1) does not
+# take out its backups. This also satisfies Firestore's export rule: a
+# us-east1 database can only export to a bucket in us-east1 or the US
+# multi-region (a single other region such as us-central1 is rejected with
+# INVALID_ARGUMENT — confirmed 2026-09-27).
 resource "google_storage_bucket" "archive" {
   project  = var.project_id
   name     = var.archive_bucket_name
-  location = "US-CENTRAL1"
+  location = "US"
 
   storage_class               = "ARCHIVE"
   uniform_bucket_level_access = true

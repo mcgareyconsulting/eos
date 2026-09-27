@@ -15,13 +15,15 @@ terraform {
     }
   }
 
-  # Remote state backend — uncomment once client provisions a bucket.
-  # See README.md "Provider Configuration" for details.
-  #
-  # backend "gcs" {
-  #   bucket = "REPLACE_ME-tfstate"   # e.g. "hpb-eos-tfstate"
-  #   prefix = "eos/terraform/state"
-  # }
+  # Remote state: gs://hpb-eos-tfstate (hpb-eos-prod, us-east1; versioned,
+  # soft-delete 7d, uniform access, public access prevented). Created by hand
+  # in the Console 2026-09-27; state migrated from the local `prod` workspace
+  # the same day. Workspaces map to objects under the prefix
+  # (e.g. eos/terraform/state/prod.tfstate). See README.md.
+  backend "gcs" {
+    bucket = "hpb-eos-tfstate"
+    prefix = "eos/terraform/state"
+  }
 }
 
 provider "google" {

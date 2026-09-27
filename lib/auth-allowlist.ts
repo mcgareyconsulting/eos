@@ -47,3 +47,29 @@ export function isEmailAllowed(
   const domain = normalized.slice(normalized.lastIndexOf("@") + 1);
   return allowlist.domains.includes(domain);
 }
+
+export const NOT_AUTHORIZED_MESSAGE =
+  "This account isn't authorized for this application. Sign in with your High Plains Bank account.";
+export const EMAIL_UNVERIFIED_MESSAGE =
+  "This account's email address isn't verified. Sign in with your High Plains Bank Google account.";
+
+/**
+ * The whole sign-in decision for a *verified* Firebase ID token: null to
+ * admit, otherwise the message to show. Used by createSession() and by
+ * session renewal, so both apply exactly the same perimeter.
+ *
+ * `email_verified` must be literally `true` (C-04,
+ * docs/SECURITY_AUDIT_2026-09-08.md). Google Workspace accounts always carry
+ * it; it matters the day a second provider (SSO, email link) is enabled —
+ * without it an unverified `anyone@highplainsbank.com` would pass the
+ * allowlist on the address string alone. Checked regardless of whether an
+ * allowlist is configured.
+ */
+export function signInRefusal(
+  claims: { email?: string | null; email_verified?: boolean | null },
+  allowlist: Allowlist | null,
+): string | null {
+  if (claims.email_verified !== true) return EMAIL_UNVERIFIED_MESSAGE;
+  if (!isEmailAllowed(allowlist, claims.email)) return NOT_AUTHORIZED_MESSAGE;
+  return null;
+}

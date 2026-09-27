@@ -27,8 +27,10 @@ service cloud.firestore {
     // These rules mirror that allowlist to gate the broad org/user/team reads
     // below, so a token from outside the perimeter can't enumerate them.
     // Keep this list in lockstep with the deployed SIGN_IN_ALLOWLIST value.
+    // The email must be verified too (C-04) — same rule as signInRefusal().
     function inDomain() {
       return authed()
+        && request.auth.token.email_verified == true
         && (request.auth.token.email.matches(".*@highplainsbank[.]com$")
             || request.auth.token.email == "daniel@mcgareyconsulting.com");
     }

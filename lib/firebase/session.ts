@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
+import { parseAllowlist, signInRefusal } from "@/lib/auth-allowlist";
 import { getAdminAuth } from "./admin";
 
 const SESSION_COOKIE_NAME = "__firebase_session";
@@ -15,21 +15,19 @@ const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 // session passes through. The client-side `hd` hint only pre-filters
 // Google's account chooser, and Firestore rules don't run for the admin-SDK
 // reads that render pages, so neither is enforcement. Unset = open sign-in.
+// The email must also be verified (C-04), allowlist or not.
 // See lib/auth-allowlist.ts.
 export async function createSession(idToken: string): Promise<void> {
   const auth = getAdminAuth();
 
-  const allowlist = parseAllowlist(process.env.SIGN_IN_ALLOWLIST);
-  if (allowlist) {
-    // Verify first so the email we gate on is the one Google attests,
-    // not anything client-supplied.
-    const decoded = await auth.verifyIdToken(idToken);
-    if (!isEmailAllowed(allowlist, decoded.email)) {
-      throw new Error(
-        "This account isn't authorized for this application. Sign in with your High Plains Bank account.",
-      );
-    }
-  }
+  // Verify first so the claims we gate on are the ones Google attests, not
+  // anything client-supplied.
+  const decoded = await auth.verifyIdToken(idToken);
+  const refusal = signInRefusal(
+    decoded,
+    parseAllowlist(process.env.SIGN_IN_ALLOWLIST),
+  );
+  if (refusal) throw new Error(refusal);
 
   const sessionCookie = await auth.createSessionCookie(idToken, {
     expiresIn: FIVE_DAYS_MS,

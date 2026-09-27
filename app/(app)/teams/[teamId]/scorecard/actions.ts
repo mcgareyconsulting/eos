@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   requireRosterOwner,
@@ -67,6 +68,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     : "weekly";
 
   if (!name) throw new Error("Name required");
+  requireMaxLength(name, TITLE_MAX, "Name");
   await requireRosterOwner(teamId, owner_id, { self: uid });
 
   const unit: ScorecardUnit = isScorecardUnit(unitRaw) ? unitRaw : "number";
@@ -139,6 +141,7 @@ export async function updateMetric(
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Name required");
+  requireMaxLength(name, TITLE_MAX, "Name");
 
   const unitRaw = String(formData.get("unit") ?? "number");
   const directionRaw = String(formData.get("direction") ?? "gte");
@@ -246,6 +249,7 @@ export async function setMetricGroup(
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const trimmed = normalizeGroupName(groupRaw);
+  requireMaxLength(trimmed, TITLE_MAX, "Group name");
   const group = trimmed === "" ? null : trimmed;
 
   const patch: { group: string | null; interval?: MetricInterval } = { group };
@@ -277,6 +281,7 @@ export async function addScorecardGroup(teamId: string, formData: FormData) {
 
   const name = normalizeGroupName(String(formData.get("name") ?? ""));
   if (!name) throw new Error("Group name required");
+  requireMaxLength(name, TITLE_MAX, "Group name");
 
   const intervalRaw = String(formData.get("interval") ?? "weekly");
   const interval: MetricInterval = isMetricInterval(intervalRaw)
@@ -439,6 +444,7 @@ export async function addExistingMetric(
   if (!result.ok) throw new Error(result.error);
 
   const wanted = normalizeGroupName(groupRaw);
+  requireMaxLength(wanted, TITLE_MAX, "Group name");
   let group: string | null = null;
   if (wanted) {
     const match = (await loadGroups(db, teamId)).find(
@@ -488,6 +494,7 @@ export async function setSharedMetricGroup(
   }
 
   const wanted = normalizeGroupName(groupRaw);
+  requireMaxLength(wanted, TITLE_MAX, "Group name");
   let group: string | null = null;
   if (wanted) {
     const match = (await loadGroups(db, teamId)).find(

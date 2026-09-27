@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import {
   requireRosterOwner,
@@ -80,6 +81,8 @@ export async function addIssue(teamId: string, formData: FormData) {
     String(formData.get("source_meeting_id") ?? "").trim() || null;
 
   if (!title) throw new Error("Title required");
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(description, LONG_TEXT_MAX, "Description");
   await requireRosterOwner(teamId, owner_id, { self: uid });
 
   await db.collection("issues").add({
@@ -122,6 +125,8 @@ export async function updateIssueMeta(
   const owner_id = readOwnerId(formData, null);
   const priority = readPriority(formData);
   const description = String(formData.get("description") ?? "").trim() || null;
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(description, LONG_TEXT_MAX, "Description");
   await requireRosterOwner(teamId, owner_id, {
     self: uid,
     keep: (snap.data()?.owner_id as string | null | undefined) ?? null,

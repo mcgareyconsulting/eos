@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
@@ -121,6 +122,8 @@ export async function addTodo(teamId: string, formData: FormData) {
   const weekly_focus = formData.get("weekly_focus") === "on";
 
   if (!title) throw new Error("Title required");
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(description, LONG_TEXT_MAX, "Description");
   // The owner's Google Tasks list receives this to-do: never a uid off the
   // roster (C-03).
   await requireRosterOwner(teamId, owner_id, { self: uid });
@@ -370,6 +373,9 @@ export async function updateTodoMeta(
   )
     ? (visibilityRaw as Visibility)
     : "team";
+
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(description, LONG_TEXT_MAX, "Description");
 
   const prevOwner = ownerUidOf(data) || null;
   const reassigned = owner_id !== prevOwner;

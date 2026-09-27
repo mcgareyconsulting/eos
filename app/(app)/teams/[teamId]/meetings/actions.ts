@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { LONG_TEXT_MAX, requireMaxLength } from "@/lib/text-limits";
 import { redirect } from "next/navigation";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import {
@@ -605,6 +606,7 @@ export async function saveMeetingNotes(
     throw new Error("Meeting notes cannot be edited after the meeting ends.");
   }
   const notes = String(formData.get("notes") ?? "");
+  requireMaxLength(notes, LONG_TEXT_MAX, "Meeting notes");
   await db.collection("meetings").doc(meetingId).update({ notes });
   revalidatePath(detailPath(teamId, meetingId));
 }

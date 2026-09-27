@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { notFound } from "next/navigation";
 import {
@@ -223,6 +224,7 @@ function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
     .map((m) => {
       const x = m as Record<string, unknown>;
       const title = String(x.title ?? "").trim();
+      requireMaxLength(title, TITLE_MAX, "Milestone title");
       const owner_id = String(x.owner_id ?? "").trim();
       const dueRaw = String(x.due_date ?? "").trim();
       const id = typeof x.id === "string" && x.id ? x.id : undefined;
@@ -278,6 +280,10 @@ function parseRockFields(formData: FormData, uid: string) {
   // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
   const quarter = String(formData.get("quarter") ?? "").trim();
   if (!title || !quarter) throw new Error("Title and quarter required");
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(quarter, TITLE_MAX, "Quarter");
+  const description = String(formData.get("description") ?? "").trim() || null;
+  requireMaxLength(description, LONG_TEXT_MAX, "Description");
 
   const ownerRaw = String(formData.get("owner_id") ?? "").trim();
   // Reject legacy "team" / Department sentinel — team rocks still need a person.
@@ -301,7 +307,7 @@ function parseRockFields(formData: FormData, uid: string) {
     // Due is optional and stays null when cleared. The modal prefills
     // end-of-quarter as a suggestion; it must never be re-forced here.
     due_date: String(formData.get("due_date") ?? "").trim() || null,
-    description: String(formData.get("description") ?? "").trim() || null,
+    description,
     owner_id: ownerRaw || uid,
     rock_type,
   };

@@ -9,6 +9,7 @@ import { useCollection } from "@/lib/firebase/use-collection";
 import { RatingForm } from "@/components/l10/rating-form";
 import { saveMeetingNotes, rateMeeting, setAttendeeAbsence } from "../actions";
 import { Eyebrow } from "@/components/ui/text";
+import { LONG_TEXT_MAX } from "@/lib/text-limits";
 
 type Member = { user_id: string; full_name: string };
 
@@ -330,6 +331,9 @@ function NotesCard({
         id="notes"
         name="notes"
         rows={6}
+        // Mirrors the server cap (C-10): autosave runs in a transition, so a
+        // refused save would replace the screen with the error boundary.
+        maxLength={LONG_TEXT_MAX}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         onBlur={() => persist(notes)}

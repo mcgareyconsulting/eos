@@ -17,6 +17,7 @@ import {
 } from "@/lib/google/tasks";
 import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
 import { canTickMilestone } from "@/lib/rocks-share";
+import { canMutateTodo, type TodoAccessCaller } from "@/lib/todo-access";
 import { notify } from "@/lib/firebase/notifications";
 import { recordActivity } from "@/lib/firebase/activity";
 import { autoArchiveActivity, joinNames } from "@/lib/activity";
@@ -51,6 +52,19 @@ function mirrorFrom(
 
 function ownerUidOf(data: FirebaseFirestore.DocumentData): string {
   return typeof data.owner_id === "string" ? data.owner_id : "";
+}
+
+/**
+ * C-11: a private to-do is changed only by its owner, a team leader or an org
+ * admin (lib/todo-access.ts). 404s like requireTeamDoc — a member can't read
+ * someone else's private to-do either, so the refusal shouldn't confirm it
+ * exists.
+ */
+function requireMutableTodo(
+  data: FirebaseFirestore.DocumentData,
+  caller: TodoAccessCaller,
+) {
+  if (!canMutateTodo(data, caller)) notFound();
 }
 
 function followerIdsOf(data: FirebaseFirestore.DocumentData): string[] {
@@ -258,9 +272,17 @@ export async function toggleTodo(
   todoId: string,
   currentlyComplete: boolean,
 ) {
-  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, team, isAdmin, membershipRole } =
+    await requireTeamAccess(teamId);
   const snap = await requireTickableTodo(db, todoId, teamId, uid, isAdmin);
   const data = snap.data() ?? {};
+  // A leader of the *viewing* team leads nothing on a milestone filed under
+  // another team's rock.
+  requireMutableTodo(data, {
+    uid,
+    isAdmin,
+    membershipRole: data.team_id === teamId ? membershipRole : null,
+  });
   // A milestone ticked from another team's page (its assignee, from their
   // own team) is still an event on the rock's team: file the notification
   // and the activity row there, as that user — not under the viewing team.
@@ -329,9 +351,11 @@ export async function updateTodoMeta(
   todoId: string,
   formData: FormData,
 ) {
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db, team, isAdmin, membershipRole } =
+    await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
+  requireMutableTodo(data, { uid, isAdmin, membershipRole });
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("Title required");
@@ -559,9 +583,10 @@ export async function toggleWeeklyFocus(
   todoId: string,
   next: boolean,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
+  requireMutableTodo(data, { uid, isAdmin, membershipRole });
   await db.collection("todos").doc(todoId).update({ weekly_focus: next });
   await recordActivity({
     db,
@@ -581,9 +606,10 @@ export async function toggleWeeklyFocus(
 }
 
 export async function deleteTodo(teamId: string, todoId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
+  requireMutableTodo(data, { uid, isAdmin, membershipRole });
   await db.collection("todos").doc(todoId).delete();
   await deleteTaskForTodo(ownerUidOf(data), data.google_task_id);
   revalidatePath(pathFor(teamId));
@@ -609,9 +635,11 @@ export async function setTodoArchived(
   todoId: string,
   archived: boolean,
 ) {
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db, team, isAdmin, membershipRole } =
+    await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
+  requireMutableTodo(data, { uid, isAdmin, membershipRole });
   if (data.source_rock_id) {
     throw new Error("Milestones are managed under Rocks, not archived here");
   }

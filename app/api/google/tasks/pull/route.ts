@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  bearerMatches,
   googleOAuthConfigured,
   googleTasksPullSecret,
   pullCompletionsForAllConnected,
@@ -24,9 +25,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const auth = request.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-  if (auth !== expected) {
+  if (!bearerMatches(request.headers.get("authorization"), secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

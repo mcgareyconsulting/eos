@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
-import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import {
+  requireRosterOwner,
+  requireTeamAccess,
+  requireTeamDoc,
+} from "@/lib/firebase/teams";
 import {
   loadOrgMetricCatalog,
   type CatalogMetric,
@@ -63,6 +67,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     : "weekly";
 
   if (!name) throw new Error("Name required");
+  await requireRosterOwner(teamId, owner_id, { self: uid });
 
   const unit: ScorecardUnit = isScorecardUnit(unitRaw) ? unitRaw : "number";
   const direction: Direction =
@@ -140,6 +145,10 @@ export async function updateMetric(
   const goalRaw = String(formData.get("goal") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
   const intervalRaw = String(formData.get("interval") ?? "weekly");
+  await requireRosterOwner(teamId, owner_id, {
+    self: uid,
+    keep: (current.owner_id as string | null | undefined) ?? null,
+  });
 
   const unit: ScorecardUnit = isScorecardUnit(unitRaw) ? unitRaw : "number";
   const direction: Direction =

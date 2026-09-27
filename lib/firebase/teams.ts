@@ -173,6 +173,42 @@ export const getTeamMembers = cache(
   },
 );
 
+/** Error shown when a form names an owner who is not on the team. */
+export const OWNER_NOT_ON_ROSTER = "Owner must be a member of this team.";
+
+/**
+ * Throws unless `ownerId` is on `teamId`'s roster (C-03,
+ * docs/SECURITY_AUDIT_2026-09-08.md). Owner ids arrive as raw form strings,
+ * and rosters are readable org-wide, so without this any member could file a
+ * to-do on an arbitrary uid — which `upsertTaskForTodo` then pushes into that
+ * person's real Google Tasks list. Same check `setMeetingDriver` and the
+ * import fallback owner already make.
+ *
+ * Passes without a roster read when there is no owner (issues allow "No
+ * owner"), when the id is the caller themself (`self` — an org admin working a
+ * team they aren't rostered on still owns their own items), or when it is the
+ * value the entity already carries (`keep` — re-saving an item whose owner has
+ * since left the team must not become impossible).
+ *
+ * Not for rocks or milestones: a shared rock legitimately carries owners from
+ * other teams (lib/rocks-share.ts), and those actions check their own rule.
+ */
+export async function requireRosterOwner(
+  teamId: string,
+  ownerId: string | null,
+  opts: { self?: string; keep?: string | null } = {},
+  deps: TeamsDeps = {},
+): Promise<void> {
+  if (!ownerId || ownerId === opts.self || ownerId === opts.keep) return;
+  // Forward `deps` only when a test injected one — see getImportableTeams.
+  const members = deps.user
+    ? await getTeamMembers(teamId, deps)
+    : await getTeamMembers(teamId);
+  if (!members.some((m) => m.user_id === ownerId)) {
+    throw new Error(OWNER_NOT_ON_ROSTER);
+  }
+}
+
 export type OrgAdmin = { uid: string; name: string; email: string | null };
 
 /** Soft directory: every in-domain user may read team names. */

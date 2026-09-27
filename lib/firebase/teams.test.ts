@@ -11,6 +11,8 @@ import {
   getOrgTeams,
   getImportableTeams,
   getOrgAdmins,
+  requireRosterOwner,
+  OWNER_NOT_ON_ROSTER,
 } from "./teams";
 
 // requireFirebaseUser()'s shape, trimmed to what teams.ts reads.
@@ -206,6 +208,51 @@ describe("getTeamMembers", () => {
       user: fakeUser({ uid: "u1", isAdmin: false, db }),
     });
     assert.deepEqual(members, []);
+  });
+});
+
+describe("requireRosterOwner", () => {
+  function setup() {
+    const db = new FakeFirestore();
+    seedMembership(db, "t1", "u1", "leader");
+    seedMembership(db, "t1", "u2", "member");
+    seedMembership(db, "t2", "outsider", "member");
+    return { user: fakeUser({ uid: "u1", isAdmin: false, db }) };
+  }
+
+  test("accepts an owner on the team's roster", async () => {
+    await requireRosterOwner("t1", "u2", {}, setup());
+  });
+
+  test("rejects a uid that is not on the roster (C-03)", async () => {
+    await assert.rejects(
+      requireRosterOwner("t1", "outsider", { self: "u1" }, setup()),
+      new Error(OWNER_NOT_ON_ROSTER),
+    );
+  });
+
+  test("rejects a made-up uid", async () => {
+    await assert.rejects(
+      requireRosterOwner("t1", "nobody", {}, setup()),
+      new Error(OWNER_NOT_ON_ROSTER),
+    );
+  });
+
+  test("no owner is not a roster question", async () => {
+    await requireRosterOwner("t1", null, {}, setup());
+    await requireRosterOwner("t1", "", {}, setup());
+  });
+
+  test("the caller may always own their own item (unrostered admin)", async () => {
+    await requireRosterOwner("t1", "admin-1", { self: "admin-1" }, setup());
+  });
+
+  test("keeping the stored owner passes even after they left the team", async () => {
+    await requireRosterOwner("t1", "departed", { keep: "departed" }, setup());
+    await assert.rejects(
+      requireRosterOwner("t1", "departed", { keep: "u2" }, setup()),
+      new Error(OWNER_NOT_ON_ROSTER),
+    );
   });
 });
 

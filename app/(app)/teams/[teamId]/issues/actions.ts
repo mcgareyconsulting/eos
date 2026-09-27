@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
-import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import {
+  requireRosterOwner,
+  requireTeamAccess,
+  requireTeamDoc,
+} from "@/lib/firebase/teams";
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
 
@@ -76,6 +80,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     String(formData.get("source_meeting_id") ?? "").trim() || null;
 
   if (!title) throw new Error("Title required");
+  await requireRosterOwner(teamId, owner_id, { self: uid });
 
   await db.collection("issues").add({
     team_id: teamId,
@@ -103,7 +108,7 @@ export async function updateIssueMeta(
   issueId: string,
   formData: FormData,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "issues", issueId, teamId);
   const prevType = snap.data()?.type;
 
@@ -117,6 +122,10 @@ export async function updateIssueMeta(
   const owner_id = readOwnerId(formData, null);
   const priority = readPriority(formData);
   const description = String(formData.get("description") ?? "").trim() || null;
+  await requireRosterOwner(teamId, owner_id, {
+    self: uid,
+    keep: (snap.data()?.owner_id as string | null | undefined) ?? null,
+  });
 
   await db.collection("issues").doc(issueId).update({
     title,

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   getTeamMembers,
+  requireRosterOwner,
   requireTeamAccess,
   requireTeamDoc,
 } from "@/lib/firebase/teams";
@@ -106,6 +107,9 @@ export async function addTodo(teamId: string, formData: FormData) {
   const weekly_focus = formData.get("weekly_focus") === "on";
 
   if (!title) throw new Error("Title required");
+  // The owner's Google Tasks list receives this to-do: never a uid off the
+  // roster (C-03).
+  await requireRosterOwner(teamId, owner_id, { self: uid });
 
   // Creator + owner follow from the start; that is the "assign and follow"
   // shape the client uses today (N61). "Add followers" picks ride along,
@@ -345,6 +349,7 @@ export async function updateTodoMeta(
 
   const prevOwner = ownerUidOf(data) || null;
   const reassigned = owner_id !== prevOwner;
+  await requireRosterOwner(teamId, owner_id, { self: uid, keep: prevOwner });
 
   // Followers. When the Edit form's picker was used (`followers_edited`),
   // the list is exactly what was left checked, plus the owner

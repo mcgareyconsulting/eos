@@ -5,6 +5,7 @@ import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
 import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
+import { SessionKeeper } from "@/components/session-keeper";
 import { NotificationsNavLink } from "@/components/notifications-nav-link";
 import { TeamNav, type ShellTeam } from "@/components/team-nav";
 import { initials } from "@/lib/user-name";
@@ -24,6 +25,7 @@ export function AppShell({
   membershipCount = 0,
   importTeamIds = [],
   unreadNotifications = 0,
+  sessionRenewInMs,
   children,
 }: {
   user: { email?: string | null };
@@ -37,6 +39,8 @@ export function AppShell({
   importTeamIds?: string[];
   /** Server-counted unread rows, so the badge is right before client auth. */
   unreadNotifications?: number;
+  /** Until the session's half-life; SessionKeeper renews after it. */
+  sessionRenewInMs?: number;
   children: React.ReactNode;
 }) {
   const displayName =
@@ -56,6 +60,9 @@ export function AppShell({
       <SidebarCollapseBoot />
       <EnvBanner />
       <LiveAuthBanner />
+      {sessionRenewInMs !== undefined && (
+        <SessionKeeper renewInMs={sessionRenewInMs} />
+      )}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-300 bg-white transition-[width] duration-200 ease-in-out group-has-[[data-meeting-focus]]/shell:hidden group-data-[sidebar-collapsed]/shell:w-16 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="border-b border-zinc-300 px-4 py-5 group-data-[sidebar-collapsed]/shell:px-2 dark:border-zinc-800">

@@ -80,23 +80,13 @@ resource "google_kms_crypto_key_iam_member" "artifact_registry_cmek" {
   member        = "serviceAccount:${google_project_service_identity.artifactregistry[0].email}"
 }
 
-# Lever 3: Firestore point-in-time recovery (PITR).
-# Uses gcloud (not Terraform) because "(default)" database is pre-existing. See README.md.
-resource "null_resource" "firestore_pitr" {
-  count = var.enable_pitr ? 1 : 0
-
-  triggers = {
-    project = var.project_id
-    enabled = var.enable_pitr
-  }
-
-  provisioner "local-exec" {
-    command = "gcloud firestore databases update --project=${var.project_id} --database='(default)' --enable-pitr --quiet"
-  }
-
-  # WARNING: toggling var.enable_pitr = false does NOT auto-disable PITR (local-exec has no destroy symmetry).
-  # Disable manually: gcloud firestore databases update --database='(default)' --no-enable-pitr
-}
+# Former Lever 3 (Firestore PITR via a null_resource/gcloud local-exec) is
+# retired as of Phase 0 backups. That resource targeted a database literally
+# named "(default)", which is not either of the real database names
+# (hpb-eos-prod-db / hpb-eos-sandbox-db) — it never worked against this
+# project. PITR and delete protection are now managed directly as attributes
+# on the imported `google_firestore_database` resources in firestore.tf.
+# See firestore.tf and IMPORT_PHASE0.md.
 
 # Lever 4: Data Access audit logs (Firestore/Datastore API).
 # Enables DATA_READ and DATA_WRITE logging. Note: storage volume can be nontrivial on read-heavy apps.

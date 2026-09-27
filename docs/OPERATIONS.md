@@ -28,6 +28,20 @@ to-dos from before this week's Monday onto Archived. Deploy:
 `firebase deploy --only functions:archiveStaleTodos --project <PROJECT_ID>`.
 Param `FIRESTORE_DATABASE_ID` defaults to `hpb-eos-prod-db`.
 
+**Shipped separately:** Sunday **Firebase Auth user export** Cloud Function
+(`exportAuthUsers`, `functions/src/export-auth-users.ts`) — `0 4 * * 0`
+America/Chicago, one hour after the Firestore export scheduler job. Lists
+every Firebase Auth user and writes one `firebase auth:import`-compatible
+JSON object (plus a small `-summary.json` sidecar) to
+`gs://<ARCHIVE_BUCKET>/auth/<YYYY-MM-DD>T<HHMM>Z-users.json`. Carries the
+`role: "admin"` custom claim, so it's the backup that lets admin access be
+rebuilt if the user directory is ever lost — Firebase Auth has no
+bulk-restore console of its own. Contains emails/uids (no password hashes
+expected; users sign in via Google only) — same private-bucket, 7-year-
+retention access boundary as the Firestore export. Deploy:
+`firebase deploy --only functions:exportAuthUsers --project <PROJECT_ID>`.
+Param `ARCHIVE_BUCKET` defaults to `hpb-eos-prod-archive`.
+
 ## Environments
 
 | | Project | Firestore DB | Who signs in |

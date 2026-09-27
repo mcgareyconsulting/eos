@@ -19,6 +19,7 @@
     "user:reassign": "tsx scripts/reassign-user.ts",
     "user:merge": "tsx scripts/merge-import-user.ts",
     "db:copy": "tsx scripts/copy-db.ts",
+    "backup:restore-test": "bash scripts/restore-test.sh",
     "ship": "bash scripts/deploy.sh"
   },
   "pnpm": {

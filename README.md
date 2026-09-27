@@ -81,6 +81,42 @@ See **[docs/CSV_IMPORT.md](docs/CSV_IMPORT.md)** for the column reference,
 owner matching, and re-run behavior. Templates live in
 [`scripts/csv-templates/`](scripts/csv-templates).
 
+## CI
+
+Every pull request and every push to `main` runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — three jobs, all of
+which must pass before a PR merges. CI never deploys and uses no secrets.
+
+| Job | Runs | Fails the PR when |
+|---|---|---|
+| **app** | `pnpm install --frozen-lockfile` → `pnpm lint` → `pnpm typecheck` → `pnpm test` → `pnpm build` → `pnpm audit --prod --audit-level=high` | lockfile out of sync with `package.json`, any ESLint error, any type error, any failing test, `next build` fails, or **any high/critical advisory in a production dependency** |
+| **functions** | `npm ci` → `npm run build` → `npm audit --omit=dev --audit-level=high` (in `functions/`) | `package-lock.json` out of sync, a TypeScript error in `functions/src` (or the shared `lib/` files it compiles), or a high/critical prod advisory |
+| **terraform** | `terraform fmt -check -recursive` → `terraform init -backend=false` → `terraform validate` (in `terraform/`) | unformatted `.tf` files or invalid config. Never plans/applies and never touches remote state |
+
+The build runs with placeholder `NEXT_PUBLIC_FIREBASE_*` values — no real
+project config lives in CI.
+
+[Dependabot](.github/dependabot.yml) opens weekly PRs (minor + patch grouped)
+for the app, `functions/`, the Dockerfile base image, and the Actions
+themselves. Major bumps of `next` (and its lockstep `eslint-config-next`),
+`react`, `react-dom`, `firebase-admin` and the `node` base image are ignored —
+those are deliberate upgrades, done by hand.
+
+**Current state:** the `pnpm audit` step fails on `main` as of 2026-09-27 — three
+high advisories, all transitive via `firebase-admin` → `google-gax` (see
+`docs/HARDENING_LOG.md`, CI merge gate row). The gate stays required; clear it
+by refreshing the lockfile (patched versions are within range), not by
+relaxing the step.
+
+Reproduce locally before pushing:
+
+```bash
+pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm audit --prod --audit-level=high
+(cd functions && npm ci && npm run build && npm audit --omit=dev --audit-level=high)
+(cd terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
+```
+
 ## Deploy (Cloud Run)
 
 The app deploys to Cloud Run in the client's GCP project — see

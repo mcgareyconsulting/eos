@@ -32,6 +32,11 @@ resource "google_cloud_run_v2_service" "app" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      # Runtime env vars (SIGN_IN_ALLOWLIST, GOOGLE_OAUTH_*) are set by
+      # scripts/deploy.sh --update-env-vars, not by Terraform. Without this,
+      # an apply strips them and breaks sign-in. Remove once they move to
+      # Secret Manager references managed here (hardening step 5).
+      template[0].containers[0].env,
       client,
       client_version,
       # API always returns scaling zero-populated; ignore to prevent spurious diffs.

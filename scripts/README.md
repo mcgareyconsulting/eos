@@ -20,6 +20,7 @@ first where one exists.
 | `reassign-user.ts` | `pnpm user:reassign` | Moves all EOS data and memberships from one uid to another — e.g. someone switched Google accounts. | Writes. Dry-run unless `--apply`. |
 | `merge-import-user.ts` | `pnpm user:merge` | Merges a CSV-import placeholder uid (`import-*`) into the person's real Auth uid on one team. | Writes. Dry-run unless `--apply`. |
 | `deploy.sh` | `pnpm ship` | Builds the image, pushes it to Artifact Registry, and rolls Cloud Run. Reads `.env.prod` by default. | **Deploys to production.** `-- --dry-run` prints the plan. |
+| `restore-test.sh` | `pnpm backup:restore-test` | Restores the newest (or a named) Firestore backup into a throwaway database, counts documents against the live database, reports PASS/FAIL, then deletes the throwaway database. The quarterly backup-restore drill in `docs/BACKUP_RUNBOOK.md`. Uses `restore-test-count.ts` internally. | Read-only against the source database. Writes/deletes only the throwaway `--target` database. Dry-run unless `-- --apply`. |
 
 `csv-templates/` holds blank CSVs with the exact headers `import-csv.ts`
 expects — hand them to anyone who has no export to give you.

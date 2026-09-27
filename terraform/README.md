@@ -6,12 +6,14 @@ This directory contains the infrastructure-as-code for the EOS app's Cloud Run d
 
 **Core footprint (always-on):**
 - Cloud Run service for the Next.js app (with least-privilege runtime service account)
-- Firestore database (existing "(default)" database, not managed by this module)
+- Firestore databases `hpb-eos-prod-db` (production) and `hpb-eos-sandbox-db` (sandbox), both pre-existing and **imported** into this module as of Phase 0 backups — see firestore.tf and IMPORT_PHASE0.md
 - Artifact Registry (Docker repo for build images)
 - Cloud Build (handles image builds and deployments via cloudbuild.yaml)
 - Firebase Auth with Google sign-in restricted to the `allowed_domain`
 
-**Optional security levers (Tier 1, all default OFF):** Cloud Armor, CMEK, Firestore PITR, Data Access audit logs. See Tier 1 Security Levers section below.
+**Backups and recovery (Phase 0, always-on as of this pass):** Firestore PITR + delete protection on prod, daily/weekly managed backup schedules on prod, a long-term export archive bucket, a weekly Firestore export via a scheduled Cloud Function, and log-based alerting on backup/DR-relevant events. See "Backups and recovery (Phase 0)" below.
+
+**Optional security levers (Tier 1, all default OFF):** Cloud Armor, CMEK, Data Access audit logs. See Tier 1 Security Levers section below. (Firestore PITR was a Tier 1 lever here; it's now a Phase 0 baseline setting on the imported database resources, not a toggle — see below.)
 
 **Planned/blocked:** Nightly BigQuery batch worker (awaiting client BigQuery conventions).
 
@@ -56,7 +58,8 @@ All inputs are defined in `variables.tf`. Key variables:
 - `allowed_domain` (default: `highplainsbank.com`): Workspace domain allowed to sign in via Firebase Auth.
 - `min_instances`, `max_instances`: Cloud Run scaling. Not yet specified by the client; verify against expected traffic/cost before applying in production.
 - `grant_cloudbuild_deploy_permissions` (default: OFF): Grant Cloud Build the roles it needs to deploy (see Cloud Build Deploy Service Account section below).
-- Security lever toggles: `enable_cloud_armor`, `enable_cmek`, `enable_pitr`, `enable_data_access_logs` (all default OFF).
+- Security lever toggles: `enable_cloud_armor`, `enable_cmek`, `enable_data_access_logs` (all default OFF).
+- Phase 0 backup variables: `prod_database_id`, `sandbox_database_id`, `archive_bucket_name`, `archive_iam_at_project_level` (default OFF), `functions_service_account_email`, `alert_emails`. See "Backups and recovery (Phase 0)" below.
 
 ### Outputs
 
@@ -64,6 +67,8 @@ Run `terraform output` to see:
 - `service_url`: Public URL of the Cloud Run service.
 - `runtime_service_account_email`: Runtime SA email (pass as `_RUNTIME_SERVICE_ACCOUNT` in cloudbuild.yaml).
 - `artifact_registry_repository`: Fully-qualified Artifact Registry repository ID.
+- `archive_bucket_name`: Name of the long-term backup/export archive bucket.
+- `backup_service_account_email`: Email of the backup automation service account.
 
 ## Core Resources
 
@@ -138,14 +143,14 @@ If the client wants it, they can apply the gcloud equivalent or uncomment the re
 The module enables the following APIs:
 - Core app: `run.googleapis.com`, `cloudbuild.googleapis.com`, `artifactregistry.googleapis.com`, `firestore.googleapis.com`, `identitytoolkit.googleapis.com`, `firebase.googleapis.com`.
 - Future audit-log onWrite trigger: `cloudfunctions.googleapis.com`, `eventarc.googleapis.com`.
-- Future nightly BigQuery batch worker: `cloudscheduler.googleapis.com`.
+- Phase 0 backups: `storage.googleapis.com` (archive bucket), `monitoring.googleapis.com` + `logging.googleapis.com` (alert policies). `cloudscheduler.googleapis.com` is also used here (weekly Firestore export job) as well as by the future nightly BigQuery batch worker below.
 - Foundation (least-privilege SAs, no exported keys, secrets): `secretmanager.googleapis.com`, `iam.googleapis.com`.
 
 APIs are left enabled if the module is destroyed (safe default for a live client project).
 
 ## Tier 1 Security Levers (levers.tf)
 
-All four levers are optional and default OFF; the MVP runs fine without any of them. Each is gated on its own boolean variable. **Ballpark combined cost: ~$40–75/mo** (verify against current GCP pricing before quoting). Tier 0 (least-privilege SAs, no exported keys, Secret Manager, default-deny Firestore rules, domain-restricted auth) is already the baseline in this module and the app itself.
+Three of the four levers originally declared here are optional and default OFF; the MVP runs fine without any of them. Each is gated on its own boolean variable. **Ballpark combined cost: ~$40–75/mo** (verify against current GCP pricing before quoting). Tier 0 (least-privilege SAs, no exported keys, Secret Manager, default-deny Firestore rules, domain-restricted auth) is already the baseline in this module and the app itself. The fourth (former Lever 3, Firestore PITR) is retired as a lever — see its section below; PITR is now a Phase 0 baseline setting, always on for prod.
 
 ### Lever 1: Cloud Armor (WAF / DDoS / IP allowlisting)
 
@@ -181,26 +186,11 @@ This is a meaningfully larger, separate footprint beyond "flip a flag" and is de
 
 **Service Agent Grant:** Artifact Registry does not implicitly get to use a CMEK key — its per-service service agent must be explicitly granted Encrypter/Decrypter on the key, or repo creation/image pushes fail with a KMS permission-denied error. The module uses `google_project_service_identity` (beta-only in hashicorp/google v6.x, declared in versions.tf) to provision/look up that service agent without hardcoding the service-account email.
 
-### Lever 3: Firestore Point-in-Time Recovery (PITR)
+### Former Lever 3: Firestore Point-in-Time Recovery (PITR) — retired, superseded by Phase 0
 
-- **Cost:** PITR retains ~7 days of change history; roughly adds the cost of a few extra days of storage on top of normal Firestore storage billing. Verify the exact multiplier against current pricing before quoting.
-- **Variable:** `enable_pitr` (default OFF).
+This used to be a `null_resource`/`local-exec` lever gated on `enable_pitr`, wired against a database literally named `"(default)"`. That database name was never correct for this project (the real databases are `hpb-eos-prod-db` and `hpb-eos-sandbox-db`), so the lever never actually did anything here.
 
-**Caveat:** The "(default)" Firestore database already exists (created via the Firebase console) and is not created by this module. There's no `google_firestore_database` resource to attach `point_in_time_recovery_enablement` to without first importing that existing database — importing a database you don't otherwise manage in Terraform (and whose other settings you'd then be responsible for syncing) is a bigger step than "flip a flag."
-
-The module wires the gcloud alternative instead, still gated on the same variable so `terraform apply` is the one on/off switch:
-
-```bash
-gcloud firestore databases update --project=<PROJECT_ID> --database='(default)' --enable-pitr
-```
-
-To disable PITR manually:
-
-```bash
-gcloud firestore databases update --database='(default)' --no-enable-pitr
-```
-
-**Note:** `terraform destroy` does NOT run a corresponding disable command automatically (local-exec provisioners have no native destroy-time symmetry without a separate `when = destroy` provisioner, which is intentionally omitted here to avoid silently flipping a data-protection setting).
+As of the Phase 0 backups pass, both real Firestore databases are **imported** into this module (see firestore.tf and IMPORT_PHASE0.md), and PITR + delete protection are managed directly as attributes on the `google_firestore_database` resources — no toggle, no local-exec, no gcloud workaround needed. See "Backups and recovery (Phase 0)" below for the full picture, including the on/off state per database and the Console/gcloud equivalents.
 
 ### Lever 4: Data Access Audit Logs (Firestore/Datastore API)
 
@@ -280,11 +270,273 @@ Once conventions arrive, implement:
 
 2. **Cloud Scheduler Trigger:** Invokes the Cloud Run job nightly via OIDC-authenticated HTTP call to the Cloud Run Jobs API. Cron schedule: `0 2 * * *` (02:00 daily; adjust to client timezone/preference and verify against HPB's actual timezone). Depends on the provider version's support for triggering Cloud Run *jobs* specifically — verify against the pinned provider docs when unblocking.
 
+## Backups and recovery (Phase 0)
+
+This section covers everything added in the "Phase 0: backups" pass:
+`firestore.tf`, `backup.tf`, `monitoring.tf`. It's written as teaching
+material — for each thing Terraform creates or configures, there's the
+plain-English explanation, where to see/do the same thing by hand in the
+GCP Console, and the equivalent `gcloud` command. Knowing the manual path
+matters even though Terraform is doing this for us: it's how you sanity-check
+that Terraform did what it says it did, and it's your fallback if Terraform
+or CI is unavailable during an incident.
+
+Before any of this exists in Terraform state, see **IMPORT_PHASE0.md** — the
+two databases must be imported first.
+
+### 1. Point-in-time recovery (PITR) on the production database
+
+**What it is:** Firestore continuously retains a rolling window of change
+history, so you can restore the database (or query it) as of any point
+within that window — not just from the last scheduled backup. This protects
+against the "someone fat-fingered a bad write five minutes ago" class of
+incident that a once-a-day backup can't undo cleanly. Enabled only on
+`hpb-eos-prod-db` — the sandbox is a disposable, refreshable copy of prod
+and doesn't need its own change history.
+
+- **Terraform:** `point_in_time_recovery_enablement` on
+  `google_firestore_database.prod` in `firestore.tf`.
+- **Console:** Firestore → Databases → `hpb-eos-prod-db` → Disaster recovery
+  tab → Point-in-time recovery.
+- **gcloud:**
+  ```bash
+  gcloud firestore databases update --project=hpb-eos-prod \
+    --database=hpb-eos-prod-db --enable-pitr
+  ```
+
+### 2. Delete protection on both databases
+
+**What it is:** A guardrail that makes `gcloud firestore databases delete`
+(or the equivalent Console action) refuse to run against the database while
+this setting is on. It does not protect against *data* being deleted
+(documents/collections) — only against the whole database being deleted.
+Enabled on both `hpb-eos-prod-db` and `hpb-eos-sandbox-db`.
+
+- **Terraform:** `delete_protection_state` on both
+  `google_firestore_database` resources in `firestore.tf`.
+- **Console:** Firestore → Databases → (database name) → Disaster recovery
+  tab → Delete protection.
+- **gcloud:**
+  ```bash
+  gcloud firestore databases update --project=hpb-eos-prod \
+    --database=hpb-eos-prod-db --delete-protection
+  ```
+
+### 3. Managed backup schedules (daily + weekly) on production
+
+**What it is:** Firestore's own native backup feature (distinct from PITR)
+— it takes full snapshots of the database on a schedule and retains them
+for a fixed period, independent of anything happening in the live database.
+This is the "restore to last Tuesday" tool, as opposed to PITR's "restore to
+2:17pm today" tool. Two schedules on `hpb-eos-prod-db`: one daily, one
+weekly (Sunday), both retained for 14 weeks — the maximum retention Firestore
+currently allows for a backup schedule. The sandbox database intentionally
+has **no** backup schedules; it's a refreshable copy of prod, not a source
+of truth worth its own backup chain.
+
+- **Terraform:** `google_firestore_backup_schedule.prod_daily` and
+  `.prod_weekly` in `firestore.tf`.
+- **Console:** Firestore → Databases → `hpb-eos-prod-db` → Backups tab.
+- **gcloud:**
+  ```bash
+  gcloud firestore backups schedules create --project=hpb-eos-prod \
+    --database=hpb-eos-prod-db --recurrence=daily --retention=14w
+
+  gcloud firestore backups schedules create --project=hpb-eos-prod \
+    --database=hpb-eos-prod-db --recurrence=weekly --day-of-week=sunday \
+    --retention=14w
+  ```
+  (List existing schedules with
+  `gcloud firestore backups schedules list --database=hpb-eos-prod-db`.)
+
+### 4. Long-term archive bucket
+
+**What it is:** A Cloud Storage bucket for exports that need to live longer
+than Firestore's own backup retention (14 weeks) — currently the weekly
+Firestore export (below) and, separately, a weekly Firebase Auth export
+written by a Cloud Function. `ARCHIVE` storage class (cheapest per-GB,
+priced for data you rarely touch), versioned (so an overwrite doesn't
+destroy the previous version), and in the `US` **multi-region**: Cloud
+Storage keeps multi-region data in at least two US regions more than 100
+miles apart, so a regional problem affecting the databases' `us-east1`
+doesn't also take out the backups of them. (A single *other* region such as
+`us-central1` is not an option: a `us-east1` Firestore database can only
+export to a bucket in `us-east1` or the `US` multi-region — anything else
+is rejected with `INVALID_ARGUMENT`, confirmed 2026-09-27.)
+Public access is blocked at the bucket level (`public_access_prevention =
+"enforced"`).
+
+A 7-year retention policy is set but **unlocked** (`is_locked = false`).
+Locking a bucket retention policy is **irreversible** — once locked, the
+retention period can only be raised, never lowered or removed, even by the
+project owner. This module leaves it unlocked until the client confirms
+their actual records retention requirement for this data; locking it is a
+one-line follow-up (`is_locked = true`) once that's confirmed, not something
+to guess at now.
+
+- **Terraform:** `google_storage_bucket.archive` in `backup.tf`.
+- **Console:** Cloud Storage → Buckets → `hpb-eos-prod-archive` (or whatever
+  `var.archive_bucket_name` is set to).
+- **gcloud:**
+  ```bash
+  gcloud storage buckets create gs://hpb-eos-prod-archive \
+    --project=hpb-eos-prod --location=US \
+    --default-storage-class=ARCHIVE --uniform-bucket-level-access \
+    --public-access-prevention
+
+  gcloud storage buckets update gs://hpb-eos-prod-archive --versioning
+
+  gcloud storage buckets update gs://hpb-eos-prod-archive \
+    --retention-period=7y
+  ```
+
+**Bucket IAM (who can write to it):** the Firestore service agent
+(`service-580850228782@gcp-sa-firestore.iam.gserviceaccount.com`, which
+performs the actual write when a Firestore export runs — not the caller
+that triggers it) gets `roles/storage.objectAdmin` on the bucket; the
+`eos-backup` service account (below) and the Cloud Functions runtime SA each
+get `roles/storage.objectCreator`.
+
+- **Console:** Cloud Storage → Buckets → `hpb-eos-prod-archive` → Permissions
+  tab.
+- **gcloud:**
+  ```bash
+  gcloud storage buckets add-iam-policy-binding gs://hpb-eos-prod-archive \
+    --member="serviceAccount:service-580850228782@gcp-sa-firestore.iam.gserviceaccount.com" \
+    --role="roles/storage.objectAdmin"
+  ```
+
+**If bucket-level IAM fails under your credentials:** a principal holding
+only `roles/editor` project-wide can sometimes lack the specific permission
+to set IAM policy on an individual bucket. If `terraform apply` fails on the
+`google_storage_bucket_iam_member` resources with a permission error, set
+`archive_iam_at_project_level = true` and re-apply — this grants the same
+roles at the *project* level instead (broader: those roles then apply to
+every bucket in the project, not just this one, so treat it as a fallback,
+not the default).
+
+### 5. Backup service account
+
+**What it is:** A dedicated service account (`eos-backup`) used only for
+backup automation — kept separate from the app's runtime service account so
+"can export/import Firestore data" isn't a permission the running web app
+carries. Granted `roles/datastore.importExportAdmin` at the project level
+(needed to kick off a Firestore export) and `roles/storage.objectCreator` on
+the archive bucket (to grant the underlying write, mirroring what the
+Firestore service agent needs to actually perform it).
+
+- **Terraform:** `google_service_account.backup` in `backup.tf`.
+- **Console:** IAM & Admin → Service Accounts → `eos-backup@hpb-eos-prod.iam.gserviceaccount.com`.
+- **gcloud:**
+  ```bash
+  gcloud iam service-accounts create eos-backup \
+    --project=hpb-eos-prod --display-name="EOS backup automation"
+
+  gcloud projects add-iam-policy-binding hpb-eos-prod \
+    --member="serviceAccount:eos-backup@hpb-eos-prod.iam.gserviceaccount.com" \
+    --role="roles/datastore.importExportAdmin"
+  ```
+
+### 6. Weekly Firestore export (scheduled Cloud Function)
+
+**What it is:** A second, independent copy of the production data, written
+out as a portable export to the archive bucket, on top of (not instead of)
+the native backup schedules in §3. Native backups live inside Firestore's
+own backup system and are restored via the Firestore backup APIs; an export
+is a set of files in GCS that can be imported into *any* Firestore database
+(useful for standing up a fresh sandbox from a known-good prod snapshot, or
+as a second, storage-independent copy of the data). Runs Sunday 03:00
+America/Chicago — matching the time zone convention already used by the
+existing scheduled function elsewhere in this project.
+
+**Why a Cloud Function and not a plain Cloud Scheduler HTTP job:** the
+original implementation was a Cloud Scheduler job (`eos-firestore-export`)
+that POSTed straight to Firestore's `exportDocuments` API with a fixed
+request body. A Scheduler job's request body is a static string, so it
+can't insert today's date — every weekly run wrote to the same undated
+prefix (`gs://hpb-eos-prod-archive/firestore/all_namespaces/...`), and the
+second run would have collided with the archive bucket's 7-year retention
+policy (retained objects can't be overwritten). That job was **removed
+2026-09-27**. The first, undated export it produced (2026-09-27 15:58Z)
+can't be deleted while retention holds and remains a valid one-off copy —
+see Decisions in `docs/HARDENING_LOG.md`.
+
+Replaced the same day by a scheduled Cloud Function, `exportFirestore`
+(`functions/src/export-firestore.ts`, region `us-east1`), which builds a
+**dated** prefix at run time —
+`gs://hpb-eos-prod-archive/firestore/<YYYY-MM-DD>T<HHMMSS>Z/` — so no two
+runs can ever collide, waits for the export operation to complete, and
+throws on failure (so a failure is a Cloud Functions error in the logs,
+which the "Firestore export (backup) failed" alert in §7 matches
+regardless of who/what called the export). Runs as the `eos-backup` service
+account (below). Firebase creates the function's own Cloud Scheduler job on
+deploy — `firebase-schedule-exportFirestore-us-east1` (location
+`us-east1`) — rather than one being hand-authored in Terraform.
+
+- **Terraform:** the function itself is deployed via `firebase deploy`, not
+  Terraform. `backup.tf` manages the IAM it needs:
+  `google_project_iam_member.backup_log_writer` (`roles/logging.logWriter`
+  at the project level — gen2 functions write their own logs),
+  `google_cloud_run_v2_service_iam_member.backup_invokes_export_firestore`
+  (`roles/run.invoker` on the `exportfirestore` Cloud Run service in
+  `us-east1` — gen2 functions run as Cloud Run services under the hood, and
+  the function's own Scheduler job invokes it over HTTP as `eos-backup`),
+  and `google_service_account_iam_member.backup_sa_deployers`
+  (`roles/iam.serviceAccountUser` on `eos-backup`, one binding per principal
+  in `var.backup_sa_deployers` — today just the consultant's account,
+  needed to deploy a function that runs as `eos-backup`; **temporary**,
+  removed once deploys move to a dedicated build service account,
+  hardening step 4/5).
+- **Console:** Cloud Scheduler → Jobs →
+  `firebase-schedule-exportFirestore-us-east1` (location `us-east1`) → ⋮ →
+  **Force run** to trigger on demand. Logs: Cloud Run functions →
+  `exportFirestore` → Logs.
+- **gcloud:**
+  ```bash
+  # Trigger the scheduled export now, without waiting for Sunday
+  gcloud scheduler jobs run firebase-schedule-exportFirestore-us-east1 \
+    --location=us-east1 --project=hpb-eos-prod
+
+  # Tail the function's own logs
+  gcloud functions logs read exportFirestore \
+    --region=us-east1 --project=hpb-eos-prod
+  ```
+
+**Deploying it:** `firebase deploy --only functions:exportFirestore
+--non-interactive` needs `functions/.env.hpb-eos-prod` (gitignored; sets
+`FIRESTORE_DATABASE_ID=hpb-eos-prod-db` and
+`ARCHIVE_BUCKET=hpb-eos-prod-archive`, both non-secret) present locally —
+without it the CLI can't resolve those params non-interactively.
+
+### 7. Alerting on backup/DR-relevant events
+
+**What it is:** Three log-based alert policies watching Cloud Audit Logs for
+events that should never happen silently: a Firestore export failing, a
+backup schedule being changed (created/updated/deleted — a signal that the
+managed cadence in `firestore.tf` might no longer reflect reality), or a
+database's settings being changed or the database itself deleted. All three
+notify the same two email addresses (`var.alert_emails`), rate-limited to at
+most one notification per hour per policy, auto-closing an open incident
+after 7 days of no recurrence.
+
+- **Terraform:** `google_monitoring_notification_channel.email` (for_each
+  over `var.alert_emails`) and the three `google_monitoring_alert_policy`
+  resources in `monitoring.tf`.
+- **Console:** Monitoring → Alerting → Notification channels (to see/add
+  email recipients) and Monitoring → Alerting → Policies (to see the three
+  policies, their conditions, and their incident history).
+- **gcloud:** channels and log-based alert policies are consoles-first
+  workflows without a single clean `gcloud` one-liner equivalent (the policy
+  JSON is easier to author in the Console's alert-policy JSON editor, or via
+  `gcloud alpha monitoring policies create --policy-from-file=policy.json`
+  once you've exported the JSON shape from an existing policy with
+  `gcloud alpha monitoring policies describe POLICY_ID`).
+
 ## Notes on What This Module Does Not Manage
 
 **Firebase Auth configuration:** Firebase Auth provider setup (Google OAuth client, hosted-domain restriction, password policy, etc.) is managed separately via the Firebase console or the gcloud Firebase CLI. The `allowed_domain` variable in this module is documentation/reference only.
 
-**Firestore database creation:** The "(default)" Firestore database already exists and is not created by this module (see the PITR and CMEK sections above for why importing it is intentionally avoided).
+**Firestore database creation:** The `hpb-eos-prod-db` and `hpb-eos-sandbox-db` databases already exist and are not *created* by this module — they were provisioned outside Terraform and are **imported** as of Phase 0 backups (see firestore.tf and IMPORT_PHASE0.md). Once imported, this module *does* manage their PITR/delete-protection settings and (for prod) backup schedules — it just never issues the create call for the database resource itself (`deletion_policy = "ABANDON"` on both).
 
 **Cloud Build configuration:** `cloudbuild.yaml` (stored in the repo root) owns build image configuration and deploy steps. This module manages the GCP infrastructure and IAM permissions Cloud Build needs; the build itself is separately defined.
 

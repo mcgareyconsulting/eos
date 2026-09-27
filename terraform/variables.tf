@@ -75,14 +75,66 @@ variable "enable_cmek" {
   default     = false
 }
 
-variable "enable_pitr" {
-  description = "Enable Firestore point-in-time recovery. Ballpark: PITR storage surcharge on Firestore (roughly the cost of ~7 extra days of storage, scales with data size); see levers.tf for the client-managed-database caveat."
-  type        = bool
-  default     = false
-}
-
 variable "enable_data_access_logs" {
   description = "Enable Data Access audit logs for the Firestore/Datastore API. Ballpark: standard Cloud Logging ingestion/storage rates on the resulting log volume (can be nontrivial under read-heavy load)."
   type        = bool
   default     = false
+}
+
+# Phase 0: backups (firestore.tf, backup.tf, monitoring.tf). See README.md
+# "Backups and recovery (Phase 0)".
+
+variable "prod_database_id" {
+  description = "Firestore database ID for production (Native mode, us-east1). Pre-existing; imported, not created — see IMPORT_PHASE0.md."
+  type        = string
+  default     = "hpb-eos-prod-db"
+}
+
+variable "sandbox_database_id" {
+  description = "Firestore database ID for the sandbox/refreshable-copy database (Native mode, us-east1). Pre-existing; imported, not created — see IMPORT_PHASE0.md."
+  type        = string
+  default     = "hpb-eos-sandbox-db"
+}
+
+variable "archive_bucket_name" {
+  description = "GCS bucket name for long-term Firestore/Auth export archives (Archive storage class, versioned, locationally separate from the database region)."
+  type        = string
+  default     = "hpb-eos-prod-archive"
+}
+
+variable "archive_iam_at_project_level" {
+  description = <<-EOT
+    Fallback for granting archive-bucket write access. Bucket-level IAM
+    (google_storage_bucket_iam_member) can fail if the Terraform-applying
+    principal only holds roles/editor (editor lacks
+    resourcemanager.projects.setIamPolicy at the bucket-policy level in some
+    org setups). Default false = grant at the bucket (least privilege). Set
+    true to instead grant roles/storage.objectAdmin /
+    roles/storage.objectCreator at the *project* level for the same
+    principals — broader, but works under editor-only credentials. See
+    README.md "Backups and recovery (Phase 0)".
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "functions_service_account_email" {
+  description = "Service account email running the (separately authored) weekly Firebase Auth export Cloud Function. Defaults to the Compute Engine default SA, which is what Cloud Functions/Cloud Build use today on this project (see iam.tf comments on the same default-SA behavior)."
+  type        = string
+  default     = "580850228782-compute@developer.gserviceaccount.com"
+}
+
+variable "alert_emails" {
+  description = "Email addresses notified by the Phase 0 backup/DR monitoring alert policies (monitoring.tf)."
+  type        = list(string)
+  default = [
+    "joe.creighton@highplainsbank.com",
+    "jessica.teichman@highplainsbank.com",
+  ]
+}
+
+variable "backup_sa_deployers" {
+  description = "Principals allowed to deploy Cloud Functions that run as the eos-backup service account (iam.serviceAccountUser on that SA). Temporary until deploys move to a build service account."
+  type        = list(string)
+  default     = ["user:daniel@mcgareyconsulting.com"]
 }

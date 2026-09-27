@@ -28,6 +28,37 @@ to-dos from before this week's Monday onto Archived. Deploy:
 `firebase deploy --only functions:archiveStaleTodos --project <PROJECT_ID>`.
 Param `FIRESTORE_DATABASE_ID` defaults to `hpb-eos-prod-db`.
 
+**Shipped separately:** Sunday **Firestore export** Cloud Function
+(`exportFirestore`, `functions/src/export-firestore.ts`) — `0 3 * * 0`
+America/Chicago, region `us-east1`, runs as
+`eos-backup@<PROJECT_ID>.iam.gserviceaccount.com`. Exports the whole
+`hpb-eos-prod-db` database to a dated prefix
+`gs://<ARCHIVE_BUCKET>/firestore/<YYYY-MM-DD>T<HHMMSS>Z/`, waits for the
+export operation to finish, and throws on failure. Replaces an earlier
+Cloud Scheduler HTTP job that wrote every run to the same undated prefix
+(fixed request body couldn't insert today's date), which collided with the
+archive bucket's 7-year retention policy on the second run — see
+`docs/HARDENING_LOG.md` Decisions. Deploy:
+`firebase deploy --only functions:exportFirestore --non-interactive` —
+needs `functions/.env.hpb-eos-prod` (gitignored; sets
+`FIRESTORE_DATABASE_ID` and `ARCHIVE_BUCKET`, both non-secret) present
+locally first, since `--non-interactive` can't prompt for those params.
+
+**Shipped separately:** Sunday **Firebase Auth user export** Cloud Function
+(`exportAuthUsers`, `functions/src/export-auth-users.ts`) — `0 4 * * 0`
+America/Chicago, one hour after the Firestore export. Lists every Firebase
+Auth user and writes one `firebase auth:import`-compatible JSON object
+(plus a small `-summary.json` sidecar) to
+`gs://<ARCHIVE_BUCKET>/auth/<YYYY-MM-DD>T<HHMM>Z-users.json`. Carries the
+`role: "admin"` custom claim, so it's the backup that lets admin access be
+rebuilt if the user directory is ever lost — Firebase Auth has no
+bulk-restore console of its own. Contains emails/uids (no password hashes
+expected; users sign in via Google only) — same private-bucket, 7-year-
+retention access boundary as the Firestore export. Deploy:
+`firebase deploy --only functions:exportAuthUsers --non-interactive` (same
+`functions/.env.hpb-eos-prod` requirement as above). Param `ARCHIVE_BUCKET`
+defaults to `hpb-eos-prod-archive`.
+
 ## Environments
 
 | | Project | Firestore DB | Who signs in |

@@ -13,6 +13,10 @@ locals {
     "cloudscheduler.googleapis.com",
     "secretmanager.googleapis.com",
     "iam.googleapis.com",
+    # Phase 0 backups (firestore.tf, backup.tf, monitoring.tf):
+    "storage.googleapis.com",
+    "monitoring.googleapis.com",
+    "logging.googleapis.com",
   ]
 }
 

@@ -12,3 +12,14 @@ output "artifact_registry_repository" {
   description = "Fully-qualified Artifact Registry repository ID (docker host/project/location/repo)."
   value       = google_artifact_registry_repository.images.id
 }
+
+output "archive_bucket_name" {
+  description = "Name of the long-term backup/export archive bucket (Firestore exports, Auth exports)."
+  value       = google_storage_bucket.archive.name
+}
+
+output "backup_service_account_email" {
+  description = "Email of the service account used for backup automation (Firestore export scheduler)."
+  value       = google_service_account.backup.email
+}
+

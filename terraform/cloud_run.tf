@@ -80,6 +80,10 @@ resource "google_cloud_run_v2_service" "app" {
   ]
 
   lifecycle {
+    # Production service/registry: a plan that replaces this (e.g. a wrong
+    # region) must fail at plan time, never offer to destroy.
+    prevent_destroy = true
+
     # Refuse to roll a revision that references a secret with no enabled
     # version: such a revision fails to start. See secrets.tf.
     precondition {

@@ -59,21 +59,33 @@ match.
 
 ## Gate 2 — secrets and keys
 
-Nothing below has been applied. Operator sequence and verification:
-`docs/SECRETS_RUNBOOK.md`. Design: `terraform/README.md` "Secrets (Gate 2)".
+**Paused 2026-09-29 after step 1**: secrets, key ring and key exist with
+versions/enabled; the four resource-level IAM grants (3 secret accessors + 1
+key encrypter/decrypter) returned 403 because Editor lacks `setIamPolicy` on
+secrets and keys. Cloud Run still runs from plaintext env (unchanged, safe).
+Resume: Owner grants the consultant `roles/secretmanager.admin` +
+`roles/cloudkms.admin` (temporary) → `terraform apply` from the worktree
+(`~/Desktop/eos-worktree/audit/security/terraform`, workspace `prod`), expect
+exactly **4 to add, 1 to change, 0 to destroy** → runbook step 4b verify
+(fresh sign-in, allowlist, refresh an existing Google Tasks connection) →
+step 5 (disable old OAuth secret, purge `.env.prod`, delete plaintext
+revisions). Env inventory 2026-09-29 (names only): SIGN_IN_ALLOWLIST,
+GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI
+— no extras, `runtime_extra_env` stays empty. Operator sequence and
+verification: `docs/SECRETS_RUNBOOK.md`. Design: `terraform/README.md` "Secrets (Gate 2)".
 When a row reaches `applied`/`verified`, record the Cloud Run revision name
 and the `gcloud run services describe` env output (refs only) as evidence.
 
 | Item | Audit ref | Status | Date | Evidence | Notes |
 |---|---|---|---|---|---|
-| Secret Manager secrets `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_TASKS_PULL_SECRET`, `SIGN_IN_ALLOWLIST` (automatic replication, labels, `deletion_protection`) | I-03; Plan step 3 | in code | 2026-09-27 | `terraform/secrets.tf` `google_secret_manager_secret.runtime`; PR #55 (branch `feat/gate2-secrets-terraform`) | No secret versions in Terraform. Values are added out-of-band (`gcloud secrets versions add … --data-file=-`) so they never reach plan output or state |
-| `roles/secretmanager.secretAccessor` per secret → runtime SA only | I-03 | in code | 2026-09-27 | `terraform/secrets.tf` `google_secret_manager_secret_iam_member.runtime_accessor` | Resource-scoped, no project-level grant |
+| Secret Manager secrets `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_TASKS_PULL_SECRET`, `SIGN_IN_ALLOWLIST` (automatic replication, labels, `deletion_protection`) | I-03; Plan step 3 | applied | 2026-09-29 | `terraform/secrets.tf` `google_secret_manager_secret.runtime`; PR #55 (branch `feat/gate2-secrets-terraform`) | No secret versions in Terraform. Values are added out-of-band (`gcloud secrets versions add … --data-file=-`) so they never reach plan output or state **2026-09-29:** created by targeted apply (step 1); version 1 added to each by the operator via Console (OAuth: the NEW rotated secret; allowlist: the live value; pull secret: freshly generated, never previously set — the pull route was disabled) |
+| `roles/secretmanager.secretAccessor` per secret → runtime SA only | I-03 | blocked | 2026-09-29 | `terraform/secrets.tf` `google_secret_manager_secret_iam_member.runtime_accessor` | Resource-scoped, no project-level grant **2026-09-29:** apply 403 — `secretmanager.secrets.setIamPolicy` is not in Editor. Waiting on an Owner to grant the consultant `roles/secretmanager.admin` (temporary, see Decisions) then re-apply |
 | Cloud Run: 3 secrets mounted as env via `secret_key_ref` (`latest`); `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_REDIRECT_URI` as plain env declared in Terraform; env `ignore_changes` removed (Terraform owns env) | I-03 | in code | 2026-09-27 | `terraform/cloud_run.tf`, `terraform/variables.tf` | Precondition refuses to roll a revision while any secret lacks an enabled version. Needs `google_oauth_client_id` / `google_oauth_redirect_uri` in the committed `terraform.tfvars`. Image `ignore_changes` kept |
 | `scripts/deploy.sh` stops pushing env (`sync_runtime_env` / `--sync-env` removed) | I-03 | in code | 2026-09-27 | `scripts/deploy.sh` | `--sync-env` now refuses with a pointer to Terraform; warns (names only) while `.env.prod` still holds secret values. Dry-run and sandbox refusal unchanged |
-| KMS key ring `eos` / key `eos-tokens` (us-east1, ENCRYPT_DECRYPT, 90-day rotation, `prevent_destroy`) + `cloudkms.googleapis.com` | C-06 (prerequisite); Plan item 11 | in code | 2026-09-27 | `terraform/kms.tf`, `terraform/apis.tf` | For application-level (envelope) encryption of Google refresh tokens in the next gate. `enable_cmek` lever untouched |
-| `roles/cloudkms.cryptoKeyEncrypterDecrypter` on `eos-tokens` → runtime SA only | C-06 | in code | 2026-09-27 | `terraform/kms.tf` `google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter` | Key-scoped, not key ring or project |
+| KMS key ring `eos` / key `eos-tokens` (us-east1, ENCRYPT_DECRYPT, 90-day rotation, `prevent_destroy`) + `cloudkms.googleapis.com` | C-06 (prerequisite); Plan item 11 | applied | 2026-09-29 | `terraform/kms.tf`, `terraform/apis.tf` | For application-level (envelope) encryption of Google refresh tokens in the next gate. `enable_cmek` lever untouched |
+| `roles/cloudkms.cryptoKeyEncrypterDecrypter` on `eos-tokens` → runtime SA only | C-06 | blocked | 2026-09-29 | `terraform/kms.tf` `google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter` | Key-scoped, not key ring or project **2026-09-29:** apply 403 — `cloudkms.cryptoKeys.setIamPolicy` not in Editor. Waiting on `roles/cloudkms.admin` for the consultant (temporary), then re-apply |
 | `docs/SECRETS_RUNBOOK.md` (create → rotate → add versions → apply → verify → finish; cadence; rollback; IAM change) | I-03; C-06 | in code | 2026-09-27 | `docs/SECRETS_RUNBOOK.md` | Console path + gcloud for every step |
-| Rotate the Google OAuth client secret | I-03 | planned | — | — | Operator step, not code. Exposed in Terraform output on 2026-09-27 (Cloud Run `env` is not a sensitive attribute). Also in plaintext in past revisions, the versioned state bucket, and `.env.prod`. Add new → version → apply → verify → disable/delete old (runbook steps 2, 5) |
+| Rotate the Google OAuth client secret | I-03 | in progress | 2026-09-29 | — | Operator step, not code. Exposed in Terraform output on 2026-09-27 (Cloud Run `env` is not a sensitive attribute). Also in plaintext in past revisions, the versioned state bucket, and `.env.prod`. Add new → version → apply → verify → disable/delete old (runbook steps 2, 5) **2026-09-29:** new client secret added in Console next to the old one; both ENABLED until step 4 verification passes. Old one is still what prod uses |
 | Purge `.env.prod` of secret values; delete pre-Gate-2 revisions carrying plaintext env | I-03 | planned | — | — | Runbook step 5, after verification |
 | Runtime SA `roles/firebaseauth.admin` narrowed | I-06 | planned | — | — | Follow-up, **not** part of Gate 2. See runbook "IAM change" |
 
@@ -83,6 +95,7 @@ and the `gcloud run services describe` env output (refs only) as evidence.
 |---|---|---|---|---|---|
 | Next.js framework upgrade (16.2.6 → 16.3.6), firebase 12.19, firebase-admin 14.5 (app + functions), base image digest-pinned | C-01; Plan step 3 | verified (prod rev eos-00112-ght = 38c2af4, PR #53, 2026-09-27) | 2026-09-27 | `pnpm audit --prod`: 35 (3 critical, 18 high) → 6 (0 critical, 3 high, all transitive in google-gax/protobufjs/brace-expansion, no upstream fix yet); functions `npm audit`: 1 high + 12 moderate → 3 moderate; 743/743 tests, lint + tsc + `next build` clean; zero app code changes | Branch feat/gate1-framework-upgrade. Manual sandbox pass pending before ship. Remaining 6 advisories: leave for upstream rather than override Google SDK internals |
 | CI merge gate (`.github/workflows/ci.yml`): lint, typecheck, tests, `next build`, `pnpm audit --prod --audit-level=high` (required); functions build + `npm audit --omit=dev --audit-level=high`; terraform fmt/validate | Plan step 2; Scorecard #1; Scorecard #5 | in code | 2026-09-27 | PR from branch chore/ci-and-dependabot; `actionlint` clean | Audit step is required, not advisory. The 3 high transitive advisories from the Gate 1 row above (protobufjs GHSA-wcpc-wj8m-hjx6; brace-expansion GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895 — via firebase-admin → google-gax) are cleared in the same PR by a lockfile-only refresh (protobufjs 7.6.0 → 7.6.6, brace-expansion 2.1.2 → 2.1.7, 1.1.14 → 1.1.21), no overrides; `pnpm audit --prod --audit-level=high` now reports 1 moderate. Branch protection (require the three jobs) is a repo setting, not code — still to do |
+| GitHub branch ruleset `main protection` (id 24199926): PR required, 0 approvals for now, conversation resolution, 3 required status checks (strict/up-to-date), no force push, no deletion, **empty bypass list** (applies to admins) | Plan step 1; Scorecard #4 | verified | 2026-09-29 | `gh api repos/mcgareyconsulting/eos/rulesets/24199926` | Created in the GitHub UI by the operator. Approvals stay at 0 until HPB names approvers (then set to 1 + required reviewers). `require_extra_approval_for_unattributed_changes` came on by default — watch the next PR; untick if it blocks a green merge. Direct pushes to `main` now refused for everyone |
 | Dependabot version updates (`.github/dependabot.yml`): weekly, minor+patch grouped, for npm `/` + `/functions`, docker `/`, github-actions `/` | Plan step 2; Scorecard #1; Scorecard #5 | in code | 2026-09-27 | PR from branch chore/ci-and-dependabot | Majors of `next`/`eslint-config-next`/`react`/`react-dom`/`firebase-admin` and the `node` base image ignored (deliberate upgrades). Dependabot security alerts/updates are a repo setting — enable separately |
 | Secrets moved to Secret Manager + KMS key | I-03; I-02(CMEK lever); Plan: items 11–14 | in code | 2026-09-27 | See "Gate 2 — secrets and keys" above | Tracked per item in the Gate 2 table. The CMEK lever (`enable_cmek`, Artifact Registry at-rest) is a separate decision and still OFF. Reviewed 2026-09-29; blockers: tfvars docs (fixed), allowlist non-empty check (added to runbook), token-refresh test (added) |
 | CSV import: apply `text-limits` caps so imported titles >500 chars are rejected at import rather than on first edit | C-10 | planned | — | — | Gap found during Gate 3 review: `lib/text-limits.ts` caps (`requireMaxLength`) are enforced on the create/update actions but not on the CSV import path, so an over-length imported title only errors the first time someone edits it |
@@ -125,6 +138,12 @@ not affect sign-in. Not a finding.
 | Gate 3 review fixes: `X-Frame-Options: DENY` (clickjacking gap — `frame-ancestors` was Report-Only only); `/api/csp-report` bounded body read | C-08 | verified | 2026-09-29 | `next.config.ts`; `app/api/csp-report/route.ts` | Found during Gate 3 review: CSP's `frame-ancestors` directive was shipped Report-Only, so it never actually blocked framing — `X-Frame-Options: DENY` closes that gap header-side; the CSP report endpoint's body read is now bounded |
 
 ## Decisions
+
+- **Consultant temporarily gets `roles/secretmanager.admin` and
+  `roles/cloudkms.admin`** (requested 2026-09-29, pending an Owner) so
+  Terraform can own the resource-level IAM bindings in Gate 2 instead of an
+  Owner creating them by hand outside state. Remove both with the rest of the
+  consultant IAM reduction (audit remediation step 5).
 
 - **Sandbox (`hpb-eos-sandbox-db`) is not backed up, by design.** It's a
   refreshable copy of prod (`pnpm db:copy`), not a source of truth — see

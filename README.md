@@ -102,11 +102,10 @@ themselves. Major bumps of `next` (and its lockstep `eslint-config-next`),
 `react`, `react-dom`, `firebase-admin` and the `node` base image are ignored —
 those are deliberate upgrades, done by hand.
 
-**Current state:** the `pnpm audit` step fails on `main` as of 2026-09-27 — three
-high advisories, all transitive via `firebase-admin` → `google-gax` (see
-`docs/HARDENING_LOG.md`, CI merge gate row). The gate stays required; clear it
-by refreshing the lockfile (patched versions are within range), not by
-relaxing the step.
+**If the audit step fails** on a transitive advisory, first try refreshing
+the lockfile (`pnpm update -r --depth Infinity <pkg>`) — patched versions are
+often already inside the parent's semver range. The gate stays required; don't
+relax the step.
 
 Reproduce locally before pushing:
 

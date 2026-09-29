@@ -8,6 +8,7 @@ This directory contains the infrastructure-as-code for the EOS app's Cloud Run d
 - Cloud Run service for the Next.js app (with least-privilege runtime service account)
 - Firestore databases `hpb-eos-prod-db` (production) and `hpb-eos-sandbox-db` (sandbox), both pre-existing and **imported** into this module as of Phase 0 backups — see firestore.tf and IMPORT_PHASE0.md
 - Artifact Registry (Docker repo for build images)
+- Secret Manager secrets for the runtime's secret env vars, mounted into Cloud Run by reference, plus a Cloud KMS key for application-level encryption (Gate 2 — see "Secrets (Gate 2)" below and `docs/SECRETS_RUNBOOK.md`)
 - Cloud Build (handles image builds and deployments via cloudbuild.yaml)
 - Firebase Auth with Google sign-in restricted to the `allowed_domain`
 
@@ -60,6 +61,7 @@ All inputs are defined in `variables.tf`. Key variables:
 - `grant_cloudbuild_deploy_permissions` (default: OFF): Grant Cloud Build the roles it needs to deploy (see Cloud Build Deploy Service Account section below).
 - Security lever toggles: `enable_cloud_armor`, `enable_cmek`, `enable_data_access_logs` (all default OFF).
 - Phase 0 backup variables: `prod_database_id`, `sandbox_database_id`, `archive_bucket_name`, `archive_iam_at_project_level` (default OFF), `functions_service_account_email`, `alert_emails`. See "Backups and recovery (Phase 0)" below.
+- Gate 2 runtime env: `google_oauth_client_id` and `google_oauth_redirect_uri` (**required**, no defaults, non-secret, set in the workspace's gitignored `.tfvars`), `runtime_extra_env` (default `{}`, optional non-secret extras such as `ENV_LABEL`). Secret *values* are never variables. See "Secrets (Gate 2)".
 
 ### Outputs
 
@@ -69,12 +71,16 @@ Run `terraform output` to see:
 - `artifact_registry_repository`: Fully-qualified Artifact Registry repository ID.
 - `archive_bucket_name`: Name of the long-term backup/export archive bucket.
 - `backup_service_account_email`: Email of the backup automation service account.
+- `runtime_secret_ids`: Secret Manager secret IDs mounted into Cloud Run (names only).
+- `tokens_kms_key_id`: Resource ID of the `eos-tokens` KMS key (application-level encryption).
+
+No output carries a secret value, and none can: this module never manages secret versions.
 
 ## Core Resources
 
 ### Cloud Run Service (cloud_run.tf)
 
-The app runs as an always-on Cloud Run service. Terraform manages the service configuration (SA, scaling, ingress); image updates are owned by cloudbuild.yaml (`gcloud run deploy` on every build).
+The app runs as an always-on Cloud Run service. Terraform manages the service configuration (SA, scaling, ingress, and — since Gate 2 — **all container env**); image updates are owned by cloudbuild.yaml (`gcloud run deploy` on every build, which leaves env untouched). Env set by hand with `gcloud run services update --update-env-vars` is removed by the next apply; declare it in `runtime_extra_env` instead. See "Secrets (Gate 2)".
 
 **Ingress and Authentication:**
 
@@ -107,7 +113,11 @@ A dedicated, least-privilege Cloud Run runtime service account (no exported JSON
 Roles granted:
 - `roles/datastore.user`: Firestore read/write.
 - `roles/logging.logWriter`: Cloud Logging writer.
-- `roles/firebaseauth.admin`: Firebase Auth session-cookie creation (required for the app's sign-in flow; without it, ID-token exchange succeeds but session cookie creation 500s, breaking sign-in).
+- `roles/firebaseauth.admin`: Firebase Auth session-cookie creation (required for the app's sign-in flow; without it, ID-token exchange succeeds but session cookie creation 500s, breaking sign-in). Broader than needed (audit I-06); tracked as a follow-up outside Gate 2.
+
+Resource-scoped grants (Gate 2, not project-level):
+- `roles/secretmanager.secretAccessor` on each of the three runtime secrets (secrets.tf).
+- `roles/cloudkms.cryptoKeyEncrypterDecrypter` on the `eos-tokens` key only (kms.tf).
 
 **Cloud Build Deploy Service Account Grants (opt-in, default OFF):**
 
@@ -138,6 +148,101 @@ Left commented because:
 
 If the client wants it, they can apply the gcloud equivalent or uncomment the resource below after adding an `org_id` variable to variables.tf.
 
+## Secrets (Gate 2): secrets.tf, cloud_run.tf, kms.tf
+
+Audit refs I-03 (secrets as plain Cloud Run env vars) and C-06 (Google
+refresh tokens in plaintext). The operator procedure, with a Console path
+and a gcloud command for every step, is in **`docs/SECRETS_RUNBOOK.md`**.
+This section covers the design and the order of operations.
+
+**What Terraform manages:**
+
+| File | Resources |
+|---|---|
+| `secrets.tf` | `google_secret_manager_secret.runtime` for `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_TASKS_PULL_SECRET`, `SIGN_IN_ALLOWLIST` (secret ID = env var name; automatic replication; labels; `deletion_protection = true`). `google_secret_manager_secret_iam_member.runtime_accessor`: `roles/secretmanager.secretAccessor` per secret, runtime SA only. A metadata-only `google_secret_manager_secret_version` data source (`fetch_secret_data = false`) feeds the Cloud Run precondition. |
+| `cloud_run.tf` | The three secrets mounted as env via `value_source.secret_key_ref` (`version = "latest"`). `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_REDIRECT_URI` as plain env from variables. `runtime_extra_env` for other non-secret extras. **`template[0].containers[0].env` removed from `ignore_changes`**, so Terraform owns env. The image stays ignored because cloudbuild.yaml rolls it. |
+| `kms.tf` | Key ring `eos` (`us-east1`, pinned) and key `eos-tokens` (`ENCRYPT_DECRYPT`, 90-day rotation, `prevent_destroy`). `roles/cloudkms.cryptoKeyEncrypterDecrypter` on the key for the runtime SA. The app doesn't use it yet: the next gate envelope-encrypts refresh tokens with it. Separate from, and not affecting, the `enable_cmek` lever in levers.tf. |
+
+**What Terraform deliberately does not manage: secret versions (values).**
+A `google_secret_manager_secret_version` resource would put the value into
+state and plan output, which is exactly the leak this gate closes. Cloud Run
+`env` is not a sensitive attribute, and that is how the OAuth client secret
+reached Terraform output on 2026-09-27. Operators add values out-of-band:
+
+```bash
+printf '%s' "$VALUE" | gcloud secrets versions add <SECRET_ID> --project=hpb-eos-prod --data-file=-
+```
+
+Console: Security → Secret Manager → `<SECRET_ID>` → **+ New version**.
+
+**Why the order matters.** A Cloud Run revision that references a secret
+with no enabled version fails to start. The precondition on
+`google_cloud_run_v2_service.app` makes `plan` fail first (*"A secret in
+secrets.tf has no ENABLED latest version…"*, or a Secret Manager "not found"
+error from the data source when a secret has no versions at all). The
+precondition is a backstop. The sequence below is the procedure.
+
+### Cutover order
+
+1. **Create secrets** (and IAM and the KMS key): targeted apply, no values
+   yet, so the service is untouched.
+
+   ```bash
+   terraform apply -var-file=prod.tfvars \
+     -target=google_project_service.required \
+     -target=google_secret_manager_secret.runtime \
+     -target=google_secret_manager_secret_iam_member.runtime_accessor \
+     -target=google_kms_key_ring.eos \
+     -target=google_kms_crypto_key.eos_tokens \
+     -target=google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter
+   ```
+
+   `prod.tfvars` must already set `google_oauth_client_id` and
+   `google_oauth_redirect_uri` (copy them from `.env.prod`), because
+   variables are validated even on a targeted apply.
+2. **Add versions** to all three secrets. First rotate the OAuth client
+   secret: its current value was exposed, so the version you add is the
+   *new* one. For `GOOGLE_TASKS_PULL_SECRET`, see the runbook's Option A
+   (keep the pull route disabled) or Option B (enable it).
+3. **Apply:** `terraform plan -var-file=prod.tfvars` should show a single
+   in-place update of `google_cloud_run_v2_service.app` (env diff only),
+   then `terraform apply -var-file=prod.tfvars`. This plan prints the old
+   plain values one last time on the "removed" side, so keep it off shared
+   logs.
+4. **Verify:** `gcloud run services describe eos --region=us-east1
+   --format='yaml(spec.template.spec.containers[0].env)'` shows
+   `secretKeyRef` for the three secrets and no values. Sign-in refuses a
+   non-allowlisted account. The Google Tasks connect flow works. A second
+   `terraform plan` reports no changes.
+5. **Remove env-var pushing from deploy.sh.** This is already done in code
+   in this change: `sync_runtime_env` and `--sync-env` are gone, and it is
+   safe to merge before step 1, because the service keeps its current env
+   until step 3. The operator's part is to purge `GOOGLE_OAUTH_CLIENT_SECRET`
+   (and any `GOOGLE_TASKS_PULL_SECRET`) from `.env.prod`, then disable and
+   delete the old OAuth client secret.
+
+### Rollback
+
+- **Before step 3:** nothing to undo. Secrets and the key sit unused.
+- **After step 3:** pin traffic to the previous (pre-Gate-2) revision:
+  `gcloud run services update-traffic eos --to-revisions=<PREV>=100
+  --region=us-east1 --project=hpb-eos-prod`. It still carries the old
+  plain env, and it keeps working as long as the old OAuth client secret
+  hasn't been disabled yet. That's why disabling it is the last step. A
+  later `terraform apply` or `update-traffic --to-latest` routes back to
+  latest.
+- **Wrong value:** add a corrected **new** version and roll a revision.
+  Don't just disable the newest version.
+- **Full revert:** revert only the env part of `cloud_run.tf` (restore the
+  env `ignore_changes`) and restore plain env with gcloud. **Never** remove
+  `secrets.tf` or `kms.tf` as a rollback: the secrets have
+  `deletion_protection` and the key has `prevent_destroy`, and KMS keys
+  can't be deleted anyway. Details are in `docs/SECRETS_RUNBOOK.md` (f).
+
+**Trial workspace (`default`):** it now also needs the two OAuth variables,
+and a plan there would create the three secrets in the trial project. Out
+of scope for Gate 2, which targets the `prod` workspace only.
+
 ## Required APIs (apis.tf)
 
 The module enables the following APIs:
@@ -145,6 +250,7 @@ The module enables the following APIs:
 - Future audit-log onWrite trigger: `cloudfunctions.googleapis.com`, `eventarc.googleapis.com`.
 - Phase 0 backups: `storage.googleapis.com` (archive bucket), `monitoring.googleapis.com` + `logging.googleapis.com` (alert policies). `cloudscheduler.googleapis.com` is also used here (weekly Firestore export job) as well as by the future nightly BigQuery batch worker below.
 - Foundation (least-privilege SAs, no exported keys, secrets): `secretmanager.googleapis.com`, `iam.googleapis.com`.
+- Gate 2 application-level encryption (kms.tf): `cloudkms.googleapis.com`. (The CMEK lever in levers.tf needed it too but never enabled it.)
 
 APIs are left enabled if the module is destroyed (safe default for a live client project).
 
@@ -540,4 +646,6 @@ after 7 days of no recurrence.
 
 **Cloud Build configuration:** `cloudbuild.yaml` (stored in the repo root) owns build image configuration and deploy steps. This module manages the GCP infrastructure and IAM permissions Cloud Build needs; the build itself is separately defined.
 
-**App-layer configuration:** Environment variables (NEXT_PUBLIC_* for the frontend, Firebase config, feature flags) are managed separately in cloudbuild.yaml substitutions or Cloud Run's service environment.
+**App-layer configuration:** `NEXT_PUBLIC_*` values (Firebase web config) are baked into the image at build time via cloudbuild.yaml substitutions and are not managed here. The Cloud Run service's *runtime* env **is** managed here since Gate 2 (cloud_run.tf, secrets.tf).
+
+**Secret values:** Secret Manager *versions* (the actual values) are deliberately not managed by this module; see "Secrets (Gate 2)".

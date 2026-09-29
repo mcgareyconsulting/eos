@@ -23,3 +23,15 @@ output "backup_service_account_email" {
   value       = google_service_account.backup.email
 }
 
+# Gate 2. Names/IDs only: no output in this module carries a secret value
+# (secret versions are not managed by Terraform at all; see secrets.tf).
+output "runtime_secret_ids" {
+  description = "Secret Manager secret IDs mounted into the Cloud Run service as env vars (values are added out-of-band; see docs/SECRETS_RUNBOOK.md)."
+  value       = sort([for s in google_secret_manager_secret.runtime : s.secret_id])
+}
+
+output "tokens_kms_key_id" {
+  description = "Full resource ID of the Cloud KMS key for application-level encryption of Google refresh tokens (kms.tf)."
+  value       = google_kms_crypto_key.eos_tokens.id
+}
+

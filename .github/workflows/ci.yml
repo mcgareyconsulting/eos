@@ -1,0 +1,129 @@
+# Merge gate for every PR and every push to main. Three independent jobs:
+#   app        — lint, typecheck, unit tests, `next build`, prod dependency audit
+#   functions  — Cloud Functions package (functions/, npm): build + prod audit
+#   terraform  — fmt/validate only; never plans or applies (no credentials here)
+#
+# Nothing in this workflow deploys or touches GCP. No secrets are used: the
+# build gets placeholder NEXT_PUBLIC_* values (see the app job's env below).
+#
+# Reproduce locally: see README.md → "CI".
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per ref: a new push to a PR branch cancels the run still in flight.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: app (lint, typecheck, test, build, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # No `version:` — pnpm/action-setup reads the exact pnpm version from
+      # package.json's "packageManager" field (same pin the Dockerfile uses).
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      # NEXT_PUBLIC_* are inlined into the client bundle at build time. The
+      # build doesn't need real values, so these are obvious placeholders
+      # (shape taken from .env.example) — never put a real project's config
+      # here. DATABASE_ID is the sandbox id .env.example already ships.
+      - run: pnpm build
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder-api-key
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder.appspot.com
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+          NEXT_PUBLIC_FIREBASE_APP_ID: 1:000000000000:web:ci-placeholder
+          NEXT_PUBLIC_FIREBASE_DATABASE_ID: hpb-eos-sandbox-db
+
+      # Required: fails the PR on any high/critical advisory in production
+      # dependencies (devDependencies are excluded — they never reach the
+      # runtime image). Don't add continue-on-error; fix, upgrade, or record
+      # an explicit, dated exception in docs/HARDENING_LOG.md instead.
+      - name: pnpm audit (prod, high+)
+        run: pnpm audit --prod --audit-level=high
+
+  functions:
+    name: functions (build, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - run: npm ci
+
+      # tsconfig.json also compiles ../lib/todos-archive.ts and
+      # ../lib/activity.ts, so this catches app-side changes that break the
+      # functions build too.
+      - run: npm run build
+
+      - name: npm audit (prod, high+)
+        run: npm audit --omit=dev --audit-level=high
+
+  terraform:
+    name: terraform (fmt, validate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Pinned so `terraform fmt` output can't shift under us between runs;
+      # bump deliberately (versions.tf requires >= 1.7.0).
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - run: terraform fmt -check -recursive
+
+      # -backend=false: never touches the gs://hpb-eos-tfstate remote state.
+      # Providers resolve from the committed .terraform.lock.hcl.
+      - run: terraform init -backend=false -input=false
+
+      - run: terraform validate

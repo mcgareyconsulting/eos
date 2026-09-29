@@ -1,0 +1,69 @@
+# Dependabot: weekly version-update PRs. Every PR it opens runs the full CI
+# gate (.github/workflows/ci.yml) like any other.
+#
+# Minor + patch bumps are grouped into one PR per ecosystem/directory so they
+# land as a single reviewable change. Major bumps of the framework/SDK
+# packages below are ignored: those are deliberate, planned upgrades (see
+# docs/HARDENING_LOG.md, e.g. the Next.js 16.2 → 16.3 gate), not something to
+# take from a bot PR. Dependabot *security* updates are configured separately
+# (repo Settings → Code security) and are not affected by these ignores.
+
+version: 2
+
+updates:
+  # Web app (pnpm; Dependabot's "npm" ecosystem reads pnpm-lock.yaml).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      # Versioned in lockstep with next — a lone major bump would mismatch.
+      - dependency-name: eslint-config-next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: firebase-admin
+        update-types: ["version-update:semver-major"]
+
+  # Cloud Functions package (npm, own package-lock.json).
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: firebase-admin
+        update-types: ["version-update:semver-major"]
+
+  # Dockerfile base image (node:22-alpine, digest-pinned). Dependabot bumps the
+  # digest when the tag is re-pushed upstream. A Node major (22 → 24) is a
+  # runtime upgrade that has to move with functions/package.json "engines"
+  # and CI's node-version, so it's ignored here and done by hand.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions used by the workflows (pinned by major tag).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]

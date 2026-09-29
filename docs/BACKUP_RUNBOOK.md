@@ -36,7 +36,7 @@ closes that gap with layered, GCP-native recovery:
 | Objective | Target | How it's met |
 |---|---|---|
 | **RPO** (how much data can we lose) | **≤ 1 minute** for anything in the last **7 days**; **≤ 24 hours** beyond that, back to **14 weeks** | Point-in-time recovery (PITR) covers the last 7 days at minute granularity; daily + weekly scheduled backups cover the rest, up to Firestore's 14-week backup-schedule maximum |
-| **RTO** (how long recovery takes) | **~1 hour** for a full-database recovery | Restore/clone into a new database (minutes to tens of minutes depending on data size) + rebuild/redeploy the app pointed at it (a few minutes via `pnpm ship`) + verification |
+| **RTO** (how long recovery takes) | **~1 hour** for a full-database recovery (measured 2026-09-29: restore of the full prod database took 18 min; add rebuild/redeploy + verification) | Restore/clone into a new database (minutes to tens of minutes depending on data size) + rebuild/redeploy the app pointed at it (a few minutes via `pnpm ship`) + verification |
 
 **Why RTO includes a rebuild, not just a restore.** A Firestore restore or
 PITR clone always creates a **new** database — you cannot restore "into"
@@ -310,7 +310,7 @@ list.
 
 | Date | Backup used | Result | Tester |
 |---|---|---|---|
-| — | — | pending — first test scheduled 2026-10-01 | — |
+| 2026-09-29 | `32055a5c-dfc8-467a-96ef-d3a0a185a8b6` (snapshot 2026-09-28T16:19Z) | PASS — 11/12 collections identical; `audit_log` 2448 restored vs 2457 prod = rows written after the snapshot (expected). Restore took 18 min. Scratch DB kept for a client demo; delete needs an Owner (or the custom role) because the restore inherits delete protection | Daniel McGarey (consultant) |
 
 Append a row (via the script's printed output) after every run of
 `pnpm backup:restore-test -- --apply`, whether it passes or fails.

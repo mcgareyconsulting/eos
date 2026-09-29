@@ -17,4 +17,10 @@ resource "google_artifact_registry_repository" "images" {
     google_project_service.required,
     google_kms_crypto_key_iam_member.artifact_registry_cmek,
   ]
+
+  lifecycle {
+    # Production service/registry: a plan that replaces this (e.g. a wrong
+    # region) must fail at plan time, never offer to destroy.
+    prevent_destroy = true
+  }
 }

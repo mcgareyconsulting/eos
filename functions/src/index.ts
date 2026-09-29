@@ -14,6 +14,14 @@
  *    dumps every Firebase Auth user to Cloud Storage as a
  *    `firebase auth:import`-compatible JSON backup. Safe to deploy
  *    independently; uses ARCHIVE_BUCKET (default hpb-eos-prod-archive).
+ *
+ * 5) Daily backup freshness check — `checkBackupFreshness` (scheduler,
+ *    daily 6am America/Chicago): reads (never writes) the Firestore managed
+ *    backups list and the archive bucket's Firestore/Auth export objects,
+ *    logs a `backup_freshness` heartbeat, and throws if anything is stale
+ *    or unreadable. Safe to deploy independently; see
+ *    check-backup-freshness.ts for why it exists and terraform/monitoring.tf
+ *    for the alert policies that consume its log line.
  */
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
@@ -35,6 +43,10 @@ export { exportAuthUsers } from "./export-auth-users";
 // 4) Weekly Firestore export (Sunday 3am America/Chicago) to a dated prefix
 //    in the archive bucket; runs as the eos-backup service account.
 export { exportFirestore } from "./export-firestore";
+
+// 5) Daily backup freshness check (6am America/Chicago); runs as the
+//    eos-backup service account with read-only IAM (terraform/backup.tf).
+export { checkBackupFreshness } from "./check-backup-freshness";
 
 initializeApp();
 

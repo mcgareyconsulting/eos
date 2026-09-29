@@ -29,7 +29,15 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: react-dom
         update-types: ["version-update:semver-major"]
+      # TypeScript majors (5 → 7 is the native-compiler rewrite) are deliberate
+      # upgrades: tsc flags and emit can change. Minor/patch only.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
       - dependency-name: firebase-admin
+        update-types: ["version-update:semver-major"]
+      # TypeScript majors (5 → 7 is the native-compiler rewrite) are deliberate
+      # upgrades: tsc flags and emit can change. Minor/patch only.
+      - dependency-name: typescript
         update-types: ["version-update:semver-major"]
 
   # Cloud Functions package (npm, own package-lock.json).

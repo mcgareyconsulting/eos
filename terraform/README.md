@@ -61,7 +61,7 @@ All inputs are defined in `variables.tf`. Key variables:
 - `grant_cloudbuild_deploy_permissions` (default: OFF): Grant Cloud Build the roles it needs to deploy (see Cloud Build Deploy Service Account section below).
 - Security lever toggles: `enable_cloud_armor`, `enable_cmek`, `enable_data_access_logs` (all default OFF).
 - Phase 0 backup variables: `prod_database_id`, `sandbox_database_id`, `archive_bucket_name`, `archive_iam_at_project_level` (default OFF), `functions_service_account_email`, `alert_emails`. See "Backups and recovery (Phase 0)" below.
-- Gate 2 runtime env: `google_oauth_client_id` and `google_oauth_redirect_uri` (**required**, no defaults, non-secret, set in the workspace's gitignored `.tfvars`), `runtime_extra_env` (default `{}`, optional non-secret extras such as `ENV_LABEL`). Secret *values* are never variables. See "Secrets (Gate 2)".
+- Gate 2 runtime env: `google_oauth_client_id` and `google_oauth_redirect_uri` (**required**, no defaults, non-secret, set in the committed `terraform/terraform.tfvars`, which Terraform auto-loads — there is no `prod.tfvars`), `runtime_extra_env` (default `{}`, optional non-secret extras such as `ENV_LABEL`). Secret *values* are never variables. See "Secrets (Gate 2)".
 
 ### Outputs
 
@@ -188,7 +188,7 @@ precondition is a backstop. The sequence below is the procedure.
    yet, so the service is untouched.
 
    ```bash
-   terraform apply -var-file=prod.tfvars \
+   terraform apply \
      -target=google_project_service.required \
      -target=google_secret_manager_secret.runtime \
      -target=google_secret_manager_secret_iam_member.runtime_accessor \
@@ -197,23 +197,34 @@ precondition is a backstop. The sequence below is the procedure.
      -target=google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter
    ```
 
-   `prod.tfvars` must already set `google_oauth_client_id` and
-   `google_oauth_redirect_uri` (copy them from `.env.prod`), because
-   variables are validated even on a targeted apply.
+   The committed `terraform/terraform.tfvars` (auto-loaded, no `-var-file`
+   needed) must already set `google_oauth_client_id` and
+   `google_oauth_redirect_uri`, because variables are validated even on a
+   targeted apply. Confirm `terraform workspace show` prints `prod` first —
+   the `default` workspace is unused and holds an empty state.
 2. **Add versions** to all three secrets. First rotate the OAuth client
    secret: its current value was exposed, so the version you add is the
    *new* one. For `GOOGLE_TASKS_PULL_SECRET`, see the runbook's Option A
    (keep the pull route disabled) or Option B (enable it).
-3. **Apply:** `terraform plan -var-file=prod.tfvars` should show a single
-   in-place update of `google_cloud_run_v2_service.app` (env diff only),
-   then `terraform apply -var-file=prod.tfvars`. This plan prints the old
-   plain values one last time on the "removed" side, so keep it off shared
-   logs.
+3. **Apply:** `terraform plan` should show a single in-place update of
+   `google_cloud_run_v2_service.app` (env diff only), then `terraform
+   apply`. This plan prints the old plain values one last time on the
+   "removed" side, so keep it off shared logs. Before applying, also check
+   that `SIGN_IN_ALLOWLIST` isn't empty (`gcloud secrets versions access
+   latest --secret=SIGN_IN_ALLOWLIST --project=hpb-eos-prod | grep -q @ ||
+   echo "STOP: allowlist empty"` — an empty allowlist means open sign-in,
+   see `lib/auth-allowlist.ts`), and read the env diff for anything live on
+   the service but not declared in `terraform.tfvars`/`runtime_extra_env`
+   (e.g. `ENV_LABEL`) — add it to `runtime_extra_env` before applying, or
+   the apply drops it.
 4. **Verify:** `gcloud run services describe eos --region=us-east1
    --format='yaml(spec.template.spec.containers[0].env)'` shows
    `secretKeyRef` for the three secrets and no values. Sign-in refuses a
-   non-allowlisted account. The Google Tasks connect flow works. A second
-   `terraform plan` reports no changes.
+   non-allowlisted account. The Google Tasks connect flow completes — but
+   also tick a to-do on an **existing** Google Tasks connection and confirm
+   it syncs; connecting alone only exercises the auth code exchange, and a
+   token **refresh** is what actually uses the rotated client secret. A
+   second `terraform plan` reports no changes.
 5. **Remove env-var pushing from deploy.sh.** This is already done in code
    in this change: `sync_runtime_env` and `--sync-env` are gone, and it is
    safe to merge before step 1, because the service keeps its current env
@@ -228,9 +239,12 @@ precondition is a backstop. The sequence below is the procedure.
   `gcloud run services update-traffic eos --to-revisions=<PREV>=100
   --region=us-east1 --project=hpb-eos-prod`. It still carries the old
   plain env, and it keeps working as long as the old OAuth client secret
-  hasn't been disabled yet. That's why disabling it is the last step. A
-  later `terraform apply` or `update-traffic --to-latest` routes back to
-  latest.
+  hasn't been disabled yet. That's why disabling it is the last step.
+  `cloud_run.tf` has no `traffic` block, so Terraform does not manage
+  traffic splitting: a `terraform apply` does not route traffic back to
+  latest by itself. Fix the config, `terraform apply` it, then separately
+  run `gcloud run services update-traffic eos --to-latest --region=us-east1
+  --project=hpb-eos-prod` (or the Console equivalent) to move traffic back.
 - **Wrong value:** add a corrected **new** version and roll a revision.
   Don't just disable the newest version.
 - **Full revert:** revert only the env part of `cloud_run.tf` (restore the
@@ -239,9 +253,9 @@ precondition is a backstop. The sequence below is the procedure.
   `deletion_protection` and the key has `prevent_destroy`, and KMS keys
   can't be deleted anyway. Details are in `docs/SECRETS_RUNBOOK.md` (f).
 
-**Trial workspace (`default`):** it now also needs the two OAuth variables,
-and a plan there would create the three secrets in the trial project. Out
-of scope for Gate 2, which targets the `prod` workspace only.
+**`default` workspace: unused, empty state.** All Gate 2 work — and all
+current work generally — happens in workspace `prod`. Confirm with
+`terraform workspace show` (must print `prod`) before any apply.
 
 ## Required APIs (apis.tf)
 

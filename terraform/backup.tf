@@ -165,3 +165,26 @@ resource "google_cloud_run_v2_service_iam_member" "backup_invokes_export_firesto
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.backup.email}"
 }
+
+# --- Backup freshness checker identity ------------------------------------
+# `checkBackupFreshness` runs as eos-backup and only READS: the Firestore
+# backups list and the archive bucket's object names.
+resource "google_project_iam_member" "backup_backups_viewer" {
+  project = var.project_id
+  role    = "roles/datastore.backupsViewer"
+  member  = "serviceAccount:${google_service_account.backup.email}"
+}
+
+resource "google_storage_bucket_iam_member" "backup_sa_reader" {
+  bucket = google_storage_bucket.archive.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.backup.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "backup_invokes_check_freshness" {
+  project  = var.project_id
+  location = "us-east1"
+  name     = "checkbackupfreshness"
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.backup.email}"
+}

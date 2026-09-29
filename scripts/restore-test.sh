@@ -85,6 +85,7 @@ while [[ $# -gt 0 ]]; do
     --keep) KEEP=true; shift ;;
     --apply) APPLY=true; shift ;;
     -h|--help) usage; exit 0 ;;
+    --) shift ;;  # pnpm run forwards a bare "--" on some versions; ignore it
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
@@ -170,6 +171,19 @@ gcloud firestore databases restore \
   --source-backup="$BACKUP" \
   --destination-database="$TARGET" \
   --project="$PROJECT"
+# `databases restore` returns once the database exists; the data restore keeps
+# running in the background and the database refuses queries until it
+# finishes (FAILED_PRECONDITION "undergoing a restore"). Poll the database's
+# sourceInfo until it reports COMPLETED (18 min for prod on 2026-09-29).
+echo "Waiting for the restore operation to complete..."
+for _ in $(seq 1 90); do
+  progress="$(gcloud firestore databases describe --database="$TARGET" --project="$PROJECT" --format='value(sourceInfo.progress)' 2>/dev/null || true)"
+  case "$progress" in
+    COMPLETED|"") break ;;
+    IN_PROGRESS) sleep 20 ;;
+    *) echo "Restore ended in state: $progress"; exit 1 ;;
+  esac
+done
 echo "Restore complete: $TARGET"
 
 # --- 2. Count both sides ---------------------------------------------------
@@ -197,10 +211,14 @@ RESULT="$(node -e '
   for (const c of cols) {
     const s = src[c] ?? 0;
     const d = dst[c] ?? 0;
-    if (s !== d) pass = false;
+    // audit_log only grows: rows written to prod after the backup
+    // snapshot are expected to be missing from the restore. Any other
+    // collection must match exactly.
+    const ok = c === "audit_log" ? d <= s : s === d;
+    if (!ok) pass = false;
     console.log(
       "  " + c.padEnd(22) + String(s).padStart(10) + String(d).padStart(10) +
-        (s === d ? "" : "  <-- mismatch"),
+        (ok ? (s === d ? "" : "  (rows since snapshot)") : "  <-- mismatch"),
     );
   }
   console.log("");

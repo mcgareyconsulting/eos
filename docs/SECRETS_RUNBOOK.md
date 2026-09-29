@@ -20,7 +20,7 @@ cutover summary: `terraform/README.md` → "Secrets (Gate 2)". Progress:
 | `GOOGLE_OAUTH_CLIENT_SECRET` | plain env var, pushed from `.env.prod` by `pnpm ship` | Secret Manager ref, `latest` |
 | `GOOGLE_TASKS_PULL_SECRET` | not set (pull route returns 503) | Secret Manager ref, `latest` (see step 2) |
 | `SIGN_IN_ALLOWLIST` | plain env var, set by hand with gcloud | Secret Manager ref, `latest` |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_REDIRECT_URI` | plain env vars, pushed by `pnpm ship` | plain env vars declared in Terraform (`prod.tfvars`) |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_REDIRECT_URI` | plain env vars, pushed by `pnpm ship` | plain env vars declared in Terraform (`terraform.tfvars`) |
 | Who writes Cloud Run env | `scripts/deploy.sh` + hand-run gcloud | **Terraform only** (`ignore_changes` on env removed) |
 | KMS | none (`enable_cmek` lever off) | key ring `eos`, key `eos-tokens` (lever untouched) |
 
@@ -44,20 +44,20 @@ grants to the runtime service account alone.
   ```bash
   cd terraform
   terraform init                       # GCS backend gs://hpb-eos-tfstate
-  terraform workspace select prod      # NEVER `default` (that's the trial)
+  terraform workspace select prod      # NEVER `default`
   ```
 
-- **Two new values in `terraform/prod.tfvars`** (gitignored). Both are
-  non-secret and already sit in `.env.prod`, which is where `pnpm ship` used
-  to copy them from:
+  Variables come from the **committed** `terraform/terraform.tfvars` (it's
+  auto-loaded by every `terraform plan`/`apply` — no `-var-file` flag, and
+  there is no `prod.tfvars`). The `default` workspace is unused and holds an
+  empty state; all real work happens in workspace `prod`. Run
+  `terraform workspace show` before any apply and confirm it prints `prod`.
 
-  ```bash
-  grep -E '^GOOGLE_OAUTH_(CLIENT_ID|REDIRECT_URI)=' .env.prod
-  ```
-
-  Cross-check against the live service without printing any other env var
-  (a bare `gcloud run services describe` prints the current client secret
-  in cleartext; don't run one until step 4):
+- **`google_oauth_client_id` / `google_oauth_redirect_uri` already live in
+  `terraform/terraform.tfvars`.** Both are non-secret. Cross-check them
+  against the live service without printing any other env var (a bare
+  `gcloud run services describe` prints the current client secret in
+  cleartext; don't run one until step 4):
 
   ```bash
   gcloud run services describe eos --region=us-east1 --project=hpb-eos-prod --format=json \
@@ -66,12 +66,15 @@ grants to the runtime service account alone.
              | "\(.name)=\(.value)"'
   ```
 
-  Then add to `terraform/prod.tfvars`:
+  Compare against `terraform/terraform.tfvars`:
 
   ```hcl
   google_oauth_client_id    = "<…>.apps.googleusercontent.com"
   google_oauth_redirect_uri = "https://<service host>/api/google/tasks/callback"
   ```
+
+  If they don't match, fix `terraform/terraform.tfvars` before applying —
+  don't apply first and fix it after.
 
   If the live service carries any other plain env var (for example
   `ENV_LABEL`), add it to `runtime_extra_env` in the same file, or the Gate 2
@@ -109,7 +112,7 @@ of it yet, so it can't affect the running service.
 - **Terraform (preferred):**
 
   ```bash
-  terraform apply -var-file=prod.tfvars \
+  terraform apply \
     -target=google_project_service.required \
     -target=google_secret_manager_secret.runtime \
     -target=google_secret_manager_secret_iam_member.runtime_accessor \
@@ -163,12 +166,12 @@ of it yet, so it can't affect the running service.
 
   ```bash
   for S in GOOGLE_OAUTH_CLIENT_SECRET GOOGLE_TASKS_PULL_SECRET SIGN_IN_ALLOWLIST; do
-    terraform import -var-file=prod.tfvars \
+    terraform import \
       "google_secret_manager_secret.runtime[\"$S\"]" "projects/hpb-eos-prod/secrets/$S"
   done
-  terraform import -var-file=prod.tfvars google_kms_key_ring.eos \
+  terraform import google_kms_key_ring.eos \
     projects/hpb-eos-prod/locations/us-east1/keyRings/eos
-  terraform import -var-file=prod.tfvars google_kms_crypto_key.eos_tokens \
+  terraform import google_kms_crypto_key.eos_tokens \
     projects/hpb-eos-prod/locations/us-east1/keyRings/eos/cryptoKeys/eos-tokens
   # IAM members: let the next apply create them (it's idempotent on an existing binding).
   ```
@@ -274,9 +277,9 @@ needs *some* version. Pick one:
   Console: Secret Manager → `GOOGLE_TASKS_PULL_SECRET` → **+ New version** →
   type one space → **Add new version**.
 - **Option B, enable the route.** Only together with the Cloud Scheduler
-  job that calls it (`docs/CUTOVER_CHECKLIST.md`, the Tasks section). Note
-  that audit **C-09** (non-constant-time bearer compare on this public
-  route) is still open.
+  job that calls it (`docs/CUTOVER_CHECKLIST.md`, the Tasks section). Audit
+  **C-09** (non-constant-time bearer compare on this public route) was
+  fixed in PR #56 (`bearerMatches` in `lib/google/tasks.ts`, ~line 722).
 
   ```bash
   openssl rand -base64 48 | tr -d '\n' | gcloud secrets versions add GOOGLE_TASKS_PULL_SECRET \
@@ -297,8 +300,25 @@ secret's **Versions** tab.
 
 ### (c) Step 4a: Apply
 
+Before touching anything, confirm the allowlist secret isn't empty. An
+empty `SIGN_IN_ALLOWLIST` means **open sign-in** (see `inDomain()` /
+`signInRefusal` in `lib/auth-allowlist.ts`):
+
 ```bash
-terraform plan -var-file=prod.tfvars
+gcloud secrets versions access latest --secret=SIGN_IN_ALLOWLIST --project=hpb-eos-prod \
+  | grep -q @ || echo "STOP: allowlist empty"
+```
+
+Also confirm you're in the right workspace — an apply from `default` is a
+much bigger mistake here than elsewhere, since this step changes live Cloud
+Run env:
+
+```bash
+terraform workspace show   # must print: prod
+```
+
+```bash
+terraform plan
 ```
 
 Read the plan before applying. Expect exactly **one in-place update**,
@@ -310,8 +330,13 @@ replace`), whose `env` diff:
 - changes `GOOGLE_OAUTH_CLIENT_SECRET` and `SIGN_IN_ALLOWLIST` from `value`
   to `value_source.secret_key_ref`,
 - leaves `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_REDIRECT_URI` unchanged.
-  If those two show a change, `prod.tfvars` doesn't match live: fix the
+  If those two show a change, `terraform.tfvars` doesn't match live: fix the
   tfvars, don't apply.
+- **drops any env var that's live on the service today but isn't declared
+  in `terraform.tfvars` / `runtime_extra_env`** (for example `ENV_LABEL`).
+  Read the full env diff, not just the three secrets above — if it removes
+  something unexpected, add it to `runtime_extra_env` in
+  `terraform/terraform.tfvars` and re-plan before applying.
 
 ⚠ This plan prints the **old** client secret and the allowlist one last
 time, on the "removed" side of the env diff. Terraform state still holds the
@@ -326,7 +351,7 @@ version"*, or with a Secret Manager "not found" error on
 incomplete. Go back and add the missing version.
 
 ```bash
-terraform apply -var-file=prod.tfvars
+terraform apply
 ```
 
 Cloud Run creates a new revision. It only takes traffic once it's ready: a
@@ -384,10 +409,16 @@ on the previous revision.
      This is the check that matters. If it gets in, `SIGN_IN_ALLOWLIST` is
      reading empty. Roll back now (step f).
    - Settings → Google Tasks → connect (or reconnect): the OAuth round trip
-     completes. That proves the new client secret.
+     completes.
+   - On an **existing** Google Tasks connection (a user who connected
+     before this rotation), tick one of that user's to-dos and confirm it
+     syncs to Google Tasks. Connecting only exercises the authorization
+     code exchange; a token **refresh** is what actually uses the client
+     secret, so this — not the connect flow above — is the check that
+     proves the rotated `GOOGLE_OAUTH_CLIENT_SECRET` works.
    - `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<service host>/api/google/tasks/pull`
      returns `503` with Option A and `401` with Option B.
-5. **Terraform has converged.** `terraform plan -var-file=prod.tfvars`
+5. **Terraform has converged.** `terraform plan`
    should report **No changes.**
 
 Then flip the Gate 2 rows in `docs/HARDENING_LOG.md` to `applied` /
@@ -493,15 +524,22 @@ be deleted anyway).
 
   Console: Cloud Run → `eos` → **Revisions** → **Manage traffic** → 100% to
   the previous revision. While traffic is pinned, new deploys don't take
-  traffic. After fixing forward, run
-  `gcloud run services update-traffic eos --to-latest --region=us-east1 --project=hpb-eos-prod`,
-  or a `terraform apply`, which also routes back to latest.
+  traffic.
+
+  `cloud_run.tf` has no `traffic` block, so Terraform does not manage
+  traffic splitting — a `terraform apply` does **not** route traffic back to
+  latest on its own. To recover: (1) route back with the
+  `update-traffic --to-revisions=<PREVIOUS_REVISION>=100` command above, (2)
+  separately fix the config and `terraform apply` it, then (3) explicitly
+  move traffic back with
+  `gcloud run services update-traffic eos --to-latest --region=us-east1 --project=hpb-eos-prod`
+  (or the Console equivalent) once you're satisfied the fix is good.
 - **Wrong secret value (the usual cause).** Fix forward: add the corrected
   value as a **new** version (step 3), roll a revision (step e.3), then
   disable the bad version. Don't disable the newest version and expect
   `latest` to fall back to an older one. Add a new version instead.
 - **Revision can't read a secret (permission denied in logs).** Re-run
-  `terraform apply -var-file=prod.tfvars` to restore the accessor bindings.
+  `terraform apply` to restore the accessor bindings.
   Check with `gcloud secrets get-iam-policy <ID> --project=hpb-eos-prod`.
 - **Full revert (last resort).** This puts plaintext secrets back on the
   service, so treat the OAuth secret as exposed again afterwards.

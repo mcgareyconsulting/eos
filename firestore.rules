@@ -27,8 +27,10 @@ service cloud.firestore {
     // These rules mirror that allowlist to gate the broad org/user/team reads
     // below, so a token from outside the perimeter can't enumerate them.
     // Keep this list in lockstep with the deployed SIGN_IN_ALLOWLIST value.
+    // The email must be verified too (C-04) — same rule as signInRefusal().
     function inDomain() {
       return authed()
+        && request.auth.token.email_verified == true
         && (request.auth.token.email.matches(".*@highplainsbank[.]com$")
             || request.auth.token.email == "daniel@mcgareyconsulting.com");
     }
@@ -231,10 +233,20 @@ service cloud.firestore {
                   // server-side, not through a client read.
                   || (resource.data.visibility == "team"
                       && sourceRockVisibleToMe(resource.data.source_rock_id));
+      // A private to-do is changed only by its owner or a team leader (C-11;
+      // lib/todo-access.ts is the server-action twin). Team-visible to-dos
+      // stay editable by any member.
+      function todoMutableByMe() {
+        return resource.data.get("visibility", "team") != "private"
+               || resource.data.get("owner_id", null) == request.auth.uid
+               || isLeader(resource.data.team_id);
+      }
       allow update: if admin()
                     || (isMember(resource.data.team_id)
-                        && todoStampsUntouched());
-      allow delete: if admin() || isMember(resource.data.team_id);
+                        && todoStampsUntouched()
+                        && todoMutableByMe());
+      allow delete: if admin()
+                    || (isMember(resource.data.team_id) && todoMutableByMe());
       allow create: if admin() || isMember(request.resource.data.team_id);
     }
 

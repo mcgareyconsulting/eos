@@ -3,13 +3,17 @@ import { redirect } from "next/navigation";
 import { tokenIsAdmin } from "./admin-claim";
 import { getAdminDb } from "./admin";
 import { verifySession } from "./session";
+import { sessionRenewAtMs } from "@/lib/session-policy";
 
 export { tokenIsAdmin } from "./admin-claim";
+
+// One session verification per request, shared by everything below.
+const verifiedSession = cache(() => verifySession());
 
 // Resolves the current Firebase session user. Per-request de-duped via
 // React cache() so layout + page share a single session verification.
 export const requireFirebaseUser = cache(async () => {
-  const decoded = await verifySession();
+  const decoded = await verifiedSession();
   if (!decoded) redirect("/login");
   return {
     uid: decoded.uid,
@@ -19,6 +23,16 @@ export const requireFirebaseUser = cache(async () => {
     isAdmin: tokenIsAdmin(decoded),
     db: getAdminDb(),
   };
+});
+
+// How long until the current session crosses its half-life — the moment the
+// app shell's <SessionKeeper> starts renewing it on the user's next
+// interaction (sliding 12-hour session; see lib/firebase/session.ts). Reuses
+// the request's verification, so it adds no Auth round trip.
+export const getSessionRenewInMs = cache(async (): Promise<number> => {
+  const decoded = await verifiedSession();
+  if (!decoded) redirect("/login");
+  return Math.max(0, sessionRenewAtMs(decoded) - Date.now());
 });
 
 // Returns the user/profile/teams structure that AppShell + home expect,

@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { getSessionRenewInMs, getUserTeamsFirebase } from "@/lib/firebase/auth";
 
 export default async function AppLayout({
   children,
@@ -15,6 +15,7 @@ export default async function AppLayout({
     leaderTeamIds,
     db,
   } = await getUserTeamsFirebase();
+  const sessionRenewInMs = await getSessionRenewInMs();
 
   // Unread badge for first paint; the sidebar's listener takes over after
   // client auth. One aggregation read per page render — cheap, and it means
@@ -51,6 +52,7 @@ export default async function AppLayout({
       membershipCount={membershipTeamIds.length}
       importTeamIds={importTeamIds}
       unreadNotifications={unreadNotifications}
+      sessionRenewInMs={sessionRenewInMs}
     >
       {children}
     </AppShell>

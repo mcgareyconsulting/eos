@@ -13,6 +13,7 @@ import {
   consumeOAuthState,
   getTasksStatus,
   saveConnection,
+  bearerMatches,
 } from "./tasks";
 
 const ENV_KEYS = [
@@ -20,6 +21,7 @@ const ENV_KEYS = [
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_TASKS_PULL_SECRET",
+  "NODE_ENV",
 ] as const;
 
 let savedEnv: Record<string, string | undefined>;
@@ -37,7 +39,8 @@ beforeEach(() => {
 afterEach(() => {
   for (const key of ENV_KEYS) {
     if (savedEnv[key] === undefined) delete process.env[key];
-    else process.env[key] = savedEnv[key];
+    // NODE_ENV is typed read-only; the env bag itself is writable.
+    else (process.env as Record<string, string | undefined>)[key] = savedEnv[key];
   }
   globalThis.fetch = originalFetch;
 });
@@ -88,6 +91,48 @@ describe("resolveRedirectUri", () => {
       resolveRedirectUri("http://localhost:3000/api/google/tasks/connect"),
       "http://localhost:3000/api/google/tasks/callback",
     );
+  });
+
+  test("fails closed in production when unset (C-12)", () => {
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    assert.throws(
+      () => resolveRedirectUri("https://evil.example/api/google/tasks/connect"),
+      /GOOGLE_OAUTH_REDIRECT_URI must be set/,
+    );
+    assert.throws(() => appOrigin("https://evil.example/x"));
+  });
+
+  test("uses the env var in production when set", () => {
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    process.env.GOOGLE_OAUTH_REDIRECT_URI = "https://pinned.example/callback";
+    assert.equal(
+      resolveRedirectUri("https://evil.example/api/google/tasks/connect"),
+      "https://pinned.example/callback",
+    );
+  });
+});
+
+describe("bearerMatches", () => {
+  test("accepts exactly Bearer <secret> (C-09)", () => {
+    assert.equal(bearerMatches("Bearer s3cr3t", "s3cr3t"), true);
+  });
+
+  test("rejects a wrong secret of the same length", () => {
+    assert.equal(bearerMatches("Bearer s3cr3x", "s3cr3t"), false);
+  });
+
+  test("rejects other lengths, schemes and a missing header without throwing", () => {
+    assert.equal(bearerMatches("Bearer s3cr3", "s3cr3t"), false);
+    assert.equal(bearerMatches("Bearer s3cr3tt", "s3cr3t"), false);
+    assert.equal(bearerMatches("bearer s3cr3t", "s3cr3t"), false);
+    assert.equal(bearerMatches("s3cr3t", "s3cr3t"), false);
+    assert.equal(bearerMatches("", "s3cr3t"), false);
+    assert.equal(bearerMatches(null, "s3cr3t"), false);
+  });
+
+  test("compares bytes, so multi-byte input can't slip past the length check", () => {
+    // "é" is one UTF-16 unit but two UTF-8 bytes.
+    assert.equal(bearerMatches("Bearer s3cr3é", "s3cr3tt"), false);
   });
 });
 

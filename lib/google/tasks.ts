@@ -24,6 +24,7 @@
 // small org; for a multi-tenant/prod hardening pass move tokens to Secret
 // Manager and grant the runtime SA roles/secretmanager.secretAccessor.
 
+import { timingSafeEqual } from "node:crypto";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { notify } from "@/lib/firebase/notifications";
@@ -46,9 +47,18 @@ export const GOOGLE_TASKS_SCOPE = "https://www.googleapis.com/auth/tasks";
 // "doesn't comply with OAuth 2.0 policy". Falls back to the request origin
 // (https forced, except localhost) only when the env var is unset, e.g. local
 // dev where you haven't set it.
+//
+// In production an unset env var is a misconfigured deploy, and the request
+// host is attacker-influenced (Host / X-Forwarded-Host), so it fails closed
+// instead of falling back (C-12, docs/SECURITY_AUDIT_2026-09-08.md).
 export function resolveRedirectUri(requestUrl: string): string {
   const explicit = process.env.GOOGLE_OAUTH_REDIRECT_URI;
   if (explicit) return explicit;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "GOOGLE_OAUTH_REDIRECT_URI must be set in production (C-12).",
+    );
+  }
   const u = new URL(requestUrl);
   const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
   const scheme = isLocal ? u.protocol : "https:";
@@ -701,4 +711,17 @@ export async function pullCompletionsForAllConnected(): Promise<{
 export function googleTasksPullSecret(): string | null {
   const s = process.env.GOOGLE_TASKS_PULL_SECRET?.trim();
   return s || null;
+}
+
+/**
+ * Does an `Authorization` header carry exactly `Bearer <secret>`? Constant
+ * time in the header's content (C-09): `timingSafeEqual` needs equal-length
+ * buffers, so a length mismatch is rejected first — that reveals only the
+ * length, which the secret's format doesn't hide anyway.
+ */
+export function bearerMatches(header: string | null, secret: string): boolean {
+  const got = Buffer.from(header ?? "", "utf8");
+  const want = Buffer.from(`Bearer ${secret}`, "utf8");
+  if (got.length !== want.length) return false;
+  return timingSafeEqual(got, want);
 }

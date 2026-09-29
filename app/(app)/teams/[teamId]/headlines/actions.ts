@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
@@ -29,6 +30,8 @@ export async function addHeadline(teamId: string, formData: FormData) {
     : "customer";
 
   if (!title) throw new Error("Title required");
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(body, LONG_TEXT_MAX, "Details");
 
   await db.collection("headlines").add({
     team_id: teamId,
@@ -73,6 +76,8 @@ export async function updateHeadline(
     : "customer";
 
   if (!title) throw new Error("Title required");
+  requireMaxLength(title, TITLE_MAX, "Title");
+  requireMaxLength(body, LONG_TEXT_MAX, "Details");
 
   await db.collection("headlines").doc(headlineId).update({
     title,

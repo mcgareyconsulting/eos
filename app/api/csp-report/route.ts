@@ -28,7 +28,9 @@ export async function POST(request: Request) {
 
   let body: unknown;
   try {
-    body = JSON.parse((await request.text()).slice(0, MAX_BODY_BYTES));
+    // Read at most MAX_BODY_BYTES off the stream so a request with no
+    // Content-Length can't make us buffer an unbounded body.
+    body = JSON.parse(await readCapped(request, MAX_BODY_BYTES));
   } catch {
     return new NextResponse(null, { status: 400 });
   }
@@ -48,4 +50,33 @@ export async function POST(request: Request) {
   }
 
   return new NextResponse(null, { status: 204 });
+}
+
+async function readCapped(request: Request, max: number): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done || !value) break;
+    const room = max - total;
+    if (room <= 0) break;
+    const slice = value.byteLength > room ? value.subarray(0, room) : value;
+    chunks.push(slice);
+    total += slice.byteLength;
+    if (total >= max) break;
+  }
+  await reader.cancel().catch(() => {});
+  return new TextDecoder().decode(concat(chunks, total));
+}
+
+function concat(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }

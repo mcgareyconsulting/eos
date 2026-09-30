@@ -571,6 +571,20 @@ already distinguishes authorities from sources and is the model.
 - 2026-08-31 · request · src session-2026-08-31 — daniel: readme + "bunch of docs"
 - 2026-08-31 · note · src session-2026-08-31 — CLAUDE.md → docs/ROADMAP.md pointer contradiction found by reading both files this session
 
+### F9 · Soft delete + trash retention (hardening Gate 5)
+*W0 · not-started · due — · deps Gate 4 merge (`feat/gate4-actor-tokens`) · owner daniel · src session-2026-09-30 · upd 2026-09-30*
+
+Effort M. Design agreed: `docs/SOFT_DELETE_DESIGN.md`. Deletes move the
+document and its cascade children to a `trash` collection in one batch
+(actor on the row, one audit event), admins restore from a Trash page,
+Firestore TTL purges after **1 year**; `audit_log` gets a **7-year** TTL.
+Replaces the Gate 4 two-write delete stamp. Retention figures are
+proposals awaiting HPB; TTL resources ship gated off until they answer.
+Not queued: sequence after Gate 4 merges and Gate 2 unblocks.
+
+**Trail**
+- 2026-09-30 · decision · src session-2026-09-30 — daniel: soft delete + ~1-year retention for auditability; relocation to `trash` chosen over an in-place flag (rules aren't filters; in-memory archive exclusion is spread across ~24 files)
+
 ---
 
 ## Workstream 1 — Data warehouse

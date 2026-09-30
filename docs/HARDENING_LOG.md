@@ -102,6 +102,7 @@ and the `gcloud run services describe` env output (refs only) as evidence.
 | Google refresh tokens encrypted with KMS | C-06; Plan: item 11 | in code | 2026-09-30 | See "Gate 4" below | Tracked per item in the Gate 4 table |
 | Audit trail: actor stamping on all updates/deletes | C-07; Plan: item 7 | in code | 2026-09-30 | See "Gate 4" below | Tracked per item in the Gate 4 table |
 | Perimeter / LB (Cloud Armor + IAP + custom domain, drop `allUsers`) | I-01; Plan: item 13 | planned | — | — | Phase 1 per the audit's remediation table |
+| Soft delete via a `trash` collection, admin restore, 1-year purge by Firestore TTL; audit log 7-year TTL | C-07 (delete actor, replaces the Gate 4 two-write stamp); Plan step 7 | planned (design agreed 2026-09-30) | — | `docs/SOFT_DELETE_DESIGN.md` | Gate 5. Builds after the Gate 4 branch merges. Retention figures are proposals — see Decisions |
 
 ## Gate 3 — access control, session and headers
 
@@ -165,6 +166,20 @@ Identity Platform blocking function and offboarding job (C-04/C-05
 remainder), I-06.
 
 ## Decisions
+
+- **Soft delete will be a `trash` collection, not an in-place flag**
+  (2026-09-30, design in `docs/SOFT_DELETE_DESIGN.md`). Firestore rules
+  are not query filters and the app excludes archived rows in memory across
+  ~24 files, so an in-place `deleted_at` would need every read path,
+  a backfill and new composite indexes, with "missed filter shows deleted
+  data" as the failure mode. Relocating the document (and its cascade
+  children) to `trash` in one batch touches no read path and fails safe.
+- **Proposed retention, awaiting HPB sign-off:** deleted records purge
+  **1 year** after deletion; `audit_log` rows purge after **7 years**,
+  matching the archive bucket. Both by Firestore TTL policy, both gated
+  behind `enable_retention_ttl` (default off) until the client confirms
+  the figures or names their own. Until then the audit log is kept
+  indefinitely and nothing is purged.
 
 - **Consultant temporarily gets `roles/secretmanager.admin` and
   `roles/cloudkms.admin`** (requested 2026-09-29, pending an Owner) so

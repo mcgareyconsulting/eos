@@ -55,6 +55,13 @@ export type UserImportOptions = {
   allowlist?: Allowlist | null;
   /** Per-pairing preview cap; the overflow is reported as a count. */
   previewLimit?: number;
+  /**
+   * Who is importing (C-07 actor stamp): the signed-in admin's uid from the
+   * server action, or SYSTEM_ACTOR("import-users") from the CLI. When set,
+   * every user / team_members / teams doc written carries
+   * `updated_by` / `updated_at`.
+   */
+  actorUid?: string;
 };
 
 const CHUNK = 100;
@@ -67,7 +74,7 @@ export async function runUserImport(
 ): Promise<SeedReport> {
   const dryRun = opts.dryRun !== false;
   const previewLimit = opts.previewLimit ?? 250;
-  const writer = new Writer(db, dryRun);
+  const writer = new Writer(db, dryRun, opts.actorUid);
 
   if (!hasSeedColumns(table)) {
     throw new Error(

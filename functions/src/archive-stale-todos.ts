@@ -16,6 +16,11 @@ import {
   selectTodosCompletedBeforeWeek,
 } from "../../lib/todos-archive";
 import { autoArchiveActivity } from "../../lib/activity";
+import { stamp, SYSTEM_ACTOR } from "../../lib/firebase/stamp";
+
+// Audit-trail actor for every write this job makes (C-07): the sweep is a
+// system writer, never a person.
+const ACTOR = SYSTEM_ACTOR("archiveStaleTodos");
 
 const TIME_ZONE = "America/Chicago";
 const BATCH_SIZE = 400;
@@ -38,6 +43,7 @@ async function archiveCollection(
     for (const id of chunk) {
       batch.update(db.collection(collection).doc(id), {
         archived_at: FieldValue.serverTimestamp(),
+        ...stamp(ACTOR),
       });
     }
     await batch.commit();
@@ -62,7 +68,7 @@ async function archiveTodos(
     const batch = db.batch();
     for (const d of due.slice(i, i + chunkSize)) {
       const data = d.data();
-      batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+      batch.update(d.ref, { archived_at: FieldValue.serverTimestamp(), ...stamp(ACTOR) });
       if (typeof data.team_id === "string" && data.team_id) {
         batch.set(
           db.collection("entity_activity").doc(),

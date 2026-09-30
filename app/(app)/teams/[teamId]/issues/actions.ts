@@ -8,6 +8,7 @@ import {
   requireTeamAccess,
   requireTeamDoc,
 } from "@/lib/firebase/teams";
+import { deleteStamp, stamp } from "@/lib/firebase/stamp";
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
 
@@ -44,6 +45,7 @@ async function clearLiveMeetingPin(
   db: Firestore,
   teamId: string,
   issueId: string,
+  uid: string,
 ) {
   // Team meeting history is small; filter in memory to avoid a composite index.
   const meetings = await db
@@ -57,7 +59,7 @@ async function clearLiveMeetingPin(
   if (openPinned.length > 0) {
     const batch = db.batch();
     for (const d of openPinned) {
-      batch.update(d.ref, { current_issue_id: null });
+      batch.update(d.ref, { current_issue_id: null, ...stamp(uid) });
     }
     await batch.commit();
   }
@@ -99,6 +101,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     resolution_todo_id: null,
     source_meeting_id,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   revalidatePath(pathFor(teamId));
@@ -138,12 +141,13 @@ export async function updateIssueMeta(
     owner_id,
     priority,
     description,
+    ...stamp(uid),
   });
 
   // Moving to long-term via the edit modal needs the same live-meeting pin
   // cleanup as setIssueType.
   if (type === "long" && prevType !== "long") {
-    await clearLiveMeetingPin(db, teamId, issueId);
+    await clearLiveMeetingPin(db, teamId, issueId, uid);
   }
 
   revalidatePath(pathFor(teamId));
@@ -229,7 +233,7 @@ export async function castVote(
     if (nextCount <= 0) {
       tx.delete(voteRef);
     } else if (voteSnap.exists) {
-      tx.update(voteRef, { count: nextCount });
+      tx.update(voteRef, { count: nextCount, ...stamp(uid) });
     } else {
       tx.set(voteRef, {
         issue_id: issueId,
@@ -237,9 +241,10 @@ export async function castVote(
         team_id: teamId,
         count: nextCount,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(uid),
       });
     }
-    tx.update(issueRef, { votes: FieldValue.increment(delta) });
+    tx.update(issueRef, { votes: FieldValue.increment(delta), ...stamp(uid) });
   });
 
   revalidatePath(pathFor(teamId));
@@ -251,9 +256,9 @@ export async function setIssueStatus(
   status: string,
 ) {
   if (!STATUSES.includes(status as Status)) throw new Error("Bad status");
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  const update: Record<string, unknown> = { status };
+  const update: Record<string, unknown> = { status, ...stamp(uid) };
   if (status === "solved" || status === "dropped") {
     update.resolved_at = FieldValue.serverTimestamp();
   } else {
@@ -272,12 +277,15 @@ export async function setIssueType(
   type: string,
 ) {
   if (!TYPES.includes(type as Type)) throw new Error("Bad type");
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  await db.collection("issues").doc(issueId).update({ type });
+  await db
+    .collection("issues")
+    .doc(issueId)
+    .update({ type, ...stamp(uid) });
 
   if (type === "long") {
-    await clearLiveMeetingPin(db, teamId, issueId);
+    await clearLiveMeetingPin(db, teamId, issueId, uid);
   }
 
   revalidatePath(pathFor(teamId));
@@ -285,9 +293,11 @@ export async function setIssueType(
 }
 
 export async function deleteIssue(teamId: string, issueId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  // Cascade: issue + votes + comments (entity_comments)
+  const issueRef = db.collection("issues").doc(issueId);
+  // Cascade: issue + votes + comments (entity_comments). The delete stamp
+  // goes on the parent only (lib/firebase/stamp.ts).
   const [votes, comments] = await Promise.all([
     db.collection("issue_votes").where("issue_id", "==", issueId).get(),
     db
@@ -297,8 +307,9 @@ export async function deleteIssue(teamId: string, issueId: string) {
       .where("entity_id", "==", issueId)
       .get(),
   ]);
+  await issueRef.update(deleteStamp(uid));
   const batch = db.batch();
-  batch.delete(db.collection("issues").doc(issueId));
+  batch.delete(issueRef);
   votes.docs.forEach((v) => batch.delete(v.ref));
   comments.docs.forEach((c) => batch.delete(c.ref));
   await batch.commit();
@@ -320,15 +331,20 @@ export async function setIssueArchived(
   issueId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
   await db
     .collection("issues")
     .doc(issueId)
     .update(
       archived
-        ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, status: "open", resolved_at: null },
+        ? { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) }
+        : {
+            archived_at: null,
+            status: "open",
+            resolved_at: null,
+            ...stamp(uid),
+          },
     );
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
@@ -342,7 +358,7 @@ export async function archiveIssuesClosedDuringMeeting(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
   const startMs =
@@ -368,7 +384,10 @@ export async function archiveIssuesClosedDuringMeeting(
   const batch = db.batch();
   for (const d of snap.docs) {
     if (!ids.has(d.id)) continue;
-    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+    batch.update(d.ref, {
+      archived_at: FieldValue.serverTimestamp(),
+      ...stamp(uid),
+    });
   }
   await batch.commit();
   revalidatePath(pathFor(teamId));

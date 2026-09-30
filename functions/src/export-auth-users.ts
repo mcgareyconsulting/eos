@@ -21,9 +21,10 @@
  *   Firebase project.
  * - Never log user emails or the export body itself. Only counts and the
  *   object path are logged (see the structured log line below).
- * - No alerting is wired up yet for a failed run; this function throws on
- *   any failure so it shows up as a Cloud Functions error in logs, and an
- *   alert policy on function errors is a follow-up (see docs/ROADMAP.md).
+ * - This function throws on any failure so it shows up as a Cloud
+ *   Functions error in logs; the "Auth export (backup) failed" alert policy
+ *   (terraform/monitoring.tf) pages on that error, and the daily
+ *   checkBackupFreshness function catches a silently skipped run.
  *
  * FORMAT: top-level `{ "users": [...] }`, one object per user, restricted
  * to the fields `firebase auth:import` actually accepts. The public docs

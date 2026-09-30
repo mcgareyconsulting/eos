@@ -17,6 +17,7 @@ import {
 import type { KindStats } from "../team-import-types";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
+import { LONG_TEXT_MAX, TITLE_MAX, overLengthNote, previewTitle } from "./limits";
 
 export async function importScorecard(
   table: CsvTable,
@@ -103,6 +104,23 @@ export async function importScorecard(
 
     const metricId = importDocId("metric", ctx.teamId, name);
     const isNew = !ctx.existingIds.has(metricId);
+
+    const tooLong = overLengthNote([
+      { label: "Name", value: name, max: TITLE_MAX },
+      { label: "Description", value: description, max: LONG_TEXT_MAX },
+    ]);
+    if (tooLong) {
+      skipped++;
+      ctx.preview.add({
+        kind: "scorecard",
+        action: "skip",
+        title: previewTitle(name),
+        owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+        detail: [],
+        note: tooLong,
+      });
+      continue;
+    }
 
     await ctx.writer.set(["scorecard_metrics", metricId], {
       team_id: ctx.teamId,

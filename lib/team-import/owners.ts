@@ -4,6 +4,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import type { DocumentData, Firestore, WriteBatch } from "firebase-admin/firestore";
 import { normalizePersonKey, slugify } from "../csv-import";
+import { stamp } from "../firebase/stamp";
 import type { PreviewRow } from "../team-import-types";
 
 // ---------------------------------------------------------------------------
@@ -18,6 +19,12 @@ export class Writer {
   constructor(
     private db: Firestore,
     private dryRun: boolean,
+    /**
+     * Who is writing (C-07 actor stamp). When set, every doc carries
+     * `updated_by` / `updated_at` so the audit trigger can name the actor;
+     * a signed-in uid from the server action, or SYSTEM_ACTOR(...) from a CLI.
+     */
+    private actorUid?: string,
   ) {
     this.batch = db.batch();
   }
@@ -25,7 +32,8 @@ export class Writer {
   async set(path: [string, string], data: DocumentData) {
     this.written++;
     if (this.dryRun) return;
-    this.batch.set(this.db.collection(path[0]).doc(path[1]), data, { merge: true });
+    const doc = this.actorUid ? { ...data, ...stamp(this.actorUid) } : data;
+    this.batch.set(this.db.collection(path[0]).doc(path[1]), doc, { merge: true });
     if (++this.pending >= 400) await this.flush();
   }
 

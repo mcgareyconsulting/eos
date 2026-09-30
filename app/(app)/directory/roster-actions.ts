@@ -6,6 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminAuth } from "@/lib/firebase/admin";
+import { deleteStamp, stamp } from "@/lib/firebase/stamp";
 import {
   getTeamMembers,
   requireTeamLeader,
@@ -24,7 +25,7 @@ import {
 // Creating an Auth record does NOT email anyone — it's an empty account
 // waiting for first Google sign-in (same as pnpm accounts:create).
 export async function addTeamMember(teamId: string, formData: FormData) {
-  const { db } = await requireTeamLeader(teamId);
+  const { db, uid } = await requireTeamLeader(teamId);
 
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
@@ -48,6 +49,7 @@ export async function addTeamMember(teamId: string, formData: FormData) {
     firstName,
     lastName,
     email,
+    actorUid: uid,
   });
 
   revalidatePath("/directory");
@@ -59,7 +61,7 @@ export async function addTeamMember(teamId: string, formData: FormData) {
 // be removed — promote a replacement first. Also drops the uid from the
 // team's speaking order and clears meeting driver if it pointed at them.
 export async function removeTeamMember(teamId: string, userId: string) {
-  const { db, team } = await requireTeamLeader(teamId);
+  const { db, team, uid } = await requireTeamLeader(teamId);
 
   const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
   const memberSnap = await memberRef.get();
@@ -82,6 +84,10 @@ export async function removeTeamMember(teamId: string, userId: string) {
     }
   }
 
+  // Own write before the delete so the audit trigger's `before` snapshot
+  // names who removed them (C-07).
+  await memberRef.update(deleteStamp(uid));
+
   const batch = db.batch();
   batch.delete(memberRef);
 
@@ -92,7 +98,10 @@ export async function removeTeamMember(teamId: string, userId: string) {
     );
   }
   if (Object.keys(teamUpdate).length > 0) {
-    batch.update(db.collection("teams").doc(teamId), teamUpdate);
+    batch.update(db.collection("teams").doc(teamId), {
+      ...teamUpdate,
+      ...stamp(uid),
+    });
   }
 
   await batch.commit();
@@ -115,7 +124,7 @@ export async function setMemberRole(
     throw new Error("Role must be leader or member");
   }
 
-  const { db } = await requireTeamLeader(teamId);
+  const { db, uid } = await requireTeamLeader(teamId);
 
   const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
   const memberSnap = await memberRef.get();
@@ -144,6 +153,7 @@ export async function setMemberRole(
       team_id: teamId,
       user_id: userId,
       role,
+      ...stamp(uid),
     },
     { merge: true },
   );

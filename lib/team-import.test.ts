@@ -191,3 +191,76 @@ describe("PreviewCollector", () => {
     assert.deepEqual(c.rows.map((r) => r.title), ["z", "m", "a"]);
   });
 });
+
+// C-10 on the import path: over-long rows are skipped with a note rather
+// than written, and the rest of the file still lands.
+import { importTodos } from "./team-import/todos";
+import { OwnerResolver } from "./team-import/owners";
+import { overLengthNote, previewTitle, TITLE_MAX } from "./team-import/limits";
+import type { Writer } from "./team-import/owners";
+
+describe("import length caps (C-10)", () => {
+  test("overLengthNote names the first field over its cap, null when all fit", () => {
+    assert.equal(overLengthNote([{ label: "Title", value: "ok", max: 5 }]), null);
+    assert.equal(overLengthNote([{ label: "Title", value: null, max: 5 }]), null);
+    assert.match(
+      overLengthNote([
+        { label: "Title", value: "fine", max: 10 },
+        { label: "Description", value: "x".repeat(11), max: 10 },
+      ]) ?? "",
+      /^Description too long \(11 chars, max 10\)/,
+    );
+  });
+
+  test("previewTitle truncates only when needed", () => {
+    assert.equal(previewTitle("short"), "short");
+    const long = previewTitle("y".repeat(400));
+    assert.ok(long.length < 130 && long.endsWith("…"));
+  });
+
+  test("importTodos skips an over-long title with a preview note and still writes the others", async () => {
+    const writes: { path: [string, string]; data: Record<string, unknown> }[] = [];
+    const writer = {
+      written: 0,
+      async set(path: [string, string], data: Record<string, unknown>) {
+        writes.push({ path, data });
+      },
+      async flush() {},
+    } as unknown as Writer;
+    const owners = new OwnerResolver("t1", [{ user_id: "u1", names: ["Ann Lee"] }], {
+      createOwners: false,
+      fallbackId: null,
+      writer,
+    });
+    const preview = new PreviewCollector();
+    const tooLong = "t".repeat(TITLE_MAX + 1);
+    const table = {
+      headers: ["Title", "Owner"],
+      rows: [
+        { Title: tooLong, Owner: "Ann Lee" },
+        { Title: "Fits", Owner: "Ann Lee" },
+      ],
+    };
+
+    const stats = await importTodos(table, {
+      teamId: "t1",
+      writer,
+      owners,
+      existingIds: new Set(),
+      includeArchived: false,
+      completedSince: null,
+      unmatchedOwner: "no-owner",
+      preview,
+      existingRows: "keep",
+    });
+
+    assert.equal(stats.imported, 1);
+    assert.equal(stats.skipped, 1);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].data.title, "Fits");
+    const skipped = preview.rows.find((r) => r.action === "skip");
+    assert.ok(skipped);
+    assert.match(skipped.note ?? "", /Title too long \(501 chars, max 500\)/);
+    assert.ok(skipped.title.length < TITLE_MAX, "preview never carries the over-long title");
+  });
+});

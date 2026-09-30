@@ -148,6 +148,52 @@ resource "google_monitoring_alert_policy" "database_settings_changed" {
   depends_on = [google_project_service.required]
 }
 
+# Alert 4: the weekly Auth export function errored. `exportAuthUsers`
+# (functions/src/export-auth-users.ts) throws on any failure, which Cloud
+# Run logs at ERROR under the function's service name. The freshness
+# checker below would also notice an 8-day-old auth export, but this fires
+# the same day.
+resource "google_monitoring_alert_policy" "auth_export_failed" {
+  project      = var.project_id
+  severity     = "ERROR"
+  display_name = "Auth export (backup) failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "exportAuthUsers error"
+
+    condition_matched_log {
+      filter = <<-EOT
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="exportauthusers"
+        AND severity>=ERROR
+      EOT
+    }
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = <<-EOT
+      **What happened:** the weekly export of Firebase Auth users (uids, emails, the `role: admin` claim) to the archive bucket reported an error.
+
+      **Impact:** the long-term archive is missing this week's copy of the user directory. Sign-in and Firestore data are unaffected.
+
+      **What to do:** open Cloud Run functions → `exportAuthUsers` → Logs for the error; fix the cause (permissions, bucket, quota); re-run via Cloud Scheduler → `firebase-schedule-exportAuthUsers-us-east1` → Force run. Runbook: docs/BACKUP_RUNBOOK.md, alert table.
+    EOT
+  }
+
+  notification_channels = local.notification_channels
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "604800s"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
 # --- Backup freshness (daily checker + heartbeat) ---------------------------
 #
 # `checkBackupFreshness` (functions/src/check-backup-freshness.ts) runs daily

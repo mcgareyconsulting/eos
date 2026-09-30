@@ -15,6 +15,7 @@ import type { KindStats } from "../team-import-types";
 import { archivedAtFrom, isArchived, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
+import { LONG_TEXT_MAX, TITLE_MAX, overLengthNote, previewTitle } from "./limits";
 
 export async function importRocks(
   table: CsvTable,
@@ -154,6 +155,23 @@ export async function importRocks(
           ? Timestamp.fromDate(new Date(`${completedOn}T00:00:00`))
           : FieldValue.serverTimestamp()
         : null;
+
+    const tooLong = overLengthNote([
+      { label: "Title", value: title, max: TITLE_MAX },
+      { label: "Description", value: description, max: LONG_TEXT_MAX },
+    ]);
+    if (tooLong) {
+      skipped++;
+      ctx.preview.add({
+        kind: "rocks",
+        action: "skip",
+        title: previewTitle(title),
+        owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+        detail: [],
+        note: tooLong,
+      });
+      continue;
+    }
 
     await ctx.writer.set(["rocks", rockId], {
       team_id: ctx.teamId,

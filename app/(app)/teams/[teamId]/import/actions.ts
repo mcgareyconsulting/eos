@@ -130,7 +130,7 @@ export async function importTeamFile(
   try {
     // Leader-or-admin, matching getImportableTeams: imports bulk-write team
     // data and (via createOwners) roster rows, which members must not do.
-    const { db } = await requireTeamLeader(teamId);
+    const { db, uid } = await requireTeamLeader(teamId);
     const members = await getTeamMembers(teamId);
 
     const kindRaw = String(formData.get("kind") ?? "");
@@ -243,6 +243,7 @@ export async function importTeamFile(
       rockTeam,
       unmatchedOwner,
       ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
+      actorUid: uid,
     });
 
     if (!dryRun) revalidateTeam(teamId);

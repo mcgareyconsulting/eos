@@ -41,6 +41,17 @@ resource "google_cloud_run_v2_service" "app" {
         value = var.google_oauth_redirect_uri
       }
 
+      # Gate 4 (C-06): key name for application-level encryption of Google
+      # refresh tokens. Not a secret (a resource name); the runtime SA's
+      # key-scoped grant is what matters (kms.tf). Absent until the flag is on.
+      dynamic "env" {
+        for_each = var.encrypt_google_tokens ? [google_kms_crypto_key.eos_tokens.id] : []
+        content {
+          name  = "GOOGLE_TOKEN_KMS_KEY"
+          value = env.value
+        }
+      }
+
       # Optional extra plain env (e.g. ENV_LABEL). Empty by default.
       dynamic "env" {
         for_each = var.runtime_extra_env

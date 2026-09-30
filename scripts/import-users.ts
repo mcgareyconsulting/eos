@@ -26,6 +26,7 @@ config({ path: ".env.local" });
 
 import { parseAllowlist } from "../lib/auth-allowlist";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";
+import { SYSTEM_ACTOR } from "../lib/firebase/stamp";
 import { tableFromBytes } from "../lib/team-import";
 import { runUserImport } from "../lib/user-import";
 
@@ -74,6 +75,8 @@ async function main() {
   const report = await runUserImport(getAdminDb(), getAdminAuth(), table, {
     dryRun: !apply,
     allowlist: noAllowlist ? null : parseAllowlist(process.env.SIGN_IN_ALLOWLIST),
+    // System actor (C-07): an audit row from this CLI is never a person's.
+    actorUid: SYSTEM_ACTOR("import-users"),
   });
 
   for (const row of report.rows) {

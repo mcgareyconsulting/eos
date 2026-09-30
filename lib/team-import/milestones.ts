@@ -12,6 +12,7 @@ import type { KindStats } from "../team-import-types";
 import { archivedAtFrom, createdAtFrom, isArchived, isStaleCompletion } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
+import { LONG_TEXT_MAX, TITLE_MAX, overLengthNote, previewTitle } from "./limits";
 
 export async function importMilestones(
   table: CsvTable,
@@ -129,6 +130,23 @@ export async function importMilestones(
         owner: ctx.owners.nameFor(ownerId),
         detail: [`rock: ${rockName || "—"}`],
         note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
+    const tooLong = overLengthNote([
+      { label: "Title", value: title, max: TITLE_MAX },
+      { label: "Description", value: description, max: LONG_TEXT_MAX },
+    ]);
+    if (tooLong) {
+      skipped++;
+      ctx.preview.add({
+        kind: "milestones",
+        action: "skip",
+        title: previewTitle(title),
+        owner: ownerId ? ctx.owners.nameFor(ownerId) : "No Owner",
+        detail: [],
+        note: tooLong,
       });
       continue;
     }

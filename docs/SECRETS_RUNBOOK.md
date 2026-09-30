@@ -461,6 +461,56 @@ Wait until step 4b passes, ideally with a day of normal use in between.
 
 ---
 
+### Step 6 (Gate 4): turn on refresh-token encryption
+
+Audit C-06. Users' Google refresh tokens in `google_tasks_connections/{uid}`
+are plaintext until this step. The code ships dark: with
+`GOOGLE_TOKEN_KMS_KEY` unset it behaves exactly as before. Do this only
+**after** step 4a has applied the key-scoped grant
+(`google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter`)
+and step 4b passed — with the env set and no grant, every Google Tasks
+connect and hourly token refresh fails with PERMISSION_DENIED.
+
+1. In `terraform/terraform.tfvars` set `encrypt_google_tokens = true`.
+   `terraform plan` should show **1 to change** (the Cloud Run service:
+   one new plain env var `GOOGLE_TOKEN_KMS_KEY`, value the key's resource
+   name), nothing else. Apply.
+2. Verify on the new revision: Settings → Google Tasks → **Disconnect**,
+   then **Connect** with a test account. Firestore →
+   `google_tasks_connections/<uid>` must now show `refresh_token: null`,
+   `refresh_token_enc: <base64>`, `refresh_token_key:
+   projects/…/cryptoKeys/eos-tokens/cryptoKeyVersions/<n>`. Complete a
+   to-do and confirm it appears in Google Tasks (a push exercises decrypt →
+   refresh → re-seal).
+3. Migrate the rows that haven't refreshed yet. Each plaintext row is
+   re-written encrypted on its next token refresh anyway; this finishes the
+   job in one pass so no plaintext token lingers for a rarely-used
+   connection. Run from a machine whose ADC holds
+   `cloudkms.cryptoKeyEncrypterDecrypter` on the key (the consultant does
+   while `roles/cloudkms.admin` is still granted; otherwise a temporary
+   key-scoped grant to the operator):
+
+   ```bash
+   GOOGLE_TOKEN_KMS_KEY=projects/hpb-eos-prod/locations/us-east1/keyRings/eos/cryptoKeys/eos-tokens \
+     pnpm tsx scripts/encrypt-google-tokens.ts            # dry run: counts
+   GOOGLE_TOKEN_KMS_KEY=… pnpm tsx scripts/encrypt-google-tokens.ts --apply
+   ```
+
+   Expect `Encrypted N row(s); M already encrypted; K with no refresh
+   token.` Re-run the dry run: it should report 0 to encrypt.
+4. Record the revision name and the `refresh_token_key` prefix in
+   `docs/HARDENING_LOG.md` (Gate 4 table, C-06 row → `verified`).
+
+Rollback: set `encrypt_google_tokens = false` and apply. Rows already
+encrypted then fail to decrypt (`GOOGLE_TOKEN_KMS_KEY is unset`) and those
+users must reconnect — so roll back only if encryption itself is the fault,
+not to work around a permissions error (fix the grant instead).
+
+Key rotation needs nothing from the app: `eos-tokens` rotates every 90
+days, old versions stay enabled, and each ciphertext names the version it
+was made with. Never destroy a key version that any stored
+`refresh_token_key` still points at.
+
 ### (e) Rotation cadence
 
 | Secret | Rotate | Also rotate immediately when |

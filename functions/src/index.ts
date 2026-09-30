@@ -100,6 +100,18 @@ function changedKeys(before: FieldMap | null, after: FieldMap | null): string[] 
 }
 
 /**
+ * The actor a server action stamped on the document (C-07). Deletes carry it
+ * in the last state before removal; creates and updates in the new state
+ * (`updated_by` is merged on every write, `created_by` is the older
+ * create-only convention some documents still use).
+ */
+function stampedActor(action: AuditAction, before: FieldMap | null, after: FieldMap | null): string | null {
+  const candidate =
+    action === "delete" ? before?.deleted_by : (after?.updated_by ?? after?.created_by);
+  return typeof candidate === "string" && candidate ? candidate : null;
+}
+
+/**
  * Builds and writes one immutable audit_log row for a single document
  * create/update/delete. Shared by every trigger below.
  */
@@ -116,17 +128,25 @@ async function recordAuditEvent(
 
   const action: AuditAction = !beforeSnap.exists ? "create" : !afterSnap.exists ? "delete" : "update";
 
+  // authId is only populated when the write carries an end-user identity
+  // (client SDK writes, or Admin SDK calls made "on behalf of" a user via
+  // impersonation). Plain Admin SDK writes — server actions, seed scripts —
+  // show up as authType "service_account"/"unknown" with no authId. Server
+  // actions therefore stamp the document itself (lib/firebase/stamp.ts,
+  // C-07): `updated_by` on every update/set, `deleted_by` written just
+  // before a hard delete. Fall back to that stamp so the row can still say
+  // who; `actor_source` records which it was.
+  const stamped = stampedActor(action, before, after);
+  const actorUid = event.authId ?? stamped;
+
   await auditDb()
     .collection("audit_log")
     .add({
       entity_type: entityType,
       entity_id: afterSnap.exists ? afterSnap.id : beforeSnap.id,
       action,
-      // authId is only populated when the write carries an end-user identity
-      // (client SDK writes, or Admin SDK calls made "on behalf of" a user via
-      // impersonation). Plain Admin SDK writes — server actions, seed scripts —
-      // show up as authType "service_account"/"unknown" with no authId.
-      actor_uid: event.authId ?? null,
+      actor_uid: actorUid,
+      actor_source: event.authId ? "auth" : stamped ? "stamp" : null,
       auth_type: event.authType,
       timestamp: FieldValue.serverTimestamp(),
       before,

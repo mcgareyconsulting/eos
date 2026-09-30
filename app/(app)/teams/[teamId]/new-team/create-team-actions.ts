@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
+import { stamp } from "@/lib/firebase/stamp";
 import {
   assertInviteEmail,
   ensureAuthUser,
@@ -23,7 +24,7 @@ export async function createTeamWithLeader(
   formData: FormData,
 ): Promise<CreateTeamResult> {
   // Outside try so Next notFound() from requireAdmin is not swallowed.
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const teamName = String(formData.get("team_name") ?? "").trim();
   const firstName = String(formData.get("first_name") ?? "").trim();
@@ -78,6 +79,7 @@ export async function createTeamWithLeader(
       meet_link: null,
       speaking_order: [userId],
       created_at: FieldValue.serverTimestamp(),
+      ...stamp(actorUid),
     });
 
     try {
@@ -88,8 +90,12 @@ export async function createTeamWithLeader(
         firstName,
         lastName,
         email,
+        actorUid,
       });
     } catch (err) {
+      // Rollback of a team nobody has seen yet — no deleteStamp; its create
+      // row already carries `updated_by`, and a stamp write here could fail
+      // the same way the membership did.
       await teamRef.delete().catch(() => undefined);
       throw err;
     }

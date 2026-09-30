@@ -20,13 +20,23 @@
 // which stores a refresh token under their uid.
 //
 // SECURITY: refresh tokens live in Firestore (admin-SDK only; firestore.rules
-// default-denies client access to `google_tasks_connections/*`). Fine for a
-// small org; for a multi-tenant/prod hardening pass move tokens to Secret
-// Manager and grant the runtime SA roles/secretmanager.secretAccessor.
+// default-denies client access to `google_tasks_connections/*`). With
+// GOOGLE_TOKEN_KMS_KEY set they are stored KMS-encrypted (C-06,
+// lib/google/token-crypto.ts): `refresh_token_enc` + `refresh_token_key`
+// instead of `refresh_token`. Reads accept both shapes; writes use the
+// encrypted one whenever the key is configured, so a legacy plaintext row is
+// re-written encrypted on its next access-token refresh. Access tokens
+// (1-hour lifetime) stay plaintext.
 
 import { timingSafeEqual } from "node:crypto";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
+import {
+  openToken,
+  sealToken,
+  tokenEncryptionEnabled,
+} from "@/lib/google/token-crypto";
+import { stamp } from "@/lib/firebase/stamp";
 import { notify } from "@/lib/firebase/notifications";
 import { recipientsFor } from "@/lib/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
@@ -79,7 +89,11 @@ export function appOrigin(requestUrl: string): string {
 export const GOOGLE_TASKS_SETTINGS_PATH = "/settings";
 
 type Connection = {
-  refresh_token: string;
+  /** Plaintext refresh token — legacy shape, or GOOGLE_TOKEN_KMS_KEY unset. */
+  refresh_token?: string | null;
+  /** KMS-encrypted refresh token (base64) + the key version that made it. */
+  refresh_token_enc?: string | null;
+  refresh_token_key?: string | null;
   access_token?: string | null;
   access_token_expiry?: number | null; // epoch ms
   tasklist_id?: string | null;
@@ -116,13 +130,52 @@ function connectionRef(uid: string, db: Firestore = getAdminDb()) {
   return db.collection("google_tasks_connections").doc(uid);
 }
 
+/** A doc counts as a connection when it holds a refresh token in either shape. */
+export function hasRefreshToken(
+  data: Connection | null | undefined,
+): data is Connection {
+  return !!(data?.refresh_token || data?.refresh_token_enc);
+}
+
 async function getConnection(
   uid: string,
   db: Firestore = getAdminDb(),
 ): Promise<Connection | null> {
   const snap = await connectionRef(uid, db).get();
   const data = snap.data() as Connection | undefined;
-  return data?.refresh_token ? data : null;
+  return hasRefreshToken(data) ? data : null;
+}
+
+/** The plaintext refresh token for this connection, decrypting if stored encrypted. */
+async function refreshTokenOf(uid: string, conn: Connection): Promise<string> {
+  if (conn.refresh_token_enc) {
+    return openToken(uid, {
+      ciphertext: conn.refresh_token_enc,
+      keyVersion: conn.refresh_token_key ?? "",
+    });
+  }
+  if (conn.refresh_token) return conn.refresh_token;
+  throw new Error("Connection has no refresh token");
+}
+
+/**
+ * The stored form of a refresh token: encrypted when GOOGLE_TOKEN_KMS_KEY is
+ * set, plaintext otherwise. Always writes all three fields so a rewrite
+ * never leaves the other shape behind.
+ */
+async function refreshTokenFields(
+  uid: string,
+  refreshToken: string,
+): Promise<Pick<Connection, "refresh_token" | "refresh_token_enc" | "refresh_token_key">> {
+  if (!tokenEncryptionEnabled()) {
+    return { refresh_token: refreshToken, refresh_token_enc: null, refresh_token_key: null };
+  }
+  const sealed = await sealToken(uid, refreshToken);
+  return {
+    refresh_token: null,
+    refresh_token_enc: sealed.ciphertext,
+    refresh_token_key: sealed.keyVersion,
+  };
 }
 
 /**
@@ -209,7 +262,7 @@ export async function saveConnection(
 ): Promise<void> {
   await connectionRef(params.uid, db).set(
     {
-      refresh_token: params.refreshToken,
+      ...(await refreshTokenFields(params.uid, params.refreshToken)),
       access_token: params.accessToken,
       access_token_expiry: Date.now() + params.expiresInSec * 1000,
       connected_by_uid: params.uid,
@@ -289,6 +342,7 @@ async function refreshAccessToken(
   uid: string,
   refreshToken: string,
   db: Firestore = getAdminDb(),
+  migratePlaintext = false,
 ): Promise<string> {
   const creds = clientCreds();
   if (!creds) throw new Error("Google OAuth not configured");
@@ -327,6 +381,10 @@ async function refreshAccessToken(
     {
       access_token: json.access_token,
       access_token_expiry: Date.now() + json.expires_in * 1000,
+      // Lazy migration (C-06): a row still holding the plaintext refresh
+      // token is rewritten encrypted the first time it is used after
+      // GOOGLE_TOKEN_KMS_KEY is set.
+      ...(migratePlaintext ? await refreshTokenFields(uid, refreshToken) : {}),
       updated_at: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -375,7 +433,12 @@ async function getAuthContext(
   const expiry = conn.access_token_expiry ?? 0;
   // Refresh a minute early to avoid mid-call expiry.
   if (!token || Date.now() > expiry - 60_000) {
-    token = await refreshAccessToken(ownerUid, conn.refresh_token, db);
+    token = await refreshAccessToken(
+      ownerUid,
+      await refreshTokenOf(ownerUid, conn),
+      db,
+      tokenEncryptionEnabled() && !conn.refresh_token_enc,
+    );
   }
 
   const tasklistId =
@@ -632,8 +695,12 @@ export async function pullCompletionsForOwner(
     for (const todoId of toComplete) {
       const ref = db.collection("todos").doc(todoId);
       const before = (await ref.get()).data() ?? {};
+      // Completed by the owner, in Google Tasks — the stamp names the owner
+      // and the source so the audit trail doesn't read as an in-app tick.
       await ref.update({
         completed_at: FieldValue.serverTimestamp(),
+        ...stamp(ownerUid),
+        updated_via: "google_tasks_pull",
       });
       updated += 1;
 
@@ -692,7 +759,7 @@ export async function pullCompletionsForAllConnected(): Promise<{
     let updated = 0;
     for (const doc of snap.docs) {
       const data = doc.data() as Connection;
-      if (!data.refresh_token) continue;
+      if (!hasRefreshToken(data)) continue;
       // A revoked grant can't be pulled from; skip it instead of burning a
       // failed refresh per sweep.
       if (isRevoked(data)) continue;

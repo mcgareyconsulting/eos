@@ -8,6 +8,7 @@ import {
 import type { KindStats } from "../team-import-types";
 import { archivedAtFrom, createdAtFrom, isArchived, normalizeHeadlineKind } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
+import { LONG_TEXT_MAX, TITLE_MAX, overLengthNote, previewTitle } from "./limits";
 
 export async function importHeadlines(
   table: CsvTable & { sheetName?: string },
@@ -107,6 +108,23 @@ export async function importHeadlines(
         owner: createdBy ? ctx.owners.nameFor(createdBy) : ownerRaw || "—",
         detail: [],
         note: "Already on the team — left as it is",
+      });
+      continue;
+    }
+
+    const tooLong = overLengthNote([
+      { label: "Title", value: title, max: TITLE_MAX },
+      { label: "Details", value: body, max: LONG_TEXT_MAX },
+    ]);
+    if (tooLong) {
+      skipped++;
+      ctx.preview.add({
+        kind: "headlines",
+        action: "skip",
+        title: previewTitle(title),
+        owner: createdBy ? ctx.owners.nameFor(createdBy) : ownerRaw || "—",
+        detail: [],
+        note: tooLong,
       });
       continue;
     }

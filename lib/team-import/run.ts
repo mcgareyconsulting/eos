@@ -54,6 +54,12 @@ export type TeamImportOptions = {
    */
   unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
+  /**
+   * Who is importing (C-07 actor stamp): the signed-in uid from the server
+   * action, or SYSTEM_ACTOR("import-csv") from the CLI. When set, every doc
+   * written carries `updated_by` / `updated_at`.
+   */
+  actorUid?: string;
 };
 
 export type TeamImportInputs = {
@@ -86,7 +92,7 @@ export async function runTeamImport(
   const unmatchedOwner = options.unmatchedOwner ?? "no-owner";
   const existingRows = options.existingRows ?? "keep";
 
-  const writer = new Writer(db, dryRun);
+  const writer = new Writer(db, dryRun, options.actorUid);
   const preview = new PreviewCollector();
   const teamMembers = members ?? (await loadMembers(db, teamId));
   const owners = new OwnerResolver(teamId, teamMembers, {

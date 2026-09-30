@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@google-cloud/kms':
+        specifier: ^6.2.1
+        version: 6.2.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -621,6 +624,10 @@ packages:
 
   '@google-cloud/firestore@9.2.0':
     resolution: {integrity: sha512-4BI2686ygMkef0Pe4QnX9hnWeGCUjaAP5m+Ow5/yNWwGxGadO741Ct28MRXW9czg0pnvz919INKbQdCgUMcfeA==}
+    engines: {node: '>=22'}
+
+  '@google-cloud/kms@6.2.1':
+    resolution: {integrity: sha512-xX71A9l3Q5zOId+hhmFqdT7IfM3kE/HlhJtl5NLfffcPYoj8m4qFSFYilLGCd/EMUCEyPHdpjP0k3YAhSeSy3A==}
     engines: {node: '>=22'}
 
   '@google-cloud/paginator@6.0.2':
@@ -5368,6 +5375,12 @@ snapshots:
       - supports-color
     optional: true
 
+  '@google-cloud/kms@6.2.1':
+    dependencies:
+      google-gax: 6.7.0
+    transitivePeerDependencies:
+      - supports-color
+
   '@google-cloud/paginator@6.0.2':
     dependencies:
       extend: 3.0.2
@@ -5447,7 +5460,6 @@ snapshots:
     dependencies:
       '@grpc/proto-loader': 0.8.1
       '@js-sdsl/ordered-map': 4.4.2
-    optional: true
 
   '@grpc/grpc-js@1.9.16':
     dependencies:
@@ -7903,7 +7915,6 @@ snapshots:
       retry-request: 9.0.1
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   google-logging-utils@0.0.2: {}
 
@@ -8998,7 +9009,6 @@ snapshots:
   proto3-json-serializer@4.0.2:
     dependencies:
       protobufjs: 7.6.6
-    optional: true
 
   protobufjs@7.6.6:
     dependencies:
@@ -9202,7 +9212,6 @@ snapshots:
       teeny-request: 11.0.1
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   retry@0.13.1: {}
 
@@ -9672,7 +9681,6 @@ snapshots:
       stream-events: 1.0.5
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   teex@1.0.1:
     dependencies:

@@ -10,6 +10,7 @@ import {
   requireTeamDoc,
 } from "@/lib/firebase/teams";
 import { canSetRockStatus } from "@/lib/rocks-share";
+import { deleteStamp, stamp } from "@/lib/firebase/stamp";
 import { notify } from "@/lib/firebase/notifications";
 import { isCompanyRock } from "@/lib/rock-bucket";
 import { loadUsersById } from "@/lib/firebase/queries";
@@ -76,9 +77,12 @@ export async function setRockType(
     throw new Error("Bad rock type");
   }
 
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
-  await db.collection("rocks").doc(rockId).update({ rock_type: rockType });
+  await db
+    .collection("rocks")
+    .doc(rockId)
+    .update({ rock_type: rockType, ...stamp(uid) });
 
   revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
 }
@@ -117,7 +121,10 @@ export async function setRockStatus(
   }
 
   const batch = db.batch();
-  batch.update(db.collection("rocks").doc(rockId), rockPatch);
+  batch.update(db.collection("rocks").doc(rockId), {
+    ...rockPatch,
+    ...stamp(uid),
+  });
   batch.set(db.collection("rock_status_updates").doc(), {
     rock_id: rockId,
     // Parent team, not the viewing team — the Rocks tab and L10 both read
@@ -128,6 +135,7 @@ export async function setRockStatus(
     comment: trimmed,
     user_id: uid,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   await batch.commit();
 
@@ -151,15 +159,15 @@ export async function setRockArchived(
   rockId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
   await db
     .collection("rocks")
     .doc(rockId)
     .update(
       archived
-        ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, completed_at: null },
+        ? { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) }
+        : { archived_at: null, completed_at: null, ...stamp(uid) },
     );
 
   revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
@@ -168,7 +176,7 @@ export async function setRockArchived(
 // Removes the rock, linked milestones (todos), and entity_comments.
 // Single batch so a partial failure can't orphan children.
 export async function deleteRock(teamId: string, rockId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const rockSnap = await requireTeamDoc(db, "rocks", rockId, teamId);
 
   const [milestonesSnap, commentsSnap] = await Promise.all([
@@ -185,10 +193,15 @@ export async function deleteRock(teamId: string, rockId: string) {
       .get(),
   ]);
 
+  // Cascade delete: the actor is stamped on the parent only (see
+  // lib/firebase/stamp.ts); the milestones and comments reference it by id.
+  const rockRef = db.collection("rocks").doc(rockId);
+  await rockRef.update(deleteStamp(uid));
+
   const batch = db.batch();
   milestonesSnap.docs.forEach((d) => batch.delete(d.ref));
   commentsSnap.docs.forEach((d) => batch.delete(d.ref));
-  batch.delete(db.collection("rocks").doc(rockId));
+  batch.delete(rockRef);
   await batch.commit();
 
   revalidateRockSurfaces(teamId, sharedTeamIdsOf(rockSnap.data()));
@@ -244,6 +257,7 @@ function milestoneDoc(
   rockId: string,
   m: MilestoneInput,
   fallbackOwner: string,
+  uid: string,
 ) {
   return {
     team_id: teamId,
@@ -262,6 +276,7 @@ function milestoneDoc(
     source_meeting_id: null,
     source_rock_id: rockId,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   };
 }
 
@@ -556,9 +571,10 @@ export async function createRockWithMilestones(
     // filter matches (Firestore never matches a missing field).
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   for (const c of created) {
-    batch.set(c.ref, milestoneDoc(teamId, rockRef.id, c.m, owner_id));
+    batch.set(c.ref, milestoneDoc(teamId, rockRef.id, c.m, owner_id, uid));
   }
   await batch.commit();
 
@@ -646,6 +662,7 @@ export async function updateRockWithMilestones(
     team_only,
     // Retired: per-team share levels. Every team share is full now.
     share_levels: FieldValue.delete(),
+    ...stamp(uid),
   });
 
   // Rows the user removed in the modal.
@@ -673,11 +690,12 @@ export async function updateRockWithMilestones(
         due_date: m.due_date,
         visibility: "team",
         team_hidden: m.locked,
+        ...stamp(uid),
       });
     } else {
       const ref = db.collection("todos").doc();
       assigned.push({ id: ref.id, title: m.title, ownerId });
-      batch.set(ref, milestoneDoc(teamId, rockId, m, fallbackOwner));
+      batch.set(ref, milestoneDoc(teamId, rockId, m, fallbackOwner, uid));
     }
   }
   // Milestones the modal never saw survive untouched — and keep their owner
@@ -689,6 +707,7 @@ export async function updateRockWithMilestones(
   }
   batch.update(db.collection("rocks").doc(rockId), {
     milestone_owner_ids: ownerIdsOf(ownersAfter),
+    ...stamp(uid),
   });
   await batch.commit();
 

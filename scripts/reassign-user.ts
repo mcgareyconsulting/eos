@@ -644,7 +644,19 @@ async function main() {
       .collection("google_tasks_connections")
       .doc(toUid)
       .get();
-    if (fromConn.exists && !toConn.exists) {
+    if (fromConn.exists && !toConn.exists && fromConn.data()?.refresh_token_enc) {
+      // C-06: an encrypted refresh token is bound to the uid it was sealed
+      // under (KMS additional authenticated data), so it cannot be moved —
+      // and this script's operator credentials hold no KMS access anyway.
+      // Drop it; the person reconnects Google Tasks from Settings.
+      ops.push({
+        kind: "delete",
+        path: `google_tasks_connections/${fromUid}`,
+      });
+      log(
+        `google_tasks_connections ${fromUid}: encrypted token cannot move to ${toUid} — deleted; user must reconnect Google Tasks`,
+      );
+    } else if (fromConn.exists && !toConn.exists) {
       const data = fromConn.data() ?? {};
       ops.push({
         kind: "set",

@@ -17,6 +17,7 @@ config({ path: ".env.local" });
 import { readFileSync } from "node:fs";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";
+import { stamp, SYSTEM_ACTOR } from "../lib/firebase/stamp";
 import { normalizePersonKey } from "../lib/csv-import";
 import { pickSheet, readXlsx } from "../lib/xlsx";
 import {
@@ -30,6 +31,10 @@ import {
   type Member,
   type TeamImportInputs,
 } from "../lib/team-import";
+
+// Actor stamp for every doc this CLI writes (C-07): a system id, so an audit
+// row is never mistaken for a person's.
+const ACTOR = SYSTEM_ACTOR("import-csv");
 
 // ---------------------------------------------------------------------------
 // Args
@@ -204,6 +209,7 @@ async function resolveTeam(
         org_id: "default",
         parent_team_id: null,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(ACTOR),
       });
     }
     return { id: ref.id, name: teamArg, created: true };
@@ -288,7 +294,7 @@ async function main() {
   );
 
   // Pre-attach leader/members so owner matching sees them (even in dry-run).
-  const preWriter = new Writer(db, args.dryRun);
+  const preWriter = new Writer(db, args.dryRun, ACTOR);
   const members = await loadMembers(db, team.id);
   const attach = async (account: string, role: "leader" | "member") => {
     const m = await attachAccount(team.id, account, role, preWriter);
@@ -393,6 +399,7 @@ async function main() {
       completedSince: args.completedSince,
       rockTeam: args.rockTeam,
       asOf: args.asOf,
+      actorUid: ACTOR,
     },
     members,
   );
@@ -427,6 +434,7 @@ async function main() {
           team_id: team.id,
           user_id: uid,
           role: "leader",
+          ...stamp(ACTOR),
         },
         { merge: true },
       );

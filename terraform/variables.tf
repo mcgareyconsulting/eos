@@ -175,6 +175,7 @@ variable "runtime_extra_env" {
       "GOOGLE_OAUTH_CLIENT_SECRET",
       "GOOGLE_TASKS_PULL_SECRET",
       "SIGN_IN_ALLOWLIST",
+      "GOOGLE_TOKEN_KMS_KEY",
     ])) == 0
     error_message = "runtime_extra_env must not redefine an env var already managed in cloud_run.tf / secrets.tf."
   }
@@ -188,4 +189,10 @@ variable "runtime_extra_env" {
     condition     = alltrue([for k in keys(var.runtime_extra_env) : !can(regex("(?i)(SECRET|TOKEN|PASSWORD|PRIVATE_KEY|CREDENTIAL)", k))])
     error_message = "runtime_extra_env is for non-secret config only. Add a secret to local.runtime_secrets in secrets.tf instead."
   }
+}
+
+variable "encrypt_google_tokens" {
+  description = "Gate 4 (C-06): set GOOGLE_TOKEN_KMS_KEY on the Cloud Run service so the app stores users' Google refresh tokens KMS-encrypted with the eos-tokens key. Flip to true only after google_kms_crypto_key_iam_member.runtime_tokens_encrypter_decrypter has been applied (Gate 2 step 4) — with the env set and no grant, every Google Tasks connect and token refresh fails with PERMISSION_DENIED. Default off."
+  type        = bool
+  default     = false
 }

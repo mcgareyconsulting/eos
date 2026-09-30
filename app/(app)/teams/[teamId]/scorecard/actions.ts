@@ -8,6 +8,7 @@ import {
   requireTeamAccess,
   requireTeamDoc,
 } from "@/lib/firebase/teams";
+import { deleteStamp, stamp } from "@/lib/firebase/stamp";
 import {
   loadOrgMetricCatalog,
   type CatalogMetric,
@@ -102,6 +103,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     interval,
     sort_order: 0,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   revalidatePath(pathFor(teamId));
@@ -198,6 +200,7 @@ export async function updateMetric(
       direction,
       owner_id,
       interval,
+      ...stamp(uid),
     },
     { merge: true },
   );
@@ -246,7 +249,7 @@ export async function setMetricGroup(
   metricId: string,
   groupRaw: string,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const trimmed = normalizeGroupName(groupRaw);
   requireMaxLength(trimmed, TITLE_MAX, "Group name");
@@ -266,7 +269,7 @@ export async function setMetricGroup(
   await db
     .collection("scorecard_metrics")
     .doc(metricId)
-    .set(patch, { merge: true });
+    .set({ ...patch, ...stamp(uid) }, { merge: true });
 
   revalidatePath(pathFor(teamId));
 }
@@ -277,7 +280,7 @@ export async function setMetricGroup(
  * they read in, and nobody has to set a number to get a sensible list.
  */
 export async function addScorecardGroup(teamId: string, formData: FormData) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const name = normalizeGroupName(String(formData.get("name") ?? ""));
   if (!name) throw new Error("Group name required");
@@ -305,6 +308,7 @@ export async function addScorecardGroup(teamId: string, formData: FormData) {
       interval,
       sort_order: nextGroupSortOrder(groups, interval),
       created_at: FieldValue.serverTimestamp(),
+      ...stamp(uid),
     });
 
   revalidatePath(pathFor(teamId));
@@ -316,7 +320,7 @@ export async function moveScorecardGroup(
   groupId: string,
   direction: -1 | 1,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "scorecard_groups", groupId, teamId);
 
   const writes = reorderGroup(await loadGroups(db, teamId), groupId, direction);
@@ -326,7 +330,7 @@ export async function moveScorecardGroup(
   for (const w of writes) {
     batch.set(
       db.collection("scorecard_groups").doc(w.id),
-      { sort_order: w.sort_order },
+      { sort_order: w.sort_order, ...stamp(uid) },
       { merge: true },
     );
   }
@@ -342,7 +346,7 @@ export async function moveScorecardGroup(
  * which renders above the remaining groups.
  */
 export async function deleteScorecardGroup(teamId: string, groupId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "scorecard_groups", groupId, teamId);
   const name = normalizeGroupName(String(snap.data()?.name ?? ""));
 
@@ -351,14 +355,17 @@ export async function deleteScorecardGroup(teamId: string, groupId: string) {
     .where("team_id", "==", teamId)
     .get();
 
+  const groupRef = db.collection("scorecard_groups").doc(groupId);
+  await groupRef.update(deleteStamp(uid));
+
   const batch = db.batch();
   for (const d of metrics.docs) {
     if (groupNameKey(String(d.data().group ?? "")) !== groupNameKey(name)) {
       continue;
     }
-    batch.set(d.ref, { group: null }, { merge: true });
+    batch.set(d.ref, { group: null, ...stamp(uid) }, { merge: true });
   }
-  batch.delete(db.collection("scorecard_groups").doc(groupId));
+  batch.delete(groupRef);
   await batch.commit();
 
   revalidatePath(pathFor(teamId));
@@ -431,7 +438,7 @@ export async function addExistingMetric(
    */
   groupRaw = "",
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const ref = db.collection("scorecard_metrics").doc(metricId);
   const snap = await ref.get();
@@ -458,6 +465,7 @@ export async function addExistingMetric(
     {
       shared_team_ids: result.shared_team_ids,
       shared_groups: { ...(metric.shared_groups ?? {}), [teamId]: group },
+      ...stamp(uid),
     },
     { merge: true },
   );
@@ -478,7 +486,7 @@ export async function setSharedMetricGroup(
   metricId: string,
   groupRaw: string,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const ref = db.collection("scorecard_metrics").doc(metricId);
   const snap = await ref.get();
@@ -504,7 +512,10 @@ export async function setSharedMetricGroup(
   }
 
   await ref.set(
-    { shared_groups: { ...(metric.shared_groups ?? {}), [teamId]: group } },
+    {
+      shared_groups: { ...(metric.shared_groups ?? {}), [teamId]: group },
+      ...stamp(uid),
+    },
     { merge: true },
   );
   revalidatePath(pathFor(teamId));
@@ -525,7 +536,7 @@ export async function setSharedMetricGroup(
  * doing nothing would read as a broken button.
  */
 export async function removeSharedMetric(teamId: string, metricId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const ref = db.collection("scorecard_metrics").doc(metricId);
   const snap = await ref.get();
@@ -545,7 +556,11 @@ export async function removeSharedMetric(teamId: string, metricId: string) {
   delete rest[teamId];
 
   await ref.set(
-    { shared_team_ids: removeShare(metric, teamId), shared_groups: rest },
+    {
+      shared_team_ids: removeShare(metric, teamId),
+      shared_groups: rest,
+      ...stamp(uid),
+    },
     { merge: true },
   );
   revalidatePath(pathFor(teamId));
@@ -557,7 +572,7 @@ export async function setEntry(
   weekStartDate: string,
   valueRaw: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   const { snap, metric } = await requireMetricOnScorecard(db, metricId, teamId);
 
   // Borrowing a measurable buys a read, not a pen. The values belong to the
@@ -596,6 +611,7 @@ export async function setEntry(
         value,
         note: null,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(uid),
       },
       { merge: true },
     );
@@ -646,8 +662,8 @@ export async function setMetricArchived(
     .doc(metricId)
     .set(
       archived
-        ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null },
+        ? { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) }
+        : { archived_at: null, ...stamp(uid) },
       { merge: true },
     );
 
@@ -675,6 +691,8 @@ export async function deleteMetric(teamId: string, metricId: string) {
     );
   }
   // Delete the metric. Entries are orphaned but harmless; can clean up later.
-  await db.collection("scorecard_metrics").doc(metricId).delete();
+  const ref = db.collection("scorecard_metrics").doc(metricId);
+  await ref.update(deleteStamp(uid));
+  await ref.delete();
   revalidatePath(pathFor(teamId));
 }

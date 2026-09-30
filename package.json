@@ -29,6 +29,7 @@
     ]
   },
   "dependencies": {
+    "@google-cloud/kms": "^6.2.1",
     "clsx": "^2.1.1",
     "firebase": "^12.19.0",
     "firebase-admin": "^14.5.0",

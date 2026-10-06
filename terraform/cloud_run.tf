@@ -40,6 +40,13 @@ resource "google_cloud_run_v2_service" "app" {
         name  = "GOOGLE_OAUTH_REDIRECT_URI"
         value = var.google_oauth_redirect_uri
       }
+      # Key that encrypts Google refresh tokens in Firestore (C-06,
+      # lib/google/token-cipher.ts). A resource name, not a secret; the
+      # runtime SA's encrypt/decrypt grant is in kms.tf.
+      env {
+        name  = "GOOGLE_TOKENS_KMS_KEY"
+        value = google_kms_crypto_key.eos_tokens.id
+      }
 
       # Optional extra plain env (e.g. ENV_LABEL). Empty by default.
       dynamic "env" {

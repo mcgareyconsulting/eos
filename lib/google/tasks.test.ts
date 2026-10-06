@@ -14,13 +14,16 @@ import {
   getTasksStatus,
   saveConnection,
   bearerMatches,
+  setTokenCipherForTesting,
 } from "./tasks";
+import type { TokenCipher } from "./token-cipher";
 
 const ENV_KEYS = [
   "GOOGLE_OAUTH_REDIRECT_URI",
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_TASKS_PULL_SECRET",
+  "GOOGLE_TOKENS_KMS_KEY",
   "NODE_ENV",
 ] as const;
 
@@ -43,6 +46,7 @@ afterEach(() => {
     else (process.env as Record<string, string | undefined>)[key] = savedEnv[key];
   }
   globalThis.fetch = originalFetch;
+  setTokenCipherForTesting(undefined);
 });
 
 // Records every call and returns queued responses in order; extra calls past
@@ -676,5 +680,182 @@ describe("consumeOAuthState", () => {
   test("unknown state is rejected", async () => {
     const db = new FakeFirestore();
     assert.equal(await consumeOAuthState("nope", "u1", db.asFirestore()), false);
+  });
+});
+
+// --- C-06: refresh tokens encrypted with KMS --------------------------------
+
+// Reversible stand-in for KMS that records calls and enforces the AAD, like
+// the real key does.
+function fakeCipher() {
+  const calls: { op: "encrypt" | "decrypt"; aad: string }[] = [];
+  const cipher: TokenCipher = {
+    async encrypt(plaintext, aad) {
+      calls.push({ op: "encrypt", aad });
+      return { ciphertext: `enc(${aad}|${plaintext})`, keyVersion: "keyVersions/1" };
+    },
+    async decrypt(ciphertext, aad) {
+      calls.push({ op: "decrypt", aad });
+      const m = /^enc\((.*)\|(.*)\)$/.exec(ciphertext);
+      if (!m || m[1] !== aad) throw new Error("KMS decrypt failed: 400 bad AAD");
+      return m[2];
+    },
+  };
+  return { cipher, calls };
+}
+
+describe("refresh-token encryption (C-06)", () => {
+  test("saveConnection stores only ciphertext, bound to the user, and drops a legacy plaintext token", async () => {
+    const { cipher, calls } = fakeCipher();
+    setTokenCipherForTesting(cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", { refresh_token: "old-plain-rt" });
+
+    await saveConnection(
+      { refreshToken: "rt-1", accessToken: "at-1", expiresInSec: 3600, uid: "u1", email: null },
+      db.asFirestore(),
+    );
+
+    const data = db.raw("google_tasks_connections/u1")!;
+    assert.equal(data.refresh_token, undefined, "no plaintext refresh token left");
+    assert.equal(data.refresh_token_enc, "enc(google_tasks_connections/u1|rt-1)");
+    assert.equal(data.refresh_token_kms_key, "keyVersions/1");
+    assert.deepEqual(calls, [{ op: "encrypt", aad: "google_tasks_connections/u1" }]);
+  });
+
+  test("production without the KMS key refuses to store a token", async () => {
+    setTokenCipherForTesting(null);
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    const db = new FakeFirestore();
+
+    await assert.rejects(
+      saveConnection(
+        { refreshToken: "rt-1", accessToken: "at-1", expiresInSec: 3600, uid: "u1", email: null },
+        db.asFirestore(),
+      ),
+      /GOOGLE_TOKENS_KMS_KEY must be set in production/,
+    );
+    assert.equal(db.raw("google_tasks_connections/u1"), undefined, "nothing written");
+  });
+
+  test("local dev without the key stores plaintext", async () => {
+    setTokenCipherForTesting(null);
+    const db = new FakeFirestore();
+    await saveConnection(
+      { refreshToken: "rt-1", accessToken: "at-1", expiresInSec: 3600, uid: "u1", email: null },
+      db.asFirestore(),
+    );
+    assert.equal(db.raw("google_tasks_connections/u1")?.refresh_token, "rt-1");
+  });
+
+  test("an expired access token is refreshed with the decrypted token", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const { cipher, calls: kms } = fakeCipher();
+    setTokenCipherForTesting(cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token_enc: "enc(google_tasks_connections/u1|rt-secret)",
+      access_token: "at-old",
+      access_token_expiry: Date.now() - 1000,
+      tasklist_id: "list-1",
+    });
+    const { fn, calls } = fetchQueue([
+      { status: 200, body: { access_token: "at-new", expires_in: 3600 } },
+      { status: 200, body: { id: "gtask-1" } },
+    ]);
+    globalThis.fetch = fn;
+
+    const id = await upsertTaskForTodo("u1", { title: "Ship it", completed: false }, null, db.asFirestore());
+
+    assert.equal(id, "gtask-1");
+    assert.deepEqual(kms, [{ op: "decrypt", aad: "google_tasks_connections/u1" }]);
+    assert.equal(new URLSearchParams(String(calls[0].init?.body)).get("refresh_token"), "rt-secret");
+  });
+
+  test("a valid cached access token needs no KMS call", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const { cipher, calls: kms } = fakeCipher();
+    setTokenCipherForTesting(cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token_enc: "enc(google_tasks_connections/u1|rt-secret)",
+      access_token: "at-valid",
+      access_token_expiry: Date.now() + 10 * 60 * 1000,
+      tasklist_id: "list-1",
+    });
+    globalThis.fetch = fetchQueue([{ status: 200, body: { id: "gtask-1" } }]).fn;
+
+    await upsertTaskForTodo("u1", { title: "Ship it", completed: false }, null, db.asFirestore());
+    assert.equal(kms.length, 0);
+  });
+
+  test("a ciphertext copied onto another user's doc does not decrypt, and doesn't mark it revoked", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    setTokenCipherForTesting(fakeCipher().cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u2", {
+      refresh_token_enc: "enc(google_tasks_connections/u1|rt-of-u1)",
+      access_token_expiry: 0,
+      tasklist_id: "list-1",
+    });
+    const { fn, calls } = fetchQueue([]);
+    globalThis.fetch = fn;
+
+    const id = await upsertTaskForTodo("u2", { title: "x", completed: false }, null, db.asFirestore());
+    assert.equal(id, null);
+    assert.equal(calls.length, 0, "no token endpoint call with someone else's token");
+    assert.equal(db.raw("google_tasks_connections/u2")?.status, undefined);
+  });
+
+  test("a legacy plaintext token is encrypted in place after a successful refresh", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    setTokenCipherForTesting(fakeCipher().cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", {
+      refresh_token: "legacy-rt",
+      access_token_expiry: 0,
+      tasklist_id: "list-1",
+    });
+    const { fn, calls } = fetchQueue([
+      { status: 200, body: { access_token: "at-new", expires_in: 3600 } },
+      { status: 200, body: { id: "gtask-1" } },
+    ]);
+    globalThis.fetch = fn;
+
+    await upsertTaskForTodo("u1", { title: "x", completed: false }, null, db.asFirestore());
+
+    assert.equal(new URLSearchParams(String(calls[0].init?.body)).get("refresh_token"), "legacy-rt");
+    const data = db.raw("google_tasks_connections/u1")!;
+    assert.equal(data.refresh_token, undefined);
+    assert.equal(data.refresh_token_enc, "enc(google_tasks_connections/u1|legacy-rt)");
+    assert.equal(data.access_token, "at-new");
+  });
+
+  test("a legacy token that Google rejects is not migrated", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const { cipher, calls: kms } = fakeCipher();
+    setTokenCipherForTesting(cipher);
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", { refresh_token: "dead-rt", access_token_expiry: 0, tasklist_id: "l" });
+    globalThis.fetch = fetchQueue([{ status: 400, body: { error: "invalid_grant" } }]).fn;
+
+    await upsertTaskForTodo("u1", { title: "x", completed: false }, null, db.asFirestore());
+    assert.equal(kms.length, 0);
+    assert.equal(db.raw("google_tasks_connections/u1")?.status, "revoked");
+  });
+
+  test("an encrypted-only connection reports as connected", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    const db = new FakeFirestore();
+    db.seed("google_tasks_connections", "u1", { refresh_token_enc: "enc(x|y)", connected_email: "a@b.c" });
+    const status = await getTasksStatus("u1", db.asFirestore());
+    assert.equal(status.connected, true);
+    assert.equal(status.email, "a@b.c");
   });
 });

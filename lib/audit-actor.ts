@@ -49,6 +49,27 @@ function millisOf(v: unknown): number | null {
   return null;
 }
 
+/**
+ * Same instant? Firestore Timestamps are microsecond-precise, so compare
+ * seconds + nanoseconds when both sides carry them — two stamped writes to
+ * one doc inside the same millisecond would otherwise look like "this write
+ * didn't touch the stamp". Falls back to millis for anything else.
+ */
+function sameInstant(a: unknown, b: unknown): boolean {
+  const sa = a as { seconds?: unknown; nanoseconds?: unknown } | null | undefined;
+  const sb = b as { seconds?: unknown; nanoseconds?: unknown } | null | undefined;
+  if (
+    typeof sa?.seconds === "number" &&
+    typeof sa?.nanoseconds === "number" &&
+    typeof sb?.seconds === "number" &&
+    typeof sb?.nanoseconds === "number"
+  ) {
+    return sa.seconds === sb.seconds && sa.nanoseconds === sb.nanoseconds;
+  }
+  const ma = millisOf(a);
+  return ma !== null && ma === millisOf(b);
+}
+
 function nonEmptyString(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
 }
@@ -83,6 +104,6 @@ export function resolveAuditActor(input: {
   const uid = nonEmptyString(after?.updated_by);
   const stampedMs = millisOf(after?.updated_at);
   if (!uid || !isFresh(stampedMs, eventTimeMs)) return none;
-  if (action === "update" && millisOf(before?.updated_at) === stampedMs) return none;
+  if (action === "update" && sameInstant(before?.updated_at, after?.updated_at)) return none;
   return { actorUid: uid, actorSource: "stamp" };
 }

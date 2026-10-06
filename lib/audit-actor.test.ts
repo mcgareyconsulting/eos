@@ -47,6 +47,30 @@ describe("resolveAuditActor", () => {
     assert.deepEqual(r, { actorUid: "jane", actorSource: "stamp" });
   });
 
+  test("two stamped writes in the same millisecond still count as a fresh stamp", () => {
+    // Firestore Timestamps carry nanoseconds; toMillis() alone would collide.
+    const at = (ns: number) => ({
+      seconds: Math.floor(NOW / 1000),
+      nanoseconds: ns,
+      toMillis: () => NOW,
+    });
+    const r = resolveAuditActor({
+      ...base,
+      action: "update",
+      before: { title: "a", updated_by: "bob", updated_at: at(1_000) },
+      after: { title: "b", updated_by: "jane", updated_at: at(2_000) },
+    });
+    assert.deepEqual(r, { actorUid: "jane", actorSource: "stamp" });
+
+    const untouched = resolveAuditActor({
+      ...base,
+      action: "update",
+      before: { title: "a", updated_by: "bob", updated_at: at(1_000) },
+      after: { title: "b", updated_by: "bob", updated_at: at(1_000) },
+    });
+    assert.deepEqual(untouched, { actorUid: null, actorSource: null });
+  });
+
   test("authType unknown is treated as an Admin SDK write too", () => {
     const r = resolveAuditActor({
       ...base,

@@ -1,3 +1,4 @@
+import { stampBeforeDelete } from "@/lib/audit-stamp";
 import { requireTeamDoc, requireTeamLeader, type TeamsDeps } from "./teams";
 
 /**
@@ -15,7 +16,7 @@ export async function deleteMeetingAsLeader(
 ): Promise<void> {
   // Forward `deps` only when a test injected one — requireTeamLeader is
   // cache()'d, and a fresh `{}` would miss the per-request cache.
-  const { db } = deps.user
+  const { db, uid } = deps.user
     ? await requireTeamLeader(teamId, deps)
     : await requireTeamLeader(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
@@ -24,8 +25,11 @@ export async function deleteMeetingAsLeader(
     .doc(meetingId)
     .collection("effectiveness_scores")
     .get();
+  const meetingRef = db.collection("meetings").doc(meetingId);
+  // Attribute the deletes in the audit log (C-07) — see stampBeforeDelete.
+  await stampBeforeDelete([...scores.docs.map((r) => r.ref), meetingRef], uid);
   const batch = db.batch();
   scores.docs.forEach((r) => batch.delete(r.ref));
-  batch.delete(db.collection("meetings").doc(meetingId));
+  batch.delete(meetingRef);
   await batch.commit();
 }

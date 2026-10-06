@@ -6,10 +6,10 @@
 // an activity row is the event itself: it is written whether or not anyone
 // is told, so the trace is complete even for a to-do nobody follows.
 //
-// Why not the audit_log? It is admin-only, and every to-do write goes
-// through a server action (Admin SDK), so its `actor_uid` is null for
-// exactly the rows this feed cares about. This trace records the actor at
-// the one place that knows them.
+// Why not the audit_log? It is admin-only, and it records raw document
+// diffs, not events a person would read. (Its `actor_uid` for server-action
+// writes comes from the `updated_by` stamp since C-07 — lib/audit-stamp.ts.)
+// This trace records the event and its actor in the shape the UI shows.
 //
 // Firestore writes live in lib/firebase/activity.ts.
 

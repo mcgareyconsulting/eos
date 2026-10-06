@@ -6,6 +6,7 @@ import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
 import { normalizeKey } from "@/lib/csv-import";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import type { AdminResult, DeleteResult } from "./action-types";
 
 function revalidateOrg() {
@@ -34,6 +35,8 @@ type PersonTeamInput = { id: string; role: TeamRole };
  */
 async function applyTeams(
   db: Awaited<ReturnType<typeof requireAdmin>>["db"],
+  /** The admin making the change — stamped for the audit log (C-07). */
+  actorUid: string,
   uid: string,
   wanted: PersonTeamInput[],
   /** Only add and re-role; keep teams the form doesn't mention. */
@@ -61,18 +64,21 @@ async function applyTeams(
         user_id: uid,
         role,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(actorUid),
       });
       added++;
     } else if (existing.data()?.role !== role) {
-      batch.update(existing.ref, { role });
+      batch.update(existing.ref, { role, ...stamp(actorUid) });
       reroled++;
     }
   }
 
   const droppedTeamIds: string[] = [];
+  const droppedRefs: (typeof current.docs)[number]["ref"][] = [];
   for (const [teamId, doc] of currentByTeam) {
     if (additive || wantedByTeam.has(teamId)) continue;
     batch.delete(doc.ref);
+    droppedRefs.push(doc.ref);
     droppedTeamIds.push(teamId);
     removed++;
   }
@@ -88,10 +94,13 @@ async function applyTeams(
       const patch: Record<string, unknown> = {};
       if (order.includes(uid)) patch.speaking_order = order.filter((id) => id !== uid);
       if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-      if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
+      if (Object.keys(patch).length > 0) {
+        batch.update(team.ref, { ...patch, ...stamp(actorUid) });
+      }
     }
   }
 
+  await stampBeforeDelete(droppedRefs, actorUid);
   await batch.commit();
   return { added, removed, reroled };
 }
@@ -147,7 +156,7 @@ function readTeams(formData: FormData): PersonTeamInput[] | { error: string } {
  */
 export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
   // Outside try so Next's notFound() from requireAdmin isn't swallowed.
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
@@ -176,6 +185,7 @@ export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
         email,
         deactivated_at: null,
         deactivated_by: null,
+        ...stamp(actorUid),
       },
       { merge: true },
     );
@@ -186,7 +196,7 @@ export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
     }
     // Additive: "Add person" on an address that already exists must not
     // strip the teams they are already on.
-    await applyTeams(db, uid, teams, true);
+    await applyTeams(db, actorUid, uid, teams, true);
     if (orgAdmin) await setOrgAdmin(uid, true);
 
     revalidateOrg();
@@ -238,12 +248,13 @@ export async function updateOrgPerson(
         {
           display_name: account.displayName ?? account.email ?? uid,
           email: account.email ?? null,
+          ...stamp(actorUid),
         },
         { merge: true },
       );
     }
 
-    const changes = await applyTeams(db, uid, teams);
+    const changes = await applyTeams(db, actorUid, uid, teams);
     const adminChanged = await setOrgAdmin(uid, orgAdmin);
 
     revalidateOrg();
@@ -298,6 +309,10 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
 
     const batch = db.batch();
     for (const doc of memberships.docs) batch.delete(doc.ref);
+    await stampBeforeDelete(
+      memberships.docs.map((d) => d.ref),
+      actorUid,
+    );
 
     // Clear the uid out of anything on the team that points at it by id.
     const teamDocs = teamIds.length
@@ -312,7 +327,9 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
         patch.speaking_order = order.filter((id) => id !== uid);
       }
       if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-      if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
+      if (Object.keys(patch).length > 0) {
+        batch.update(team.ref, { ...patch, ...stamp(actorUid) });
+      }
     }
 
     // Tombstone the profile rather than deleting it — see the doc comment.
@@ -325,6 +342,7 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
         ...(account?.displayName ? { display_name: account.displayName } : {}),
         deactivated_at: FieldValue.serverTimestamp(),
         deactivated_by: actorUid,
+        ...stamp(actorUid),
       },
       { merge: true },
     );
@@ -376,7 +394,7 @@ async function nameTaken(
  * Directory calls those out rather than blocking on it.
  */
 export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
   const leaderUid = String(formData.get("leader_uid") ?? "").trim();
@@ -401,6 +419,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
       meet_link: null,
       speaking_order: [],
       created_at: FieldValue.serverTimestamp(),
+      ...stamp(actorUid),
     });
     if (leaderUid) {
       batch.set(db.collection("team_members").doc(`${ref.id}__${leaderUid}`), {
@@ -408,6 +427,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
         user_id: leaderUid,
         role: "leader",
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(actorUid),
       });
     }
     await batch.commit();
@@ -430,7 +450,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
  * team beside it — hence the collision check and nothing more clever.
  */
 export async function renameOrgTeam(formData: FormData): Promise<AdminResult> {
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const teamId = String(formData.get("team_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -449,7 +469,7 @@ export async function renameOrgTeam(formData: FormData): Promise<AdminResult> {
       return { ok: false, error: `A team named “${name}” already exists.` };
     }
 
-    await ref.update({ name });
+    await ref.update({ name, ...stamp(actorUid) });
     revalidateOrg();
     return { ok: true, message: `Renamed to “${name}”.` };
   } catch (err) {

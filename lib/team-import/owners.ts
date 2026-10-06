@@ -3,6 +3,7 @@
 
 import { FieldValue } from "firebase-admin/firestore";
 import type { DocumentData, Firestore, WriteBatch } from "firebase-admin/firestore";
+import { stamp } from "../audit-stamp";
 import { normalizePersonKey, slugify } from "../csv-import";
 import type { PreviewRow } from "../team-import-types";
 
@@ -18,6 +19,12 @@ export class Writer {
   constructor(
     private db: Firestore,
     private dryRun: boolean,
+    /**
+     * The signed-in person running an in-app import. Every write is stamped
+     * with it for the audit log (C-07). CLI imports pass nothing — no app
+     * user is behind them — and their writes stay unattributed.
+     */
+    private actorUid?: string | null,
   ) {
     this.batch = db.batch();
   }
@@ -25,7 +32,8 @@ export class Writer {
   async set(path: [string, string], data: DocumentData) {
     this.written++;
     if (this.dryRun) return;
-    this.batch.set(this.db.collection(path[0]).doc(path[1]), data, { merge: true });
+    const row = this.actorUid ? { ...data, ...stamp(this.actorUid) } : data;
+    this.batch.set(this.db.collection(path[0]).doc(path[1]), row, { merge: true });
     if (++this.pending >= 400) await this.flush();
   }
 

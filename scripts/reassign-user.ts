@@ -628,6 +628,10 @@ async function main() {
           ...data,
           email: toAuth.email ?? data.email ?? null,
           updated_at: FieldValue.serverTimestamp(),
+          // The copied profile carries the last app editor's stamp; with a
+          // fresh updated_at the audit trigger would pin this CLI write on
+          // them (lib/audit-actor.ts). No app user is behind it.
+          updated_by: null,
         },
       });
       log(`users profile seed users/${toUid} from old profile`);

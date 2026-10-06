@@ -61,7 +61,12 @@ class FakeDocRef {
     // Real Firestore rejects update() on a missing doc (NOT_FOUND); mirror
     // that so a test can't pass on a path that would fail in production.
     const existing = this.store.raw(this.path);
-    if (!existing) throw new Error(`fake-firestore: update() on missing doc ${this.path}`);
+    // `code: 5` is gRPC NOT_FOUND, which is what callers branch on.
+    if (!existing) {
+      throw Object.assign(new Error(`fake-firestore: update() on missing doc ${this.path}`), {
+        code: 5,
+      });
+    }
     this.store.write(this.path, applyPatch(existing, data));
   }
   async delete() {

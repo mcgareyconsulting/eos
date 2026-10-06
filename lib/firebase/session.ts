@@ -28,7 +28,7 @@ const SESSION_COOKIE_NAME = "__firebase_session";
 //   ~6 hours. An idle user's cookie simply expires.
 // - Sign-out revokes the user's Firebase refresh tokens before clearing the
 //   cookie, so a copied cookie (or another device's session) stops working
-//   too — verifySession checks revocation on every request.
+//   too — verifySession checks revocation and the sign-in perimeter on every request.
 //
 // Test-only seam, same shape as lib/firebase/teams.ts: production callers
 // never pass `deps`.
@@ -151,7 +151,7 @@ export async function renewSession(
  * either way — and the failure is logged for follow-up.
  */
 export async function endSession(deps: SessionDeps = {}): Promise<void> {
-  const current = await verifySession(deps);
+  const current = await verifyCookie(deps);
   try {
     if (current) await authOf(deps).revokeRefreshTokens(current.uid);
   } catch (e) {
@@ -166,12 +166,11 @@ export async function clearSession(deps: SessionDeps = {}): Promise<void> {
   store.delete(SESSION_COOKIE_NAME);
 }
 
-// Returns the decoded token (uid, email, name, etc.) or null if no valid session.
-// checkRevoked=true adds a Firebase Auth roundtrip — correct but slower.
-// A cookie older than the 12-hour policy is refused whatever its own `exp`.
-export async function verifySession(
-  deps: SessionDeps = {},
-): Promise<DecodedIdToken | null> {
+// Cryptographic + lifetime check only: the cookie is genuine, unrevoked and
+// inside the 12-hour policy. No perimeter check — endSession() uses this so
+// someone just removed from the allowlist can still have their refresh
+// tokens revoked on sign-out.
+async function verifyCookie(deps: SessionDeps): Promise<DecodedIdToken | null> {
   const store = await cookieStoreOf(deps);
   const sessionCookie = store.get(SESSION_COOKIE_NAME)?.value;
   if (!sessionCookie) return null;
@@ -183,4 +182,28 @@ export async function verifySession(
   } catch {
     return null;
   }
+}
+
+// Returns the decoded token (uid, email, name, etc.) or null if no valid session.
+// checkRevoked=true adds a Firebase Auth roundtrip — correct but slower.
+// A cookie older than the 12-hour policy is refused whatever its own `exp`.
+//
+// Every request re-applies the sign-in perimeter (verified email +
+// SIGN_IN_ALLOWLIST) to the claims already in the cookie, so removing someone
+// from the allowlist ends their session on their next request rather than at
+// the next renewal. It costs no network call: the claims are in the decoded
+// cookie and the allowlist is an in-memory env read. A refused session
+// behaves exactly like an expired one (null -> redirect to /login). Every
+// session read in the app goes through here (requireFirebaseUser, the Tasks
+// routes, the login page); proxy.ts only checks cookie presence.
+export async function verifySession(
+  deps: SessionDeps = {},
+): Promise<DecodedIdToken | null> {
+  const decoded = await verifyCookie(deps);
+  if (!decoded) return null;
+  const refusal = signInRefusal(
+    decoded,
+    parseAllowlist(process.env.SIGN_IN_ALLOWLIST),
+  );
+  return refusal ? null : decoded;
 }

@@ -189,3 +189,14 @@ variable "runtime_extra_env" {
     error_message = "runtime_extra_env is for non-secret config only. Add a secret to local.runtime_secrets in secrets.tf instead."
   }
 }
+
+variable "custom_domain" {
+  description = "Hostname mapped to the Cloud Run service (domain.tf), e.g. \"pulse.highplainsbank.com\". Empty = no mapping. The applying identity must be a verified owner of the domain in Google Search Console first."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.custom_domain == "" || can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", var.custom_domain))
+    error_message = "custom_domain must be a bare lowercase hostname (no scheme, path or trailing dot), or empty."
+  }
+}

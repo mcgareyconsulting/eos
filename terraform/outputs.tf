@@ -35,3 +35,11 @@ output "tokens_kms_key_id" {
   value       = google_kms_crypto_key.eos_tokens.id
 }
 
+
+output "custom_domain_dns_records" {
+  description = "DNS records the bank must add for var.custom_domain (domain.tf). Empty until the mapping exists; may take a minute after apply to populate (re-run `terraform refresh`)."
+  value = var.custom_domain == "" ? [] : [
+    for r in try(google_cloud_run_domain_mapping.app[0].status[0].resource_records, []) :
+    { name = r.name, type = r.type, rrdata = r.rrdata }
+  ]
+}

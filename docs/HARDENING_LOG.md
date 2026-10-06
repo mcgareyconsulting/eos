@@ -187,3 +187,15 @@ not affect sign-in. Not a finding.
   access for up to an hour. If the client wants both encrypted, it is a
   small change in `lib/google/tasks.ts` (same cipher, same AAD) — record the
   decision here either way.
+- **One dependency advisory is excepted from the CI audit gate:
+  GHSA-m9gg-hp2v-232j (`@grpc/grpc-js` <1.13.6, high), added 2026-10-06.**
+  It affects gRPC *servers* that accept client certificates; EOS reaches
+  grpc-js only through the Firebase client SDK (`@firebase/firestore`, a
+  gRPC client) and runs no gRPC server. The latest `@firebase/firestore`
+  (4.17.2) still pins `~1.9.0`, so no in-range fix exists, and forcing 1.13
+  into Firebase's internals is riskier than the advisory. Exception is
+  scoped to that one ID in `pnpm-workspace.yaml` (`auditConfig.ignoreGhsas`)
+  with the reason inline; remove it when Firebase ships a fixed pin. The
+  other advisories that turned up the same day (source-map-js; functions:
+  `@fastify/busboy`, protobufjs, uuid) were cleared by lockfile-only
+  refreshes, no overrides.

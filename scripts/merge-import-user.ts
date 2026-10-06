@@ -34,10 +34,11 @@
 // created_via marker, and no Firebase Auth record). --force overrides.
 
 import "./lib/load-target"; // first: sets up env before anything reads it
-import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
+import { assertNoServiceAccountKey } from "../lib/firebase/admin";
 import { clampSpeakerIndex } from "../lib/l10/speaking-order";
 import { syncUsersTeamIds } from "../lib/firebase/membership";
 
@@ -79,12 +80,10 @@ async function main() {
 
   let app = getApps()[0];
   if (!app) {
-    const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    app = json
-      ? initializeApp({ credential: cert(JSON.parse(json)) })
-      : initializeApp({
-          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-        });
+    assertNoServiceAccountKey();
+    app = initializeApp({
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    });
   }
   const db: Firestore = databaseId
     ? getFirestore(app, databaseId)

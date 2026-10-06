@@ -25,9 +25,10 @@
 // doc is reported, not written.
 
 import "./lib/load-target"; // first: sets up env before anything reads it
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
+import { assertNoServiceAccountKey } from "../lib/firebase/admin";
 import { planBackfill, TEAM_IDS_FIELD } from "../lib/firebase/membership";
 
 function arg(flag: string): string | undefined {
@@ -57,10 +58,8 @@ async function main() {
 
   let app: App = getApps()[0]!;
   if (!app) {
-    const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    app = json
-      ? initializeApp({ credential: cert(JSON.parse(json)) })
-      : initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || undefined });
+    assertNoServiceAccountKey();
+    app = initializeApp({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || undefined });
   }
   const db: Firestore = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 

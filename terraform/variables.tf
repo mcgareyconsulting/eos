@@ -139,6 +139,12 @@ variable "backup_sa_deployers" {
   default     = ["user:daniel@mcgareyconsulting.com"]
 }
 
+variable "functions_sa_deployers" {
+  description = "Principals allowed to deploy Cloud Functions that run as the eos-functions service account (iam.serviceAccountUser on that SA). Temporary until deploys move to a build service account."
+  type        = list(string)
+  default     = ["user:daniel@mcgareyconsulting.com"]
+}
+
 # Gate 2: runtime env owned by Terraform (cloud_run.tf, secrets.tf). See
 # README.md "Secrets (Gate 2)". Secret values are NOT variables: they live
 # only in Secret Manager versions added out-of-band (docs/SECRETS_RUNBOOK.md).

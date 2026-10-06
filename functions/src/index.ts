@@ -23,9 +23,11 @@
  *    check-backup-freshness.ts for why it exists and terraform/monitoring.tf
  *    for the alert policies that consume its log line.
  */
+// Must stay the first import: sets region / ingress / runtime service account
+// before any function below (or in a re-exported module) is defined.
+import "./global-options";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { setGlobalOptions } from "firebase-functions/v2";
 import {
   onDocumentWrittenWithAuthContext,
   type FirestoreAuthEvent,
@@ -60,7 +62,10 @@ initializeApp();
 //
 // The trial project never caught this: its database is `nam5` multi-region,
 // which already contains us-central1, so the same code deployed there fine.
-setGlobalOptions({ region: "us-east1" });
+//
+// The region (plus internal-only ingress and the eos-functions runtime SA) is
+// now set in ./global-options, imported first above — see that file for why
+// it can't live here.
 
 /** Named DB — never `(default)` on hpb-eos-prod. */
 function auditDb() {

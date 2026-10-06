@@ -112,8 +112,8 @@ and the `gcloud run services describe` env output (refs only) as evidence.
 | Dependabot version updates (`.github/dependabot.yml`): weekly, minor+patch grouped, for npm `/` + `/functions`, docker `/`, github-actions `/` | Plan step 2; Scorecard #1; Scorecard #5 | in code | 2026-09-27 | PR from branch chore/ci-and-dependabot | Majors of `next`/`eslint-config-next`/`react`/`react-dom`/`firebase-admin` and the `node` base image ignored (deliberate upgrades). Dependabot security alerts/updates are a repo setting — enable separately |
 | Secrets moved to Secret Manager + KMS key | I-03; I-02(CMEK lever); Plan: items 11–14 | verified | 2026-10-06 | See "Gate 2 — secrets and keys" above | Tracked per item in the Gate 2 table. The CMEK lever (`enable_cmek`, Artifact Registry at-rest) is a separate decision and still OFF. Reviewed 2026-09-29; blockers: tfvars docs (fixed), allowlist non-empty check (added to runbook), token-refresh test (added) |
 | CSV import: apply `text-limits` caps so imported titles >500 chars are rejected at import rather than on first edit | C-10 | planned | — | — | Gap found during Gate 3 review: `lib/text-limits.ts` caps (`requireMaxLength`) are enforced on the create/update actions but not on the CSV import path, so an over-length imported title only errors the first time someone edits it |
-| Access-control fixes (meeting-delete leader check, `owner_id` validation) | C-02; C-03; Plan: item 1–2 (code fixes) | planned | — | — | Two HIGH/MEDIUM code findings, not infra |
-| Google refresh tokens encrypted with KMS | C-06; Plan: item 11 | planned | — | — | Currently plaintext in Firestore. Key `eos-tokens` + runtime SA grant are in code (Gate 2); the app-side envelope encryption is the next gate |
+| Meeting delete limited to team leader / org admin (server action, UI, rules) | C-02; Plan: item 1 (code fixes) | verified | 2026-10-06 | Fixed in `7b92cbb` (2026-09-16, in prod since `d574b9c`); logic now in `lib/firebase/meetings.ts` `deleteMeetingAsLeader` → `requireTeamLeader`; trash icon gated by `canDelete={isLeader}` (`meetings/page.tsx:202`); `firestore.rules` meetings `allow create, update, delete: if false`; tests `lib/firebase/meetings.test.ts` › deleteMeetingAsLeader (5) | Was never logged when it shipped. Test fails if the gate is weakened to `requireTeamAccess` (checked). C-03 (`owner_id`) is in the Gate 3 table |
+| Google refresh tokens encrypted with KMS | C-06; Plan: item 11 | in code | 2026-10-06 | `lib/google/token-cipher.ts`; `lib/google/tasks.ts` (`refreshTokenFields`, `readRefreshToken`); `terraform/cloud_run.tf` env `GOOGLE_TOKENS_KMS_KEY`; `scripts/encrypt-google-tokens.ts`; tests `lib/google/token-cipher.test.ts` › kmsTokenCipher (3), `lib/google/tasks.test.ts` › refresh-token encryption (C-06) (9) | Direct KMS encrypt (not envelope — tokens are tiny), AAD = `google_tasks_connections/<uid>` so a ciphertext can't be moved to another user. Field `refresh_token_enc` + `refresh_token_kms_key`; plaintext `refresh_token` removed on write. Production without the key refuses to save a token. Legacy plaintext tokens are encrypted on their next successful refresh; the script sweeps idle ones. Access tokens (1 h) stay plaintext so to-do writes don't wait on KMS. **Rollout:** `terraform apply` (adds the env var, new revision) → deploy code → run the script → `verified` when the script reports 0 plaintext |
 | Audit trail: actor stamping on all updates/deletes | C-07; Plan: item 7 | planned | — | — | Audit-log Cloud Function itself is built but most writes carry no actor yet |
 | Perimeter / LB (Cloud Armor + IAP + custom domain, drop `allUsers`) | I-01; Plan: item 13 | planned | — | — | Phase 1 per the audit's remediation table |
 
@@ -188,3 +188,27 @@ not affect sign-in. Not a finding.
   is rejected with `INVALID_ARGUMENT` (confirmed 2026-09-27). `US`
   multi-region also gives redundancy across ≥2 US regions, which is the
   stronger DR posture for backups anyway.
+- **Google access tokens stay plaintext; refresh tokens are KMS-encrypted
+  (C-06) — flagged for client sign-off.** An access token lets the holder
+  act on that user's Google Tasks for at most 1 hour (Google's fixed
+  lifetime) and is replaced on every refresh; the refresh token is the
+  long-lived credential (valid until the user disconnects or revokes) and is
+  the one the audit named. Encrypting access tokens too would put a KMS
+  decrypt in front of every to-do write that syncs to Google, coupling
+  to-do saves to KMS availability and latency. Exposure that remains: anyone
+  with Firestore read on `google_tasks_connections` can use a user's Tasks
+  access for up to an hour. If the client wants both encrypted, it is a
+  small change in `lib/google/tasks.ts` (same cipher, same AAD) — record the
+  decision here either way.
+- **One dependency advisory is excepted from the CI audit gate:
+  GHSA-m9gg-hp2v-232j (`@grpc/grpc-js` <1.13.6, high), added 2026-10-06.**
+  It affects gRPC *servers* that accept client certificates; EOS reaches
+  grpc-js only through the Firebase client SDK (`@firebase/firestore`, a
+  gRPC client) and runs no gRPC server. The latest `@firebase/firestore`
+  (4.17.2) still pins `~1.9.0`, so no in-range fix exists, and forcing 1.13
+  into Firebase's internals is riskier than the advisory. Exception is
+  scoped to that one ID in `pnpm-workspace.yaml` (`auditConfig.ignoreGhsas`)
+  with the reason inline; remove it when Firebase ships a fixed pin. The
+  other advisories that turned up the same day (source-map-js; functions:
+  `@fastify/busboy`, protobufjs, uuid) were cleared by lockfile-only
+  refreshes, no overrides.

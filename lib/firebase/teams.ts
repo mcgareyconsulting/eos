@@ -9,7 +9,7 @@ import { getAdminAuth } from "./admin";
 // getAdminAuth directly, so tests can pass fakes without touching real
 // Firebase. Production call sites never pass `deps` — same behavior as
 // before this seam existed.
-type TeamsDeps = {
+export type TeamsDeps = {
   user?: typeof requireFirebaseUser;
   auth?: typeof getAdminAuth;
 };

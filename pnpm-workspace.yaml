@@ -1,3 +1,16 @@
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# Advisories CI's `pnpm audit --prod --audit-level=high` may skip. Each entry
+# needs a reason and is logged in docs/HARDENING_LOG.md; remove it once
+# upstream ships the fix.
+auditConfig:
+  ignoreGhsas:
+    # @grpc/grpc-js <1.13.6: getAuthContext() on a gRPC *server* with
+    # requireClientCertificate=false reports unauthorized client certs as
+    # authorized. Only reachable here via firebase > @firebase/firestore, which
+    # uses grpc-js as a client; EOS runs no gRPC server. @firebase/firestore
+    # 4.17.2 (latest, 2026-10-06) still pins ~1.9.0, so there is no in-range
+    # fix. Added 2026-10-06.
+    - GHSA-m9gg-hp2v-232j

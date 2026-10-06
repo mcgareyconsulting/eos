@@ -10,6 +10,7 @@ import {
   requireTeamDoc,
   requireTeamLeader,
 } from "@/lib/firebase/teams";
+import { deleteMeetingAsLeader } from "@/lib/firebase/meetings";
 import {
   type Segment,
   normalizeSegment,
@@ -673,21 +674,9 @@ export async function setAttendeeAbsence(
   revalidatePath(detailPath(teamId, meetingId));
 }
 
-// Leader/admin only. Destroying a team's meeting history (and, for a live
-// meeting, the room everyone is sitting in) is not the same kind of act as
-// driving one, so opening Start to every member does not open this with it.
+// Leader/admin only (C-02) — see deleteMeetingAsLeader.
 export async function deleteMeeting(teamId: string, meetingId: string) {
-  const { db } = await requireTeamLeader(teamId);
-  await requireTeamDoc(db, "meetings", meetingId, teamId);
-  const scores = await db
-    .collection("meetings")
-    .doc(meetingId)
-    .collection("effectiveness_scores")
-    .get();
-  const batch = db.batch();
-  scores.docs.forEach((r) => batch.delete(r.ref));
-  batch.delete(db.collection("meetings").doc(meetingId));
-  await batch.commit();
+  await deleteMeetingAsLeader(teamId, meetingId);
   revalidatePath(listPath(teamId));
 }
 

@@ -19,14 +19,24 @@
 // bare service account) — each human connects via /api/google/tasks/connect,
 // which stores a refresh token under their uid.
 //
-// SECURITY: refresh tokens live in Firestore (admin-SDK only; firestore.rules
-// default-denies client access to `google_tasks_connections/*`). Fine for a
-// small org; for a multi-tenant/prod hardening pass move tokens to Secret
-// Manager and grant the runtime SA roles/secretmanager.secretAccessor.
+// SECURITY: refresh tokens are stored KMS-encrypted (`refresh_token_enc`,
+// lib/google/token-cipher.ts, C-06) when GOOGLE_TOKENS_KMS_KEY is set, which
+// production requires. firestore.rules default-denies client access to
+// `google_tasks_connections/*`. A legacy plaintext `refresh_token` is still
+// read, and encrypted in place on its next successful refresh
+// (scripts/encrypt-google-tokens.ts sweeps idle ones); local dev
+// without the key stores plaintext. Access tokens (1-hour lifetime) stay
+// plaintext so a to-do write doesn't wait on KMS.
 
 import { timingSafeEqual } from "node:crypto";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { getAdminAccessToken, getAdminDb } from "@/lib/firebase/admin";
+import {
+  TOKENS_KMS_KEY_ENV,
+  kmsTokenCipher,
+  tokenAad,
+  type TokenCipher,
+} from "@/lib/google/token-cipher";
 import { notify } from "@/lib/firebase/notifications";
 import { recipientsFor } from "@/lib/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
@@ -79,7 +89,11 @@ export function appOrigin(requestUrl: string): string {
 export const GOOGLE_TASKS_SETTINGS_PATH = "/settings";
 
 type Connection = {
-  refresh_token: string;
+  /** KMS ciphertext of the refresh token (C-06). */
+  refresh_token_enc?: string | null;
+  refresh_token_kms_key?: string | null;
+  /** Legacy plaintext; encrypted on next refresh or by scripts/encrypt-google-tokens.ts. */
+  refresh_token?: string | null;
   access_token?: string | null;
   access_token_expiry?: number | null; // epoch ms
   tasklist_id?: string | null;
@@ -105,6 +119,68 @@ function clientCreds(): { clientId: string; clientSecret: string } | null {
   return { clientId, clientSecret };
 }
 
+// Test seam: `undefined` = resolve from env.
+let cipherOverride: TokenCipher | null | undefined;
+export function setTokenCipherForTesting(c: TokenCipher | null | undefined) {
+  cipherOverride = c;
+}
+
+/** The KMS cipher for refresh tokens, or null when the key isn't configured. */
+export function tokenCipher(): TokenCipher | null {
+  if (cipherOverride !== undefined) return cipherOverride;
+  const key = process.env[TOKENS_KMS_KEY_ENV]?.trim();
+  return key ? kmsTokenCipher(key, getAdminAccessToken) : null;
+}
+
+function hasRefreshToken(data: Connection | undefined): boolean {
+  return !!(data?.refresh_token_enc || data?.refresh_token);
+}
+
+/** The usable refresh token for a stored connection (decrypting if needed). */
+async function readRefreshToken(uid: string, conn: Connection): Promise<string> {
+  if (conn.refresh_token_enc) {
+    const cipher = tokenCipher();
+    if (!cipher) {
+      throw new Error(
+        `${TOKENS_KMS_KEY_ENV} is not set; cannot decrypt the stored Google refresh token (C-06).`,
+      );
+    }
+    return cipher.decrypt(conn.refresh_token_enc, tokenAad(uid));
+  }
+  return conn.refresh_token ?? "";
+}
+
+/**
+ * The refresh-token fields to write for this user: ciphertext when the KMS
+ * key is configured (and the plaintext field removed), plaintext only in
+ * local dev. Production without the key fails closed rather than storing a
+ * plaintext token.
+ */
+export async function refreshTokenFields(
+  uid: string,
+  refreshToken: string,
+): Promise<Record<string, unknown>> {
+  const cipher = tokenCipher();
+  if (cipher) {
+    const enc = await cipher.encrypt(refreshToken, tokenAad(uid));
+    return {
+      refresh_token_enc: enc.ciphertext,
+      refresh_token_kms_key: enc.keyVersion,
+      refresh_token: FieldValue.delete(),
+    };
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `${TOKENS_KMS_KEY_ENV} must be set in production; refusing to store a plaintext Google refresh token (C-06).`,
+    );
+  }
+  return {
+    refresh_token: refreshToken,
+    refresh_token_enc: FieldValue.delete(),
+    refresh_token_kms_key: FieldValue.delete(),
+  };
+}
+
 /** Whether GOOGLE_OAUTH_CLIENT_ID/SECRET are present (env-configured). */
 export function googleOAuthConfigured(): boolean {
   return clientCreds() !== null;
@@ -122,7 +198,7 @@ async function getConnection(
 ): Promise<Connection | null> {
   const snap = await connectionRef(uid, db).get();
   const data = snap.data() as Connection | undefined;
-  return data?.refresh_token ? data : null;
+  return data && hasRefreshToken(data) ? data : null;
 }
 
 /**
@@ -207,9 +283,10 @@ export async function saveConnection(
   },
   db: Firestore = getAdminDb(),
 ): Promise<void> {
+  const tokenFields = await refreshTokenFields(params.uid, params.refreshToken);
   await connectionRef(params.uid, db).set(
     {
-      refresh_token: params.refreshToken,
+      ...tokenFields,
       access_token: params.accessToken,
       access_token_expiry: Date.now() + params.expiresInSec * 1000,
       connected_by_uid: params.uid,
@@ -375,7 +452,21 @@ async function getAuthContext(
   const expiry = conn.access_token_expiry ?? 0;
   // Refresh a minute early to avoid mid-call expiry.
   if (!token || Date.now() > expiry - 60_000) {
-    token = await refreshAccessToken(ownerUid, conn.refresh_token, db);
+    const refreshToken = await readRefreshToken(ownerUid, conn);
+    token = await refreshAccessToken(ownerUid, refreshToken, db);
+    // Legacy plaintext token that just proved valid: encrypt it in place
+    // (C-06). Best-effort — sync carries on if KMS is briefly unavailable,
+    // and the next refresh tries again.
+    if (!conn.refresh_token_enc && tokenCipher()) {
+      try {
+        await connectionRef(ownerUid, db).set(
+          await refreshTokenFields(ownerUid, refreshToken),
+          { merge: true },
+        );
+      } catch (e) {
+        console.error("[google-tasks] refresh-token encryption failed:", e);
+      }
+    }
   }
 
   const tasklistId =
@@ -692,7 +783,7 @@ export async function pullCompletionsForAllConnected(): Promise<{
     let updated = 0;
     for (const doc of snap.docs) {
       const data = doc.data() as Connection;
-      if (!data.refresh_token) continue;
+      if (!hasRefreshToken(data)) continue;
       // A revoked grant can't be pulled from; skip it instead of burning a
       // failed refresh per sweep.
       if (isRevoked(data)) continue;

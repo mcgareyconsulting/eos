@@ -2,9 +2,15 @@
 # Audit ref C-06. See README.md "Secrets (Gate 2)".
 #
 # This key is for the app to encrypt data itself before writing it to
-# Firestore. The next gate uses it to envelope-encrypt users' Google refresh
-# tokens (google_tasks_connections/{uid}), which are plaintext today. Nothing
-# in the app uses it yet; creating it is inert.
+# Firestore: users' Google refresh tokens (google_tasks_connections/{uid},
+# field refresh_token_enc) are encrypted with it directly via the KMS REST
+# API (lib/google/token-cipher.ts, C-06). Cloud Run gets the key name as
+# GOOGLE_TOKENS_KMS_KEY (cloud_run.tf).
+#
+# Rotation (90 days) is safe: each ciphertext names its key version, and KMS
+# decrypts with any ENABLED version. Never disable or destroy an old version
+# while tokens encrypted with it may still exist (refresh_token_kms_key on
+# each doc records which one) — those users would have to reconnect.
 #
 # It is deliberately separate from the CMEK lever in levers.tf
 # (var.enable_cmek → key ring "eos-keyring", key "eos-key", used by the

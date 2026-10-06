@@ -114,6 +114,17 @@ export async function importScorecard(
       normalizeDescription(cell(row, table.headers, "Description")) || null;
     if (ownerId === null && unmatchedName) {
       description = withUnmatchedOwnerNote(description, unmatchedName);
+      // The owner note can push an in-limit description over the cap; check
+      // what is actually stored, or the first edit of this row would fail.
+      if (
+        rejectOverLength(ctx.preview, "scorecard", name, [
+          ["Description (with the imported owner note)", description, LONG_TEXT_MAX],
+        ])
+      ) {
+        skipped++;
+        tooLong++;
+        continue;
+      }
       noOwner++;
     }
 

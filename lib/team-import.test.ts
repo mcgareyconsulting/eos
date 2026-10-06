@@ -337,4 +337,35 @@ describe("import length caps", () => {
     assert.equal(db.docsIn("scorecard_entries").length, 1);
     assert.equal(db.docsIn("scorecard_groups").length, 1);
   });
+
+  test("todos: a description pushed over the cap by the unmatched-owner note is rejected", async () => {
+    // In-limit on its own; "Imported owner: Ghost" tips it over.
+    const desc = long(LONG_TEXT_MAX - 5);
+    // No fallback owner, so "Ghost" stays unmatched and the note is added.
+    const db = new FakeFirestore();
+    const report = await runTeamImport(
+      db.asFirestore(),
+      "t1",
+      { todos: { table: tbl(`Title,Description,Owner\nbad,${desc},Ghost\nok,short,Ghost\n`) } },
+      { createOwners: false, unmatchedOwner: "no-owner", fallbackOwnerId: null },
+      [],
+    );
+    assertRejected(report, db, "todos", /Description \(with the imported owner note\) too long/);
+    // Only the row that imported counts as No Owner, not the rejected one.
+    assert.ok(report.kinds[0].details.includes("1 imported as No Owner"));
+  });
+
+  test("headlines: a broadcast body pushed over the cap by the From line is rejected", async () => {
+    const body = long(LONG_TEXT_MAX - 5);
+    const { report, db } = await run({
+      headlines: {
+        tables: [
+          tbl(
+            `Title,Type,From,Description,Owner\nbad,Cascading,Leadership,${body},\nok,Cascading,,${body},\n`,
+          ),
+        ],
+      },
+    });
+    assertRejected(report, db, "headlines", /Details \(with the From line\) too long/);
+  });
 });

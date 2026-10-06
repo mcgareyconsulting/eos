@@ -120,6 +120,17 @@ export async function importHeadlines(
     let body = bodyRaw || null;
     if (cleanFrom && isBroadcast) {
       body = body ? `From: ${cleanFrom}\n\n${body}` : `From: ${cleanFrom}`;
+      // The From prefix can push an in-limit body over the cap; check what
+      // is actually stored, or the first edit of this headline would fail.
+      if (
+        rejectOverLength(ctx.preview, "headlines", title, [
+          ["Details (with the From line)", body, LONG_TEXT_MAX],
+        ])
+      ) {
+        skipped++;
+        tooLong++;
+        continue;
+      }
     }
 
     const headlineId = importDocId("headline", ctx.teamId, `${kind}|${title}`);

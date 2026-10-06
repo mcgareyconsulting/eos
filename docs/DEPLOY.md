@@ -109,8 +109,9 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 ```
 
 No `GOOGLE_APPLICATION_CREDENTIALS` should be set in the Cloud Run service's
-env, and `FIREBASE_SERVICE_ACCOUNT_JSON` is rejected at startup — leave both
-unset so `firebase-admin` uses ADC (the attached service account).
+env, and `FIREBASE_SERVICE_ACCOUNT_JSON` is rejected (every Admin SDK call
+throws until it is removed) — leave both unset so `firebase-admin` uses ADC
+(the attached service account).
 
 ## 3. Firestore database + rules
 

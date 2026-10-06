@@ -1,6 +1,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { parseDelimited, toTable } from "./csv-import";
+import { FakeFirestore } from "./test-support/fake-firestore";
+import { LONG_TEXT_MAX, TITLE_MAX } from "./text-limits";
 import {
+  runTeamImport,
   normalizeHeadlineKind,
   pickRockWorkbookSheets,
   rocksWorkbookFromBytes,
@@ -189,5 +193,179 @@ describe("PreviewCollector", () => {
     const c = new PreviewCollector();
     for (const t of ["z", "m", "a"]) c.add(row(t));
     assert.deepEqual(c.rows.map((r) => r.title), ["z", "m", "a"]);
+  });
+});
+
+// C-10 follow-up: the create/update actions cap text (lib/text-limits.ts); the
+// importers must too, or an over-length imported title only fails on first edit.
+describe("import length caps", () => {
+  const tbl = (csv: string) => toTable(parseDelimited(csv));
+  const long = (n: number) => "x".repeat(n);
+  const run = (inputs: Parameters<typeof runTeamImport>[2], db = new FakeFirestore()) =>
+    runTeamImport(
+      db.asFirestore(),
+      "t1",
+      inputs,
+      { createOwners: false, unmatchedOwner: "no-owner", fallbackOwnerId: "u1" },
+      [],
+    ).then((report) => ({ report, db }));
+
+  function assertRejected(
+    report: Awaited<ReturnType<typeof run>>["report"],
+    db: FakeFirestore,
+    collection: string,
+    reason: RegExp,
+  ) {
+    const stats = report.kinds[0];
+    assert.equal(stats.imported, 1, "the in-limit row still imports");
+    assert.equal(stats.skipped, 1);
+    assert.equal(db.docsIn(collection).length, 1);
+    const skip = report.rows.find((r) => r.action === "skip");
+    assert.ok(skip, "over-length row reported in the preview");
+    assert.match(skip.note ?? "", reason);
+    assert.ok(skip.title.length <= 81, "echoed title is clipped");
+    assert.ok(stats.details.some((d) => /length limit/.test(d)));
+  }
+
+  test("todos: over-length title and description are rejected per row", async () => {
+    for (const [col, val, re] of [
+      ["Title", long(TITLE_MAX + 1), /Title too long/],
+      ["Description", long(LONG_TEXT_MAX + 1), /Description too long/],
+    ] as const) {
+      const csv =
+        col === "Title"
+          ? `Title,Owner\n${val},\nok,\n`
+          : `Title,Description,Owner\nbad,${val},\nok,fine,\n`;
+      const { report, db } = await run({ todos: { table: tbl(csv) } });
+      assertRejected(report, db, "todos", re);
+    }
+  });
+
+  test("todos: values exactly at the cap import", async () => {
+    const { report, db } = await run({
+      todos: { table: tbl(`Title,Description,Owner\n${long(TITLE_MAX)},${long(LONG_TEXT_MAX)},\n`) },
+    });
+    assert.equal(report.kinds[0].imported, 1);
+    assert.equal(db.docsIn("todos").length, 1);
+  });
+
+  test("todos: an over-length Owner name is rejected (it would become a description note)", async () => {
+    const { report, db } = await run({
+      todos: { table: tbl(`Title,Owner\nbad,${long(TITLE_MAX + 1)}\nok,\n`) },
+    });
+    assertRejected(report, db, "todos", /Owner name too long/);
+  });
+
+  test("issues: over-length title is rejected per row", async () => {
+    const { report, db } = await run({
+      issues: { tables: [tbl(`Title,Owner\n${long(TITLE_MAX + 1)},\nok,\n`)] },
+    });
+    assertRejected(report, db, "issues", /Title too long/);
+  });
+
+  test("issues: over-length description is rejected per row", async () => {
+    const { report, db } = await run({
+      issues: {
+        tables: [tbl(`Title,Description,Owner\nbad,${long(LONG_TEXT_MAX + 1)},\nok,,\n`)],
+      },
+    });
+    assertRejected(report, db, "issues", /Description too long/);
+  });
+
+  test("headlines: over-length title and body are rejected per row", async () => {
+    const t = await run({
+      headlines: { tables: [tbl(`Title,Owner\n${long(TITLE_MAX + 1)},\nok,\n`)] },
+    });
+    assertRejected(t.report, t.db, "headlines", /Title too long/);
+    const b = await run({
+      headlines: {
+        tables: [tbl(`Title,Description,Owner\nbad,${long(LONG_TEXT_MAX + 1)},\nok,,\n`)],
+      },
+    });
+    assertRejected(b.report, b.db, "headlines", /Details too long/);
+  });
+
+  test("rocks: over-length title, quarter and description are rejected per row", async () => {
+    const cases: [string, RegExp][] = [
+      [`Title,Owner\n${long(TITLE_MAX + 1)},\nok,\n`, /Title too long/],
+      [`Title,Quarter,Owner\nbad,Q3 ${long(TITLE_MAX + 1)},\nok,2026-Q3,\n`, /Quarter too long/],
+      [
+        `Title,Description,Owner\nbad,${long(LONG_TEXT_MAX + 1)},\nok,,\n`,
+        /Description too long/,
+      ],
+    ];
+    for (const [csv, re] of cases) {
+      const { report, db } = await run({
+        rocks: { table: tbl(csv.replace("Owner", "Level,Owner").replace(/,\n/g, ",department,\n")) },
+      });
+      assertRejected(report, db, "rocks", re);
+    }
+  });
+
+  test("milestones: over-length title is rejected, the parent rock is unaffected", async () => {
+    const { report, db } = await run({
+      rocks: { table: tbl("Title,Level,Owner\nR1,department,\n") },
+      milestones: {
+        table: tbl(
+          `Rock Name,Title,Owner\nR1,${long(TITLE_MAX + 1)},\nR1,ok,\n`,
+        ),
+      },
+    });
+    const stats = report.kinds.find((k) => k.kind === "milestones")!;
+    assert.equal(stats.imported, 1);
+    assert.equal(stats.skipped, 1);
+    assert.equal(db.docsIn("rocks").length, 1);
+    assert.equal(db.docsIn("todos").length, 1);
+    assert.match(
+      report.rows.find((r) => r.kind === "milestones" && r.action === "skip")?.note ?? "",
+      /Title too long/,
+    );
+  });
+
+  test("scorecard: over-length name and group are rejected, with no entries or group written", async () => {
+    const { report, db } = await run({
+      scorecard: {
+        table: tbl(
+          `Name,Group,Owner,Jul 27 - Aug 2\n${long(TITLE_MAX + 1)},G,,5\nok,${long(TITLE_MAX + 1)},,5\nfine,Good,,7\n`,
+        ),
+      },
+    });
+    const stats = report.kinds[0];
+    assert.equal(stats.imported, 1);
+    assert.equal(stats.skipped, 2);
+    assert.equal(db.docsIn("scorecard_metrics").length, 1);
+    assert.equal(db.docsIn("scorecard_entries").length, 1);
+    assert.equal(db.docsIn("scorecard_groups").length, 1);
+  });
+
+  test("todos: a description pushed over the cap by the unmatched-owner note is rejected", async () => {
+    // In-limit on its own; "Imported owner: Ghost" tips it over.
+    const desc = long(LONG_TEXT_MAX - 5);
+    // No fallback owner, so "Ghost" stays unmatched and the note is added.
+    const db = new FakeFirestore();
+    const report = await runTeamImport(
+      db.asFirestore(),
+      "t1",
+      { todos: { table: tbl(`Title,Description,Owner\nbad,${desc},Ghost\nok,short,Ghost\n`) } },
+      { createOwners: false, unmatchedOwner: "no-owner", fallbackOwnerId: null },
+      [],
+    );
+    assertRejected(report, db, "todos", /Description \(with the imported owner note\) too long/);
+    // Only the row that imported counts as No Owner, not the rejected one.
+    assert.ok(report.kinds[0].details.includes("1 imported as No Owner"));
+  });
+
+  test("headlines: a broadcast body pushed over the cap by the From line is rejected", async () => {
+    const body = long(LONG_TEXT_MAX - 5);
+    const { report, db } = await run({
+      headlines: {
+        tables: [
+          tbl(
+            `Title,Type,From,Description,Owner\nbad,Cascading,Leadership,${body},\nok,Cascading,,${body},\n`,
+          ),
+        ],
+      },
+    });
+    assertRejected(report, db, "headlines", /Details \(with the From line\) too long/);
   });
 });

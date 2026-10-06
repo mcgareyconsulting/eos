@@ -11,8 +11,9 @@ import {
   parseDateOnly,
   type CsvTable,
 } from "../csv-import";
+import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFrom, isArchived, rockTypeLabel } from "./normalize";
+import { archivedAtFrom, isArchived, rejectOverLength, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
 
@@ -35,6 +36,7 @@ export async function importRocks(
   let imported = 0;
   let skipped = 0;
   let unchanged = 0;
+  let tooLong = 0;
   let noOwner = 0;
   let archived = 0;
   let attachments = 0;
@@ -60,6 +62,19 @@ export async function importRocks(
     if (rowTeam) teamValues.add(rowTeam);
     if (ctx.rockTeam && normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)) {
       skipped++;
+      continue;
+    }
+
+    if (
+      rejectOverLength(ctx.preview, "rocks", title, [
+        ["Title", title, TITLE_MAX],
+        ["Quarter", cell(row, table.headers, "Quarter"), TITLE_MAX],
+        ["Description", normalizeDescription(cell(row, table.headers, "Description")), LONG_TEXT_MAX],
+        ["Owner name", cell(row, table.headers, "Owner", "Owner Name", "Accountable"), TITLE_MAX],
+      ])
+    ) {
+      skipped++;
+      tooLong++;
       continue;
     }
 
@@ -207,6 +222,9 @@ export async function importRocks(
   }
   if (noOwner) {
     details.push(`${noOwner} imported as No Owner`);
+  }
+  if (tooLong) {
+    details.push(`${tooLong} over the length limit, not imported`);
   }
   if (archived) {
     details.push(`${archived} archived held back`);

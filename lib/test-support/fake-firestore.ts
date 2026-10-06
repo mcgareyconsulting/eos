@@ -96,6 +96,11 @@ class FakeQuery {
     return new FakeQuery(this.store, this.collectionPath, this.wheres, field);
   }
 
+  /** Field projection is a read-cost optimisation; the fake returns full docs. */
+  select(): FakeQuery {
+    return this;
+  }
+
   async get() {
     let docs = this.store
       .docsIn(this.collectionPath)

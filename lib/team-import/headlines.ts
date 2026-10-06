@@ -5,8 +5,15 @@ import {
   normalizeKey,
   type CsvTable,
 } from "../csv-import";
+import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFrom, createdAtFrom, isArchived, normalizeHeadlineKind } from "./normalize";
+import {
+  archivedAtFrom,
+  createdAtFrom,
+  isArchived,
+  normalizeHeadlineKind,
+  rejectOverLength,
+} from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 
 export async function importHeadlines(
@@ -24,6 +31,7 @@ export async function importHeadlines(
 ): Promise<KindStats> {
   let imported = 0;
   let unchanged = 0;
+  let tooLong = 0;
   let skipped = 0;
   let archived = 0;
   let broadcast = 0;
@@ -64,6 +72,25 @@ export async function importHeadlines(
       normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)
     ) {
       skipped++;
+      continue;
+    }
+
+    if (
+      rejectOverLength(ctx.preview, "headlines", title, [
+        ["Title", title, TITLE_MAX],
+        [
+          "Details",
+          normalizeDescription(
+            cell(row, table.headers, "Description", "Notes", "Body", "Detail"),
+          ),
+          LONG_TEXT_MAX,
+        ],
+        ["Owner name", cell(row, table.headers, "Owner", "Owner Name", "Accountable", "From Name"), TITLE_MAX],
+        ["From", cell(row, table.headers, "From", "Source", "Team From"), TITLE_MAX],
+      ])
+    ) {
+      skipped++;
+      tooLong++;
       continue;
     }
 
@@ -146,6 +173,7 @@ export async function importHeadlines(
   }
 
   if (broadcast) details.push(`${broadcast} broadcast / read-only`);
+  if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
   if (archived) details.push(`${archived} archived held back`);
 
   return {

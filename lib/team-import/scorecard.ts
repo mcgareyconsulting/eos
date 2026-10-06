@@ -14,7 +14,9 @@ import {
   parseWeekHeader,
   type CsvTable,
 } from "../csv-import";
+import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
+import { rejectOverLength } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
 
@@ -47,6 +49,7 @@ export async function importScorecard(
   let entries = 0;
   let skipped = 0;
   let noOwner = 0;
+  let tooLong = 0;
   // First-seen order becomes sort_order, so a file whose rows run
   // Weekly-then-Compliance produces exactly that order with nobody setting it
   // by hand. Everything imports weekly, so every group created here is weekly.
@@ -62,6 +65,19 @@ export async function importScorecard(
     const status = cell(row, table.headers, "Status");
     if (!ctx.includeArchived && /archiv|inactive|paused|deleted/i.test(status)) {
       skipped++;
+      continue;
+    }
+
+    if (
+      rejectOverLength(ctx.preview, "scorecard", name, [
+        ["Name", name, TITLE_MAX],
+        ["Group name", cell(row, table.headers, "Group Name", "Group", "Section"), TITLE_MAX],
+        ["Description", normalizeDescription(cell(row, table.headers, "Description")), LONG_TEXT_MAX],
+        ["Owner name", cell(row, table.headers, "Owner", "Owner Name", "Accountable"), TITLE_MAX],
+      ])
+    ) {
+      skipped++;
+      tooLong++;
       continue;
     }
 
@@ -206,6 +222,7 @@ export async function importScorecard(
           : ` (${groupOrder.size - newGroups} already set up — order kept)`),
     );
   }
+  if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
   if (noOwner) details.push(`${noOwner} imported with No Owner`);
   // Everything imports weekly; say so rather than let it be discovered later.
   if (metrics) details.push("all created as weekly measurables");

@@ -32,6 +32,8 @@ function harness(opts: {
   if (opts.cookie) jar.set("__firebase_session", opts.cookie);
   const session = {
     uid: "u1",
+    email: "jane@highplainsbank.com",
+    email_verified: true,
     iat: T0,
     exp: T0 + 12 * 3600,
     ...(opts.session === "invalid" ? {} : opts.session),
@@ -156,6 +158,69 @@ describe("verifySession", () => {
   });
 });
 
+describe("verifySession perimeter on every request", () => {
+  test("an allowlisted, verified user passes", async () => {
+    const h = harness({ cookie: "c", nowHours: 1 });
+    await withAllowlist("@highplainsbank.com", async () => {
+      assert.equal((await verifySession(h.deps))?.uid, "u1");
+    });
+  });
+
+  test("an exact-email allowlist entry passes", async () => {
+    const h = harness({ cookie: "c", session: { email: "Consultant@Example.com" } });
+    await withAllowlist("consultant@example.com", async () => {
+      assert.equal((await verifySession(h.deps))?.uid, "u1");
+    });
+  });
+
+  test("removed from the allowlist: refused on the next verify, mid-session", async () => {
+    const h = harness({ cookie: "c", nowHours: 1 });
+    await withAllowlist("@highplainsbank.com", async () => {
+      assert.ok(await verifySession(h.deps));
+    });
+    await withAllowlist("@elsewhere.com", async () => {
+      assert.equal(await verifySession(h.deps), null);
+    });
+  });
+
+  test("unverified email is refused, with or without an allowlist", async () => {
+    const h = harness({ cookie: "c", session: { email_verified: false } });
+    await withAllowlist("@highplainsbank.com", async () => {
+      assert.equal(await verifySession(h.deps), null);
+    });
+    await withAllowlist(undefined, async () => {
+      assert.equal(await verifySession(h.deps), null);
+    });
+  });
+
+  test("allowlist unset keeps open behavior for a verified user", async () => {
+    const h = harness({ cookie: "c", session: { email: "anyone@gmail.com" } });
+    await withAllowlist(undefined, async () => {
+      assert.equal((await verifySession(h.deps))?.uid, "u1");
+    });
+  });
+
+  test("a cookie missing the email claim is refused when an allowlist is set", async () => {
+    const h = harness({ cookie: "c", session: { email: undefined } });
+    await withAllowlist("@highplainsbank.com", async () => {
+      assert.equal(await verifySession(h.deps), null);
+    });
+  });
+
+  test("makes no extra Auth calls beyond the cookie verification", async () => {
+    const h = harness({ cookie: "c" });
+    await withAllowlist("@highplainsbank.com", () => verifySession(h.deps).then(() => {}));
+    assert.deepEqual(h.calls.map((c) => c[0]), ["verifySessionCookie"]);
+  });
+
+  test("a refused user can still sign out and have tokens revoked", async () => {
+    const h = harness({ cookie: "c" });
+    await withAllowlist("@elsewhere.com", () => endSession(h.deps));
+    assert.ok(h.calls.some((c) => c[0] === "revokeRefreshTokens"));
+    assert.equal(h.jar.has("__firebase_session"), false);
+  });
+});
+
 describe("renewSession", () => {
   test("leaves a session younger than its half-life alone", async () => {
     const h = harness({ cookie: "c", nowHours: 2 });
@@ -194,10 +259,42 @@ describe("renewSession", () => {
 
   test("someone taken off the allowlist is not renewed", async () => {
     const h = harness({ cookie: "c", nowHours: 7 });
-    await withAllowlist("@elsewhere.com", () =>
-      assert.rejects(renewSession("tok", h.deps), new Error(NOT_AUTHORIZED_MESSAGE)),
-    );
+    // The per-request check refuses the current session first, so renewal
+    // declines (like an expired session) before it ever sees the ID token.
+    await withAllowlist("@elsewhere.com", async () => {
+      assert.equal(await renewSession("tok", h.deps), false);
+    });
     assert.equal(h.jar.get("__firebase_session"), "c");
+  });
+
+  test("the fresh ID token must still pass the perimeter on its own", async () => {
+    // The cookie's claims pass, but the new ID token does not (e.g. the
+    // account's email changed or lost verification) — renewal still refuses.
+    const unverified = harness({
+      cookie: "c",
+      nowHours: 7,
+      idToken: { email_verified: false },
+    });
+    await withAllowlist("@highplainsbank.com", () =>
+      assert.rejects(
+        renewSession("tok", unverified.deps),
+        new Error(EMAIL_UNVERIFIED_MESSAGE),
+      ),
+    );
+    assert.equal(unverified.jar.get("__firebase_session"), "c");
+
+    const moved = harness({
+      cookie: "c",
+      nowHours: 7,
+      idToken: { email: "jane@gmail.com" },
+    });
+    await withAllowlist("@highplainsbank.com", () =>
+      assert.rejects(
+        renewSession("tok", moved.deps),
+        new Error(NOT_AUTHORIZED_MESSAGE),
+      ),
+    );
+    assert.equal(moved.jar.get("__firebase_session"), "c");
   });
 });
 

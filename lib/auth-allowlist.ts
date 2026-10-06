@@ -55,8 +55,9 @@ export const EMAIL_UNVERIFIED_MESSAGE =
 
 /**
  * The whole sign-in decision for a *verified* Firebase ID token: null to
- * admit, otherwise the message to show. Used by createSession() and by
- * session renewal, so both apply exactly the same perimeter.
+ * admit, otherwise the message to show. Used by createSession(), session
+ * renewal, and verifySession() on every request (against the decoded
+ * cookie's claims), so all three apply exactly the same perimeter.
  *
  * `email_verified` must be literally `true` (C-04,
  * docs/SECURITY_AUDIT_2026-09-08.md). Google Workspace accounts always carry

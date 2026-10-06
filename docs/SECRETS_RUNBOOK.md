@@ -200,6 +200,24 @@ consultant's laptop. Moving it to Secret Manager doesn't unexpose any of
 those copies. Rotating does, all at once: after step 5 every one of those
 copies is a revoked credential.
 
+> **Two OAuth clients — pick the right one.** `hpb-eos-prod` has two web
+> clients and they look alike in the Console:
+>
+> | Client | Used by | Secret lives in |
+> |---|---|---|
+> | `…-7eue…` "Google Tasks API (dev+prod)" | the app's Google Tasks connector (`google_oauth_client_id`) | Secret Manager `GOOGLE_OAUTH_CLIENT_SECRET` |
+> | `…-ui7v…` "Web client (auto created by Google Service)" | **Firebase Auth Google sign-in** | Firebase → Authentication → Sign-in method → Google → Web SDK configuration |
+>
+> This runbook rotates **`7eue` only**. Match the Client ID against
+> `terraform.tfvars` before adding a secret. A `ui7v` secret in Secret
+> Manager makes Tasks fail with 401 `invalid_client`; disabling or deleting
+> the `ui7v` secret Firebase holds takes down **sign-in for everyone**
+> (both happened on 2026-10-06, see `docs/HARDENING_LOG.md`). To rotate
+> `ui7v`: add secret → paste into Firebase's Web SDK configuration → save →
+> confirm the stored value's last 4 characters match the Console → test a
+> fresh sign-in → only then disable and delete the old one. Never delete a
+> secret you haven't disabled and tested first; deletion can't be undone.
+
 Google OAuth web clients can hold **two secrets at once**, so this rotation
 has no downtime. You add the new secret, switch the app to it (steps 3–4),
 and only then disable and delete the old one (step 5).

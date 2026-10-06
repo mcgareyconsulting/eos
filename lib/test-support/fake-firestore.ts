@@ -4,16 +4,34 @@
 // lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
 // single-doc get/set/update/delete, `where` (==, "in" and "array-contains"),
 // `orderBy` (single field, ascending), a bare `collection().get()`,
-// `collection().doc()` with no id (auto-id), `getAll(...refs)`, and a
-// `batch()` of set/update/delete. It is not an emulator replacement — just
+// `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
+// `batch()` of set/update/delete, one-level subcollections
+// (`doc().collection()`, with `.ref` on query results), and
+// `FieldValue.delete()` in set/update. It is not an emulator replacement — just
 // enough shape to drive these modules' logic without touching real Firebase.
 
+import { FieldValue } from "firebase-admin/firestore";
+
 type DocData = Record<string, unknown>;
+
+const DELETE = FieldValue.delete();
+
+/** Apply `patch` onto `base`, honouring FieldValue.delete() like Firestore. */
+function applyPatch(base: DocData, patch: DocData): DocData {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v instanceof FieldValue && v.isEqual(DELETE)) delete out[k];
+    else out[k] = v;
+  }
+  return out;
+}
 
 class FakeDocSnapshot {
   constructor(
     public id: string,
     private raw: DocData | undefined,
+    /** Set on query results, so callers can `batch.delete(snap.ref)`. */
+    public ref?: FakeDocRef,
   ) {}
   get exists() {
     return this.raw !== undefined;
@@ -36,7 +54,7 @@ class FakeDocRef {
   }
   async set(data: DocData, opts?: { merge?: boolean }) {
     const existing = this.store.raw(this.path);
-    const next = opts?.merge && existing ? { ...existing, ...data } : { ...data };
+    const next = applyPatch(opts?.merge && existing ? existing : {}, data);
     this.store.write(this.path, next);
   }
   async update(data: DocData) {
@@ -44,10 +62,14 @@ class FakeDocRef {
     // that so a test can't pass on a path that would fail in production.
     const existing = this.store.raw(this.path);
     if (!existing) throw new Error(`fake-firestore: update() on missing doc ${this.path}`);
-    this.store.write(this.path, { ...existing, ...data });
+    this.store.write(this.path, applyPatch(existing, data));
   }
   async delete() {
     this.store.remove(this.path);
+  }
+  /** Subcollection, e.g. `meetings/m1/effectiveness_scores`. */
+  collection(name: string) {
+    return this.store.collection(`${this.path}/${name}`);
   }
 }
 
@@ -77,7 +99,10 @@ class FakeQuery {
   async get() {
     let docs = this.store
       .docsIn(this.collectionPath)
-      .map(({ id, data }) => new FakeDocSnapshot(id, data));
+      .map(
+        ({ id, data }) =>
+          new FakeDocSnapshot(id, data, new FakeDocRef(this.store, `${this.collectionPath}/${id}`)),
+      );
 
     for (const [field, op, value] of this.wheres) {
       docs = docs.filter((d) => {

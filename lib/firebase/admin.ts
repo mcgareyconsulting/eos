@@ -44,3 +44,15 @@ export function getAdminDb(): Firestore {
   const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
   return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 }
+
+/**
+ * OAuth access token for the app's own Google identity (the runtime service
+ * account on Cloud Run, ADC locally), for the few Google REST APIs called
+ * with plain fetch — e.g. Cloud KMS in lib/google/token-cipher.ts. The admin
+ * SDK's default credential requests the cloud-platform scope.
+ */
+export async function getAdminAccessToken(): Promise<string> {
+  const credential = getAdminApp().options.credential;
+  if (!credential) throw new Error("firebase-admin app has no credential");
+  return (await credential.getAccessToken()).access_token;
+}

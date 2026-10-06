@@ -34,7 +34,7 @@ export async function importSeedFile(
   formData: FormData,
 ): Promise<SeedImportResult> {
   // Outside try so Next's notFound() from requireAdmin isn't swallowed.
-  const { db } = await requireAdmin();
+  const { db, uid } = await requireAdmin();
 
   try {
     const file = formData.get("file");
@@ -63,6 +63,7 @@ export async function importSeedFile(
 
     const report = await runUserImport(db, getAdminAuth(), table, {
       dryRun,
+      actorUid: uid,
       // The same allowlist createSession() enforces: an address that can't
       // sign in shouldn't get an account here either.
       allowlist: parseAllowlist(process.env.SIGN_IN_ALLOWLIST),

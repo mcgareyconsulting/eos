@@ -563,6 +563,22 @@ describe("pullCompletionsForOwner", () => {
     assert.equal(result.updated, 0);
     assert.equal(calls.length, 0);
   });
+
+  test("audit stamp (C-07): Sync now names its user; the scheduled pull names nobody", async () => {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "secret";
+    for (const actorUid of ["owner-1", undefined]) {
+      const db = new FakeFirestore();
+      seedConnection(db, "owner-1");
+      db.seed("todos", "t1", { google_task_id: "g1", owner_id: "owner-1", completed_at: null });
+      globalThis.fetch = fetchQueue([tasklistResponse([{ id: "g1", status: "completed" }])]).fn;
+
+      await pullCompletionsForOwner("owner-1", db.asFirestore(), actorUid);
+      const todo = db.raw("todos/t1")!;
+      assert.ok(todo.completed_at);
+      assert.equal(todo.updated_by, actorUid);
+    }
+  });
 });
 
 // --- getTasksStatus / reconnect ---------------------------------------------

@@ -62,6 +62,30 @@ describe("deleteMeetingAsLeader", () => {
     assert.equal(db.docsIn("meetings/m1/effectiveness_scores").length, 0);
   });
 
+  test("each deleted doc is stamped with the deleter first, in its own write (C-07)", async () => {
+    const db = seeded();
+    const stamped = new Map<string, unknown>();
+    const removed: string[] = [];
+    const write = db.write.bind(db);
+    const remove = db.remove.bind(db);
+    db.write = (path, data) => {
+      if (data.deleted_by !== undefined) stamped.set(path, data.deleted_by);
+      write(path, data);
+    };
+    db.remove = (path) => {
+      // The audit trigger reads the doc's last state as `before`.
+      assert.equal(stamped.get(path), "lead", `${path} stamped before removal`);
+      removed.push(path);
+      remove(path);
+    };
+    await deleteMeetingAsLeader("t1", "m1", { user: fakeUser({ uid: "lead", isAdmin: false, db }) });
+    assert.deepEqual(removed.sort(), [
+      "meetings/m1",
+      "meetings/m1/effectiveness_scores/lead",
+      "meetings/m1/effectiveness_scores/mem",
+    ]);
+  });
+
   test("an org admin may delete without a roster row", async () => {
     const db = seeded();
     await deleteMeetingAsLeader("t1", "m1", { user: fakeUser({ uid: "boss", isAdmin: true, db }) });

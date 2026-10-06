@@ -24,6 +24,7 @@ import { recordActivity } from "@/lib/firebase/activity";
 import { autoArchiveActivity, joinNames } from "@/lib/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import {
   addedFollowerRecipients,
   applyFollowerEdit,
@@ -165,6 +166,7 @@ export async function addTodo(teamId: string, formData: FormData) {
     created_by: uid,
     follower_ids,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   const target = notifyTarget(teamId, team.name, ref.id, { title });
@@ -222,7 +224,7 @@ export async function addTodo(teamId: string, formData: FormData) {
       completed: false,
     },
   );
-  if (taskId) await ref.update({ google_task_id: taskId });
+  if (taskId) await ref.update({ google_task_id: taskId, ...stamp(uid) });
 
   revalidatePath(pathFor(teamId));
   revalidatePath("/home");
@@ -300,6 +302,7 @@ export async function toggleTodo(
     .doc(todoId)
     .update({
       completed_at: nowComplete ? FieldValue.serverTimestamp() : null,
+      ...stamp(uid),
     });
 
   await notify({
@@ -333,7 +336,10 @@ export async function toggleTodo(
     data.google_task_id,
   );
   if (taskId && taskId !== data.google_task_id) {
-    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+    await db
+      .collection("todos")
+      .doc(todoId)
+      .update({ google_task_id: taskId, ...stamp(uid) });
   }
   revalidatePath(pathFor(teamId));
   if (data.source_rock_id) {
@@ -421,6 +427,7 @@ export async function updateTodoMeta(
     visibility,
     weekly_focus: formData.get("weekly_focus") === "on",
     follower_ids,
+    ...stamp(uid),
   });
 
   const taskId = await upsertTaskForTodo(
@@ -433,7 +440,10 @@ export async function updateTodoMeta(
     data.google_task_id,
   );
   if (taskId && taskId !== data.google_task_id) {
-    await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
+    await db
+      .collection("todos")
+      .doc(todoId)
+      .update({ google_task_id: taskId, ...stamp(uid) });
   }
 
   // Tell followers what moved. The new owner hears "assigned you" instead of
@@ -557,7 +567,10 @@ export async function setTodoFollowing(
   await db
     .collection("todos")
     .doc(todoId)
-    .update({ follower_ids: toggleFollower(followerIdsOf(data), uid, following) });
+    .update({
+      follower_ids: toggleFollower(followerIdsOf(data), uid, following),
+      ...stamp(uid),
+    });
   await recordActivity({
     db,
     teamId,
@@ -593,7 +606,10 @@ export async function toggleWeeklyFocus(
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
   requireMutableTodo(data, { uid, isAdmin, membershipRole });
-  await db.collection("todos").doc(todoId).update({ weekly_focus: next });
+  await db
+    .collection("todos")
+    .doc(todoId)
+    .update({ weekly_focus: next, ...stamp(uid) });
   await recordActivity({
     db,
     teamId,
@@ -616,7 +632,9 @@ export async function deleteTodo(teamId: string, todoId: string) {
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
   requireMutableTodo(data, { uid, isAdmin, membershipRole });
-  await db.collection("todos").doc(todoId).delete();
+  const ref = db.collection("todos").doc(todoId);
+  await stampBeforeDelete(ref, uid);
+  await ref.delete();
   await deleteTaskForTodo(ownerUidOf(data), data.google_task_id);
   revalidatePath(pathFor(teamId));
 }
@@ -660,9 +678,10 @@ export async function setTodoArchived(
           ? {
               completed_at: FieldValue.serverTimestamp(),
               archived_at: FieldValue.serverTimestamp(),
+              ...stamp(uid),
             }
-          : { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, completed_at: null },
+          : { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) }
+        : { archived_at: null, completed_at: null, ...stamp(uid) },
     );
 
   if (closingNow) {
@@ -699,7 +718,7 @@ export async function setTodoArchived(
       await db
         .collection("todos")
         .doc(todoId)
-        .update({ google_task_id: taskId });
+        .update({ google_task_id: taskId, ...stamp(uid) });
     }
   }
 
@@ -729,7 +748,7 @@ export async function archiveTodosAtMeetingFinish(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
   const endMs =
@@ -752,15 +771,20 @@ export async function archiveTodosAtMeetingFinish(
   for (let i = 0; i < due.length; i += 200) {
     const batch = db.batch();
     for (const d of due.slice(i, i + 200)) {
-      batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
-      batch.set(
-        db.collection("entity_activity").doc(),
-        autoArchiveActivity(
+      batch.update(d.ref, {
+        archived_at: FieldValue.serverTimestamp(),
+        ...stamp(uid),
+      });
+      // The Finish click is the human act behind the sweep, so the driver
+      // who pressed it is the audit actor for both rows (C-07).
+      batch.set(db.collection("entity_activity").doc(), {
+        ...autoArchiveActivity(
           { id: d.id, team_id: teamId, ...d.data() },
           "finish",
           FieldValue.serverTimestamp(),
         ),
-      );
+        ...stamp(uid),
+      });
     }
     await batch.commit();
   }

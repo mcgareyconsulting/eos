@@ -5,6 +5,7 @@ import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 
 const KINDS = ["customer", "employee", "cascading", "general"] as const;
 type Kind = (typeof KINDS)[number];
@@ -45,6 +46,7 @@ export async function addHeadline(teamId: string, formData: FormData) {
     discussed_at: null,
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   revalidateHeadlines(teamId);
@@ -62,7 +64,7 @@ export async function updateHeadline(
   headlineId: string,
   formData: FormData,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
   if (snap.data()?.broadcast) {
     throw new Error("Org-wide headlines are read-only");
@@ -83,18 +85,21 @@ export async function updateHeadline(
     title,
     body,
     kind,
+    ...stamp(uid),
   });
 
   revalidateHeadlines(teamId);
 }
 
 export async function deleteHeadline(teamId: string, headlineId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
   if (snap.data()?.broadcast) {
     throw new Error("Org-wide headlines are read-only");
   }
-  await db.collection("headlines").doc(headlineId).delete();
+  const ref = db.collection("headlines").doc(headlineId);
+  await stampBeforeDelete(ref, uid);
+  await ref.delete();
   revalidateHeadlines(teamId);
 }
 
@@ -116,7 +121,7 @@ export async function setHeadlineDiscussed(
   headlineId: string,
   discussed: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "headlines", headlineId, teamId);
   await db
     .collection("headlines")
@@ -124,6 +129,7 @@ export async function setHeadlineDiscussed(
     .update({
       discussed,
       discussed_at: discussed ? FieldValue.serverTimestamp() : null,
+      ...stamp(uid),
     });
   revalidateHeadlines(teamId);
 }
@@ -138,7 +144,7 @@ export async function setHeadlineArchived(
   headlineId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "headlines", headlineId, teamId);
   // Restore clears discuss so standing items don't re-archive on next Finish.
   await db
@@ -146,11 +152,12 @@ export async function setHeadlineArchived(
     .doc(headlineId)
     .update(
       archived
-        ? { archived_at: FieldValue.serverTimestamp() }
+        ? { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) }
         : {
             archived_at: null,
             discussed: false,
             discussed_at: null,
+            ...stamp(uid),
           },
     );
   revalidateHeadlines(teamId);
@@ -164,7 +171,7 @@ export async function archiveHeadlinesDiscussedDuringMeeting(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
   const startMs =
@@ -190,7 +197,10 @@ export async function archiveHeadlinesDiscussedDuringMeeting(
   const batch = db.batch();
   for (const d of snap.docs) {
     if (!ids.has(d.id)) continue;
-    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+    batch.update(d.ref, {
+      archived_at: FieldValue.serverTimestamp(),
+      ...stamp(uid),
+    });
   }
   await batch.commit();
   revalidateHeadlines(teamId);

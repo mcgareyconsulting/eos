@@ -55,6 +55,8 @@ export type UserImportOptions = {
   allowlist?: Allowlist | null;
   /** Per-pairing preview cap; the overflow is reported as a count. */
   previewLimit?: number;
+  /** Signed-in admin, stamped on every write (C-07). Omitted by the CLI. */
+  actorUid?: string | null;
 };
 
 const CHUNK = 100;
@@ -67,7 +69,7 @@ export async function runUserImport(
 ): Promise<SeedReport> {
   const dryRun = opts.dryRun !== false;
   const previewLimit = opts.previewLimit ?? 250;
-  const writer = new Writer(db, dryRun);
+  const writer = new Writer(db, dryRun, opts.actorUid);
 
   if (!hasSeedColumns(table)) {
     throw new Error(

@@ -7,6 +7,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
 import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
+import { stamp } from "@/lib/audit-stamp";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -49,6 +50,8 @@ export async function writeMembership(
     firstName: string;
     lastName: string;
     email: string;
+    /** Who is adding them — stamped for the audit log (C-07). */
+    actorUid: string;
   },
 ): Promise<void> {
   const fullName = `${opts.firstName} ${opts.lastName}`.trim();
@@ -69,6 +72,7 @@ export async function writeMembership(
       first_name: opts.firstName,
       last_name: opts.lastName,
       email: opts.email,
+      ...stamp(opts.actorUid),
     },
     { merge: true },
   );
@@ -78,6 +82,7 @@ export async function writeMembership(
     user_id: opts.userId,
     role: opts.role,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(opts.actorUid),
   });
 
   await batch.commit();

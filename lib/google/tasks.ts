@@ -40,6 +40,7 @@ import {
 import { notify } from "@/lib/firebase/notifications";
 import { recipientsFor } from "@/lib/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
+import { stamp } from "@/lib/audit-stamp";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const TASKS_BASE = "https://tasks.googleapis.com/tasks/v1";
@@ -660,10 +661,16 @@ async function listTasklistTasks(
 /**
  * Pull completed status from Google Tasks into EOS for this owner.
  * Never throws; never re-pushes to Google (avoids completion loops).
+ *
+ * `actorUid` is set only when a signed-in person asked for the pull (Settings,
+ * "Sync now"), and stamps the to-do writes for the audit log (C-07). The
+ * scheduled pull passes nothing: no person made those writes, so they stay
+ * unattributed rather than borrowing someone's uid.
  */
 export async function pullCompletionsForOwner(
   ownerUid: string,
   db: Firestore = getAdminDb(),
+  actorUid?: string,
 ): Promise<{ updated: number }> {
   if (!ownerUid || !googleOAuthConfigured()) return { updated: 0 };
   try {
@@ -725,6 +732,7 @@ export async function pullCompletionsForOwner(
       const before = (await ref.get()).data() ?? {};
       await ref.update({
         completed_at: FieldValue.serverTimestamp(),
+        ...(actorUid ? stamp(actorUid) : {}),
       });
       updated += 1;
 

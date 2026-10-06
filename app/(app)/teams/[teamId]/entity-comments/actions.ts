@@ -11,6 +11,7 @@ import {
 } from "@/lib/firebase/teams";
 import { notify } from "@/lib/firebase/notifications";
 import { recordActivity } from "@/lib/firebase/activity";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { mentionedIds } from "@/lib/mentions";
 import { commentRecipients, snippetOf } from "@/lib/notifications";
 
@@ -97,6 +98,7 @@ export async function addEntityComment(
     author_id: uid,
     mention_ids,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   if (entityType === "todo") {
@@ -219,6 +221,7 @@ export async function deleteEntityComment(
   if (data.author_id !== uid) {
     throw new Error("Only the author can delete this comment");
   }
+  await stampBeforeDelete(ref, uid);
   await ref.delete();
   // The trace keeps a record of the deletion; the row that carried the body
   // is gone, but the snippet on the trace says what it was.

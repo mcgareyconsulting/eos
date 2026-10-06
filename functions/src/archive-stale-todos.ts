@@ -4,6 +4,7 @@
  *
  * Deploy: firebase deploy --only functions:archiveStaleTodos
  */
+import "./global-options"; // first: global region/ingress/SA (I-10)
 import { getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -150,9 +151,9 @@ export const archiveStaleTodos = onSchedule(
   {
     schedule: "0 3 * * 1",
     timeZone: TIME_ZONE,
-    // Pinned explicitly: setGlobalOptions in index.ts runs after this module
-    // is evaluated (imports are hoisted), so a per-function region is the
-    // only reliable way to land next to the database.
+    // Pinned explicitly as well as via ./global-options: before that module
+    // existed, setGlobalOptions in index.ts ran after this module was
+    // evaluated (imports are hoisted) and never applied here.
     region: "us-east1",
     retryCount: 1,
   },

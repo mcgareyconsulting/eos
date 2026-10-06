@@ -175,3 +175,15 @@ not affect sign-in. Not a finding.
   is rejected with `INVALID_ARGUMENT` (confirmed 2026-09-27). `US`
   multi-region also gives redundancy across ≥2 US regions, which is the
   stronger DR posture for backups anyway.
+- **Google access tokens stay plaintext; refresh tokens are KMS-encrypted
+  (C-06) — flagged for client sign-off.** An access token lets the holder
+  act on that user's Google Tasks for at most 1 hour (Google's fixed
+  lifetime) and is replaced on every refresh; the refresh token is the
+  long-lived credential (valid until the user disconnects or revokes) and is
+  the one the audit named. Encrypting access tokens too would put a KMS
+  decrypt in front of every to-do write that syncs to Google, coupling
+  to-do saves to KMS availability and latency. Exposure that remains: anyone
+  with Firestore read on `google_tasks_connections` can use a user's Tasks
+  access for up to an hour. If the client wants both encrypted, it is a
+  small change in `lib/google/tasks.ts` (same cipher, same AAD) — record the
+  decision here either way.

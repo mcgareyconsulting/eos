@@ -126,8 +126,9 @@ export async function createSession(
  * renewable — the user signs in again).
  *
  * The ID token must belong to the session's own user and pass the same
- * perimeter as sign-in, so taking someone off SIGN_IN_ALLOWLIST ends their
- * session at the next renewal instead of never.
+ * perimeter as sign-in. (Removal from SIGN_IN_ALLOWLIST already ends the
+ * session on the next request via verifySession; a refused current session
+ * returns false here, like an expired one.)
  */
 export async function renewSession(
   idToken: string,

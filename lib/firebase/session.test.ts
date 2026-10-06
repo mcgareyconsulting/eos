@@ -200,6 +200,13 @@ describe("verifySession perimeter on every request", () => {
     });
   });
 
+  test("a cookie missing the email claim is refused when an allowlist is set", async () => {
+    const h = harness({ cookie: "c", session: { email: undefined } });
+    await withAllowlist("@highplainsbank.com", async () => {
+      assert.equal(await verifySession(h.deps), null);
+    });
+  });
+
   test("makes no extra Auth calls beyond the cookie verification", async () => {
     const h = harness({ cookie: "c" });
     await withAllowlist("@highplainsbank.com", () => verifySession(h.deps).then(() => {}));
@@ -258,6 +265,36 @@ describe("renewSession", () => {
       assert.equal(await renewSession("tok", h.deps), false);
     });
     assert.equal(h.jar.get("__firebase_session"), "c");
+  });
+
+  test("the fresh ID token must still pass the perimeter on its own", async () => {
+    // The cookie's claims pass, but the new ID token does not (e.g. the
+    // account's email changed or lost verification) — renewal still refuses.
+    const unverified = harness({
+      cookie: "c",
+      nowHours: 7,
+      idToken: { email_verified: false },
+    });
+    await withAllowlist("@highplainsbank.com", () =>
+      assert.rejects(
+        renewSession("tok", unverified.deps),
+        new Error(EMAIL_UNVERIFIED_MESSAGE),
+      ),
+    );
+    assert.equal(unverified.jar.get("__firebase_session"), "c");
+
+    const moved = harness({
+      cookie: "c",
+      nowHours: 7,
+      idToken: { email: "jane@gmail.com" },
+    });
+    await withAllowlist("@highplainsbank.com", () =>
+      assert.rejects(
+        renewSession("tok", moved.deps),
+        new Error(NOT_AUTHORIZED_MESSAGE),
+      ),
+    );
+    assert.equal(moved.jar.get("__firebase_session"), "c");
   });
 });
 

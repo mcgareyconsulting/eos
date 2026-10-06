@@ -20,7 +20,8 @@
 ## 0. Credentials first (`rapt_required` / invalid_grant)
 
 Scripts use **Application Default Credentials** (`gcloud auth application-default login`)
-unless `FIREBASE_SERVICE_ACCOUNT_JSON` is set in the env.
+only. Service-account keys are not supported; if `FIREBASE_SERVICE_ACCOUNT_JSON`
+is still set, the scripts and the app fail with an error until it is unset.
 
 ```
 invalid_grant … error_subtype: "rapt_required"
@@ -40,13 +41,9 @@ gcloud config set project hpb-eos-prod
 gcloud auth application-default print-access-token >/dev/null && echo "ADC OK"
 ```
 
-Then retry the script. If RAPT keeps failing (org policy), use a **service
-account key** instead (less ideal; rotate after use):
-
-```bash
-# In .env.local (never commit):
-# FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
-```
+Then retry the script. If RAPT keeps failing (org policy), re-run
+`gcloud auth application-default login` and complete the reauth prompt;
+service-account keys are not an option.
 
 Admin SDK needs a principal that can call Identity Platform / Firebase Auth
 Admin (e.g. `roles/firebaseauth.admin` or owner/editor on the project).
@@ -266,4 +263,3 @@ any machine that has IAM + working ADC pointed at `hpb-eos-prod`.
 | `SIGN_IN_ALLOWLIST` | `.env.local`, Cloud Run | `@highplainsbank.com,daniel@mcgareyconsulting.com` |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | `.env.local` | `hpb-eos-prod` |
 | `NEXT_PUBLIC_FIREBASE_DATABASE_ID` | `.env.local` | `hpb-eos-sandbox-db` |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | optional local | SA key JSON one-liner |

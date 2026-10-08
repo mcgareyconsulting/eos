@@ -17,9 +17,12 @@ export default async function LoginPage({
   // Always the dark card, whatever the app theme — colors are fixed here
   // rather than dark: variants. Background/card neutrals come from the
   // HPB Pulse brand package; brand accents stay on the hpb-* tokens.
+  // Flat background + hairline border rather than the package's large
+  // radial glow and 80px shadow: Chrome dithers wide low-contrast gradients,
+  // which read as visible grain next to the rest of the (flat) app.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0f1730] bg-[radial-gradient(1200px_600px_at_50%_-10%,#1d2e63_0%,#0f1730_60%)] px-4 text-[#e8ecf5]">
-      <main className="w-full max-w-[560px] rounded-3xl bg-[#0b1226] px-8 pb-12 pt-14 sm:px-14 shadow-[0_30px_80px_rgba(0,0,0,0.7)]">
+    <div className="flex min-h-screen items-center justify-center bg-[#0f1730] px-4 text-[#e8ecf5]">
+      <main className="w-full max-w-[560px] rounded-3xl border border-[#2a365c] bg-[#0b1226] px-8 pb-12 pt-14 shadow-[0_24px_48px_-16px_rgba(0,0,0,0.6)] sm:px-14">
         <EnvBadge className="mb-4" />
         {/* Self-contained animation (CSS inside the SVG); honors
             prefers-reduced-motion. The SVG's viewBox carries 45 units of

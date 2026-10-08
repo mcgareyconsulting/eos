@@ -34,19 +34,19 @@ export function LoginForm({ next }: { next: string }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <button
         type="button"
         onClick={handleSignIn}
         disabled={busy}
-        className="w-full rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2.5 text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 flex items-center justify-center gap-3"
+        className="mx-auto flex h-14 w-full max-w-[420px] items-center justify-center gap-3 rounded-full border border-[#8e918f] bg-[#131314] px-4 text-base font-medium text-[#e3e3e3] hover:bg-[#1f1f20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-hpb-green disabled:opacity-50"
       >
         <GoogleIcon />
         {busy ? "Signing in…" : "Sign in with Google"}
       </button>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950 px-3 py-2 text-sm text-red-800 dark:text-red-300">
+        <div className="rounded-md border border-red-900 bg-red-950/60 px-3 py-2 text-sm text-red-300">
           {error}
         </div>
       )}
@@ -56,7 +56,7 @@ export function LoginForm({ next }: { next: string }) {
 
 function GoogleIcon() {
   return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden>
+    <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
       <path
         fill="#4285F4"
         d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.44a5.5 5.5 0 0 1-2.39 3.6v3h3.85c2.25-2.08 3.59-5.14 3.59-8.84z"

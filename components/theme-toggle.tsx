@@ -47,7 +47,11 @@ export function ThemeToggle() {
       aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
       title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
     >
-      {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      {theme === "dark" ? (
+        <Sun className="w-4 h-4 group-data-[sidebar-collapsed]/shell:size-5" />
+      ) : (
+        <Moon className="w-4 h-4 group-data-[sidebar-collapsed]/shell:size-5" />
+      )}
     </button>
   );
 }

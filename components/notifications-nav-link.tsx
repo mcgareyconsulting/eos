@@ -61,12 +61,12 @@ export function NotificationsNavLink({
       }
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:justify-center dark:text-zinc-300 dark:hover:bg-zinc-800",
+        "relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:justify-center group-data-[sidebar-collapsed]/shell:py-2 dark:text-zinc-300 dark:hover:bg-zinc-800",
         active && "bg-zinc-100 font-medium dark:bg-zinc-800",
       )}
     >
       <span className="relative shrink-0">
-        <Bell className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+        <Bell className="h-4 w-4 text-zinc-600 group-data-[sidebar-collapsed]/shell:size-5 dark:text-zinc-400" />
         {/* Collapsed rail: a dot, since there is no room for a number. */}
         {unread > 0 && (
           <span

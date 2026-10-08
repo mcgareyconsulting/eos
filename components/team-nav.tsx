@@ -278,8 +278,8 @@ export function TeamNav({
               }
             : {})}
           className={cn(
-            "mx-auto hidden h-8 w-8 items-center justify-center rounded-md",
-            "text-xs font-semibold text-hpb-blue dark:text-hpb-gold",
+            "mx-auto hidden h-9 w-9 items-center justify-center rounded-md",
+            "text-sm font-semibold text-hpb-blue dark:text-hpb-gold",
             "bg-hpb-blue/10 hover:bg-hpb-blue/20 dark:bg-hpb-gold/10 dark:hover:bg-hpb-gold/20",
             "group-data-[sidebar-collapsed]/shell:flex",
           )}
@@ -414,9 +414,9 @@ function NavLink({
     <Link
       href={href}
       title={label}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center"
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center group-data-[sidebar-collapsed]/shell:py-2"
     >
-      <Icon className="w-4 h-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
+      <Icon className="w-4 h-4 shrink-0 text-zinc-600 group-data-[sidebar-collapsed]/shell:size-5 dark:text-zinc-400" />
       <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
     </Link>
   );

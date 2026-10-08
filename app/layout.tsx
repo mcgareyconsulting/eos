@@ -11,7 +11,7 @@ const nunitoSans = Nunito_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "High Plains Bank",
+  title: "HPB Pulse",
   description: "Level 10 meetings, scorecards, rocks, and the rest of EOS.",
 };
 

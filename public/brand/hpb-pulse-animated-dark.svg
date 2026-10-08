@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg class="hpb-logo" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="136.625 21.000 605.000 242.250">
+<defs><style>
+  /* Lap 5.25s: draw-on 2.4 | hold 0.3 | one continuous roll-off 2.55.
+     Each keyframe boundary meets at zero velocity (ease-out into the hold,
+     ease-in out of it), so there's no speed jump anywhere in the lap. */
+  @keyframes roll {
+    0%    { stroke-dashoffset:1.05; animation-timing-function:cubic-bezier(.65,0,.35,1) }  /* draw on  */
+    45.7% { stroke-dashoffset:0;    animation-timing-function:linear }                      /* hold     */
+    51.4% { stroke-dashoffset:0;    animation-timing-function:cubic-bezier(.5,0,.5,1) }     /* roll off */
+    100%  { stroke-dashoffset:-1.05 }
+  }
+  /* Neon core (pale, tight blur), mid glow (lagging a hair), wide halo (lagging more). No solid stroke. */
+  #pulse       { stroke-dasharray:1 1.2; stroke-dashoffset:1.05; opacity:.95; stroke-opacity:0; animation: roll 5.25s infinite .25s, enter 5.25s infinite .25s }
+  #pulse-trail { stroke-dasharray:1 1.2; stroke-dashoffset:1.05; opacity:.85; stroke-opacity:0; animation: roll 5.25s infinite .32s, enter 5.25s infinite .32s }
+  #pulse-halo  { stroke-dasharray:1 1.2; stroke-dashoffset:1.05; opacity:.55; stroke-opacity:0; animation: roll 5.25s infinite .42s, enter 5.25s infinite .42s }
+  /* Entry: a dash's leading edge reaches the path start 9.69% into its own
+     lap (offset 1.05 → 1.0 on the draw-on curve). At that instant both round
+     caps appear as a full dot — on the 30-wide halo a visible blob. Each
+     layer fades its own stroke in from that moment (same delay as its roll,
+     so it lines up per layer); stroke-opacity leaves each layer's base
+     opacity alone. */
+  @keyframes enter {
+    0%, 9.6% { stroke-opacity:0; animation-timing-function:cubic-bezier(.33,0,.5,1) }
+    19%, 100% { stroke-opacity:1 }
+  }
+
+  /* Residue: on the first lap only, it unrolls behind the trail's tail as
+     the live glow rolls off (same curve + delay as #pulse-trail, so its
+     leading edge is always hidden under the glow), then stays.
+     Dash 2 / offset 2 → 0.95 keeps the visible span exactly [0, tail]. */
+  #pulse-ghost { stroke-dasharray:2 2; stroke-dashoffset:2; opacity:0; animation: ghost-in 5.25s .32s forwards }
+  @keyframes ghost-in {
+    0%, 51.4% { stroke-dashoffset:2;   opacity:0;   animation-timing-function:cubic-bezier(.5,0,.5,1) }
+    100%      { stroke-dashoffset:.95; opacity:.4 }
+  }
+
+  /* The live group stays dark through the lap boundary (the trail and halo
+     finish rolling off just after the core restarts) and is fully up by the
+     time the core enters; per-layer entry is handled by `enter` above.
+     Fade-out: the live glow eases away over the back half of the roll-off
+     in one curve. */
+  #pulse-live { animation: dissolve 5.25s infinite .25s }
+  @keyframes dissolve {
+    0%, 5% { opacity:0 }
+    9%   { opacity:1 }
+    70%  { opacity:1; animation-timing-function:cubic-bezier(.45,0,.75,1) }
+    100% { opacity:0 }
+  }
+
+  .once #pulse-live { animation:none; opacity:1 }
+  .hpb-logo > g:not(.pulse-wrap), .hpb-logo > path { animation: rise .9s ease-out .9s both }
+  @keyframes rise { from { opacity:0 } to { opacity:1 } }   /* opacity only: a CSS transform would override the SVG transform attributes */
+
+  @media (prefers-reduced-motion: reduce) {
+    #pulse, #pulse-trail, #pulse-halo, #pulse-live, .hpb-logo > g, .hpb-logo > path { animation:none !important; stroke-dashoffset:0; opacity:1; stroke-opacity:1 }
+    #pulse-ghost { opacity:0 !important }
+  }
+  path[fill="rgb(35.293579%, 37.646484%, 43.136597%)"] { fill:#c9cfdb }
+</style><!-- Filter regions are sized to what each blur can actually reach (half the
+     stroke width + 3σ, plus slack) around the pulse (x 187.7–689.2,
+     y 76.5–207.8). The original percentage regions were ~2× taller than
+     needed, and every frame re-blurs the whole region — that cost showed
+     up as dropped frames while the full line is lit (early roll-off). -->
+<filter id="halo" filterUnits="userSpaceOnUse" x="142" y="31" width="593" height="222"><feGaussianBlur stdDeviation="9"/></filter><filter id="wake" filterUnits="userSpaceOnUse" x="163" y="52" width="550" height="180"><feGaussianBlur stdDeviation="4"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="177" y="66" width="522" height="152"><feGaussianBlur stdDeviation="1.2"/></filter>
+<g>
+<g id="glyph-0-0">
+<path d="M 7.609375 0 L 21.578125 0 L 21.578125 -19.109375 L 32.1875 -19.109375 C 46.421875 -19.109375 57.84375 -26.765625 57.84375 -41.5 L 57.84375 -41.6875 C 57.84375 -54.703125 48.6875 -63.703125 33.546875 -63.703125 L 7.609375 -63.703125 Z M 21.578125 -31.578125 L 21.578125 -51.0625 L 32.359375 -51.0625 C 39.34375 -51.0625 43.703125 -47.6875 43.703125 -41.40625 L 43.703125 -41.234375 C 43.703125 -35.765625 39.609375 -31.578125 32.640625 -31.578125 Z M 21.578125 -31.578125 "/>
+</g>
+<g id="glyph-0-1">
+<path d="M 34.09375 1 C 51.125 1 61.921875 -8.46875 61.921875 -27.765625 L 61.921875 -63.703125 L 47.953125 -63.703125 L 47.953125 -27.21875 C 47.953125 -17.109375 42.796875 -11.921875 34.265625 -11.921875 C 25.75 -11.921875 20.578125 -17.296875 20.578125 -27.671875 L 20.578125 -63.703125 L 6.625 -63.703125 L 6.625 -27.296875 C 6.625 -8.5625 17.046875 1 34.09375 1 Z M 34.09375 1 "/>
+</g>
+<g id="glyph-0-2">
+<path d="M 7.609375 0 L 53.21875 0 L 53.21875 -12.734375 L 21.578125 -12.734375 L 21.578125 -63.703125 L 7.609375 -63.703125 Z M 7.609375 0 "/>
+</g>
+<g id="glyph-0-3">
+<path d="M 30.1875 0.90625 C 43.875 0.90625 53.484375 -6.1875 53.484375 -18.84375 L 53.484375 -19.015625 C 53.484375 -30.125 46.234375 -34.765625 33.359375 -38.140625 C 22.390625 -40.953125 19.671875 -42.328125 19.671875 -46.515625 L 19.671875 -46.6875 C 19.671875 -49.78125 22.484375 -52.25 27.828125 -52.25 C 33.1875 -52.25 38.703125 -49.875 44.328125 -45.96875 L 51.578125 -56.515625 C 45.140625 -61.703125 37.265625 -64.625 28.015625 -64.625 C 15.046875 -64.625 5.796875 -56.96875 5.796875 -45.421875 L 5.796875 -45.234375 C 5.796875 -32.578125 14.046875 -29.03125 26.828125 -25.75 C 37.4375 -23.03125 39.609375 -21.203125 39.609375 -17.65625 L 39.609375 -17.46875 C 39.609375 -13.75 36.171875 -11.46875 30.453125 -11.46875 C 23.203125 -11.46875 17.21875 -14.46875 11.515625 -19.203125 L 3.265625 -9.28125 C 10.875 -2.453125 20.578125 0.90625 30.1875 0.90625 Z M 30.1875 0.90625 "/>
+</g>
+<g id="glyph-0-4">
+<path d="M 7.609375 0 L 55.9375 0 L 55.9375 -12.46875 L 21.484375 -12.46875 L 21.484375 -25.84375 L 51.40625 -25.84375 L 51.40625 -38.3125 L 21.484375 -38.3125 L 21.484375 -51.234375 L 55.484375 -51.234375 L 55.484375 -63.703125 L 7.609375 -63.703125 Z M 7.609375 0 "/>
+</g>
+</g>
+<clipPath id="clip-0">
+<path clip-rule="nonzero" d="M 43 0 L 775.828125 0 L 775.828125 259.472656 L 43 259.472656 Z M 43 0 "/>
+</clipPath>
+</defs>
+<g fill="rgb(24.705505%, 69.804382%, 30.979919%)" fill-opacity="1">
+<use xlink:href="#glyph-0-0" x="399.53811" y="164.037986"/>
+<use xlink:href="#glyph-0-1" x="463.718043" y="164.037986"/>
+</g>
+<path fill="none" stroke-width="2.737" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-opacity="1" stroke-miterlimit="10" d="M -0.0000834601 -0.00108004 L 14.001894 -0.00108004 L 14.001894 19.168388 L 24.638539 19.168388 C 38.910841 19.168388 50.366292 26.835391 50.366292 41.624833 L 50.366292 41.805049 C 50.366292 54.858935 41.187044 63.897145 26.001911 63.897145 L -0.0000834601 63.897145 Z M 14.001894 31.673791 L 14.001894 51.207608 L 24.818755 51.207608 C 31.819744 51.207608 36.184099 47.830522 36.184099 41.534725 L 36.184099 41.350592 C 36.184099 35.873601 32.093985 31.673791 25.092996 31.673791 Z M 14.001894 31.673791 " transform="matrix(0.997069, 0, 0, -0.997069, 407.152427, 164.037986)"/>
+<path fill="none" stroke-width="2.737" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-opacity="1" stroke-miterlimit="10" d="M -0.00117122 -0.000119696 C 17.091898 -0.000119696 27.912676 9.492547 27.912676 28.846148 L 27.912676 64.901045 L 13.910699 64.901045 L 13.910699 28.297666 C 13.910699 18.166408 8.727538 12.963659 0.182962 12.963659 C -8.365531 12.963659 -13.548692 18.346624 -13.548692 28.752123 L -13.548692 64.901045 L -27.546752 64.901045 L -27.546752 28.387774 C -27.546752 9.582655 -17.09424 -0.000119696 -0.00117122 -0.000119696 Z M -0.00117122 -0.000119696 " transform="matrix(0.997069, 0, 0, -0.997069, 497.801949, 165.038943)"/>
+<g class="pulse-wrap">
+  <path id="pulse-geom" d="M -0.001784 -0.001607 L 351.446291 -0.001607 C 352.417889 -0.001607 353.236695 0.723174 353.354227 1.686936 L 365.659827 101.420666 C 365.941903 103.712539 369.291565 103.649856 369.483534 101.346229 L 380.222040 -25.525637 C 380.402256 -27.637295 383.364062 -27.950714 383.979146 -25.921328 L 391.430674 -1.364978 C 391.677492 -0.554007 392.421861 -0.001607 393.272009 -0.001607 L 503.011630 -0.001607" transform="matrix(0.997069, 0, 0, -0.997069, 187.665841, 179.947617)" fill="none" pathLength="1"/>
+  <use href="#pulse-geom" id="pulse-ghost" stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" filter="url(#wake)"/>
+  <g id="pulse-live">
+  <use href="#pulse-geom" id="pulse-halo"  stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" filter="url(#halo)"/>
+  <use href="#pulse-geom" id="pulse-trail" stroke="#5ed45e" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" filter="url(#wake)"/>
+  <use href="#pulse-geom" id="pulse"       stroke="#c9ffc4" stroke-width="7"  stroke-linecap="round" stroke-linejoin="round" filter="url(#soft)"/>
+  </g>
+</g>
+<g fill="rgb(24.705505%, 69.804382%, 30.979919%)" fill-opacity="1">
+<use xlink:href="#glyph-0-3" x="571.633857" y="164.037986"/>
+<use xlink:href="#glyph-0-4" x="633.275600" y="164.037986"/>
+</g>
+<path fill="none" stroke-width="2.737" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-opacity="1" stroke-miterlimit="10" d="M 0.000402957 -0.00131184 C 13.728139 -0.00131184 23.365763 7.121127 23.365763 19.806746 L 23.365763 19.99088 C 23.365763 31.125077 16.090532 35.783261 3.181602 39.160347 C -7.819392 41.988951 -10.546134 43.360157 -10.546134 47.556049 L -10.546134 47.740183 C -10.546134 50.843027 -7.729284 53.307281 -2.365908 53.307281 C 3.001386 53.307281 8.544979 50.933135 14.182596 47.011484 L 21.457827 57.597199 C 15.001403 62.803866 7.0915 65.722577 -2.181774 65.722577 C -15.18473 65.722577 -24.458004 58.055574 -24.458004 46.463002 L -24.458004 46.278868 C -24.458004 33.593249 -16.183752 30.032029 -3.36493 26.745051 C 7.271715 24.006556 9.453893 22.180892 9.453893 18.619673 L 9.453893 18.439457 C 9.453893 14.694105 5.998452 12.413984 0.270727 12.413984 C -7.000586 12.413984 -13.002553 15.426721 -18.730279 20.171095 L -27.000613 10.223971 C -19.364951 3.375774 -9.63722 -0.00131184 0.000402957 -0.00131184 Z M 0.000402957 -0.00131184 " transform="matrix(0.997069, 0, 0, -0.997069, 601.819911, 164.947911)"/>
+<path fill="none" stroke-width="2.737" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(24.705505%, 69.804382%, 30.979919%)" stroke-opacity="1" stroke-miterlimit="10" d="M -0.0019492 -0.00108004 L 48.460408 -0.00108004 L 48.460408 12.504324 L 13.909921 12.504324 L 13.909921 25.922559 L 43.91192 25.922559 L 43.91192 38.431881 L 13.909921 38.431881 L 13.909921 51.391742 L 48.005951 51.391742 L 48.005951 63.897145 L -0.0019492 63.897145 Z M -0.0019492 -0.00108004 " transform="matrix(0.997069, 0, 0, -0.997069, 640.888662, 164.037986)"/>
+<path fill-rule="nonzero" fill="rgb(35.293579%, 37.646484%, 43.136597%)" fill-opacity="1" d="M 255.082031 95.710938 L 255.171875 167.628906 L 235.703125 167.648438 L 235.503906 139.546875 L 207.15625 139.335938 L 206.78125 167.675781 L 187.664062 167.605469 L 187.675781 95.789062 L 206.753906 95.664062 L 207.027344 122.859375 L 235.398438 123.136719 L 235.625 95.8125 Z M 255.082031 95.710938 "/>
+<path fill-rule="nonzero" fill="rgb(35.293579%, 37.646484%, 43.136597%)" fill-opacity="1" d="M 301.335938 127.148438 C 295.652344 128.800781 290.085938 128.414062 284.375 128.085938 L 284.300781 110.484375 L 297.375 110.636719 C 301.972656 110.679688 305.679688 112.957031 306.4375 117.019531 C 307.210938 121.09375 306.003906 125.796875 301.335938 127.148438 M 303.847656 95.921875 L 264.871094 95.59375 L 264.871094 167.644531 L 284.179688 167.675781 L 284.359375 143.277344 L 302.925781 142.949219 C 316.347656 142.710938 325.851562 132.59375 324.988281 119.339844 C 326.015625 106.542969 316.820312 96.023438 303.847656 95.921875 "/>
+<path fill-rule="nonzero" fill="rgb(35.293579%, 37.646484%, 43.136597%)" fill-opacity="1" d="M 366.691406 153.214844 L 349.167969 153.453125 L 349.167969 138.1875 L 365.679688 138.261719 C 370.171875 138.292969 373.265625 141.015625 373.550781 145.046875 C 373.816406 149.078125 371.675781 153.15625 366.691406 153.214844 M 349.152344 110.023438 L 365.054688 110.128906 C 369.160156 110.144531 371.378906 113.371094 371.363281 116.792969 C 371.363281 120.261719 369.292969 123.683594 365.203125 123.710938 L 349 123.847656 Z M 391.609375 143.648438 C 389.320312 130.125 378.296875 132.238281 382.9375 128.667969 C 390.734375 122.640625 392.28125 110.875 386.136719 103.0625 C 381.835938 98.375 375.960938 95.875 369.503906 95.847656 L 330.539062 95.667969 L 330.507812 167.632812 L 369.757812 167.570312 C 375.75 167.558594 381.226562 164.921875 385.929688 161.605469 C 390.496094 156.785156 392.726562 150.195312 391.609375 143.648438 "/>
+</svg>

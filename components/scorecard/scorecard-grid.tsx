@@ -386,9 +386,9 @@ export function ScorecardGrid({
             {m.sharedFrom && (
               <div
                 className="mt-0.5 truncate text-[11px] italic text-zinc-400 dark:text-zinc-500"
-                title={`Shared from ${m.sharedFrom} — values are maintained by that team`}
+                title={`Tracked from ${m.sharedFrom} — values are maintained by that team`}
               >
-                Shared from {m.sharedFrom}
+                Tracked from {m.sharedFrom}
               </div>
             )}
             <div className="mt-1 flex items-center gap-2">

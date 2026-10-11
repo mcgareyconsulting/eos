@@ -2,6 +2,9 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   addShare,
+  inCatalogFor,
+  isPublicMetric,
+  privateTransition,
   canArchiveMetric,
   canDeleteMetric,
   canEditMetricValues,
@@ -282,5 +285,47 @@ describe("canEditMetricValues — archived", () => {
       }),
       false,
     );
+  });
+});
+
+describe("inCatalogFor (catalog filter)", () => {
+  const priv = { team_id: "leadership" };
+  const pub = { team_id: "leadership", is_public: true };
+
+  test("public metrics are listed for any team", () => {
+    assert.equal(inCatalogFor(pub, "it", false), true);
+  });
+  test("another team's private metric is hidden", () => {
+    assert.equal(inCatalogFor(priv, "it", false), false);
+    assert.equal(inCatalogFor({ ...priv, is_public: false }, "it", false), false);
+  });
+  test("the asking team's own private metric is listed", () => {
+    assert.equal(inCatalogFor(priv, "leadership", false), true);
+  });
+  test("admins see everything", () => {
+    assert.equal(inCatalogFor(priv, "it", true), true);
+  });
+  test("isPublicMetric is strictly true", () => {
+    assert.equal(isPublicMetric({ team_id: "x", is_public: null }), false);
+    assert.equal(isPublicMetric(pub), true);
+  });
+});
+
+describe("privateTransition", () => {
+  test("clears tracking and returns the teams that lost it", () => {
+    const r = privateTransition({
+      team_id: "leadership",
+      is_public: true,
+      shared_team_ids: ["it", "esd", "leadership"],
+    });
+    assert.deepEqual(r.removedTeamIds, ["it", "esd"]);
+    assert.deepEqual(r.patch, {
+      is_public: false,
+      shared_team_ids: [],
+      shared_groups: {},
+    });
+  });
+  test("nothing tracking means nothing removed", () => {
+    assert.deepEqual(privateTransition({ team_id: "a" }).removedTeamIds, []);
   });
 });

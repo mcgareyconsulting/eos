@@ -35,6 +35,18 @@ export type ShareableMetric = {
   is_public?: boolean | null;
 };
 
+/**
+ * Does the "Add existing" catalog list this metric for `askingTeamId`?
+ * Public metrics, the asking team's own, and (admin) everything.
+ */
+export function inCatalogFor(
+  metric: ShareableMetric,
+  askingTeamId: string,
+  isAdmin: boolean,
+): boolean {
+  return isAdmin || isPublicMetric(metric) || isHomeTeam(metric, askingTeamId);
+}
+
 /** Public metrics show on the org metric board and can be tracked. */
 export function isPublicMetric(metric: ShareableMetric): boolean {
   return metric.is_public === true;
@@ -234,4 +246,21 @@ export function removeShare(
   teamId: string,
 ): string[] {
   return (metric.shared_team_ids ?? []).filter((id) => id !== teamId);
+}
+
+/**
+ * Make a metric private: tracking ends everywhere. Returns the patch to write
+ * (clears `shared_team_ids` and `shared_groups`) and the team ids that lost
+ * the metric, for the leader notification (P7b).
+ */
+export function privateTransition(metric: ShareableMetric): {
+  patch: { is_public: false; shared_team_ids: string[]; shared_groups: Record<string, never> };
+  removedTeamIds: string[];
+} {
+  return {
+    patch: { is_public: false, shared_team_ids: [], shared_groups: {} },
+    removedTeamIds: (metric.shared_team_ids ?? []).filter(
+      (t) => t !== metric.team_id,
+    ),
+  };
 }

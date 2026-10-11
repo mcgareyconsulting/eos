@@ -10,7 +10,7 @@ import {
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
 import { formatGoalInput, parseScorecardValue } from "@/lib/scorecard";
-import { addMetric, updateMetric } from "./actions";
+import { addMetric, setMetricPublic, updateMetric } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import {
@@ -37,6 +37,7 @@ export type MetricFormMetric = {
   owner_id: string | null;
   group?: string | null;
   interval?: string | null;
+  is_public?: boolean | null;
 };
 
 /**
@@ -132,6 +133,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
     isEdit ? (metric!.owner_id ?? (members[0]?.user_id ?? "")) : props.defaultOwnerId,
   );
   const [group, setGroup] = useState("");
+  const [isPublic, setIsPublic] = useState(metric?.is_public === true);
   // What the fields held when the modal opened. Seeded from the state hooks
   // above on first render, which covers the controlled path too — a
   // controlled caller mounts this component only while the modal is open (see
@@ -144,11 +146,15 @@ export function MetricFormModal(props: MetricFormModalProps) {
     goal,
     ownerId,
     group,
+    isPublic,
   }));
 
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
   const guard = useDiscardGuard(
-    draftChanged({ name, interval, unit, direction, goal, ownerId, group }, opened),
+    draftChanged(
+      { name, interval, unit, direction, goal, ownerId, group, isPublic },
+      opened,
+    ),
     () => setOpen(false),
   );
 
@@ -170,6 +176,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
         ownerId: props.metric.owner_id ?? (props.members[0]?.user_id ?? ""),
         // Create-only field; never rendered or submitted on edit.
         group: "",
+        isPublic: props.metric.is_public === true,
       });
     } else {
       hydrate({
@@ -180,6 +187,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
         goal: "",
         ownerId: props.defaultOwnerId,
         group: "",
+        isPublic: false,
       });
     }
   }
@@ -193,6 +201,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
     goal: string;
     ownerId: string;
     group: string;
+    isPublic: boolean;
   }) {
     setName(draft.name);
     setMetricInterval(draft.interval);
@@ -201,6 +210,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
     setGoal(draft.goal);
     setOwnerId(draft.ownerId);
     setGroup(draft.group);
+    setIsPublic(draft.isPublic);
     setOpened(draft);
     setError(null);
   }
@@ -248,13 +258,19 @@ export function MetricFormModal(props: MetricFormModalProps) {
     fd.set("direction", unit === "yesno" ? "eq" : direction);
     fd.set("goal", goal);
     fd.set("owner_id", ownerId);
-    if (!isEdit) fd.set("group", group);
+    if (!isEdit) {
+      fd.set("group", group);
+      fd.set("is_public", isPublic ? "true" : "false");
+    }
 
     start(async () => {
       try {
         setError(null);
         if (isEdit) {
           await updateMetric(teamId, props.metric.id, fd);
+          if (isPublic !== (props.metric.is_public === true)) {
+            await setMetricPublic(teamId, props.metric.id, isPublic);
+          }
         } else {
           await addMetric(teamId, fd);
         }
@@ -451,6 +467,23 @@ export function MetricFormModal(props: MetricFormModalProps) {
               </datalist>
             </label>
           )}
+
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Public
+              <span className="block text-[11px] text-zinc-500">
+                {isEdit && metric?.is_public && !isPublic
+                  ? "Making this private removes it from every team that tracks it."
+                  : "Everyone can see it on the metric board and other teams can track it. Private by default."}
+              </span>
+            </span>
+          </label>
 
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>

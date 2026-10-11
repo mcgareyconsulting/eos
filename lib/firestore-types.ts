@@ -153,11 +153,12 @@ export type ScorecardMetricDoc = {
   // `initialMetrics` until the realtime listener replaces it.
   group?: string | null;
   interval?: string | null;
-  // Teams that pulled this measurable onto their scorecard from the org-wide
-  // "Add existing" picker. The measurable still belongs to `team_id`; these
-  // teams read it and its history. Capped at 8 — `firestore.rules` unrolls
-  // the membership check index by index and cannot see past that. See
-  // `lib/scorecard-share.ts`.
+  // Public metrics are visible to every person (org metric board) and can be
+  // tracked by other teams. Missing/false = private. Default false.
+  is_public?: boolean | null;
+  // Teams tracking this measurable ("track" in the UI; field name kept until a
+  // migration). Only a public metric can be tracked; becoming private clears
+  // this. No cap — rules use hasAny(team_ids). See `lib/scorecard-share.ts`.
   shared_team_ids?: string[] | null;
   // Soft archive, same convention as rocks / issues / headlines: a timestamp
   // means archived, null or missing means active. Archived measurables drop

@@ -10,6 +10,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test \"lib/**/*.test.ts\" \"components/**/*.test.ts\" \"app/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test:rules": "firebase emulators:exec --config tests/rules/firebase.json --project demo-eos-rules --only firestore \"tsx --test tests/rules/firestore.rules.test.ts\"",
     "spike:p14": "firebase emulators:exec --config spikes/firebase.json --project demo-p14-hasany --only firestore \"tsx --test spikes/p14-hasany.test.ts\"",
     "team:info": "tsx scripts/team-info.ts",
     "import:csv": "tsx scripts/import-csv.ts",

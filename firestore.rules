@@ -1,9 +1,14 @@
 rules_version = '2';
 
 // Firestore Security Rules for the EOS app.
-// Mirrors the access patterns of the current Postgres RLS — gated on
-// team membership via the team_members collection + Identity Platform
-// custom claims (`role: "normal" | "admin"`).
+//
+// No client writes: every write is a server action on the Admin SDK (which
+// bypasses these rules). The rules below govern client reads only
+// (onSnapshot listeners); every `write` is denied.
+//
+// Reads are gated on team membership via the team_members collection (and,
+// for shared lists, users/{uid}.team_ids) + Identity Platform custom claims
+// (`role: "normal" | "admin"`).
 
 service cloud.firestore {
   match /databases/{db}/documents {
@@ -40,32 +45,20 @@ service cloud.firestore {
         && exists(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
     }
 
-    // Is the caller on any team this document was shared into? Used by rocks
-    // and by scorecard measurables, which share the same `shared_team_ids`
-    // shape (lib/rocks-share.ts, lib/scorecard-share.ts).
-    //
-    // Unrolled because rules cannot loop, and **the 8 here is the cap, not a
-    // formality** — a ninth share would be written happily by the Admin SDK
-    // and then be unreadable by the client listener, so both share libraries
-    // refuse past 8. Lengthen this list and those constants together or not
-    // at all.
-    function listSharedToMe(data) {
-      let ids = data.get('shared_team_ids', []);
-      return ids is list && (
-        (ids.size() > 0 && isMember(ids[0])) ||
-        (ids.size() > 1 && isMember(ids[1])) ||
-        (ids.size() > 2 && isMember(ids[2])) ||
-        (ids.size() > 3 && isMember(ids[3])) ||
-        (ids.size() > 4 && isMember(ids[4])) ||
-        (ids.size() > 5 && isMember(ids[5])) ||
-        (ids.size() > 6 && isMember(ids[6])) ||
-        (ids.size() > 7 && isMember(ids[7]))
-      );
+    // The caller's teams: one get() of users/{uid}.team_ids, which is
+    // server-maintained from team_members (lib/firebase/membership.ts).
+    // `users` writes are denied below, so a client cannot forge team_ids.
+    function myTeamIds() {
+      return get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('team_ids', []);
     }
 
-    function isLeader(teamId) {
-      let m = get(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
-      return m != null && m.data.role == "leader";
+    // Is the caller on any team this document was shared into? Used by rocks
+    // and by scorecard measurables, which share the same `shared_team_ids`
+    // shape (lib/rocks-share.ts, lib/scorecard-share.ts). hasAny() replaces
+    // the old 8-way unroll: there is no cap on the number of shares any more
+    // (proved in docs/spikes/P14-rules-hasany.md).
+    function listSharedToMe(data) {
+      return authed() && data.get('shared_team_ids', []).hasAny(myTeamIds());
     }
 
     // ---------- default deny ----------
@@ -76,70 +69,51 @@ service cloud.firestore {
     // ---------- organizations & users ----------
     match /organizations/{orgId} {
       allow read:  if inDomain();
-      allow write: if admin();
+      allow write: if false;
     }
 
     match /users/{uid} {
       allow read:  if inDomain();
-      allow write: if uid == request.auth.uid || admin();
+      allow write: if false;
     }
 
     // ---------- teams & memberships (org directory) ----------
     // Soft directory: any signed-in in-domain user may read team names and
     // rosters. Team *data* (rocks, issues, meetings, …) is membership-gated
-    // below. Writes go through Admin SDK server actions (create team, invite);
-    // client write stays admin-claim only as defense-in-depth.
+    // below.
     match /teams/{teamId} {
       allow read:  if inDomain();
-      allow write: if admin();
+      allow write: if false;
     }
 
     match /team_members/{id} {
       allow read:  if inDomain();
-      allow write: if admin();
+      allow write: if false;
     }
 
     // ---------- scorecard ----------
     // A measurable has one home team and an optional `shared_team_ids` — the
-    // teams that pulled it onto their scorecard from the org-wide "Add
-    // existing" picker (lib/scorecard-share.ts).
-    //
-    // **Read widens; write does not.** A borrowing team can see the row and
-    // its history, which is the point of borrowing it, but every write —
-    // renaming, re-goaling, regrouping, deleting — stays with the home team,
-    // so one team can never edit another team's measurable through a row it
-    // merely displays. Attaching and detaching a share are Admin-SDK server
-    // actions (`addExistingMetric` / `hideSharedMetric`), authorised by
-    // `requireTeamAccess` rather than by these rules; what these rules govern
-    // is the client listener reading a borrowed row afterwards.
-    //
-    // Values are the one write a non-home team can reach, and they are gated
-    // in the server action, not here: only the home team and org admins may
-    // set an entry. See `canEditMetricValues`.
+    // teams that pulled it onto their scorecard. A borrowing team can read the
+    // row and its history; attaching/detaching a share and setting values are
+    // Admin-SDK server actions (`requireTeamAccess`, `canEditMetricValues`).
     function metricSharedToMe() {
       return listSharedToMe(resource.data);
     }
     match /scorecard_metrics/{id} {
-      allow read:        if admin() || isMember(resource.data.team_id) || metricSharedToMe();
-      allow write:       if admin() || isMember(resource.data.team_id);
-      allow create:      if admin() || isMember(request.resource.data.team_id);
+      allow read:  if admin() || isMember(resource.data.team_id) || metricSharedToMe();
+      allow write: if false;
     }
 
-    // Groups are just named, ordered buckets within a period — same team
-    // gate as the metrics that reference them by name.
+    // Groups are named, ordered buckets within a period — same team gate as
+    // the metrics that reference them by name.
     match /scorecard_groups/{id} {
-      allow read, write: if admin() || isMember(resource.data.team_id);
-      allow create:      if admin() || isMember(request.resource.data.team_id);
+      allow read:  if admin() || isMember(resource.data.team_id);
+      allow write: if false;
     }
 
     // Entries carry no team of their own — they are keyed
     // `${metricId}__${weekStartDate}` — so they inherit their measurable's
-    // visibility. That inheritance is what makes a share a *reference*: one
-    // set of values, read by every scorecard the measurable appears on, with
-    // no second copy to drift.
-    //
-    // Reads follow the share. Writes do not: they stay on the home team, so a
-    // borrowing team cannot rewrite the numbers it is displaying.
+    // visibility (a share is a *reference*: one set of values).
     match /scorecard_entries/{id} {
       function metricDoc() {
         return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data;
@@ -147,22 +121,13 @@ service cloud.firestore {
       function metricTeam() {
         return metricDoc().team_id;
       }
-      function createMetricTeam() {
-        return get(/databases/$(db)/documents/scorecard_metrics/$(request.resource.data.metric_id)).data.team_id;
-      }
-      allow read:                 if admin() || isMember(metricTeam()) || listSharedToMe(metricDoc());
-      allow update, delete:       if admin() || isMember(metricTeam());
-      allow create:               if admin() || isMember(createMetricTeam());
+      allow read:  if admin() || isMember(metricTeam()) || listSharedToMe(metricDoc());
+      allow write: if false;
     }
 
     // ---------- rocks ----------
-    // Parent team members always have full access. Guest teams listed in
-    // shared_team_ids may read (up to 8 shares; index checks below). Writes
-    // stay on the home team only — edit status/share from the parent team.
-    // Share-down is allowed: the writer does not have to sit on the guest
-    // team (a rock shared from its parent team into another).
-    // `listSharedToMe` is defined with the shared helpers at the top of this
-    // block — the scorecard rules use it too and come earlier in the file.
+    // Parent team members have full access; teams in shared_team_ids may read
+    // (no cap). `listSharedToMe` is defined with the shared helpers above.
     function rockSharedToMe() {
       return listSharedToMe(resource.data);
     }
@@ -193,33 +158,20 @@ service cloud.firestore {
         );
     }
     match /rocks/{id} {
-      allow read:   if admin() || rockFullAccess(resource.data);
-      allow update, delete: if admin() || isMember(resource.data.team_id);
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow read:  if admin() || rockFullAccess(resource.data);
+      allow write: if false;
     }
 
     // ---------- rock status updates (immutable history) ----------
     match /rock_status_updates/{id} {
-      allow read:   if admin()
-                    || isMember(resource.data.team_id)
-                    || rockFullAccessById(resource.data.rock_id);
-      allow create: if admin()
-                    || (isMember(request.resource.data.team_id)
-                        && request.resource.data.user_id == request.auth.uid);
-      // No update/delete from clients — history is append-only.
+      allow read:  if admin()
+                   || isMember(resource.data.team_id)
+                   || rockFullAccessById(resource.data.rock_id);
+      allow write: if false;
     }
 
     // ---------- todos ----------
-    // Archive/audit stamps (archived_at, completed_at) are written only by
-    // server actions and the Monday sweep worker (Admin SDK — bypasses these
-    // rules); no client-SDK code writes to-dos at all. Freezing the stamps
-    // keeps a hand-rolled client from forging archive state (e.g. archiving
-    // without completing) and desyncing the Finish/Monday contract.
     match /todos/{id} {
-      function todoStampsUntouched() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(["archived_at", "completed_at"]) == false;
-      }
       allow read: if admin()
                   // Your own to-do or milestone, from any team — a guest-team
                   // member assigned a milestone on another team's rock.
@@ -233,54 +185,23 @@ service cloud.firestore {
                   // server-side, not through a client read.
                   || (resource.data.visibility == "team"
                       && sourceRockVisibleToMe(resource.data.source_rock_id));
-      // A private to-do is changed only by its owner or a team leader (C-11;
-      // lib/todo-access.ts is the server-action twin). Team-visible to-dos
-      // stay editable by any member.
-      function todoMutableByMe() {
-        return resource.data.get("visibility", "team") != "private"
-               || resource.data.get("owner_id", null) == request.auth.uid
-               || isLeader(resource.data.team_id);
-      }
-      allow update: if admin()
-                    || (isMember(resource.data.team_id)
-                        && todoStampsUntouched()
-                        && todoMutableByMe());
-      allow delete: if admin()
-                    || (isMember(resource.data.team_id) && todoMutableByMe());
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow write: if false;
     }
 
     // ---------- issues + per-user votes ----------
-    // Same archive-contract freeze as todos: status / resolved_at / votes /
-    // archived_at all change via server actions only (setIssueStatus keeps
-    // status and resolved_at in lockstep; castVote owns the denormalized
-    // votes counter — no client path writes any of them).
     match /issues/{id} {
-      function issueStampsUntouched() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(["archived_at", "resolved_at", "status", "votes"]) == false;
-      }
-      allow read, delete: if admin() || isMember(resource.data.team_id);
-      allow update: if admin()
-                    || (isMember(resource.data.team_id)
-                        && issueStampsUntouched());
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow read:  if admin() || isMember(resource.data.team_id);
+      allow write: if false;
     }
 
+    // Votes: server-action only (castVote keeps the credit cap and the
+    // denormalized issues.votes counter in one transaction).
     match /issue_votes/{id} {
-      // Server-action only (castVote, Admin SDK): the 3-per-team credit cap
-      // and the denormalized issues.votes counter live in one transaction
-      // there. A client writing these docs directly could desync that
-      // counter — e.g. delete its own vote doc (freeing credits) while
-      // issues.votes keeps the increment, then re-vote for unbounded
-      // inflation — so clients get no write path at all.
       allow read:  if admin() || isMember(resource.data.team_id);
       allow write: if false;
     }
 
     // ---------- free-form comments on issues / rocks / to-dos ----------
-    // Writes go through server actions (admin SDK); client rules cover live
-    // reads + defense-in-depth if a client write path is added later.
     match /entity_comments/{id} {
       // A rock has one thread, filed under its parent team, readable by
       // everyone with the whole rock (docs/ROCK_SHARING_RULES.md). Other
@@ -288,111 +209,64 @@ service cloud.firestore {
       function rockThread(data) {
         return data.entity_type == 'rock' && rockFullAccessById(data.entity_id);
       }
-      allow read:   if admin()
-                    || isMember(resource.data.team_id)
-                    || rockThread(resource.data);
-      allow create: if admin()
-                    || ((isMember(request.resource.data.team_id)
-                         || rockThread(request.resource.data))
-                        && request.resource.data.author_id == request.auth.uid);
-      allow update: if false; // append-only; edit = delete + re-post
-      allow delete: if admin()
-                    || (isMember(resource.data.team_id)
-                        && resource.data.author_id == request.auth.uid);
+      allow read:  if admin()
+                   || isMember(resource.data.team_id)
+                   || rockThread(resource.data);
+      allow write: if false;
     }
 
     // ---------- in-app notifications (per-user inbox) ----------
-    // One row per recipient × event, written only by server actions (Admin
-    // SDK — lib/firebase/notifications.ts) when a followed to-do is
-    // commented on, completed, edited or reassigned. The client subscribes
-    // to its own rows for the sidebar badge and the /notifications hub;
-    // marking read goes through a server action, so there is no client
-    // write path at all — a hand-rolled client can neither forge a row for
-    // someone else nor read theirs. A list query must constrain
-    // `user_id == request.auth.uid` or the rule rejects it outright.
+    // One row per recipient × event, written by server actions
+    // (lib/firebase/notifications.ts). The client subscribes to its own rows
+    // for the sidebar badge and the /notifications hub. A list query must
+    // constrain `user_id == request.auth.uid` or the rule rejects it outright.
     match /notifications/{id} {
       allow read:  if authed() && resource.data.user_id == request.auth.uid;
       allow write: if false;
     }
 
     // ---------- headlines ----------
+    // Cascading headlines reach target teams via app-layer filtering (rules
+    // can't iterate target_team_ids; the query scopes by team_id).
     match /headlines/{id} {
-      // Cascading headlines visible to target teams via app-layer filtering
-      // (rules can't iterate target_team_ids efficiently; the query already
-      // scopes by team_id, so this is enforced at query time).
-      // Same archive-contract freeze as todos: discussed / discussed_at /
-      // archived_at change via server actions only.
-      function headlineStampsUntouched() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(["archived_at", "discussed", "discussed_at"]) == false;
-      }
-      allow read:   if admin() || isMember(resource.data.team_id);
-      allow update: if admin()
-                    || (isMember(resource.data.team_id)
-                        && headlineStampsUntouched());
-      allow delete: if admin() || isMember(resource.data.team_id);
-      allow create: if admin() || isMember(request.resource.data.team_id);
+      allow read:  if admin() || isMember(resource.data.team_id);
+      allow write: if false;
     }
 
     // ---------- meeting agendas (templates) ----------
-    // Per-team templates for meeting stage order + durations.
-    // Management is leader/admin-only (matches requireTeamLeader server
-    // actions). Members may still read so a future client path can show the
-    // name of the template used on a live meeting without Admin SDK.
-    // Real writes go through Admin SDK; client write is defense-in-depth.
+    // No client reads today; kept member-readable.
     match /agendas/{agendaId} {
-      allow read:   if admin() || isMember(resource.data.team_id);
-      allow create: if admin()
-                    || (isLeader(request.resource.data.team_id)
-                        && isMember(request.resource.data.team_id));
-      allow update, delete: if admin()
-                    || (isLeader(resource.data.team_id)
-                        && isMember(resource.data.team_id));
+      allow read:  if admin() || isMember(resource.data.team_id);
+      allow write: if false;
     }
 
     // ---------- meetings (L10) ----------
     match /meetings/{meetingId} {
-      allow read: if admin() || isMember(resource.data.team_id);
-      // No client writes at all. Every write to a meeting doc goes through a
-      // server action on the Admin SDK (which bypasses these rules), and the
-      // app has no client-side Firestore write path anywhere — the live
-      // surfaces subscribe with onSnapshot and mutate through actions.
-      //
-      // This used to allow any member to update a live meeting, as
-      // defense-in-depth for a client path that never existed. That made the
-      // whole driver model (meetings/actions.ts, lib/l10/driver.ts) advisory:
-      // `current_segment` is the group's stage, and anyone with a browser
-      // console could move the room. Same for `ended_at`, `driver_id` and the
-      // vote/attendance state. Deletes are leader-only in `deleteMeeting` for
-      // the same reason.
-      allow create, update, delete: if false;
+      allow read:  if admin() || isMember(resource.data.team_id);
+      // Meeting state (driver, current_segment, ended_at, votes) changes only
+      // through server actions; a client write would make the driver model
+      // advisory.
+      allow write: if false;
 
       function meetingTeam() {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
       }
 
-      // End-of-meeting ratings (one doc per attendee, keyed by that
-      // attendee's uid) are written server-side (admin SDK) during the
-      // Conclude segment; clients only read aggregates via server
-      // components, so no client write path is needed. Collection name kept
-      // as `effectiveness_scores` for path stability (rules + audit trigger).
-      // Conclude-lock (no rewrite after ended_at) is enforced in
-      // rateMeeting — Admin SDK bypasses these rules.
+      // End-of-meeting ratings, one doc per attendee, written server-side.
       match /effectiveness_scores/{scoreId} {
         allow read:  if admin() || isMember(meetingTeam());
-        allow write: if admin();
+        allow write: if false;
       }
 
       match /presence/{uid} {
         allow read:  if admin() || isMember(meetingTeam());
-        allow write: if uid == request.auth.uid && isMember(meetingTeam());
+        allow write: if false;
       }
     }
 
     // ---------- per-entity activity trace ----------
-    // One row per event on a to-do (created, edited, checked off, followed,
-    // commented on — lib/activity.ts), written only by server actions.
-    // Readable on the same terms as the to-do itself: members see a
+    // One row per event on a to-do (lib/activity.ts), written only by server
+    // actions. Readable on the same terms as the to-do itself: members see a
     // team-visible to-do's trace; a private one's is its owner's alone. A
     // list query must constrain `visibility` (and `owner_id` when private)
     // or the rule rejects it outright.
@@ -406,19 +280,15 @@ service cloud.firestore {
 
     // ---------- audit log (append-only, function-written) ----------
     // Populated exclusively by the onDocumentWrittenWithAuthContext Cloud
-    // Function (functions/src/index.ts), which writes via the Admin SDK and
-    // therefore bypasses these rules entirely. The `allow write: if false`
-    // here is what guarantees clients can never forge or tamper with an
-    // audit row — only admins may even read the log.
+    // Function (functions/src/index.ts, Admin SDK); only admins may read it.
     match /audit_log/{eventId} {
       allow read:  if admin();
       allow write: if false;
     }
 
     // ---------- Google Tasks OAuth tokens (per-user, server-only) ----------
-    // Written exclusively by the Admin SDK in lib/google/tasks.ts (OAuth
-    // callback + token refresh). Clients must never read refresh tokens.
-    // Default-deny above already covers this; explicit rule documents intent.
+    // Admin SDK only (lib/google/tasks.ts). Clients must never read refresh
+    // tokens. Default-deny above covers this; explicit rule documents intent.
     match /google_tasks_connections/{uid} {
       allow read, write: if false;
     }

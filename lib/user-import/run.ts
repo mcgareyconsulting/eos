@@ -19,6 +19,7 @@ import { isEmailAllowed, type Allowlist } from "../auth-allowlist";
 // path rather than through the barrel so this path doesn't drag in the six
 // kind-importers (and node:zlib) for one batching helper.
 import { Writer } from "../team-import/owners";
+import { syncUsersTeamIds } from "../firebase/membership";
 import type {
   SeedIssue,
   SeedPreviewRow,
@@ -329,6 +330,15 @@ export async function runUserImport(
   }
 
   await writer.flush();
+  // Recompute team_ids for everyone who just gained a membership.
+  if (!dryRun) {
+    await syncUsersTeamIds(
+      db,
+      pairs
+        .filter((p) => !p.pending && !existingMembership.has(`${p.teamId}__${p.uid}`))
+        .map((p) => p.uid),
+    );
+  }
 
   // ---------------------------------------------------------------------
   // Review lists — who the file left out, and which teams have no leader

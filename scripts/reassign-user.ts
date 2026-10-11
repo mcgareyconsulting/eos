@@ -42,6 +42,7 @@ import {
 } from "firebase-admin/firestore";
 
 import { clampSpeakerIndex } from "../lib/l10/speaking-order";
+import { syncUsersTeamIds } from "../lib/firebase/membership";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -704,6 +705,9 @@ async function main() {
     if (++n >= 400) await commit();
   }
   await commit();
+  // Memberships moved, and step 9 may have copied `from`'s stale team_ids
+  // onto a freshly seeded `to` profile — recompute both from the roster.
+  await syncUsersTeamIds(db, [fromUid, toUid]);
 
   console.log("\nApplied successfully.");
   console.log("Next:");

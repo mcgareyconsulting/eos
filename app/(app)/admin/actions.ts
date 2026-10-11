@@ -6,6 +6,7 @@ import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
 import { normalizeKey } from "@/lib/csv-import";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
+import { syncUserTeamIds } from "@/lib/firebase/membership";
 import type { AdminResult, DeleteResult } from "./action-types";
 
 function revalidateOrg() {
@@ -93,6 +94,7 @@ async function applyTeams(
   }
 
   await batch.commit();
+  await syncUserTeamIds(db, uid);
   return { added, removed, reroled };
 }
 
@@ -330,6 +332,7 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
     );
 
     await batch.commit();
+    await syncUserTeamIds(db, uid);
 
     let signInRevoked = false;
     if (account) {
@@ -411,6 +414,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
       });
     }
     await batch.commit();
+    if (leaderUid) await syncUserTeamIds(db, leaderUid);
 
     revalidateOrg();
     return {

@@ -243,7 +243,7 @@ export function AddExistingMetricModal({
         <ModalBody>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             Public measurables from across the organisation, plus your own
-            team's, with their recent results. Tracking one shows it on this
+            team&apos;s, with their recent results. Tracking one shows it on this
             scorecard with its live values — the owning team keeps it, and you
             can stop tracking it at any time. Private measurables of other
             teams are not listed.

@@ -7,6 +7,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
 import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
+import { syncUserTeamIds } from "@/lib/firebase/membership";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -98,4 +99,5 @@ export async function writeMembership(
   });
 
   await batch.commit();
+  await syncUserTeamIds(db, opts.userId);
 }

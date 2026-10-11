@@ -17,6 +17,7 @@ config({ path: ".env.local" });
 import { readFileSync } from "node:fs";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";
+import { syncUserTeamIds, syncUsersTeamIds } from "../lib/firebase/membership";
 import { normalizePersonKey } from "../lib/csv-import";
 import { pickSheet, readXlsx } from "../lib/xlsx";
 import {
@@ -290,13 +291,16 @@ async function main() {
   // Pre-attach leader/members so owner matching sees them (even in dry-run).
   const preWriter = new Writer(db, args.dryRun);
   const members = await loadMembers(db, team.id);
+  const attached: string[] = [];
   const attach = async (account: string, role: "leader" | "member") => {
     const m = await attachAccount(team.id, account, role, preWriter);
+    attached.push(m.user_id);
     if (!members.some((existing) => existing.user_id === m.user_id)) members.push(m);
   };
   if (args.leader) await attach(args.leader, "leader");
   for (const m of args.members) await attach(m, "member");
   await preWriter.flush();
+  if (!args.dryRun) await syncUsersTeamIds(db, attached);
   console.log(`Members on this team: ${members.length}`);
 
   let fallbackId: string | null = null;
@@ -430,6 +434,7 @@ async function main() {
         },
         { merge: true },
       );
+      await syncUserTeamIds(db, uid);
       console.log(`\nLeader: ${args.leaderName} (uid ${uid})`);
     } else {
       console.log(`\nLeader (dry-run): ${args.leaderName} (uid ${uid})`);

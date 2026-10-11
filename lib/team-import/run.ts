@@ -1,6 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { normalizeKey } from "../csv-import";
 import type { CsvTable } from "../csv-import";
+import { syncUsersTeamIds } from "../firebase/membership";
 import type { ImportReport } from "../team-import-types";
 import { importHeadlines } from "./headlines";
 import { importIssues } from "./issues";
@@ -217,6 +218,8 @@ export async function runTeamImport(
   }
 
   await writer.flush();
+  // Placeholder owners got a team_members row in the batch just flushed.
+  if (!dryRun) await syncUsersTeamIds(db, owners.created.map((c) => c.user_id));
 
   return {
     dryRun,

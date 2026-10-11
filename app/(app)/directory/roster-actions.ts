@@ -6,6 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminAuth } from "@/lib/firebase/admin";
+import { syncUserTeamIds } from "@/lib/firebase/membership";
 import {
   getTeamMembers,
   requireTeamLeader,
@@ -96,6 +97,7 @@ export async function removeTeamMember(teamId: string, userId: string) {
   }
 
   await batch.commit();
+  await syncUserTeamIds(db, userId);
 
   revalidatePath("/directory");
 }

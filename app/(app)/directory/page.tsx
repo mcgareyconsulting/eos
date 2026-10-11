@@ -10,7 +10,7 @@ import { DirectoryTable } from "./directory-table";
  */
 export default async function DirectoryPage() {
   // isAdmin gates which fields the loader returns, so resolve it first.
-  const { teams: openableTeams, isAdmin, user } = await getUserTeamsFirebase();
+  const { teams: openableTeams, leaderTeamIds, isAdmin, user } = await getUserTeamsFirebase();
   const [people, teams] = await Promise.all([
     getDirectoryPeople(isAdmin),
     getOrgTeams(),
@@ -33,6 +33,7 @@ export default async function DirectoryPage() {
         teams={teams}
         openableTeamIds={openableTeams.map((t) => t.id)}
         currentUserId={user.id}
+        leaderTeamIds={leaderTeamIds}
         isAdmin={isAdmin}
       />
     </div>

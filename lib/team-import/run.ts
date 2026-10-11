@@ -79,7 +79,7 @@ export async function runTeamImport(
   members?: Member[],
 ): Promise<ImportReport> {
   const dryRun = options.dryRun ?? false;
-  const createOwners = options.createOwners ?? true;
+  const createOwners = options.createOwners ?? false;
   const includeArchived = options.includeArchived ?? false;
   const completedSince = options.completedSince ?? null;
   const asOf = options.asOf ?? new Date();

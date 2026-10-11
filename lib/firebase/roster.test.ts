@@ -56,7 +56,7 @@ describe("removePersonFromTeam", () => {
 
   test("removes a member and drops them from speaking order", async () => {
     const db = seed();
-    await removePersonFromTeam(db.asFirestore(), team, "u2");
+    await removePersonFromTeam(db.asFirestore(), team, "u2", false);
     assert.equal(db.raw("team_members/t1__u2"), undefined);
     assert.deepEqual(db.raw("teams/t1")?.speaking_order, []);
   });
@@ -64,23 +64,33 @@ describe("removePersonFromTeam", () => {
   test("keeps the last leader", async () => {
     const db = seed();
     await assert.rejects(
-      removePersonFromTeam(db.asFirestore(), team, "L"),
+      removePersonFromTeam(db.asFirestore(), team, "L", true),
       /at least one leader/,
     );
     assert.ok(db.raw("team_members/t1__L"));
   });
 
-  test("allows removing a leader when another remains", async () => {
+  test("a non-admin leader cannot remove a leader", async () => {
     const db = seed();
     db.seed("team_members", "t1__L2", { team_id: "t1", user_id: "L2", role: "leader" });
-    await removePersonFromTeam(db.asFirestore(), team, "L");
+    await assert.rejects(
+      removePersonFromTeam(db.asFirestore(), team, "L", false),
+      /Only an admin can remove a leader/,
+    );
+    assert.ok(db.raw("team_members/t1__L"));
+  });
+
+  test("admin removes a leader when another remains", async () => {
+    const db = seed();
+    db.seed("team_members", "t1__L2", { team_id: "t1", user_id: "L2", role: "leader" });
+    await removePersonFromTeam(db.asFirestore(), team, "L", true);
     assert.equal(db.raw("team_members/t1__L"), undefined);
   });
 
   test("rejects a person not on the team", async () => {
     const db = seed();
     await assert.rejects(
-      removePersonFromTeam(db.asFirestore(), team, "u1"),
+      removePersonFromTeam(db.asFirestore(), team, "u1", false),
       /not on this team/,
     );
   });

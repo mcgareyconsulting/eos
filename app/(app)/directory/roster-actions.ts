@@ -41,9 +41,9 @@ export async function removeTeamMember(
   teamId: string,
   userId: string,
 ): Promise<Result> {
-  const { db, team } = await requireTeamLeader(teamId);
+  const { db, team, isAdmin } = await requireTeamLeader(teamId);
   return guarded(async () => {
-    await removePersonFromTeam(db, team, userId);
+    await removePersonFromTeam(db, team, userId, isAdmin);
     return `Removed from ${team.name}.`;
   });
 }

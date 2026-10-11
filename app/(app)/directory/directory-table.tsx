@@ -212,7 +212,7 @@ export function DirectoryTable({
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
                           leader={t.role === "leader"}
                           remove={
-                            showLeaderTools && isLeaderOf(viewer, t.id) ? (
+                            showLeaderTools && isLeaderOf(viewer, t.id) && t.role !== "leader" ? (
                               <RemoveFromTeamButton
                                 teamId={t.id}
                                 teamName={t.name}

@@ -46,6 +46,7 @@ export async function removePersonFromTeam(
   db: Firestore,
   team: { id: string; speakingOrder: string[] },
   userId: string,
+  callerIsAdmin: boolean,
 ): Promise<void> {
   const teamId = team.id;
   const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
@@ -53,6 +54,12 @@ export async function removePersonFromTeam(
   if (!memberSnap.exists) throw new Error("That person is not on this team");
 
   if (memberSnap.data()?.role === "leader") {
+    // Removing a leader is a demotion: admin-only (spec 2.4).
+    if (!callerIsAdmin) {
+      throw new Error(
+        "Only an admin can remove a leader; ask an admin to change leaders first",
+      );
+    }
     const roster = await db
       .collection("team_members")
       .where("team_id", "==", teamId)

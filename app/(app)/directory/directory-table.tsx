@@ -194,12 +194,12 @@ export function DirectoryTable({
                   {/* Account state is an admin concern — it's what the old
                       People tab existed to show, and means nothing to
                       anyone who can't fix it. */}
-                  {isAdmin && !p.hasAuth && (
+                  {isAdmin && p.hasAuth === false && (
                     <Chip tone="amber" title="No sign-in account — a placeholder left by a data import.">
                       No account
                     </Chip>
                   )}
-                  {isAdmin && p.hasAuth && !p.hasSignedIn && (
+                  {isAdmin && p.hasAuth && p.hasSignedIn === false && (
                     <Chip tone="zinc">Never signed in</Chip>
                   )}
                 </td>

@@ -16,6 +16,7 @@ import {
   loadTeamRocks,
   loadUsersById,
 } from "@/lib/firebase/queries";
+import { isRecapTodoVisible } from "@/lib/recap-todos";
 import { userDisplayName } from "@/lib/user-name";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import {
@@ -252,12 +253,14 @@ export default async function MeetingDetailPage({
       }));
 
     // Exclude milestone-style todos (those tied to a rock); recap should show
-    // standalone to-dos created during the meeting.
+    // standalone to-dos created during the meeting. Other people's private
+    // to-dos are dropped (Admin SDK bypasses firestore.rules).
     newTodos = todosSnap.docs
       .map((d) => ({ id: d.id, x: d.data() }))
       .filter(
         ({ x }) =>
-          inWindow(x.created_at as Timestamp | null) && !x.source_rock_id,
+          inWindow(x.created_at as Timestamp | null) &&
+          isRecapTodoVisible(x, uid),
       )
       .map(({ id, x }) => ({
         id,

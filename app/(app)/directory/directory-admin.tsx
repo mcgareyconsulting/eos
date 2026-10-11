@@ -321,7 +321,7 @@ function EditPersonModal({
             // Nobody removes their own admin: the server refuses it too.
             disabled={isSelf}
           />
-          {!person.hasAuth && (
+          {person.hasAuth === false && (
             <p className="text-xs text-amber-700 dark:text-amber-400">
               No sign-in account yet, so org admin can&rsquo;t be granted until
               they are added with an email.

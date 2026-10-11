@@ -7,7 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
+import { isLeaderOf, type Viewer } from "@/lib/access/types";
 import { AddPersonButton, NewTeamButton, PersonRowMenu } from "./directory-admin";
+import { LeaderAddButton, RemoveFromTeamButton } from "./directory-leader";
 
 const ACCESS_LABEL: Record<DirectoryPerson["access"], string> = {
   admin: "Admin",
@@ -27,6 +29,7 @@ export function DirectoryTable({
   teams,
   openableTeamIds,
   currentUserId,
+  leaderTeamIds,
   isAdmin,
 }: {
   people: DirectoryPerson[];
@@ -34,6 +37,8 @@ export function DirectoryTable({
   /** Teams the viewer can open for data — chips for these link to the team. */
   openableTeamIds: string[];
   currentUserId: string;
+  /** Teams the viewer leads (admins manage rosters through the row menu). */
+  leaderTeamIds: string[];
   isAdmin: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -45,6 +50,21 @@ export function DirectoryTable({
   const [notice, setNotice] = useState<string | null>(null);
 
   const openable = useMemo(() => new Set(openableTeamIds), [openableTeamIds]);
+  const viewer: Viewer = useMemo(
+    () => ({
+      uid: currentUserId,
+      isAdmin,
+      teamIds: new Set(openableTeamIds),
+      leaderOf: new Set(leaderTeamIds),
+    }),
+    [currentUserId, isAdmin, openableTeamIds, leaderTeamIds],
+  );
+  const ledTeams = useMemo(
+    () => teams.filter((t) => isLeaderOf(viewer, t.id)),
+    [teams, viewer],
+  );
+  // Admins use the row menu; the leader controls are for non-admin leaders.
+  const showLeaderTools = !isAdmin && ledTeams.length > 0;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -83,6 +103,12 @@ export function DirectoryTable({
           </Link>
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
+        </div>
+      )}
+
+      {showLeaderTools && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <LeaderAddButton ledTeams={ledTeams} people={people} onDone={setNotice} />
         </div>
       )}
 
@@ -184,6 +210,18 @@ export function DirectoryTable({
                           key={t.id}
                           name={t.name}
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
+                          leader={t.role === "leader"}
+                          remove={
+                            showLeaderTools && isLeaderOf(viewer, t.id) && t.role !== "leader" ? (
+                              <RemoveFromTeamButton
+                                teamId={t.id}
+                                teamName={t.name}
+                                userId={p.uid}
+                                personName={`${p.firstName} ${p.lastName}`.trim() || "Person"}
+                                onDone={setNotice}
+                              />
+                            ) : null
+                          }
                         />
                       ))}
                     </div>
@@ -229,24 +267,45 @@ function Blank() {
   return <span className="text-zinc-400">—</span>;
 }
 
-function TeamChip({ name, href }: { name: string; href: string | null }) {
-  const label = name;
+function TeamChip({
+  name,
+  href,
+  leader,
+  remove,
+}: {
+  name: string;
+  href: string | null;
+  leader: boolean;
+  remove: React.ReactNode;
+}) {
   const cls =
-    "rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
-  if (!href) {
-    return (
-      <span
-        className={cls}
-        title="You can see who is on this team, but not its data, until a leader adds you."
-      >
-        {label}
-      </span>
-    );
-  }
+    "inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
+  const label = (
+    <>
+      {name}
+      {leader && (
+        <span className="ml-1 font-semibold text-hpb-blue dark:text-hpb-gold">
+          leader
+        </span>
+      )}
+    </>
+  );
   return (
-    <Link href={href} className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}>
-      {label}
-    </Link>
+    <span className="inline-flex items-center">
+      {href ? (
+        <Link href={href} className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}>
+          {label}
+        </Link>
+      ) : (
+        <span
+          className={cls}
+          title="You can see who is on this team, but not its data, until a leader adds you."
+        >
+          {label}
+        </span>
+      )}
+      {remove}
+    </span>
   );
 }
 

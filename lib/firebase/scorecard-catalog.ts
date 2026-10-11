@@ -4,8 +4,10 @@ import { loadScorecardEntries } from "@/lib/scorecard-entries";
 import { loadUserNames } from "./user-names";
 import { STRIP_LENGTH, type GoalDirection } from "@/lib/scorecard";
 import {
+  inCatalogFor,
   isArchivedMetric,
   isHomeTeam,
+  isPublicMetric,
   isSharedIntoTeam,
 } from "@/lib/scorecard-share";
 import type { ScorecardMetricDoc } from "@/lib/firestore-types";
@@ -65,20 +67,26 @@ export type CatalogMetric = {
   alreadyOnScorecard: boolean;
   /** Owned by the asking team, so it can never be added or hidden. */
   isHome: boolean;
+  /** Public metrics are on the org board and trackable; private ones only reach a catalog via their own team. */
+  isPublic: boolean;
+  /** Teams tracking it. The org board uses this to say where it is already tracked. */
+  trackingTeamIds: string[];
 };
 
 /**
- * Every measurable in the organisation, labelled with the team it belongs to.
+ * The measurables a team may browse in "Add existing", labelled with the team
+ * each belongs to.
  *
- * **Deliberately unfiltered by team membership** (decided 2026-09-09). The
- * picker's job is discovery across the whole org, so a viewer sees the names
- * of measurables belonging to teams they are not on — and, once they pull one
- * in, that team's numbers. This widens the "hard data" half of the P2-7
- * model, and it is a product decision rather than an oversight; it is stated
- * here because a future reader will otherwise file it as a leak.
+ * **Filtered by visibility** (docs/PERMISSIONS_SPEC.md 3.4). A row is listed
+ * when the metric is public, or when it belongs to the asking team, or the
+ * caller is an org admin (who sees every metric). A private metric of another
+ * team never appears — not even its name. This supersedes the 2026-09-09
+ * "deliberately unfiltered" decision, under which any member saw every
+ * measurable in the org.
  *
- * What it is *not* is a way to write: adding a measurable grants a read, and
- * every write stays with the home team (see `lib/scorecard-share.ts`).
+ * Adding grants a read only; every write stays with the home team (see
+ * `lib/scorecard-share.ts`), and only a public metric can be tracked
+ * (`addExistingMetric` enforces it).
  *
  * Runs on the Admin SDK, so it bypasses `firestore.rules` by construction.
  * Call it only from a server action that has already established the caller
@@ -92,6 +100,28 @@ export type CatalogMetric = {
 export async function loadOrgMetricCatalog(
   db: FirebaseFirestore.Firestore,
   teamId: string,
+  opts: { isAdmin?: boolean } = {},
+): Promise<CatalogMetric[]> {
+  return loadCatalog(db, teamId, (m) =>
+    inCatalogFor(m, teamId, opts.isAdmin === true),
+  );
+}
+
+/**
+ * The org metric board: every active public metric, regardless of team. No
+ * asking team, so `alreadyOnScorecard` / `isHome` are false; the page derives
+ * per-team state from `teamId` and `trackingTeamIds`.
+ */
+export async function loadPublicMetricBoard(
+  db: FirebaseFirestore.Firestore,
+): Promise<CatalogMetric[]> {
+  return loadCatalog(db, "", (m) => isPublicMetric(m));
+}
+
+async function loadCatalog(
+  db: FirebaseFirestore.Firestore,
+  teamId: string,
+  keep: (m: ScorecardMetricDoc) => boolean,
 ): Promise<CatalogMetric[]> {
   const [snap, teams] = await Promise.all([
     db.collection("scorecard_metrics").get(),
@@ -101,7 +131,9 @@ export async function loadOrgMetricCatalog(
   const teamName = new Map(teams.map((t) => [t.id, t.name]));
 
   const active = snap.docs.filter(
-    (d) => !isArchivedMetric(d.data() as ScorecardMetricDoc),
+    (d) =>
+      !isArchivedMetric(d.data() as ScorecardMetricDoc) &&
+      keep(d.data() as ScorecardMetricDoc),
   );
 
   // One extra read, on modal open only, to give each row a trend instead of a
@@ -137,7 +169,11 @@ export async function loadOrgMetricCatalog(
     .map((d) => {
       const x = d.data() as ScorecardMetricDoc;
       const home = String(x.team_id ?? "");
-      const shareable = { team_id: home, shared_team_ids: x.shared_team_ids };
+      const shareable = {
+        team_id: home,
+        shared_team_ids: x.shared_team_ids,
+        is_public: x.is_public,
+      };
       return {
         id: d.id,
         name: String(x.name ?? ""),
@@ -152,6 +188,8 @@ export async function loadOrgMetricCatalog(
         alreadyOnScorecard:
           isHomeTeam(shareable, teamId) || isSharedIntoTeam(shareable, teamId),
         isHome: isHomeTeam(shareable, teamId),
+        isPublic: isPublicMetric(shareable),
+        trackingTeamIds: (x.shared_team_ids ?? []).filter((t) => t !== home),
       };
     })
     .sort(

@@ -1,9 +1,12 @@
 // Cross-team measurable share. A measurable has one home `team_id` and an
 // optional `shared_team_ids` — the teams that pulled it onto their own
-// scorecard from the org-wide "Add existing" picker. Same shape as the rock
-// share in `lib/rocks-share.ts`, and capped at the same 8 for the same
-// reason: `firestore.rules` cannot loop, so the membership check there is
-// unrolled index by index and a ninth share would be invisible to it.
+// scorecard from the org-wide "Add existing" picker. User-facing copy calls
+// this "track" (docs/PERMISSIONS_SPEC.md 3.4); the stored field keeps the old
+// name until a migration renames it.
+//
+// **Only a public metric can be tracked** (`is_public`, default false). There
+// is no cap on tracking teams: the rules read `shared_team_ids` with
+// `hasAny(team_ids)`, so no unrolled index check is left to outgrow.
 //
 // **The share is a reference, not a copy.** There is one metric doc and one
 // set of `scorecard_entries` — those are keyed `${metricId}__${weekStartDate}`
@@ -25,12 +28,29 @@
 //     team. They are different words because they are different acts, and the
 //     UI must not blur them.
 
-export const MAX_METRIC_SHARES = 8;
-
 export type ShareableMetric = {
   team_id: string;
   shared_team_ids?: string[] | null;
+  /** Visible to every person and trackable by other teams. Missing = private. */
+  is_public?: boolean | null;
 };
+
+/**
+ * Does the "Add existing" catalog list this metric for `askingTeamId`?
+ * Public metrics, the asking team's own, and (admin) everything.
+ */
+export function inCatalogFor(
+  metric: ShareableMetric,
+  askingTeamId: string,
+  isAdmin: boolean,
+): boolean {
+  return isAdmin || isPublicMetric(metric) || isHomeTeam(metric, askingTeamId);
+}
+
+/** Public metrics show on the org metric board and can be tracked. */
+export function isPublicMetric(metric: ShareableMetric): boolean {
+  return metric.is_public === true;
+}
 
 /** A measurable plus the fields the lifecycle gate and the archive filter need. */
 export type ManageableMetric = ShareableMetric & {
@@ -145,61 +165,53 @@ export function canEditMetricValues({
  *
  * **Two conditions, and both must hold.**
  *
- * *Home team.* Never from a borrowing team, admin or not. Remove is the action
- * there, and offering Archive or Delete on a borrowed row is how one team
+ * *Home team.* Never from a tracking team, admin or not. Remove is the action
+ * there, and offering Archive or Delete on a tracked row is how one team
  * takes another team's measurable off every scorecard at once by reaching for
  * what looks like a remove button.
  *
- * *Owner or org admin.* Decided 2026-09-09: the measurable's `owner_id`, or
- * someone holding the org admin claim. This **narrows** what shipped before,
- * where any member of the home team could delete — a deliberate change, not a
- * side effect, and the reason `deleteMetric` now needs a uid it never used to
- * ask for.
+ * *Owner, leader of the home team, or org admin* (spec 3.4: "The metric
+ * owner, leaders and admins can archive or delete a metric"). Leaders count
+ * so a team whose measurable is owned by someone who has left can tidy it up
+ * without an admin. `isLeader` is the caller's `team_members.role ===
+ * "leader"` on the home team (requireTeamAccess's `membershipRole`); it
+ * defaults to false so callers that cannot supply it stay on the narrower
+ * owner-or-admin rule.
  *
- * Archive and delete share this gate on purpose. They differ enormously in
- * consequence — one is reversible, one destroys every value ever logged — but
- * "who may take this measurable off the scorecard" is one question, and
- * answering it in two places is how the two answers drift. The difference gets
- * stated in the confirmation copy, not in the permissions.
- *
- * **The one definition worth revisiting is "owner".** This reads the
- * measurable's `owner_id` — the person accountable for reporting it. It does
- * not include the team leader, so a team whose measurable is owned by someone
- * who has left cannot tidy it up without an admin. That is a real hole and a
- * one-line change here if leaders are meant to count.
+ * Archive and delete share this gate on purpose: "who may take this
+ * measurable off the scorecard" is one question. The difference in
+ * consequence is stated in the confirmation copy, not in the permissions.
  */
 function canManageMetricLifecycle({
   metric,
   teamId,
   uid,
   isAdmin,
-}: {
-  metric: ManageableMetric;
-  teamId: string;
-  uid: string;
-  isAdmin: boolean;
-}): boolean {
+  isLeader = false,
+}: LifecycleArgs): boolean {
   if (!isHomeTeam(metric, teamId)) return false;
-  return isAdmin || (!!metric.owner_id && metric.owner_id === uid);
+  return (
+    isAdmin ||
+    isLeader ||
+    (!!metric.owner_id && metric.owner_id === uid)
+  );
 }
 
-/** Reversible: hides the row, keeps every value. Owner or admin, home team. */
-export function canArchiveMetric(args: {
+type LifecycleArgs = {
   metric: ManageableMetric;
   teamId: string;
   uid: string;
   isAdmin: boolean;
-}): boolean {
+  isLeader?: boolean;
+};
+
+/** Reversible: hides the row, keeps every value. Owner, home leader or admin. */
+export function canArchiveMetric(args: LifecycleArgs): boolean {
   return canManageMetricLifecycle(args);
 }
 
 /** Irreversible: destroys the measurable and orphans its history. Same gate. */
-export function canDeleteMetric(args: {
-  metric: ManageableMetric;
-  teamId: string;
-  uid: string;
-  isAdmin: boolean;
-}): boolean {
+export function canDeleteMetric(args: LifecycleArgs): boolean {
   return canManageMetricLifecycle(args);
 }
 
@@ -208,9 +220,8 @@ export type ShareResult =
   | { ok: false; error: string };
 
 /**
- * Add a borrowing team. Idempotent, and refuses past the rules cap rather
- * than writing a share the client listener would then be unable to read —
- * a silent half-share is worse than a refusal that says why.
+ * Track a metric from `teamId`. Idempotent. Refuses the home team and any
+ * private metric (spec 3.4: only a public metric can be tracked).
  */
 export function addShare(
   metric: ShareableMetric,
@@ -219,15 +230,12 @@ export function addShare(
   if (isHomeTeam(metric, teamId)) {
     return { ok: false, error: "This measurable already lives on this team." };
   }
+  if (!isPublicMetric(metric)) {
+    return { ok: false, error: "That measurable is private." };
+  }
   const ids = metric.shared_team_ids ?? [];
   if (ids.includes(teamId)) {
     return { ok: true, shared_team_ids: [...ids] };
-  }
-  if (ids.length >= MAX_METRIC_SHARES) {
-    return {
-      ok: false,
-      error: `A measurable can be on ${MAX_METRIC_SHARES} other scorecards at most. Remove it from another scorecard first.`,
-    };
   }
   return { ok: true, shared_team_ids: [...ids, teamId] };
 }
@@ -238,4 +246,21 @@ export function removeShare(
   teamId: string,
 ): string[] {
   return (metric.shared_team_ids ?? []).filter((id) => id !== teamId);
+}
+
+/**
+ * Make a metric private: tracking ends everywhere. Returns the patch to write
+ * (clears `shared_team_ids` and `shared_groups`) and the team ids that lost
+ * the metric, for the leader notification (P7b).
+ */
+export function privateTransition(metric: ShareableMetric): {
+  patch: { is_public: false; shared_team_ids: string[]; shared_groups: Record<string, never> };
+  removedTeamIds: string[];
+} {
+  return {
+    patch: { is_public: false, shared_team_ids: [], shared_groups: {} },
+    removedTeamIds: (metric.shared_team_ids ?? []).filter(
+      (t) => t !== metric.team_id,
+    ),
+  };
 }

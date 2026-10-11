@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
+import { getOrgTeams } from "@/lib/firebase/teams";
 import {
   requireRosterOwner,
   requireTeamAccess,
@@ -23,6 +24,8 @@ import {
 } from "@/lib/scorecard-periods";
 import {
   addShare,
+  isPublicMetric,
+  privateTransition,
   canArchiveMetric,
   canDeleteMetric,
   canEditMetricValues,
@@ -100,6 +103,7 @@ export async function addMetric(teamId: string, formData: FormData) {
     owner_id,
     group,
     interval,
+    is_public: formData.get("is_public") === "true",
     sort_order: 0,
     created_at: FieldValue.serverTimestamp(),
   });
@@ -398,8 +402,8 @@ async function requireMetricOnScorecard(
  * serve a modal most visits never open is the wrong trade.
  */
 export async function listOrgMetrics(teamId: string): Promise<CatalogMetric[]> {
-  const { db } = await requireTeamAccess(teamId);
-  return loadOrgMetricCatalog(db, teamId);
+  const { db, isAdmin } = await requireTeamAccess(teamId);
+  return loadOrgMetricCatalog(db, teamId, { isAdmin });
 }
 
 /**
@@ -439,6 +443,15 @@ export async function addExistingMetric(
   const metric = (snap.data() ?? {}) as ShareableMetric & {
     shared_groups?: Record<string, string | null> | null;
   };
+
+  // Only a public metric can be tracked (spec 3.4). Name the owning team so
+  // the refusal says whose it is.
+  if (!isPublicMetric(metric) && !isOnScorecard(metric, teamId)) {
+    const home = (await getOrgTeams()).find((t) => t.id === metric.team_id);
+    throw new Error(
+      `That measurable is private to ${home?.name ?? "another team"}`,
+    );
+  }
 
   const result = addShare(metric, teamId);
   if (!result.ok) throw new Error(result.error);
@@ -605,7 +618,7 @@ export async function setEntry(
 }
 
 /**
- * Archive or restore a measurable. Owner or org admin, home team only.
+ * Archive or restore a measurable. Owner, home-team leader or org admin; home team only.
  *
  * **Archive is the answer to almost every "get this off my scorecard".** It
  * hides the row and keeps every value ever logged, so a measurable a team has
@@ -629,15 +642,23 @@ export async function setMetricArchived(
   metricId: string,
   archived: boolean,
 ) {
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const metric = (snap.data() ?? {}) as ManageableMetric;
 
-  if (!canArchiveMetric({ metric, teamId, uid, isAdmin })) {
+  if (
+    !canArchiveMetric({
+      metric,
+      teamId,
+      uid,
+      isAdmin,
+      isLeader: membershipRole === "leader",
+    })
+  ) {
     throw new Error(
       archived
-        ? "Only this measurable's owner or an admin can archive it."
-        : "Only this measurable's owner or an admin can restore it.",
+        ? "Only this measurable's owner, a team leader or an admin can archive it."
+        : "Only this measurable's owner, a team leader or an admin can restore it.",
     );
   }
 
@@ -666,15 +687,68 @@ export async function setMetricArchived(
  * effect of which loader happened to be used.
  */
 export async function deleteMetric(teamId: string, metricId: string) {
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const metric = (snap.data() ?? {}) as ManageableMetric;
-  if (!canDeleteMetric({ metric, teamId, uid, isAdmin })) {
+  if (
+    !canDeleteMetric({
+      metric,
+      teamId,
+      uid,
+      isAdmin,
+      isLeader: membershipRole === "leader",
+    })
+  ) {
     throw new Error(
-      "Only this measurable's owner or an admin can delete it.",
+      "Only this measurable's owner, a team leader or an admin can delete it.",
     );
   }
   // Delete the metric. Entries are orphaned but harmless; can clean up later.
   await db.collection("scorecard_metrics").doc(metricId).delete();
   revalidatePath(pathFor(teamId));
+}
+
+/**
+ * Make a metric public or private. Any member of the home team, or an admin
+ * (spec 3.4). Going private ends tracking everywhere: `shared_team_ids` and
+ * `shared_groups` are cleared and the removed team ids come back with each
+ * team's leader uids so P7b can notify them.
+ */
+export async function setMetricPublic(
+  teamId: string,
+  metricId: string,
+  isPublic: boolean,
+): Promise<{
+  removed: { teamId: string; leaderIds: string[] }[];
+}> {
+  const { db } = await requireTeamAccess(teamId);
+  const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
+  const metric = (snap.data() ?? {}) as ShareableMetric;
+
+  if (isPublic) {
+    await snap.ref.set({ is_public: true }, { merge: true });
+    revalidatePath(pathFor(teamId));
+    return { removed: [] };
+  }
+
+  const { patch, removedTeamIds } = privateTransition(metric);
+  const removed = await Promise.all(
+    removedTeamIds.map(async (tid) => {
+      const leaders = await db
+        .collection("team_members")
+        .where("team_id", "==", tid)
+        .where("role", "==", "leader")
+        .get();
+      return {
+        teamId: tid,
+        leaderIds: leaders.docs.map((d) => String(d.data().user_id)),
+      };
+    }),
+  );
+  // update, not merge: merging {} would not clear the maps
+  await snap.ref.update(patch);
+  // P7b: notify leaders (`removed` is what to send, and stop followers on
+  // those teams from following the metric).
+  revalidatePath(pathFor(teamId));
+  return { removed };
 }

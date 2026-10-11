@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
 import { normalizeKey } from "@/lib/csv-import";
+import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
 import type { AdminResult, DeleteResult } from "./action-types";
 
@@ -114,8 +115,14 @@ async function setOrgAdmin(uid: string, orgAdmin: boolean): Promise<boolean> {
   if (isAdmin === orgAdmin) return false;
   const claims = { ...(account.customClaims ?? {}) };
   if (orgAdmin) claims.role = "admin";
-  else delete claims.role;
+  else {
+    await assertAnotherAdminRemains(auth, uid);
+    delete claims.role;
+  }
   await auth.setCustomUserClaims(uid, claims);
+  // Claims ride on the ID token; revoke so the change takes effect on the
+  // next request instead of when the old token/session cookie expires.
+  await auth.revokeRefreshTokens(uid);
   return true;
 }
 
@@ -287,6 +294,9 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
   try {
     const auth = getAdminAuth();
     const account = await auth.getUser(uid).catch(() => null);
+    if (account?.customClaims?.role === "admin") {
+      await assertAnotherAdminRemains(auth, uid);
+    }
 
     const memberships = await db
       .collection("team_members")
@@ -333,6 +343,7 @@ export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
 
     let signInRevoked = false;
     if (account) {
+      await auth.revokeRefreshTokens(uid);
       await auth.deleteUser(uid);
       signInRevoked = true;
     }

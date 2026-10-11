@@ -123,8 +123,45 @@ d. `SIGN_IN_ALLOWLIST` fails closed in production.
 e. Directory stops sending sign-in status (`hasAuth`, `hasSignedIn`) to non-admins.
 f. Read-only prod script listing "Keep on this team" rocks with outside assignees. **Run locally with Daniel, not from the cloud.**
 
-## Plan review, still to apply (held 2026-10-09)
+## Plan review (applied 2026-10-11)
 
-- Split P6, P7 and P8 into an "a" part (model + server gates, depends on P3 only) and a "b" part (notifications, depends on P5) so wave 2 can run P4, P5, P6a and P7a in parallel.
-- PRs straight to `main` (Daniel merges): P0, P1, P2, P14. Everything else lands on `feat/permissions-v2` with one squashed commit per package, then one final PR to `main`.
-- Model per agent: Opus for P3, P5, P6a, P8a, P11, P14 (design and rules keystones); Sonnet for everything else; the main session reviews every diff and runs `pnpm typecheck && pnpm test && pnpm lint` before each merge.
+**Package splits.** P6, P7 and P8 each split into an "a" part (data model +
+server gates, depends on P3 only) and a "b" part (notifications and follow,
+depends on P5):
+
+| Package | a (after P3) | b (after P5) |
+|---|---|---|
+| P6 rocks | audience field (teams + persons), leader-only audience/private, audience can edit, `team_only`→`private` guards, stripped assignee view, owner on roster, remove lock + `milestone_owner_ids`, block rule, Home | audience-added notifications, milestone thread for audience, rock events |
+| P7 scorecard | `is_public`, catalog filtered, metric board, track = public only, leaders archive/delete | metric follow gated to scorecard, new-value / goal / owner events, private-transition notify |
+| P8 to-dos | org-wide assignment + directory picker, open-by-id route (complete + comment), private = creator + assignee + admin, leader powers removed, admins see private, outside-assignee block with "assigned by X from Team Y" pill, private cross-team to-do hidden from the team page | assigned / unassigned events, `assigned_by`, locked followers |
+
+**Revised waves.**
+
+| Wave | Parallel | Notes |
+|---|---|---|
+| 1 | P0, P1 (PR only), P3, P14 | started 2026-10-11; P2 right after P14 merges (both edit rules) |
+| 2 | P4, P5, P6a, P7a | P6a before P7a on the L10 page |
+| 3 | P6b, P7b, P8a | |
+| 4 | P8b, P9 | |
+| 5 | P10, P11, P12 | |
+| 6 | P13 | dry run → review → prod with Daniel |
+
+Critical path: P3 → P6a → P8a → P9 → P11 → P13.
+
+**PR routing.** Straight to `main`, Daniel merges: P0 (one PR, one commit per
+fix), P1, P2, P14. Everything else: one branch per package, reviewed and
+merged by the main session into `feat/permissions-v2` as one squashed commit
+per package, then a single PR `feat/permissions-v2` → `main` for HPB review,
+readable package by package.
+
+**Model per agent.**
+
+| Model | Packages | Why |
+|---|---|---|
+| Opus | P3, P5, P6a, P8a, P11, P14 | design keystones and rules reasoning; mistakes here are security bugs |
+| Sonnet | P0, P2, P4, P6b, P7a, P7b, P8b, P9, P10, P12, P13 | well-specified, bounded, test-gated |
+| Main session (Fable) | review of every diff, merge order, `pnpm typecheck && pnpm test && pnpm lint` before each merge | |
+
+**Rules file ownership (amended):** P14 (hasAny switch) → P2 (deny writes) →
+P11 (reads). No other package edits `firestore.rules`; they put the rule
+they need in their PR notes.

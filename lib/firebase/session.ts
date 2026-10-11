@@ -81,6 +81,7 @@ async function admit(
   const refusal = signInRefusal(
     decoded,
     parseAllowlist(process.env.SIGN_IN_ALLOWLIST),
+    process.env.NODE_ENV === "production",
   );
   if (refusal) throw new Error(refusal);
   return decoded;

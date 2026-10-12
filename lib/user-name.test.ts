@@ -70,7 +70,7 @@ describe("ownerLabel", () => {
     assert.equal(ownerLabel("sam", nameOf), "Samantha Reyes");
   });
 
-  test("null / undefined / empty owner reads as No Owner", () => {
+  test("null / undefined / empty owner reads as Unassigned", () => {
     assert.equal(ownerLabel(null, nameOf), NO_OWNER_LABEL);
     assert.equal(ownerLabel(undefined, nameOf), NO_OWNER_LABEL);
     assert.equal(ownerLabel("", nameOf), NO_OWNER_LABEL);
@@ -82,7 +82,7 @@ describe("ownerLabel", () => {
     assert.equal(ownerLabel("ghost", nameOf), "—");
   });
 
-  test("a blank stored name is treated as unresolved, not as No Owner", () => {
+  test("a blank stored name is treated as unresolved, not as Unassigned", () => {
     assert.equal(ownerLabel("blank", () => "   "), "—");
   });
 });

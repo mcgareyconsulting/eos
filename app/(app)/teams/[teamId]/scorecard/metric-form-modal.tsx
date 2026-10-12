@@ -130,7 +130,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
     isEdit ? formatGoalInput(metric!.goal, metric!.unit) : "",
   );
   const [ownerId, setOwnerId] = useState(
-    isEdit ? (metric!.owner_id ?? (members[0]?.user_id ?? "")) : props.defaultOwnerId,
+    isEdit ? (metric!.owner_id ?? "") : props.defaultOwnerId,
   );
   const [group, setGroup] = useState("");
   const [isPublic, setIsPublic] = useState(metric?.is_public === true);
@@ -173,7 +173,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
         // opening and saving without touching anything is a no-op rather than
         // a reformat.
         goal: formatGoalInput(props.metric.goal, props.metric.unit),
-        ownerId: props.metric.owner_id ?? (props.members[0]?.user_id ?? ""),
+        ownerId: props.metric.owner_id ?? "",
         // Create-only field; never rendered or submitted on edit.
         group: "",
         isPublic: props.metric.is_public === true,
@@ -434,7 +434,13 @@ export function MetricFormModal(props: MetricFormModalProps) {
               name="owner_id"
               value={ownerId}
               onChange={(e) => setOwnerId(e.target.value)}
+              required
             >
+              {!ownerId && (
+                <option value="" disabled>
+                  Choose an owner
+                </option>
+              )}
               {members.map((m) => (
                 <option key={m.user_id} value={m.user_id}>
                   {m.full_name}

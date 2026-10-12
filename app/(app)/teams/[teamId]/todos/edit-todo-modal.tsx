@@ -43,11 +43,11 @@ type TodoDraft = {
 };
 
 /** The values the form opens with: the to-do's own. */
-function draftFrom(todo: TodoForEdit, members: Member[]): TodoDraft {
+function draftFrom(todo: TodoForEdit): TodoDraft {
   return {
     title: todo.title,
     description: normalizeDescription(todo.description),
-    ownerId: todo.owner_id ?? members[0]?.user_id ?? "",
+    ownerId: todo.owner_id ?? "",
     due: todo.due_date ?? "",
     visibility: todo.visibility,
     weeklyFocus: !!todo.weekly_focus,
@@ -86,7 +86,7 @@ export function EditTodoModal({
     normalizeDescription(todo.description),
   );
   const [ownerId, setOwnerId] = useState(
-    todo.owner_id ?? members[0]?.user_id ?? "",
+    todo.owner_id ?? "",
   );
   const [due, setDue] = useState(todo.due_date ?? "");
   const [visibility, setVisibility] = useState<"team" | "private">(
@@ -99,7 +99,7 @@ export function EditTodoModal({
   // What the fields held when the dialog opened. Seeded alongside them below,
   // so an edit form that opens full of the to-do's own data is not "changed".
   const [opened, setOpened] = useState<TodoDraft>(() =>
-    draftFrom(todo, members),
+    draftFrom(todo),
   );
 
   function hydrate(draft: TodoDraft) {
@@ -121,7 +121,7 @@ export function EditTodoModal({
   const [seededFrom, setSeededFrom] = useState<typeof seedSource>(seedSource);
   if (seedSource !== seededFrom) {
     setSeededFrom(seedSource);
-    if (seedSource) hydrate(draftFrom(seedSource, members));
+    if (seedSource) hydrate(draftFrom(seedSource));
   }
 
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.

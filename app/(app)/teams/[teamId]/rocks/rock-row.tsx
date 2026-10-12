@@ -119,8 +119,8 @@ export function RockRow({
   if (isCompanyRock(rock)) pills.push("company");
   if (isTeamRock(rock)) pills.push("department");
   if (pills.length === 0) pills.push("individual");
-  // Always prefer person name; legacy null owner shows as em dash.
-  const displayOwner = ownerName || "—";
+  // Always prefer person name; a null owner (deactivated person) reads Unassigned.
+  const displayOwner = ownerName || "Unassigned";
   const doneCount = milestones.filter((m) => m.completed).length;
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
@@ -421,7 +421,7 @@ export function RockBlockRow({
           <FromTeamChip name={fromTeamName} />
         </div>
         <div className="mt-0.5 pl-[25px] text-[11.5px] text-zinc-500 dark:text-zinc-400">
-          Rock owner: {ownerName || "—"}
+          Rock owner: {ownerName || "Unassigned"}
         </div>
         <ul className="ml-[25px] mt-1.5">
           {milestones.map((m) => {
@@ -463,7 +463,7 @@ export function RockBlockRow({
                     {m.title}
                   </span>
                   <span className="shrink-0 text-[11.5px] text-zinc-400">
-                    {m.owner_label ?? "—"}
+                    {m.owner_label ?? (m.owner_id ? "—" : "Unassigned")}
                   </span>
                   <span
                     className={cn(

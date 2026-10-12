@@ -319,7 +319,9 @@ export async function updateTodoMeta(
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("Title required");
 
-  const owner_id = String(formData.get("owner_id") ?? "").trim() || uid;
+  const owner_id = String(formData.get("owner_id") ?? "").trim();
+  // Spec §2.6: an edited to-do needs an owner (a deactivation can leave it null).
+  if (!owner_id) throw new Error("Choose an owner.");
   const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
     normalizeDescription(String(formData.get("description") ?? "")) || null;

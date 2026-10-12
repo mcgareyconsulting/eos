@@ -65,6 +65,10 @@ export type ScorecardMetric = {
   canManage?: boolean;
   /** Archived measurables render only in the archived view, where Restore replaces Archive. */
   isArchived?: boolean;
+  /** Follow state for the viewer, resolved by the caller (lib/scorecard-follow.ts). Absent = no control. */
+  follow?: { following: boolean; locked: boolean; count: number };
+  /** Public metrics show on the metric board; carried so the edit form can show and save it. */
+  is_public?: boolean | null;
   /**
    * Section to render under, resolved for the viewing team: its own choice for
    * a borrowed row, else the cadence default. Falls back to `group` when the
@@ -481,6 +485,11 @@ export function ScorecardGrid({
                   ownerName={owner}
                   columns={columns}
                   values={values}
+                  follow={
+                    m.follow && !m.isArchived
+                      ? { teamId, ...m.follow }
+                      : undefined
+                  }
                   manage={
                     showManage || showArchiveControl
                       ? {

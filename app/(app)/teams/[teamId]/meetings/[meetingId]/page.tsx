@@ -623,6 +623,9 @@ async function SegmentContent({
         goal: x.goal ?? null,
         direction: x.direction,
         owner_id: x.owner_id ?? null,
+        is_public: x.is_public === true,
+        assigned_by: x.assigned_by ?? null,
+        follower_ids: x.follower_ids ?? [],
         group: metricGroupForTeam(shareable, teamId),
         interval,
         sort_order: x.sort_order ?? 0,
@@ -660,6 +663,9 @@ async function SegmentContent({
         initialEntries={initialEntries}
         members={members}
         isAdmin={isAdmin}
+        isLeader={
+          (await requireTeamAccess(teamId)).membershipRole === "leader"
+        }
         viewerId={uid}
         teamNameById={Object.fromEntries(teamNameById)}
         ownerNameById={Object.fromEntries(resolvedOwner)}

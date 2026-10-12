@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { richTextToPlain } from "@/lib/rich-text";
 import { formatDateShort, relativeDueLabel } from "@/lib/dates";
@@ -22,11 +22,6 @@ export type MilestoneSerialized = {
   /** Pre-resolved owner name, for callers that never had the roster (L10).
    *  Wins over looking `owner_id` up in `members`. */
   owner_label?: string | null;
-  /** Locked: not passed on to the assignee's teams (lib/rocks-share.ts). */
-  locked?: boolean;
-  /** On a team page, shown to the viewer alone (their own locked
-   *  milestone); greyed with an "Only you" tag. */
-  only_you?: boolean;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -36,9 +31,10 @@ type Member = { user_id: string; full_name: string };
  * editing milestones happens in RockModal now, which is what removes the
  * clutter from the expanded row.
  *
- * Tickable by the rock's team. On a read-only (shared-in) row, a guest can
- * still tick what is theirs — their own milestone, or any on a rock they own
- * (lib/rocks-share.ts canTickMilestone, which the server action enforces).
+ * Tickable by everyone with the full rock (parent team, audience, admins).
+ * On a read-only list the viewer still ticks their own milestone
+ * (lib/access/rock.ts milestoneAccess.canComplete, which toggleTodo
+ * enforces).
  *
  * variant "row" = expanded rock row on team page.
  * variant "modal" = rock detail: open as cards, completed collapsed.
@@ -50,7 +46,6 @@ export function MilestoneChecklist({
   variant = "row",
   readOnly = false,
   currentUserId,
-  rockOwnerId,
 }: {
   teamId: string;
   members?: Member[];
@@ -58,16 +53,11 @@ export function MilestoneChecklist({
   variant?: "row" | "modal";
   readOnly?: boolean;
   currentUserId?: string;
-  rockOwnerId?: string | null;
 }) {
   if (milestones.length === 0) return null;
 
   const lockedFor = (m: MilestoneSerialized) =>
-    readOnly &&
-    !(
-      currentUserId &&
-      (m.owner_id === currentUserId || rockOwnerId === currentUserId)
-    );
+    readOnly && !(currentUserId && m.owner_id === currentUserId);
 
   const nameFor = (m: MilestoneSerialized) => {
     if (m.owner_label) return m.owner_label;
@@ -102,7 +92,7 @@ export function MilestoneChecklist({
             <span
               className={cn(
                 "min-w-0 flex-1 truncate text-[13px]",
-                m.completed || m.only_you
+                m.completed
                   ? "text-zinc-400 dark:text-zinc-500"
                   : "font-medium text-zinc-800 dark:text-zinc-200",
               )}
@@ -110,7 +100,6 @@ export function MilestoneChecklist({
             >
               {m.title}
             </span>
-            {m.only_you ? <OnlyYouTag /> : m.locked && <LockedMark />}
             <span className="shrink-0 text-[11.5px] text-zinc-400">
               {nameFor(m)}
             </span>
@@ -163,30 +152,6 @@ function MilestoneTick({
   );
 }
 
-/** Something on a team page that only the viewer sees. */
-export function OnlyYouTag() {
-  return (
-    <span
-      title="Kept off your team — only you see this here"
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-    >
-      <Lock className="h-2.5 w-2.5" aria-hidden />
-      Only you
-    </span>
-  );
-}
-
-function LockedMark() {
-  return (
-    <Lock
-      className="h-3 w-3 shrink-0 text-zinc-400"
-      aria-label="Kept off the assignee's team"
-    >
-      <title>Kept off the assignee&apos;s team</title>
-    </Lock>
-  );
-}
-
 function ModalMilestoneList({
   teamId,
   milestones,
@@ -221,7 +186,6 @@ function ModalMilestoneList({
           >
             {m.title}
           </span>
-          {m.locked && <LockedMark />}
           <span className="shrink-0 text-[11.5px] text-zinc-400">
             {nameFor(m)}
           </span>

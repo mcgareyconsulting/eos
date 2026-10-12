@@ -20,10 +20,11 @@ import { cn } from "@/lib/utils";
 //                    people are reached through Whole org like anyone else.
 //   "Whole org"    — everyone on any roster, A–Z; search matches a name or a
 //                    team name, so no separate team filter. Picking
-//                    someone outside the rock's teams is allowed: they see the
-//                    rock's headline and their own milestone only, and the
-//                    rock modal confirms that on save. No per-row "outside"
-//                    tag — each row already lists its teams.
+//                    someone outside the parent team and the audience is
+//                    allowed: they see the rock's headline and their own
+//                    milestone only (lib/access/rock.ts), and the rock modal
+//                    confirms that on save. Those people carry a gold dot,
+//                    on the trigger and in the list (spec §3.3).
 //
 // The popover is portalled and fixed-positioned: milestone rows sit at the
 // bottom of a scrolling modal, where an absolute menu would be clipped.
@@ -63,9 +64,9 @@ export function OwnerPicker({
   onChange: (userId: string) => void;
   /** The parent team — the first tab's whole list. */
   team: RockTeamRoster;
-  /** Everyone on the rock's teams (parent + shared). Only drives the
-   *  "outside this rock" dot; never listed. Undefined while shared rosters
-   *  load — no dot until it is known. */
+  /** Everyone who sees the whole rock (parent team + audience). Only
+   *  drives the "sees only their milestone" dot; never listed. Undefined
+   *  while the org list loads — no dot until it is known. */
   insideIds?: ReadonlySet<string>;
   /** null until first requested — see onNeedOrg. */
   orgPeople: OrgPerson[] | null;
@@ -224,7 +225,7 @@ export function OwnerPicker({
         {outsideRock && (
           <span
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-hpb-gold"
-            title="Outside this rock's teams"
+            title="Will see only their milestone and the rock's title"
             aria-hidden
           />
         )}
@@ -323,6 +324,13 @@ export function OwnerPicker({
                           </span>
                         )}
                       </span>
+                      {insideIds && !insideIds.has(r.id) && (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-hpb-gold"
+                          title="Will see only their milestone and the rock's title"
+                          aria-label="Sees only their milestone"
+                        />
+                      )}
                       {r.id === value && (
                         <Check className="h-3.5 w-3.5 shrink-0 text-hpb-blue dark:text-hpb-gold" aria-hidden />
                       )}

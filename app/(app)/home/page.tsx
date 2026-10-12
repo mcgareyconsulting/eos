@@ -11,6 +11,7 @@ import {
 } from "@/lib/firebase/queries";
 import {
   byDueDateAsc,
+  homeMilestonesFor,
   homeRockPillKind,
   rockHasMyOpenMilestone,
   selectHomeTodos,
@@ -37,6 +38,8 @@ import {
 } from "@/lib/scorecard-periods";
 import { EmptyState } from "@/components/empty-state";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { rockSubjectOf, rockViewFor, type RockView } from "@/lib/access/rock";
+import { viewerOf } from "@/lib/access/types";
 import {
   HomeRocksList,
   type HomeRockListItem,
@@ -73,7 +76,11 @@ type RockRow = {
   rock_type?: string | null;
   is_company_rock?: boolean | null;
   archived_at?: unknown | null;
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  private?: boolean | null;
   shared_team_ids?: string[] | null;
+  team_only?: boolean | null;
 };
 
 type MetricRow = {
@@ -107,8 +114,10 @@ async function hydrateNames(
 }
 
 export default async function HomePage() {
-  const { user, teams, membershipTeamIds, isAdmin, db } =
+  const { user, teams, membershipTeamIds, leaderTeamIds, isAdmin, db } =
     await getUserTeamsFirebase();
+  // Rock access (lib/access/rock.ts) follows the viewer's real memberships.
+  const viewer = viewerOf(user.id, isAdmin, membershipTeamIds, leaderTeamIds);
 
   // Prefer real memberships for "my teams"; admins with no roster see nothing
   // personal (won't happen in prod). Fall back to navigable teams if needed.
@@ -155,16 +164,20 @@ export default async function HomePage() {
           ),
         ),
       ),
-      // Rocks shared *into* my teams (field optional; empty until share ships).
+      // Rocks with one of my teams — or me — in their audience (the
+      // legacy `shared_team_ids` too, until P13 migrates every rock).
       // Status filtered in memory so we only need the array-contains index.
-      Promise.all(
-        myTeamIdsList.map((teamId) =>
-          db
-            .collection("rocks")
-            .where("shared_team_ids", "array-contains", teamId)
-            .get(),
+      Promise.all([
+        ...myTeamIdsList.flatMap((teamId) =>
+          ["audience_team_ids", "shared_team_ids"].map((field) =>
+            db.collection("rocks").where(field, "array-contains", teamId).get(),
+          ),
         ),
-      ),
+        db
+          .collection("rocks")
+          .where("audience_user_ids", "array-contains", user.id)
+          .get(),
+      ]),
       Promise.all(
         teamChunks.map((ids) =>
           db.collection("team_members").where("team_id", "in", ids).get(),
@@ -295,19 +308,35 @@ export default async function HomePage() {
     rockStatusById,
   );
 
+  // How much of each rock the viewer gets (lib/access/rock.ts): the full
+  // rock, or — as an assignee outside the parent team and the audience —
+  // only the headline and their own milestones.
+  const viewById = new Map<string, RockView>();
+  const mineById = new Map<string, boolean>();
+  for (const r of rocks) {
+    const mine = rockHasMyOpenMilestone(r.id, openMilestones, user.id);
+    mineById.set(r.id, mine);
+    viewById.set(
+      r.id,
+      rockViewFor(
+        rockSubjectOf(r as unknown as Record<string, unknown>),
+        viewer,
+        mine ? [user.id] : [],
+      ),
+    );
+  }
+  const showOnHome = (r: RockRow) =>
+    shouldShowHomeRock(r, {
+      uid: user.id,
+      myTeamIds,
+      hasMyOpenMilestone: mineById.get(r.id) === true,
+      fullAccess: viewById.get(r.id) === "full",
+    });
+
   // Candidate rocks for Home (before loading full milestone counts).
   const shownCandidateIds = new Set<string>();
   for (const r of rocks) {
-    const mine = rockHasMyOpenMilestone(r.id, openMilestones, user.id);
-    if (
-      shouldShowHomeRock(r, {
-        uid: user.id,
-        myTeamIds,
-        hasMyOpenMilestone: mine,
-      })
-    ) {
-      shownCandidateIds.add(r.id);
-    }
+    if (showOnHome(r)) shownCandidateIds.add(r.id);
   }
 
   // All milestones (open + completed) for shown rocks — progress fractions
@@ -321,14 +350,14 @@ export default async function HomePage() {
     // still counts as "loaded", which is what stops the openMilestones
     // fallback below from re-adding rows for that rock.
     for (const rockId of shownCandidateIds) allMsByRock.set(rockId, []);
-    // Every rock Home shows is one the viewer has in full — their own, one
-    // on or shared into their teams, or one they carry a milestone on
-    // (lib/rocks-share.ts hasFullRockView) — so every milestone, locked or
-    // not, and full progress.
+    // The full rock gets every milestone and its progress; a headline view
+    // only the viewer's own milestones (homeMilestonesFor).
     for (const d of await loadMilestonesForRocks(db, [...shownCandidateIds])) {
       const data = d.data() as Omit<TodoRow, "id">;
       const list = allMsByRock.get(data.source_rock_id ?? "");
       if (!list) continue;
+      const view = viewById.get(data.source_rock_id ?? "") ?? "none";
+      if (homeMilestonesFor(view, [data], user.id).length === 0) continue;
       list.push({
         id: d.id,
         ...data,
@@ -368,21 +397,12 @@ export default async function HomePage() {
 
   const myTodos = selectHomeTodos(todos, user.id).sort(byDueDateAsc);
 
-  const homeRocks: RockRow[] = rocks
-    .filter((r) =>
-      shouldShowHomeRock(r, {
-        uid: user.id,
-        myTeamIds,
-        hasMyOpenMilestone: rockHasMyOpenMilestone(
-          r.id,
-          openMilestones,
-          user.id,
-        ),
-      }),
-    )
-    .sort(byDueDateAsc);
+  const homeRocks: RockRow[] = rocks.filter(showOnHome).sort(byDueDateAsc);
 
   const rockItems: HomeRockListItem[] = homeRocks.map((r) => {
+    // Headline view (spec §3.3): title, owner, team and my milestones only —
+    // no status, due date or progress.
+    const headline = viewById.get(r.id) !== "full";
     const kind = homeRockPillKind(r);
     const teamName = teamNameById.get(r.team_id) ?? "Team";
     // Owner column: "You" / person name / team name for company and
@@ -398,24 +418,34 @@ export default async function HomePage() {
     }
 
     const allMs = allMsByRock.get(r.id) ?? [];
-    const openMs = openMsByRock.get(r.id) ?? allMs.filter((m) => !m.completed);
+    const openMs = homeMilestonesFor(
+      headline ? "headline" : "full",
+      openMsByRock.get(r.id) ?? allMs.filter((m) => !m.completed),
+      user.id,
+    );
     const milestoneTotal = allMs.length;
     const milestoneDone = allMs.filter((m) => m.completed).length;
 
     return {
       id: r.id,
       title: r.title,
-      status: r.status,
-      due_date: r.due_date,
-      quarter: r.quarter || "",
+      headline,
+      status: headline ? "" : r.status,
+      due_date: headline ? null : r.due_date,
+      quarter: headline ? "" : r.quarter || "",
       team_id: r.team_id,
       owner_id: r.owner_id ?? null,
       rock_type: r.rock_type ?? null,
       is_company_rock: r.is_company_rock === true,
-      href: `/teams/${r.team_id}/rocks`,
+      // Only a member of the parent team (or an admin) can open its page;
+      // the audience and assignees work the rock from here.
+      href:
+        isAdmin || myTeamIds.has(r.team_id)
+          ? `/teams/${r.team_id}/rocks`
+          : null,
       ownerLabel,
-      milestoneDone,
-      milestoneTotal,
+      milestoneDone: headline ? 0 : milestoneDone,
+      milestoneTotal: headline ? 0 : milestoneTotal,
       milestones: openMs.map((m) => {
         const isMine = m.owner_id === user.id;
         return {

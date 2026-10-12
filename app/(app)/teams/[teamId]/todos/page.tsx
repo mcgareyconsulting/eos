@@ -107,6 +107,8 @@ export default async function TodosPage({
       weekly_focus: t.weekly_focus === true,
       source_rock_id: t.source_rock_id ?? null,
       follower_ids: t.follower_ids ?? null,
+      assigned_by: t.assigned_by ?? null,
+      created_by: t.created_by ?? null,
     });
   }
 
@@ -130,6 +132,8 @@ export default async function TodosPage({
       weekly_focus: false,
       source_rock_id: t.source_rock_id ?? null,
       follower_ids: t.follower_ids ?? null,
+      assigned_by: t.assigned_by ?? null,
+      created_by: t.created_by ?? null,
     });
   }
 

@@ -9,10 +9,11 @@ import {
   requireTeamAccess,
   requireTeamDoc,
 } from "@/lib/firebase/teams";
-import { notify } from "@/lib/firebase/notifications";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { autoFollow } from "@/lib/firebase/follow";
 import { recordActivity } from "@/lib/firebase/activity";
 import { mentionedIds } from "@/lib/mentions";
-import { commentRecipients, snippetOf } from "@/lib/notifications";
+import { snippetOf } from "@/lib/notifications";
 
 export type CommentEntityType = "issue" | "rock" | "todo";
 
@@ -41,9 +42,9 @@ function parentCollection(
  * To-do comments additionally resolve `@Name` mentions against the team
  * roster (lib/mentions.ts) and fan out in-app notifications: mentioned people
  * get a `mention` row, every other follower of the to-do gets a `comment`
- * row. Issues and rocks carry no followers yet, so nothing is written for
- * them — N31 is waiting on the subscribe-vs-broadcast answer before that
- * switch is flipped.
+ * row (lib/firebase/notifications.ts emitEvent, access-checked at send
+ * time). The author and the mentioned people auto-follow the item, on every
+ * thread type. Issue and rock comments notify nobody yet (SPEC P9).
  */
 export async function addEntityComment(
   teamId: string,
@@ -52,7 +53,7 @@ export async function addEntityComment(
   formData: FormData,
 ) {
   if (!ENTITY_TYPES.includes(entityType)) throw new Error("Bad entity type");
-  const { uid, db, team, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   // A rock has ONE thread, filed under its parent team, open to everyone
   // with the whole rock (lib/rocks-share.ts hasFullRockView) — including an
   // assignee posting from their own team's page, where `teamId` is not the
@@ -99,39 +100,20 @@ export async function addEntityComment(
     created_at: FieldValue.serverTimestamp(),
   });
 
+  // Spec §5.3: writing a comment, or being mentioned in one, follows the
+  // item (only people who may follow it — a mention never grants access).
+  const ref = { type: entityType, id: entityId };
+  await autoFollow(db, ref, [uid, ...mention_ids]);
+
   if (entityType === "todo") {
     const data = parent.data() ?? {};
-    const { mention, comment } = commentRecipients({
-      followerIds: data.follower_ids as string[] | undefined,
-      mentionedIds: mention_ids,
-      actorId: uid,
-      visibility: data.visibility as string | undefined,
-      ownerId: data.owner_id as string | null | undefined,
-    });
-    const entity = {
-      type: "todo" as const,
-      id: entityId,
-      title: String(data.title ?? "To-do"),
-    };
     const detail = snippetOf(body);
-    const teamRef = { id: teamId, name: team.name };
-    await notify({
-      db,
-      recipientIds: mention,
-      kind: "mention",
-      team: teamRef,
-      entity,
-      actor: { id: uid },
-      detail,
-    });
-    await notify({
-      db,
-      recipientIds: comment,
-      kind: "comment",
-      team: teamRef,
-      entity,
-      actor: { id: uid },
-      detail,
+    // Mentioned people get `mention`, every other follower `comment`; the
+    // send-time access check drops anyone who cannot see the to-do.
+    // SPEC P9: emit for issue / rock threads too.
+    await emitEvent(db, ref, "comment", uid, {
+      teamId: threadTeamId,
+      direct: { mention: mention_ids },
     });
     await recordActivity({
       db,

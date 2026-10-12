@@ -37,8 +37,7 @@ import {
   tokenAad,
   type TokenCipher,
 } from "@/lib/google/token-cipher";
-import { notify } from "@/lib/firebase/notifications";
-import { recipientsFor } from "@/lib/notifications";
+import { emitEvent } from "@/lib/firebase/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -730,29 +729,9 @@ export async function pullCompletionsForOwner(
 
       // Checking a task off in Google is the owner completing it — tell the
       // to-do's other followers the same way an in-app check-off would.
-      const recipientIds = recipientsFor({
-        followerIds: before.follower_ids,
-        actorId: ownerUid,
-        visibility: before.visibility,
-        ownerId: before.owner_id,
-      });
-      if (recipientIds.length > 0 && typeof before.team_id === "string") {
-        const teamSnap = await db.collection("teams").doc(before.team_id).get();
-        await notify({
-          db,
-          recipientIds,
-          kind: "completed",
-          team: {
-            id: before.team_id,
-            name: String(teamSnap.data()?.name ?? "Team"),
-          },
-          entity: {
-            type: "todo",
-            id: todoId,
-            title: String(before.title ?? "To-do"),
-          },
-          actor: { id: ownerUid },
-          detail: "Completed from Google Tasks",
+      if (typeof before.team_id === "string") {
+        await emitEvent(db, { type: "todo", id: todoId }, "completed", ownerUid, {
+          teamId: before.team_id,
         });
       }
     }

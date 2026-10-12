@@ -66,6 +66,9 @@ export type TodoBoardDoc = {
   weekly_focus?: boolean;
   source_rock_id: string | null;
   follower_ids?: string[] | null;
+  /** Who made the current assignment (locked follower); legacy: created_by. */
+  assigned_by?: string | null;
+  created_by?: string | null;
   /** Set on the viewer's milestones from other teams' rocks; absent on
    *  this team's own rows. */
   team_id?: string;
@@ -343,6 +346,8 @@ export function TodosBoard({
         archived,
         closed_on: formatClosedOn(t.archived_at),
         follower_ids: t.follower_ids ?? null,
+        assigned_by: t.assigned_by ?? null,
+        created_by: t.created_by ?? null,
       });
     }
     return { allTodos: todos, allMilestones: milestones };

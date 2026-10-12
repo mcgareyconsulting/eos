@@ -57,6 +57,8 @@ type TodoDoc = WithId<
     | "weekly_focus"
     | "source_rock_id"
     | "follower_ids"
+    | "assigned_by"
+    | "created_by"
   >
 > & {
   completed_at: TodoDocRecord["completed_at"] | boolean;
@@ -93,6 +95,8 @@ function toListItem(t: TodoDoc): TodoListItem {
     visibility: t.visibility === "private" ? "private" : "team",
     weekly_focus: t.weekly_focus === true,
     follower_ids: t.follower_ids ?? null,
+    assigned_by: t.assigned_by ?? null,
+    created_by: t.created_by ?? null,
   };
 }
 

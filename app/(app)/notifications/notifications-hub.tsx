@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   collection,
@@ -17,20 +17,26 @@ import {
   BellPlus,
   CheckCheck,
   CheckCircle2,
+  Lock,
   MessageSquare,
   Pencil,
   RotateCcw,
   Trash2,
+  UserMinus,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
+  NO_ACCESS_TEXT,
   notificationColumn,
-  notificationHref,
   notificationVerb,
+  type NotificationEntityType,
   type NotificationKind,
 } from "@/lib/notifications";
+import type { ItemEvent } from "@/lib/item-registry";
+import type { NotificationLabel } from "@/lib/firebase/item-peek";
 import { EmptyState } from "@/components/empty-state";
 import { LocalTime } from "@/components/local-time";
 import { entityHeaderButtonClass } from "@/components/entity-page-header";
@@ -42,24 +48,28 @@ import {
   deleteNotification,
   markAllNotificationsRead,
   markNotificationRead,
+  loadNotificationLabels,
   restoreNotification,
 } from "./actions";
 import { TodoPeekModal } from "./todo-peek-modal";
+import { ItemPeekModal } from "./item-peek-modal";
 
 type MaybeTimestamp = { toMillis: () => number } | number | null | undefined;
 
-/** A row as the hub renders it: server projection or live snapshot. */
+/**
+ * A row as the hub renders it: server projection or live snapshot. Only
+ * the pointer fields — legacy rows' stored titles are never read; labels
+ * come from `loadNotificationLabels` (access-checked at read time).
+ */
 export type NotificationRow = {
   id: string;
   team_id: string;
-  team_name: string;
-  entity_type: "todo";
+  entity_type: NotificationEntityType;
   entity_id: string;
-  entity_title: string;
   kind: NotificationKind;
+  /** Absent on rows written before P5. */
+  event?: ItemEvent | null;
   actor_id: string;
-  actor_name: string;
-  detail: string | null;
   created_at: MaybeTimestamp;
   read_at: MaybeTimestamp;
   /** Absent on rows older than the Archived tab — treated as not archived. */
@@ -91,6 +101,9 @@ const KIND_ICON: Record<
   reopened: RotateCcw,
   updated: Pencil,
   assigned: UserPlus,
+  unassigned: UserMinus,
+  audience_added: Users,
+  metric_private: Lock,
   following: BellPlus,
 };
 
@@ -101,15 +114,25 @@ const KIND_TONE: Record<NotificationKind, string> = {
   reopened: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
   updated: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   assigned: "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold",
+  unassigned: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  audience_added: "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold",
+  metric_private: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
   following: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
 };
+
+/** To-dos and milestones open in the full to-do peek; the rest, the generic one. */
+function isTodoRow(n: NotificationRow): boolean {
+  return n.entity_type === "todo" || n.entity_type === "milestone";
+}
 
 export function NotificationsHub({
   userId,
   initial,
+  initialLabels,
 }: {
   userId: string;
   initial: NotificationRow[];
+  initialLabels: Record<string, NotificationLabel>;
 }) {
   const db = getClientDb();
   const q = useMemo(
@@ -123,6 +146,29 @@ export function NotificationsHub({
     [db, userId],
   );
   const rows = useCollection<NotificationRow>(q, initial, "notifications");
+
+  // Labels for rows the server pass did not cover (they arrived live).
+  // Resolved through the same access check; a row stays on its generic
+  // wording ("commented on a to-do") until its label lands.
+  const [labels, setLabels] =
+    useState<Record<string, NotificationLabel>>(initialLabels);
+  const requested = useRef(new Set(Object.keys(initialLabels)));
+  useEffect(() => {
+    const missing = rows
+      .map((r) => r.id)
+      .filter((id) => !requested.current.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) requested.current.add(id);
+    let cancelled = false;
+    loadNotificationLabels(missing)
+      .then((more) => {
+        if (!cancelled) setLabels((prev) => ({ ...prev, ...more }));
+      })
+      .catch((e) => console.error("[notifications] labels failed:", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [rows]);
 
   // The listener already orders newest-first; sort again so the server
   // projection (millis) and a row whose serverTimestamp is still pending
@@ -229,10 +275,11 @@ export function NotificationsHub({
       </header>
 
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Comments, completions and edits on to-dos you own or follow on the
-        left; anywhere you&apos;re @mentioned on the right. You follow a
-        to-do you create, own or were added to; use Follow on any other to-do
-        to opt in. Click a row to open the to-do here. Rows stay in the
+        Comments, completions and edits on items you own or follow on the
+        left; anywhere you&apos;re @mentioned on the right. You follow what
+        you create, own, are assigned, comment on or are mentioned on; use
+        Follow to opt in to anything else. Click a row to open it here — if
+        you can no longer see the item, the row says so. Rows stay in the
         inbox until you archive them — read ones just go quiet — and stay
         findable on Archived until deleted from there.
       </p>
@@ -246,6 +293,7 @@ export function NotificationsHub({
           title="Owned & following"
           rows={activity}
           onOpen={setPeek}
+          labels={labels}
           emptyTitle={showArchived ? "Nothing archived" : "Nothing here"}
           emptyHint={
             showArchived
@@ -258,6 +306,7 @@ export function NotificationsHub({
           icon={AtSign}
           rows={mentions}
           onOpen={setPeek}
+          labels={labels}
           emptyTitle={showArchived ? "No archived mentions" : "No mentions"}
           emptyHint={
             showArchived
@@ -267,9 +316,12 @@ export function NotificationsHub({
         />
       </div>
 
-      {peek && (
-        <TodoPeekModal n={peek} userId={userId} onClose={() => setPeek(null)} />
-      )}
+      {peek &&
+        (isTodoRow(peek) ? (
+          <TodoPeekModal n={peek} userId={userId} onClose={() => setPeek(null)} />
+        ) : (
+          <ItemPeekModal n={peek} onClose={() => setPeek(null)} />
+        ))}
 
       {sorted.length >= HUB_LIMIT && (
         <p className="text-xs text-zinc-500">
@@ -285,6 +337,7 @@ function HubColumn({
   icon: Icon = Bell,
   rows,
   onOpen,
+  labels,
   emptyTitle,
   emptyHint,
 }: {
@@ -292,6 +345,7 @@ function HubColumn({
   icon?: React.ComponentType<{ className?: string }>;
   rows: NotificationRow[];
   onOpen: (n: NotificationRow) => void;
+  labels: Record<string, NotificationLabel>;
   emptyTitle: string;
   emptyHint: string;
 }) {
@@ -307,7 +361,12 @@ function HubColumn({
         ) : (
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {rows.map((n) => (
-              <NotificationItem key={n.id} n={n} onOpen={onOpen} />
+              <NotificationItem
+                key={n.id}
+                n={n}
+                label={labels[n.id]}
+                onOpen={onOpen}
+              />
             ))}
           </ul>
         )}
@@ -318,11 +377,16 @@ function HubColumn({
 
 function NotificationItem({
   n,
+  label,
   onOpen,
 }: {
   n: NotificationRow;
+  /** Undefined while loading; `peek.access === "none"` when denied. */
+  label: NotificationLabel | undefined;
   onOpen: (n: NotificationRow) => void;
 }) {
+  const peek = label?.peek;
+  const visible = peek?.access === "ok" ? peek : null;
   const [, start] = useTransition();
   const Icon = KIND_ICON[n.kind] ?? Bell;
   const tone = KIND_TONE[n.kind] ?? KIND_TONE.comment;
@@ -393,24 +457,28 @@ function NotificationItem({
               : "text-zinc-600 dark:text-zinc-400",
           )}
         >
-          <span className="font-semibold">{n.actor_name}</span>{" "}
-          {notificationVerb(n)}
+          <span className="font-semibold">{label?.actorName ?? "Someone"}</span>{" "}
+          {notificationVerb(n, visible?.title)}
         </button>
-        {n.detail && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">
-            {n.detail}
+        {peek?.access === "none" && (
+          <p className="mt-0.5 text-xs italic text-zinc-500 dark:text-zinc-400">
+            {NO_ACCESS_TEXT}
           </p>
         )}
         <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-500">
-          <Link
-            href={notificationHref(n)}
-            onClick={markRead}
-            className="hover:underline"
-            title="Open on the To-Dos tab"
-          >
-            {n.team_name}
-          </Link>
-          {" · "}
+          {visible && (
+            <>
+              <Link
+                href={visible.href}
+                onClick={markRead}
+                className="hover:underline"
+                title="Open on its team's page"
+              >
+                {visible.teamName}
+              </Link>
+              {" · "}
+            </>
+          )}
           <LocalTime ms={whenMs} options={WHEN} fallback="just now" />
         </p>
       </div>

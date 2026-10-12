@@ -36,7 +36,7 @@ export const privateTodoAccess: CompletableAccessModule<PrivateTodoSubject> & {
   canComment: party,
   // Spec §5.3: follow = canSee.
   canFollow: party,
-  // SPEC P9: mentions refused server-side unless the person canSee.
+  // Spec §5.2: refused server-side unless the person canSee.
   canMention: party,
   canDelete: party,
   canComplete: party,

@@ -65,13 +65,13 @@ describe("item registry (spec §5.0)", () => {
     }
   });
 
-  test("threads: none for metric; none for headline yet", () => {
+  test("threads: none for metric; headline has one", () => {
     assert.equal(registryFor("rock").threadEntityType, "rock");
     assert.equal(registryFor("milestone").threadEntityType, "todo");
     assert.equal(registryFor("todo").threadEntityType, "todo");
     assert.equal(registryFor("issue").threadEntityType, "issue");
     assert.equal(registryFor("metric").threadEntityType, null);
-    assert.equal(registryFor("headline").threadEntityType, null);
+    assert.equal(registryFor("headline").threadEntityType, "headline");
   });
 
   test("events (spec §5.3)", () => {

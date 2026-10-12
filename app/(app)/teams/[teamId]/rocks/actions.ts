@@ -21,7 +21,17 @@ import {
 } from "@/lib/access/rock";
 import type { Viewer } from "@/lib/access/types";
 import { chunkForInQuery } from "@/lib/firestore-in";
-import { notify } from "@/lib/firebase/notifications";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { purgeItem } from "@/lib/firebase/purge";
+import { emitAudienceAdded } from "@/lib/firebase/rock-events";
+import { deleteTaskForTodo } from "@/lib/google/tasks";
+import { assignmentPatch } from "@/lib/follow";
+import type { RockEvent } from "@/lib/item-registry";
+import {
+  audienceAdded,
+  reassignmentRecipients,
+  rockEditEvents,
+} from "@/lib/rock-notify";
 import { isCompanyRock } from "@/lib/rock-bucket";
 import { loadUsersById } from "@/lib/firebase/queries";
 import { userDisplayName } from "@/lib/user-name";
@@ -52,12 +62,6 @@ async function requireRock(
   if (rock.team_id !== teamId) notFound();
   if (!can(rock, viewer)) notFound();
   return { uid, isAdmin, db, viewer, snap, data, rock };
-}
-
-async function teamName(db: Firestore, teamId: string): Promise<string> {
-  const snap = await db.collection("teams").doc(teamId).get();
-  if (!snap.exists) notFound();
-  return (snap.data()?.name as string) ?? "Team";
 }
 
 export async function setRockType(
@@ -122,6 +126,11 @@ export async function setRockStatus(
   });
   await batch.commit();
 
+  if (prevStatus !== status) {
+    await emitEvent(db, { type: "rock", id: rockId }, "status_changed", uid, {
+      teamId,
+    });
+  }
   revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
 
@@ -154,6 +163,23 @@ export async function setRockArchived(
 // Removes the rock, linked milestones (todos), and entity_comments.
 // Single batch so a partial failure can't orphan children. Parent team and
 // admins only — the audience may edit, not delete.
+/** Purge + unmirror milestone docs that were just deleted. Never throws. */
+async function purgeRemovedMilestones(
+  db: Firestore,
+  docs: readonly FirebaseFirestore.QueryDocumentSnapshot[],
+) {
+  for (const d of docs) {
+    const x = d.data();
+    try {
+      await purgeItem(db, { type: "milestone", id: d.id });
+    } catch (e) {
+      console.error(`[rocks] purge of milestone ${d.id} failed:`, e);
+    }
+    const owner = typeof x.owner_id === "string" ? x.owner_id : "";
+    await deleteTaskForTodo(owner, x.google_task_id as string | null | undefined);
+  }
+}
+
 export async function deleteRock(teamId: string, rockId: string) {
   const { db, rock } = await requireRock(teamId, rockId, rockAccess.canDelete);
 
@@ -176,6 +202,11 @@ export async function deleteRock(teamId: string, rockId: string) {
   commentsSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(db.collection("rocks").doc(rockId));
   await batch.commit();
+
+  // Spec §5.1: threads, notifications and activity go with each item, and a
+  // mirrored Google Task must not keep the milestone's title around.
+  await purgeItem(db, { type: "rock", id: rockId });
+  await purgeRemovedMilestones(db, milestonesSnap.docs);
 
   revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
@@ -247,8 +278,10 @@ function milestoneDoc(
   rockId: string,
   m: MilestoneInput,
   ownerId: string,
+  assignedBy: { assigned_by: string | null; follower_ids: string[] },
 ) {
   return {
+    ...assignedBy,
     team_id: teamId,
     title: m.title,
     owner_id: ownerId,
@@ -506,27 +539,31 @@ export async function loadOrgPeople(): Promise<
 }
 
 /**
- * Tell people they were handed a milestone (review item 5, 2026-09-22).
- * One "assigned" row per milestone whose owner is new and isn't the actor —
- * for someone outside the rock's teams it is the only way they'd learn of
- * it. Best-effort, after the write, like every other notification.
+ * Tell people about milestone hand-offs (spec §5.3): the new owner gets
+ * `assigned`, the previous owner `unassigned`, the milestone's followers a
+ * `reassigned` event. Best-effort, after the write; `emitEvent` also drops
+ * anyone who cannot see the milestone (the unassigned are exempt).
  */
-async function notifyAssignments(
+async function notifyMilestoneOwners(
   db: Firestore,
-  team: { id: string; name: string },
+  teamId: string,
   actorId: string,
-  assigned: { id: string; title: string; ownerId: string }[],
+  changes: { id: string; prevOwnerId: string | null; ownerId: string | null }[],
 ) {
-  for (const m of assigned) {
-    if (m.ownerId === actorId) continue;
-    await notify({
+  for (const c of changes) {
+    const { assigned, unassigned } = reassignmentRecipients(
+      c.prevOwnerId,
+      c.ownerId,
+      actorId,
+    );
+    if (assigned.length === 0 && unassigned.length === 0) continue;
+    await emitEvent(
       db,
-      recipientIds: [m.ownerId],
-      kind: "assigned",
-      team,
-      entity: { type: "todo", id: m.id, title: m.title },
-      actor: { id: actorId },
-    });
+      { type: "milestone", id: c.id },
+      c.prevOwnerId ? "reassigned" : null,
+      actorId,
+      { teamId, direct: { assigned, unassigned } },
+    );
   }
 }
 
@@ -547,11 +584,38 @@ function pathFor(teamId: string) {
   return `/teams/${teamId}/rocks`;
 }
 
+function pickAssignment(p: ReturnType<typeof assignmentPatch>) {
+  return { assigned_by: p.assigned_by, follower_ids: p.follower_ids };
+}
+
+/**
+ * Rock-level notification: the new owner is told `assigned`, the previous
+ * one `unassigned`, and the followers hear `event` (null = direct only).
+ */
+async function notifyRockOwner(
+  db: Firestore,
+  teamId: string,
+  rockId: string,
+  actorId: string,
+  prevOwnerId: string | null,
+  ownerId: string | null,
+  event: RockEvent | null = null,
+) {
+  const direct = reassignmentRecipients(prevOwnerId, ownerId, actorId);
+  if (direct.assigned.length === 0 && direct.unassigned.length === 0 && !event) {
+    return;
+  }
+  await emitEvent(db, { type: "rock", id: rockId }, event, actorId, {
+    teamId,
+    direct,
+  });
+}
+
 export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin, team } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   const { viewer } = await requireViewer();
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
@@ -568,6 +632,7 @@ export async function createRockWithMilestones(
     ownerId: milestoneOwnerFor(m, owner_id, null) ?? owner_id,
     m,
   }));
+  const rockAssign = assignmentPatch("rock", {}, owner_id, uid);
   await assertMilestoneOwners(
     db,
     created.map((c) => ({ title: c.title, ownerId: c.ownerId })),
@@ -588,6 +653,7 @@ export async function createRockWithMilestones(
     rock_type,
     is_company_rock,
     ...audience,
+    ...pickAssignment(rockAssign),
     status: "on_track",
     completed_at: null,
     // Explicit null so the Monday sweep's `archived_at == null` equality
@@ -596,15 +662,38 @@ export async function createRockWithMilestones(
     created_at: FieldValue.serverTimestamp(),
   });
   for (const c of created) {
-    batch.set(c.ref, milestoneDoc(teamId, rockRef.id, c.m, c.ownerId));
+    batch.set(
+      c.ref,
+      milestoneDoc(
+        teamId,
+        rockRef.id,
+        c.m,
+        c.ownerId,
+        pickAssignment(assignmentPatch("milestone", {}, c.ownerId, uid)),
+      ),
+    );
   }
   await batch.commit();
 
-  await notifyAssignments(
+  await notifyMilestoneOwners(
     db,
-    { id: teamId, name: team.name },
+    teamId,
     uid,
-    created.map((c) => ({ id: c.ref.id, title: c.title, ownerId: c.ownerId })),
+    created.map((c) => ({ id: c.ref.id, prevOwnerId: null, ownerId: c.ownerId })),
+  );
+  // A new rock: the owner is told they were assigned it, the audience that
+  // they were added to it.
+  await notifyRockOwner(db, teamId, rockRef.id, uid, null, owner_id);
+  await emitAudienceAdded(
+    db,
+    rockRef.id,
+    uid,
+    teamId,
+    audienceAdded(
+      { teamIds: [], userIds: [] },
+      { teamIds: audience.audience_team_ids, userIds: audience.audience_user_ids },
+      uid,
+    ),
   );
   revalidateRockSurfaces(teamId, audience.audience_team_ids);
 }
@@ -631,14 +720,13 @@ export async function updateRockWithMilestones(
     milestones.map((m) => m.id).filter((id): id is string => !!id),
   );
 
-  const [existingSnap, members, name] = await Promise.all([
+  const [existingSnap, members] = await Promise.all([
     db
       .collection("todos")
       .where("team_id", "==", teamId)
       .where("source_rock_id", "==", rockId)
       .get(),
     getTeamMembers(teamId),
-    teamName(db, teamId),
   ]);
   const parentIds = new Set(members.map((m) => m.user_id));
   const existingById = new Map(existingSnap.docs.map((d) => [d.id, d]));
@@ -689,6 +777,7 @@ export async function updateRockWithMilestones(
     audience.private,
   );
 
+  const rockAssign = assignmentPatch("rock", data, owner_id, uid);
   const batch = db.batch();
   batch.update(db.collection("rocks").doc(rockId), {
     title,
@@ -699,6 +788,9 @@ export async function updateRockWithMilestones(
     rock_type,
     is_company_rock,
     ...audience,
+    // New owner + new assigner lock; the old ones stay as plain followers.
+    // Only on a real hand-off, so a plain edit never races a Follow click.
+    ...(rockAssign.reassigned ? pickAssignment(rockAssign) : {}),
     // Legacy names, replaced by the fields above (P13 migrates the rest).
     shared_team_ids: FieldValue.delete(),
     team_only: FieldValue.delete(),
@@ -710,19 +802,30 @@ export async function updateRockWithMilestones(
   });
 
   // Rows the user removed in the modal.
+  const removed: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   for (const d of existingSnap.docs) {
     if (keptIds.has(d.id)) continue;
     if (known && !known.has(d.id)) continue;
     batch.delete(d.ref);
+    removed.push(d);
   }
 
-  const assigned: { id: string; title: string; ownerId: string }[] = [];
+  const handoffs: {
+    id: string;
+    prevOwnerId: string | null;
+    ownerId: string | null;
+  }[] = [];
   for (const { m, existing, ownerId } of planned) {
     if (existing) {
-      if (ownerId && String(existing.data().owner_id ?? "") !== ownerId) {
-        assigned.push({ id: existing.id, title: m.title, ownerId });
-      }
+      const prevOwnerId = (existing.data().owner_id as string | null) || null;
+      const handoff = !!ownerId && prevOwnerId !== ownerId;
+      if (handoff) handoffs.push({ id: existing.id, prevOwnerId, ownerId });
       batch.update(db.collection("todos").doc(existing.id), {
+        ...(handoff
+          ? pickAssignment(
+              assignmentPatch("milestone", existing.data(), ownerId, uid),
+            )
+          : {}),
         title: m.title,
         owner_id: ownerId,
         due_date: m.due_date,
@@ -733,13 +836,52 @@ export async function updateRockWithMilestones(
     } else {
       const ref = db.collection("todos").doc();
       const owner = ownerId ?? owner_id;
-      assigned.push({ id: ref.id, title: m.title, ownerId: owner });
-      batch.set(ref, milestoneDoc(teamId, rockId, m, owner));
+      handoffs.push({ id: ref.id, prevOwnerId: null, ownerId: owner });
+      batch.set(
+        ref,
+        milestoneDoc(
+          teamId,
+          rockId,
+          m,
+          owner,
+          pickAssignment(assignmentPatch("milestone", {}, owner, uid)),
+        ),
+      );
     }
   }
   await batch.commit();
 
-  await notifyAssignments(db, { id: teamId, name }, uid, assigned);
+  await purgeRemovedMilestones(db, removed);
+  await notifyMilestoneOwners(db, teamId, uid, handoffs);
+  // Rock-level events: owner / due date to the followers, `assigned` and
+  // `unassigned` to the two owners, `audience_added` to the new audience.
+  const edits = rockEditEvents(
+    { owner_id: rock.owner_id, due_date: (data.due_date as string | null) ?? null },
+    { owner_id, due_date },
+  );
+  for (const ev of edits) {
+    const ownerEv = ev === "owner_changed";
+    await notifyRockOwner(
+      db,
+      teamId,
+      rockId,
+      uid,
+      ownerEv ? rock.owner_id : null,
+      ownerEv ? owner_id : null,
+      ev,
+    );
+  }
+  await emitAudienceAdded(
+    db,
+    rockId,
+    uid,
+    teamId,
+    audienceAdded(
+      { teamIds: audienceTeamIdsOf(rock), userIds: audienceUserIdsOf(rock) },
+      { teamIds: audience.audience_team_ids, userIds: audience.audience_user_ids },
+      uid,
+    ),
+  );
   revalidateRockSurfaces(teamId, [
     ...new Set([...audienceTeamIdsOf(rock), ...audience.audience_team_ids]),
   ]);

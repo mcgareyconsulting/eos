@@ -7,6 +7,12 @@ import { RichText } from "@/components/rich-text";
 import { DetailModal } from "@/components/detail-modal";
 import { EntityComments } from "@/components/entity-comments";
 import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
+import {
+  effectiveFollowers,
+  isFollowing,
+  isLockedFollower,
+} from "@/lib/follow";
+import { RockFollowButton } from "./rock-follow-button";
 import { dueToneClass } from "@/lib/due";
 import { Fact } from "./fact";
 import {
@@ -35,6 +41,11 @@ export type RockDetailData = {
   description: string | null;
   rock_type: string | null;
   is_company_rock?: boolean | null;
+  // Follow state (lib/follow.ts reads these); absent on a legacy doc.
+  owner_id?: string | null;
+  assigned_by?: string | null;
+  created_by?: string | null;
+  follower_ids?: string[] | null;
 };
 
 export type RockDetailMilestone = {
@@ -140,6 +151,12 @@ function RockDetailModal({
   const pct = milestones.length
     ? Math.round((doneCount / milestones.length) * 100)
     : 0;
+  const followDoc = {
+    owner_id: rock.owner_id ?? null,
+    assigned_by: rock.assigned_by ?? null,
+    created_by: rock.created_by ?? null,
+    follower_ids: rock.follower_ids ?? [],
+  };
   const hasDescription = !!rock.description?.trim();
   const isDone = rock.status === "done" || rock.status === "cancelled";
 
@@ -218,6 +235,16 @@ function RockDetailModal({
             </>
           ) : null}
         </p>
+
+        <div className="mt-3">
+          <RockFollowButton
+            teamId={teamId}
+            rockId={rock.id}
+            following={isFollowing("rock", followDoc, userId)}
+            followerCount={effectiveFollowers("rock", followDoc).length}
+            locked={isLockedFollower("rock", followDoc, userId)}
+          />
+        </div>
 
         <dl className="mt-4 flex border-y border-zinc-100 dark:border-zinc-800">
           <Fact label="Owner">{ownerName}</Fact>

@@ -45,6 +45,9 @@ type Rock = {
   audience_user_ids?: string[] | null;
   private?: boolean | null;
   archived_at?: unknown | null;
+  assigned_by?: string | null;
+  created_by?: string | null;
+  follower_ids?: string[] | null;
 };
 
 type Member = { user_id: string; full_name: string };

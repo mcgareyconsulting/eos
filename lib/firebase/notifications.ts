@@ -161,8 +161,8 @@ export async function emitEvent(
 
 /**
  * The pre-P5 call shape, kept for callers outside this package's reach
- * (rocks/actions.ts `notifyAssignments` — SPEC P6b: switch it to
- * `emitEvent`). `team.name`, `entity.title` and `detail` are IGNORED (rows
+ * (rocks/actions.ts used it until P6b; it now calls
+ * `emitEvent` directly). `team.name`, `entity.title` and `detail` are IGNORED (rows
  * are pointer-only); the access check applies.
  */
 export type NotifyArgs = {

@@ -3,12 +3,16 @@ rules_version = '2';
 // Firestore Security Rules for the EOS app.
 //
 // No client writes: every write is a server action on the Admin SDK (which
-// bypasses these rules). The rules below govern client reads only
-// (onSnapshot listeners); every `write` is denied.
+// bypasses these rules). Every `write` below is denied.
 //
-// Reads are gated on team membership via the team_members collection (and,
-// for shared lists, users/{uid}.team_ids) + Identity Platform custom claims
-// (`role: "normal" | "admin"`).
+// Client READS (the live onSnapshot listeners) must agree with the server
+// access modules in lib/access/** (docs/PERMISSIONS_SPEC.md §6). Each item
+// rule below names the module function it mirrors. tests/rules/ holds a
+// parity suite that evaluates the module and the rule on the same fixtures.
+//
+// Lookup budget: Firestore allows 10 get()/exists() document lookups per
+// single-document read or query (repeat reads of one document count once).
+// Each rule notes its worst case. `myTeamIds()` is always one lookup.
 
 service cloud.firestore {
   match /databases/{db}/documents {
@@ -17,48 +21,101 @@ service cloud.firestore {
     function authed() { return request.auth != null; }
 
     // Admin = Identity Platform custom claim (role: "admin"), granted by HPB to
-    // their own admin accounts. There are no email-allowlisted break-glass
-    // accounts: app access is HPB SSO only. Consultant / operator administration
-    // happens at the GCP IAM + Admin SDK layer (HPB-granted), which bypasses
-    // these rules entirely and needs no app login.
+    // their own admin accounts. Consultant / operator administration happens
+    // at the GCP IAM + Admin SDK layer, which bypasses these rules.
     function admin() {
-      return authed() && request.auth.token.role == "admin";
+      return authed() && request.auth.token.get('role', '') == "admin";
     }
 
-    // Sign-in perimeter (defense-in-depth). Primary enforcement is the
-    // server-side SIGN_IN_ALLOWLIST check in createSession()
-    // (lib/firebase/session.ts) — the provider-level domain restriction can't
-    // express "HPB domain plus the consultant account", so it is NOT used.
-    // These rules mirror that allowlist to gate the broad org/user/team reads
-    // below, so a token from outside the perimeter can't enumerate them.
-    // Keep this list in lockstep with the deployed SIGN_IN_ALLOWLIST value.
-    // The email must be verified too (C-04) — same rule as signInRefusal().
-    function inDomain() {
-      return authed()
-        && request.auth.token.email_verified == true
-        && (request.auth.token.email.matches(".*@highplainsbank[.]com$")
-            || request.auth.token.email == "daniel@mcgareyconsulting.com");
-    }
-
-    function isMember(teamId) {
-      return authed()
-        && exists(/databases/$(db)/documents/team_members/$(teamId + "__" + request.auth.uid));
-    }
-
-    // The caller's teams: one get() of users/{uid}.team_ids, which is
-    // server-maintained from team_members (lib/firebase/membership.ts).
-    // `users` writes are denied below, so a client cannot forge team_ids.
+    // The caller's teams: one get() of users/{uid}.team_ids, server-maintained
+    // from team_members (lib/firebase/membership.ts). `users` is not
+    // client-writable, so a client cannot forge it. Rostered on a team =
+    // `teamId in myTeamIds()` (lib/access isMemberOf). 1 lookup.
     function myTeamIds() {
       return get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('team_ids', []);
     }
+    function onTeam(teamId) {
+      return authed() && teamId in myTeamIds();
+    }
+    // lib/access passesTeamGate: rostered on the item's team, or admin.
+    function teamGate(teamId) {
+      return admin() || onTeam(teamId);
+    }
+    function isMe(id) {
+      return authed() && id == request.auth.uid;
+    }
 
-    // Is the caller on any team this document was shared into? Used by rocks
-    // and by scorecard measurables, which share the same `shared_team_ids`
-    // shape (lib/rocks-share.ts, lib/scorecard-share.ts). hasAny() replaces
-    // the old 8-way unroll: there is no cap on the number of shares any more
-    // (proved in docs/spikes/P14-rules-hasany.md).
-    function listSharedToMe(data) {
-      return authed() && data.get('shared_team_ids', []).hasAny(myTeamIds());
+    // ---------- shape C: rock (lib/access/rock.ts) ----------
+    // isPrivateRock: `private` when it is a bool, else legacy `team_only`.
+    function rockPrivate(r) {
+      return r.get('private', null) is bool
+        ? r.private
+        : r.get('team_only', false) == true;
+    }
+    // audienceTeamIdsOf: `audience_team_ids` when the doc has the list (even
+    // empty), else legacy `shared_team_ids` (until the P13 migration).
+    function rockAudienceTeams(r) {
+      return r.get('audience_team_ids', r.get('shared_team_ids', []));
+    }
+    // seesFullRock: admin, parent team, audience team, audience person. A
+    // private rock has no audience whatever is stored. 1 lookup (myTeamIds).
+    function rockFull(r) {
+      return admin()
+        || onTeam(r.team_id)
+        || (!rockPrivate(r)
+            && (rockAudienceTeams(r).hasAny(myTeamIds())
+                || r.get('audience_user_ids', []).hasAny([request.auth.uid])));
+    }
+    // 2 lookups (the rock + myTeamIds).
+    function rockFullById(rockId) {
+      return rockId is string
+        && rockId != ''
+        && rockFull(get(/databases/$(db)/documents/rocks/$(rockId)).data);
+    }
+
+    // ---------- to-dos: shapes A, B and milestones ----------
+    // lib/item-registry.ts itemTypeOfTodoDoc.
+    function isMilestone(t) {
+      return t.get('source_rock_id', '') is string && t.get('source_rock_id', '') != '';
+    }
+    // lib/access: teamTodoAccess / privateTodoAccess / milestoneAccess canSee.
+    //   any:        admin, the assignee (owner_id) from any team
+    //   team to-do: + members of team_id. A milestone's team_id is its rock's
+    //               parent team, so this is the rock's parent-team clause.
+    //   private:    + the creator (created_by). Not members, not leaders.
+    //   milestone:  + the full-rock set of its rock.
+    // Worst case 2 lookups (the rock + myTeamIds).
+    function todoSee(t) {
+      return admin()
+        || isMe(t.get('owner_id', null))
+        || (t.visibility != 'private' && onTeam(t.team_id))
+        || (t.visibility == 'private'
+            && isMe(t.get('created_by', null))
+            && !isMilestone(t))
+        || (isMilestone(t) && rockFullById(t.source_rock_id));
+    }
+    // 3 lookups (the to-do, its rock, myTeamIds).
+    function todoSeeById(todoId) {
+      return todoId is string
+        && todoId != ''
+        && todoSee(get(/databases/$(db)/documents/todos/$(todoId)).data);
+    }
+
+    // ---------- shape A: issue, headline (lib/access/team-item.ts) ----------
+    // 2 lookups (the item + myTeamIds).
+    function teamItemSeeById(coll, itemId) {
+      return itemId is string
+        && itemId != ''
+        && teamGate(get(/databases/$(db)/documents/$(coll)/$(itemId)).data.team_id);
+    }
+
+    // ---------- shape D: metric (lib/access/metric.ts seesMetric) ----------
+    // admin, public (every person), home team, tracking team. 1 lookup.
+    function metricSee(m) {
+      return admin()
+        || onTeam(m.team_id)
+        || (authed() && m.get('is_public', false) == true)
+        || (authed() && m.get('shared_team_ids', []).hasAny(myTeamIds()));
     }
 
     // ---------- default deny ----------
@@ -66,236 +123,161 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // ---------- organizations & users ----------
-    match /organizations/{orgId} {
-      allow read:  if inDomain();
-      allow write: if false;
-    }
-
-    match /users/{uid} {
-      allow read:  if inDomain();
-      allow write: if false;
-    }
-
-    // ---------- teams & memberships (org directory) ----------
-    // Soft directory: any signed-in in-domain user may read team names and
-    // rosters. Team *data* (rocks, issues, meetings, …) is membership-gated
-    // below.
-    match /teams/{teamId} {
-      allow read:  if inDomain();
-      allow write: if false;
-    }
-
-    match /team_members/{id} {
-      allow read:  if inDomain();
-      allow write: if false;
-    }
+    // ---------- organizations, users, teams, rosters ----------
+    // No client listener reads these (every directory read is a server page
+    // or action on the Admin SDK), so client reads are denied. The rules'
+    // own get() of users/{uid} is not a client read and is unaffected.
+    match /organizations/{orgId} { allow read, write: if false; }
+    match /users/{uid}           { allow read, write: if false; }
+    match /teams/{teamId}        { allow read, write: if false; }
+    match /team_members/{id}     { allow read, write: if false; }
 
     // ---------- scorecard ----------
-    // A measurable has one home team and an optional `shared_team_ids` — the
-    // teams that pulled it onto their scorecard. A borrowing team can read the
-    // row and its history; attaching/detaching a share and setting values are
-    // Admin-SDK server actions (`requireTeamAccess`, `canEditMetricValues`).
-    function metricSharedToMe() {
-      return listSharedToMe(resource.data);
-    }
+    // Queries: `team_id == T`, `shared_team_ids array-contains T`. 1 lookup.
     match /scorecard_metrics/{id} {
-      allow read:  if admin() || isMember(resource.data.team_id) || metricSharedToMe();
+      allow read:  if metricSee(resource.data);
       allow write: if false;
     }
 
-    // Groups are named, ordered buckets within a period — same team gate as
-    // the metrics that reference them by name.
+    // Groups: named buckets within a team's scorecard. 1 lookup.
     match /scorecard_groups/{id} {
-      allow read:  if admin() || isMember(resource.data.team_id);
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
     }
 
-    // Entries carry no team of their own — they are keyed
-    // `${metricId}__${weekStartDate}` — so they inherit their measurable's
-    // visibility (a share is a *reference*: one set of values).
+    // Entries inherit their metric (a track is a reference: one set of
+    // values). Query: `metric_id in [≤30 ids] and week_start_date >= d`.
+    // 2 lookups per document (the metric + myTeamIds).
     match /scorecard_entries/{id} {
-      function metricDoc() {
-        return get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data;
-      }
-      function metricTeam() {
-        return metricDoc().team_id;
-      }
-      allow read:  if admin() || isMember(metricTeam()) || listSharedToMe(metricDoc());
+      allow read:  if metricSee(get(/databases/$(db)/documents/scorecard_metrics/$(resource.data.metric_id)).data);
       allow write: if false;
     }
 
     // ---------- rocks ----------
-    // Parent team members have full access; teams in shared_team_ids may read
-    // (no cap). `listSharedToMe` is defined with the shared helpers above.
-    function rockSharedToMe() {
-      return listSharedToMe(resource.data);
-    }
-    // The whole rock, client half of lib/rocks-share.ts hasFullRockView:
-    // parent team, a shared team, the rock's owner, or an assignee (the
-    // rock carries `milestone_owner_ids`, rewritten on every save). Gates
-    // the rock doc, its status history and its comments.
-    function rockFullAccess(data) {
-      return isMember(data.team_id)
-        || listSharedToMe(data)
-        || (authed()
-            && (data.owner_id == request.auth.uid
-                || data.get('milestone_owner_ids', []).hasAny([request.auth.uid])));
-    }
-    function rockFullAccessById(rockId) {
-      return rockId is string
-        && rockId != ''
-        && exists(/databases/$(db)/documents/rocks/$(rockId))
-        && rockFullAccess(get(/databases/$(db)/documents/rocks/$(rockId)).data);
-    }
-    function sourceRockVisibleToMe(rockId) {
-      return rockId is string
-        && rockId != ''
-        && exists(/databases/$(db)/documents/rocks/$(rockId))
-        && (
-          isMember(get(/databases/$(db)/documents/rocks/$(rockId)).data.team_id)
-          || listSharedToMe(get(/databases/$(db)/documents/rocks/$(rockId)).data)
-        );
-    }
+    // Queries: `team_id == T`; `audience_team_ids array-contains T`; legacy
+    // `shared_team_ids array-contains T` (until P13). 1 lookup.
     match /rocks/{id} {
-      allow read:  if admin() || rockFullAccess(resource.data);
+      allow read:  if rockFull(resource.data);
       allow write: if false;
     }
 
     // ---------- rock status updates (immutable history) ----------
+    // The rock's full-access rule. `team_id` is always the rock's parent team
+    // (setRockStatus refuses any other team, and a rock never changes team),
+    // so the `team_id` clause is the parent-team clause of rockFull, stated
+    // on the row so the L10's `team_id == T` listener can be proven.
+    // Worst case 2 lookups (the rock + myTeamIds).
     match /rock_status_updates/{id} {
-      allow read:  if admin()
-                   || isMember(resource.data.team_id)
-                   || rockFullAccessById(resource.data.rock_id);
+      allow read:  if teamGate(resource.data.team_id)
+                   || rockFullById(resource.data.rock_id);
       allow write: if false;
     }
 
-    // ---------- todos ----------
+    // ---------- to-dos and milestones ----------
+    // Queries: `team_id == T and visibility == "team"`; `... visibility ==
+    // "private" and owner_id == me`; `... visibility == "private" and
+    // created_by == me`; `owner_id == me`; `todos/{id}`.
+    // Worst case 2 lookups.
     match /todos/{id} {
-      allow read: if admin()
-                  // Your own to-do or milestone, from any team — a guest-team
-                  // member assigned a milestone on another team's rock.
-                  || (authed() && resource.data.owner_id == request.auth.uid)
-                  || (isMember(resource.data.team_id)
-                      && resource.data.visibility == "team")
-                  // Guest team can see team-visible milestones of a rock
-                  // shared into them (parent team_id is not theirs). Every
-                  // team share is full (lib/rocks-share.ts); a team that sees
-                  // a rock only through its people's milestones gets them
-                  // server-side, not through a client read.
-                  || (resource.data.visibility == "team"
-                      && sourceRockVisibleToMe(resource.data.source_rock_id));
+      allow read:  if todoSee(resource.data);
       allow write: if false;
     }
 
     // ---------- issues + per-user votes ----------
     match /issues/{id} {
-      allow read:  if admin() || isMember(resource.data.team_id);
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
     }
 
-    // Votes: server-action only (castVote keeps the credit cap and the
-    // denormalized issues.votes counter in one transaction).
+    // Votes: server-action only (castVote). Query `user_id == me and
+    // team_id == T`. 1 lookup.
     match /issue_votes/{id} {
-      allow read:  if admin() || isMember(resource.data.team_id);
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
     }
 
-    // ---------- free-form comments on issues / rocks / to-dos ----------
+    // ---------- threads (one per item; spec §5.1) ----------
+    // Item-aware: a comment is readable by whoever can see the item it hangs
+    // off (lib/firebase/thread-gate.ts → accessFor(type)). The comment's own
+    // `team_id` is only its filing team and grants nothing. Every client
+    // query pins `entity_type` and `entity_id` by equality, which is what lets
+    // the rule get() the parent. Worst case 3 lookups (milestone thread: the
+    // to-do, its rock, myTeamIds).
+    function threadSee(d) {
+      return d.entity_type == 'rock'     ? rockFullById(d.entity_id)
+           : d.entity_type == 'todo'     ? todoSeeById(d.entity_id)
+           : d.entity_type == 'issue'    ? teamItemSeeById('issues', d.entity_id)
+           : d.entity_type == 'headline' ? teamItemSeeById('headlines', d.entity_id)
+           : false;
+    }
     match /entity_comments/{id} {
-      // A rock has one thread, filed under its parent team, readable by
-      // everyone with the whole rock (docs/ROCK_SHARING_RULES.md). Other
-      // entities stay team-scoped.
-      function rockThread(data) {
-        return data.entity_type == 'rock' && rockFullAccessById(data.entity_id);
-      }
+      allow read:  if admin() || threadSee(resource.data);
+      allow write: if false;
+    }
+
+    // ---------- per-entity activity trace ----------
+    // One row per event on a to-do (lib/activity.ts). Readable on the same
+    // terms as the to-do itself, looked up by `entity_id` (the row's own
+    // `visibility` / `owner_id` are a snapshot and grant nothing). Query:
+    // `entity_type == "todo" and entity_id == X`. Worst case 3 lookups.
+    match /entity_activity/{id} {
       allow read:  if admin()
-                   || isMember(resource.data.team_id)
-                   || rockThread(resource.data);
+                   || (resource.data.entity_type == 'todo'
+                       && todoSeeById(resource.data.entity_id));
       allow write: if false;
     }
 
     // ---------- in-app notifications (per-user inbox) ----------
-    // One row per recipient × event, written by server actions
-    // (lib/firebase/notifications.ts). The client subscribes to its own rows
-    // for the sidebar badge and the /notifications hub. A list query must
-    // constrain `user_id == request.auth.uid` or the rule rejects it outright.
+    // A list query must constrain `user_id == request.auth.uid`. 0 lookups.
     match /notifications/{id} {
       allow read:  if authed() && resource.data.user_id == request.auth.uid;
       allow write: if false;
     }
 
     // ---------- headlines ----------
-    // Cascading headlines reach target teams via app-layer filtering (rules
-    // can't iterate target_team_ids; the query scopes by team_id).
+    // A cascade is fanned out as one doc per team, so `team_id` is the gate
+    // (lib/access headlineAccess). 1 lookup.
     match /headlines/{id} {
-      allow read:  if admin() || isMember(resource.data.team_id);
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
     }
 
     // ---------- meeting agendas (templates) ----------
-    // No client reads today; kept member-readable.
+    // No client reads today; kept on the team gate. 1 lookup.
     match /agendas/{agendaId} {
-      allow read:  if admin() || isMember(resource.data.team_id);
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
     }
 
     // ---------- meetings (L10) ----------
+    // 1 lookup; subcollections 2 (the meeting + myTeamIds).
     match /meetings/{meetingId} {
-      allow read:  if admin() || isMember(resource.data.team_id);
-      // Meeting state (driver, current_segment, ended_at, votes) changes only
-      // through server actions; a client write would make the driver model
-      // advisory.
+      allow read:  if teamGate(resource.data.team_id);
       allow write: if false;
 
       function meetingTeam() {
         return get(/databases/$(db)/documents/meetings/$(meetingId)).data.team_id;
       }
 
-      // End-of-meeting ratings, one doc per attendee, written server-side.
       match /effectiveness_scores/{scoreId} {
-        allow read:  if admin() || isMember(meetingTeam());
+        allow read:  if teamGate(meetingTeam());
         allow write: if false;
       }
 
       match /presence/{uid} {
-        allow read:  if admin() || isMember(meetingTeam());
+        allow read:  if teamGate(meetingTeam());
         allow write: if false;
       }
     }
 
-    // ---------- per-entity activity trace ----------
-    // One row per event on a to-do (lib/activity.ts), written only by server
-    // actions. Readable on the same terms as the to-do itself: members see a
-    // team-visible to-do's trace; a private one's is its owner's alone. A
-    // list query must constrain `visibility` (and `owner_id` when private)
-    // or the rule rejects it outright.
-    match /entity_activity/{id} {
-      allow read:  if admin()
-                   || (isMember(resource.data.team_id)
-                       && (resource.data.visibility == "team"
-                           || resource.data.owner_id == request.auth.uid));
-      allow write: if false;
-    }
-
     // ---------- audit log (append-only, function-written) ----------
-    // Populated exclusively by the onDocumentWrittenWithAuthContext Cloud
-    // Function (functions/src/index.ts, Admin SDK); only admins may read it.
     match /audit_log/{eventId} {
       allow read:  if admin();
       allow write: if false;
     }
 
-    // ---------- Google Tasks OAuth tokens (per-user, server-only) ----------
-    // Admin SDK only (lib/google/tasks.ts). Clients must never read refresh
-    // tokens. Default-deny above covers this; explicit rule documents intent.
-    match /google_tasks_connections/{uid} {
-      allow read, write: if false;
-    }
-
-    // One-time OAuth CSRF states for the Tasks connector (admin SDK only).
-    match /oauth_csrf_states/{state} {
-      allow read, write: if false;
-    }
+    // ---------- server-only secrets (Admin SDK only) ----------
+    match /google_tasks_connections/{uid} { allow read, write: if false; }
+    match /oauth_csrf_states/{state}      { allow read, write: if false; }
   }
 }

@@ -94,44 +94,33 @@ const DEFAULT_TONE =
  * The activity trace for one to-do, newest first — every event the server
  * actions recorded (lib/activity.ts), live.
  *
- * The query mirrors the `entity_activity` rule: it always pins `visibility`,
- * and for a private to-do pins `owner_id` too, because the rule rejects a
- * list it cannot prove is readable. `visibility` / `ownerId` come from the
- * to-do as the caller currently sees it.
+ * The query is by entity alone: the `entity_activity` rule looks the to-do
+ * up by `entity_id` and applies the to-do's own read rule (firestore.rules
+ * `todoSee`), so the off-team assignee and a private to-do's creator read
+ * the trace too. The row's own `team_id` / `visibility` / `owner_id` are a
+ * snapshot from when the event was written and grant nothing.
  */
 export function EntityActivity({
-  teamId,
   entityType,
   entityId,
-  visibility,
-  ownerId,
   userId,
   className,
 }: {
-  teamId: string;
   entityType: "todo";
   entityId: string;
-  visibility: "team" | "private";
-  ownerId: string | null;
   userId: string;
   className?: string;
 }) {
   const db = getClientDb();
-  const q = useMemo<Query | null>(() => {
-    const base = [
-      where("team_id", "==", teamId),
-      where("entity_type", "==", entityType),
-      where("entity_id", "==", entityId),
-      where("visibility", "==", visibility),
-    ];
-    if (visibility === "private") {
-      // Only the owner can read a private trace; anyone else gets nothing
-      // rather than a rules error in the console.
-      if (ownerId !== userId) return null;
-      base.push(where("owner_id", "==", userId));
-    }
-    return fsQuery(collection(db, "entity_activity"), ...base);
-  }, [db, teamId, entityType, entityId, visibility, ownerId, userId]);
+  const q = useMemo<Query>(
+    () =>
+      fsQuery(
+        collection(db, "entity_activity"),
+        where("entity_type", "==", entityType),
+        where("entity_id", "==", entityId),
+      ),
+    [db, entityType, entityId],
+  );
   const rows = useCollection<ActivityRow>(q, [], "entity-activity");
 
   const sorted = useMemo(

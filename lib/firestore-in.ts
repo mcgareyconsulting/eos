@@ -7,11 +7,25 @@
 
 export const FIRESTORE_IN_LIMIT = 30;
 
-export function chunkForInQuery<T>(ids: readonly T[]): T[][] {
+/**
+ * Chunk size for a CLIENT `in` query whose read rule get()s one document per
+ * value (scorecard_entries → its metric). The rules evaluate an `in` query
+ * once per value and every get() counts against the request's lookup budget
+ * (10 per query in the Firestore docs), plus one for `users/{uid}`
+ * (`myTeamIds()`): 9 values + 1 = 10. A bigger chunk is refused outright.
+ * Admin SDK queries bypass rules and keep FIRESTORE_IN_LIMIT.
+ */
+export const RULES_GET_IN_LIMIT = 9;
+
+export function chunkForInQuery<T>(
+  ids: readonly T[],
+  size: number = FIRESTORE_IN_LIMIT,
+): T[][] {
   if (ids.length === 0) return [];
+  const step = Math.max(1, Math.min(size, FIRESTORE_IN_LIMIT));
   const chunks: T[][] = [];
-  for (let i = 0; i < ids.length; i += FIRESTORE_IN_LIMIT) {
-    chunks.push(ids.slice(i, i + FIRESTORE_IN_LIMIT) as T[]);
+  for (let i = 0; i < ids.length; i += step) {
+    chunks.push(ids.slice(i, i + step) as T[]);
   }
   return chunks;
 }

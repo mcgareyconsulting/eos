@@ -371,11 +371,8 @@ export function TodoListRow({
           />
           {showActivity && (
             <EntityActivity
-              teamId={teamId}
               entityType="todo"
               entityId={todo.id}
-              visibility={todo.visibility}
-              ownerId={todo.owner_id}
               userId={userId}
               className="border-t border-zinc-200 pt-3 dark:border-zinc-800"
             />

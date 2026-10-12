@@ -177,11 +177,8 @@ function LiveRow({
       </div>
       <aside className="min-h-0 overflow-y-auto border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 lg:border-l lg:border-t-0">
         <EntityActivity
-          teamId={teamId}
           entityType="todo"
           entityId={todo.id}
-          visibility={todo.visibility}
-          ownerId={todo.owner_id}
           userId={userId}
         />
       </aside>

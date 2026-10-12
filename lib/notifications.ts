@@ -241,6 +241,26 @@ export function applyFollowerEdit(args: {
   };
 }
 
+/**
+ * Who hears "assigned" and "unassigned" when an item's owner changes
+ * (spec §5.3). The new owner is told unless they made the change; the
+ * previous owner is told their assignment was removed unless they did it.
+ * No change, or nobody on a side, yields an empty list for that side.
+ */
+export function assignmentRecipients(args: {
+  prevOwnerId: string | null | undefined;
+  nextOwnerId: string | null | undefined;
+  actorId: string;
+}): { assigned: string[]; unassigned: string[] } {
+  const prev = args.prevOwnerId || null;
+  const next = args.nextOwnerId || null;
+  if (prev === next) return { assigned: [], unassigned: [] };
+  return {
+    assigned: next && next !== args.actorId ? [next] : [],
+    unassigned: prev && prev !== args.actorId ? [prev] : [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // What the row says
 // ---------------------------------------------------------------------------

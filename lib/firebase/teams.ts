@@ -191,8 +191,9 @@ export const OWNER_NOT_ON_ROSTER = "Owner must be a member of this team.";
  * since left the team must not become impossible).
  *
  * The rock OWNER uses this too (spec §3.3: on the parent team). Not for
- * milestones: a milestone may be assigned to a person on any team, and the
- * rock actions check that rule themselves.
+ * milestones or to-dos: either may be assigned to a person on any team
+ * (spec §3.1, §3.3) — the rock actions check milestones themselves, and
+ * to-dos use `requireAssignablePerson` (lib/firebase/todo-gate.ts).
  */
 export async function requireRosterOwner(
   teamId: string,

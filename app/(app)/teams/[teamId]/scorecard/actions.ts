@@ -36,6 +36,10 @@ import {
   type ManageableMetric,
   type ShareableMetric,
 } from "@/lib/scorecard-share";
+import { assignmentPatch } from "@/lib/follow";
+import { isNewValue, metricEditEvents } from "@/lib/scorecard-follow";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { metricFollowersAfter } from "@/lib/firebase/follow";
 import {
   groupDocId,
   groupNameKey,
@@ -94,6 +98,10 @@ export async function addMetric(teamId: string, formData: FormData) {
   }
   const goal = parsedGoal.value;
 
+  // The creator is the assigner (and the owner when they pick themselves);
+  // both follow, and the owner/assigner are locked (lib/follow.ts).
+  const assignment = assignmentPatch("metric", {}, owner_id, uid);
+
   await db.collection("scorecard_metrics").add({
     team_id: teamId,
     name,
@@ -104,6 +112,8 @@ export async function addMetric(teamId: string, formData: FormData) {
     group,
     interval,
     is_public: formData.get("is_public") === "true",
+    assigned_by: assignment.assigned_by,
+    follower_ids: assignment.follower_ids,
     sort_order: 0,
     created_at: FieldValue.serverTimestamp(),
   });
@@ -194,6 +204,15 @@ export async function updateMetric(
     if (match) interval = match.interval;
   }
 
+  // An owner change makes the editor the assigner; the old owner and old
+  // assigner stay on as unlocked followers (spec §5.3).
+  const assignment = assignmentPatch("metric", current, owner_id, uid);
+  const events = metricEditEvents(current, {
+    goal: parsedGoal.value,
+    direction,
+    owner_id,
+  });
+
   await db.collection("scorecard_metrics").doc(metricId).set(
     {
       name,
@@ -202,9 +221,21 @@ export async function updateMetric(
       direction,
       owner_id,
       interval,
+      ...(assignment.reassigned
+        ? {
+            assigned_by: assignment.assigned_by,
+            follower_ids: assignment.follower_ids,
+          }
+        : {}),
     },
     { merge: true },
   );
+
+  for (const event of events) {
+    await emitEvent(db, { type: "metric", id: metricId }, event, uid, {
+      teamId,
+    });
+  }
 
   revalidatePath(pathFor(teamId));
 }
@@ -557,8 +588,16 @@ export async function removeSharedMetric(teamId: string, metricId: string) {
   const rest = { ...((metric as { shared_groups?: Record<string, string | null> }).shared_groups ?? {}) };
   delete rest[teamId];
 
+  // Followers whose only path to the metric was this team stop following
+  // (spec §3.4). Computed against the metric as it will be stored.
+  const sharedAfter = removeShare(metric, teamId);
+  const follower_ids = await metricFollowersAfter(db, {
+    ...(snap.data() ?? {}),
+    shared_team_ids: sharedAfter,
+  } as ShareableMetric & Record<string, unknown>);
+
   await ref.set(
-    { shared_team_ids: removeShare(metric, teamId), shared_groups: rest },
+    { shared_team_ids: sharedAfter, shared_groups: rest, follower_ids },
     { merge: true },
   );
   revalidatePath(pathFor(teamId));
@@ -570,7 +609,7 @@ export async function setEntry(
   weekStartDate: string,
   valueRaw: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   const { snap, metric } = await requireMetricOnScorecard(db, metricId, teamId);
 
   // Borrowing a measurable buys a read, not a pen. The values belong to the
@@ -599,19 +638,26 @@ export async function setEntry(
   const value = parsed.value;
 
   const id = `${metricId}__${weekStartDate}`;
-  await db
-    .collection("scorecard_entries")
-    .doc(id)
-    .set(
-      {
-        metric_id: metricId,
-        week_start_date: weekStartDate,
-        value,
-        note: null,
-        created_at: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+  const entryRef = db.collection("scorecard_entries").doc(id);
+  const prevValue = (await entryRef.get()).data()?.value;
+  await entryRef.set(
+    {
+      metric_id: metricId,
+      week_start_date: weekStartDate,
+      value,
+      note: null,
+      created_at: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // Followers hear about a new number, not a re-save of the same one or a
+  // cleared cell (spec §5.3).
+  if (isNewValue(prevValue, value)) {
+    await emitEvent(db, { type: "metric", id: metricId }, "value_posted", uid, {
+      teamId,
+    });
+  }
 
   revalidatePath(pathFor(teamId));
   return { ok: true };
@@ -721,7 +767,7 @@ export async function setMetricPublic(
 ): Promise<{
   removed: { teamId: string; leaderIds: string[] }[];
 }> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "scorecard_metrics", metricId, teamId);
   const metric = (snap.data() ?? {}) as ShareableMetric;
 
@@ -745,10 +791,22 @@ export async function setMetricPublic(
       };
     }),
   );
+  // Followers on the removed teams stop following (spec §3.4); the rest keep
+  // the metric. Computed against the metric as it will be stored.
+  const follower_ids = await metricFollowersAfter(db, {
+    ...(snap.data() ?? {}),
+    ...patch,
+  } as unknown as ShareableMetric & Record<string, unknown>);
   // update, not merge: merging {} would not clear the maps
-  await snap.ref.update(patch);
-  // P7b: notify leaders (`removed` is what to send, and stop followers on
-  // those teams from following the metric).
+  await snap.ref.update({ ...patch, follower_ids });
+  // The removed teams' leaders hear that their team lost the metric.
+  const leaderIds = removed.flatMap((r) => r.leaderIds);
+  if (leaderIds.length > 0) {
+    await emitEvent(db, { type: "metric", id: metricId }, null, uid, {
+      teamId,
+      direct: { metric_private: leaderIds },
+    });
+  }
   revalidatePath(pathFor(teamId));
   return { removed };
 }

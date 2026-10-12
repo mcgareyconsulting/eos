@@ -4,7 +4,9 @@
 import type { Firestore } from "firebase-admin/firestore";
 import type { Viewer } from "@/lib/access";
 import { registryFor, type ItemRef } from "@/lib/item-registry";
-import { applyFollow, withAutoFollowers } from "@/lib/follow";
+import { applyFollow, storedFollowerIds, withAutoFollowers } from "@/lib/follow";
+import { prunedFollowerIds } from "@/lib/scorecard-follow";
+import type { MetricSubject } from "@/lib/access/metric";
 import {
   canFollowItem,
   canSeeItem,
@@ -75,4 +77,22 @@ export async function autoFollow(
     console.error(`[follow] auto-follow on ${ref.type}/${ref.id} failed:`, e);
     return [];
   }
+}
+
+/**
+ * The `follower_ids` a metric should store once its scorecard footprint is
+ * `after` (a team untracked it, or it went private): everyone who can still
+ * follow it, plus the locked owner and assigner. Spec §3.4. Reads only; the
+ * caller writes the list in the same update as the footprint change, so
+ * there is no window where a follower outlives their path to the metric.
+ */
+export async function metricFollowersAfter(
+  db: Firestore,
+  after: MetricSubject & Record<string, unknown>,
+  deps: ViewerDeps = {},
+): Promise<string[]> {
+  const stored = storedFollowerIds(after);
+  if (stored.length === 0) return stored;
+  const viewers = await loadViewers(db, stored, deps);
+  return prunedFollowerIds(after, viewers);
 }

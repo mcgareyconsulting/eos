@@ -6,6 +6,7 @@ import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
 import { normalizeKey } from "@/lib/csv-import";
 import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
+import { deactivatePerson, reactivatePerson } from "@/lib/firebase/deactivate";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
 import { syncUserTeamIds } from "@/lib/firebase/membership";
 import type { AdminResult, DeleteResult } from "./action-types";
@@ -271,95 +272,45 @@ export async function updateOrgPerson(
 }
 
 /**
- * Remove someone's access while keeping the record of their work.
- *
- * Deletes every roster row and the Identity Platform account (so they cannot
- * sign in), and drops them from any speaking order or meeting-driver slot
- * pointing at them. **Keeps the `/users` profile**, marked with
- * `deactivated_at`: every rock, to-do, issue and headline they owned still
- * renders their name instead of turning into an unattributed row. Their
- * owned items are left where they are — reassign them first if someone needs
- * to pick the work up (`pnpm user:reassign`).
+ * Deactivate a person (spec §2.6, decision D5): DISABLE the sign-in account
+ * (reversible - not deleted), revoke sessions, drop roster rows / speaking
+ * order / meeting driver, mark `users/{uid}.deactivated_at`, and unassign
+ * everything they owned, telling each parent team's leaders. The profile is
+ * kept so names on history still render. See lib/firebase/deactivate.ts.
  */
-export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
+export async function deactivateOrgPerson(uid: string): Promise<DeleteResult> {
   const { db, uid: actorUid } = await requireAdmin();
-
-  if (!uid) return { ok: false, error: "No user given" };
-  if (uid === actorUid) {
-    return {
-      ok: false,
-      error:
-        "You can't delete your own account — you would lose admin access with it.",
-    };
-  }
-
   try {
-    const auth = getAdminAuth();
-    const account = await auth.getUser(uid).catch(() => null);
-    if (account?.customClaims?.role === "admin") {
-      await assertAnotherAdminRemains(auth, uid);
-    }
-
-    const memberships = await db
-      .collection("team_members")
-      .where("user_id", "==", uid)
-      .get();
-    const teamIds = memberships.docs
-      .map((d) => d.data()?.team_id as string)
-      .filter(Boolean);
-
-    const batch = db.batch();
-    for (const doc of memberships.docs) batch.delete(doc.ref);
-
-    // Clear the uid out of anything on the team that points at it by id.
-    const teamDocs = teamIds.length
-      ? await db.getAll(...teamIds.map((id) => db.collection("teams").doc(id)))
-      : [];
-    for (const team of teamDocs) {
-      if (!team.exists) continue;
-      const data = team.data() ?? {};
-      const order = (data.speaking_order as string[]) ?? [];
-      const patch: Record<string, unknown> = {};
-      if (order.includes(uid)) {
-        patch.speaking_order = order.filter((id) => id !== uid);
-      }
-      if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-      if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
-    }
-
-    // Tombstone the profile rather than deleting it — see the doc comment.
-    // Carry the account's email/name over first: for someone who signed in
-    // without ever being invited, this is the only place the name survives.
-    batch.set(
-      db.collection("users").doc(uid),
-      {
-        ...(account?.email ? { email: account.email } : {}),
-        ...(account?.displayName ? { display_name: account.displayName } : {}),
-        deactivated_at: FieldValue.serverTimestamp(),
-        deactivated_by: actorUid,
-      },
-      { merge: true },
-    );
-
-    await batch.commit();
-    await syncUserTeamIds(db, uid);
-
-    let signInRevoked = false;
-    if (account) {
-      await auth.revokeRefreshTokens(uid);
-      await auth.deleteUser(uid);
-      signInRevoked = true;
-    }
-
+    const r = await deactivatePerson(db, getAdminAuth(), uid, actorUid);
+    if (!r.ok) return r;
     revalidateOrg();
-
+    const { teamsRemoved, itemsUnassigned, signInDisabled } = r.result;
     return {
       ok: true,
-      teamsRemoved: memberships.size,
-      signInRevoked,
-      message: signInRevoked
-        ? `Removed from ${memberships.size} team${memberships.size === 1 ? "" : "s"} and sign-in revoked. Their name still shows on work they owned.`
-        : `Removed from ${memberships.size} team${memberships.size === 1 ? "" : "s"}. There was no sign-in account to revoke.`,
+      teamsRemoved,
+      signInRevoked: signInDisabled,
+      message:
+        `Deactivated: removed from ${teamsRemoved} team${teamsRemoved === 1 ? "" : "s"}, ` +
+        `${itemsUnassigned} item${itemsUnassigned === 1 ? "" : "s"} unassigned` +
+        (signInDisabled ? ", sign-in disabled." : ". There was no sign-in account."),
+    };
+  } catch (err) {
+    return { ok: false, error: message(err) };
+  }
+}
+
+/** Undo a deactivation: re-enable sign-in. Items stay unassigned; re-add to teams by hand. */
+export async function reactivateOrgPerson(uid: string): Promise<AdminResult> {
+  const { db } = await requireAdmin();
+  try {
+    const r = await reactivatePerson(db, getAdminAuth(), uid);
+    if (!r.ok) return r;
+    revalidateOrg();
+    return {
+      ok: true,
+      message: r.signInRestored
+        ? "Reactivated. Add them back to their teams and reassign their work."
+        : "Reactivated, but there is no sign-in account - invite them again to let them in.",
     };
   } catch (err) {
     return { ok: false, error: message(err) };

@@ -74,7 +74,7 @@ describe("getDirectoryPeople", () => {
     assert.equal(bob.hasSignedIn, true);
   });
 
-  test("includes uninvited sign-ins, splits their display name, and hides deactivated profiles", async () => {
+  test("includes uninvited sign-ins, splits their display name, and lists deactivated profiles for admins only", async () => {
     const db = new FakeFirestore();
     db.seed("users", "gone", {
       first_name: "Gone",
@@ -91,8 +91,23 @@ describe("getDirectoryPeople", () => {
     });
 
     assert.deepEqual(
-      people.map((p) => [p.uid, p.firstName, p.lastName, p.email, p.hasSignedIn]),
-      [["walkin", "Walk", "In", "walkin@x.com", false]],
+      people.map((p) => [p.uid, p.firstName, p.lastName, p.email, p.hasSignedIn, p.deactivated]),
+      [
+        ["walkin", "Walk", "In", "walkin@x.com", false, undefined],
+        ["gone", "Gone", "Person", null, true, true],
+      ],
+    );
+
+    const forMember = await getDirectoryPeople(false, {
+      user: fakeUser(db),
+      auth: fakeAuth([
+        record("gone", { signedIn: true }),
+        record("walkin", { name: "Walk In", email: "walkin@x.com" }),
+      ]),
+    });
+    assert.deepEqual(
+      forMember.map((p) => p.uid),
+      ["walkin"],
     );
   });
 

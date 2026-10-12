@@ -33,6 +33,8 @@ export type DirectoryPerson = {
   hasAuth?: boolean;
   /** Has signed in at least once. Admin-only, like `hasAuth`. */
   hasSignedIn?: boolean;
+  /** Deactivated (sign-in disabled). Listed for admins only, so they can reactivate. */
+  deactivated?: boolean;
 };
 
 function namePartsOf(
@@ -132,6 +134,21 @@ export const getDirectoryPeople = cache(
       const data = doc.data() ?? {};
       if (data.deactivated_at) {
         deactivated.add(doc.id);
+        if (isAdmin) {
+          const account = authByUid.get(doc.id);
+          const { first, last } = namePartsOf(data, account?.name ?? null);
+          people.set(doc.id, {
+            uid: doc.id,
+            firstName: first,
+            lastName: last,
+            email: (data.email as string) ?? account?.email ?? null,
+            teams: [],
+            access: "member",
+            hasAuth: !!account,
+            hasSignedIn: account?.signedIn ?? false,
+            deactivated: true,
+          });
+        }
         continue;
       }
       const account = authByUid.get(doc.id);

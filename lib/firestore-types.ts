@@ -148,6 +148,8 @@ export type HeadlineDoc = Omit<FollowFields, "assigned_by"> & {
   broadcast?: boolean;
   from_label?: string | null;
   source_owner_name?: string | null;
+  // Set when the creator was deactivated (spec 2.6): shown as Unassigned.
+  owner_unassigned?: boolean;
 };
 
 // ---------------------------------------------------------------------------

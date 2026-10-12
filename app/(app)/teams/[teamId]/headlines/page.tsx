@@ -7,6 +7,7 @@ import { OwnerFilter } from "@/components/owner-filter";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
+import { HeadlineThread } from "./headline-thread";
 import {
   groupByOwner,
   isArchivedHeadline,
@@ -160,6 +161,12 @@ export default async function HeadlinesPage({
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
             {creatorName(h)} · {when}
           </div>
+          <HeadlineThread
+            teamId={teamId}
+            headlineId={h.id}
+            userId={uid}
+            members={members}
+          />
         </div>
         {/* Archive stays available on a broadcast copy — closing this team's
             own copy is a per-team act and leaves every other team's queue

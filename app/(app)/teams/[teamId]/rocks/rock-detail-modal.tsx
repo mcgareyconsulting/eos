@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RichText } from "@/components/rich-text";
@@ -70,6 +71,7 @@ export function RockDetailTrigger({
   children,
   readOnly = false,
   sourceTeamName,
+  deepLink = false,
 }: {
   teamId: string;
   userId: string;
@@ -83,8 +85,18 @@ export function RockDetailTrigger({
   readOnly?: boolean;
   /** Parent team of a shared-in rock — shown as "shared from {team}". */
   sourceTeamName?: string;
+  /**
+   * Open on arrival when the URL says `?rock=<this id>` or
+   * `?milestone=<one of its milestones>` (the links notifications carry).
+   * Set on the one trigger per rock the page renders, not on every surface.
+   */
+  deepLink?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const sp = useSearchParams();
+  const linked =
+    sp.get("rock") === rock.id ||
+    milestones.some((m) => m.id === sp.get("milestone"));
+  const [open, setOpen] = useState(deepLink && linked);
   return (
     <>
       <button

@@ -243,6 +243,7 @@ function IssueRow({
           {closedPending && <Pill>Closes Monday</Pill>}
         </div>
         <IssueDetailTrigger
+          deepLink
           issue={issue}
           ownerName={ownerName(issue.owner_id)}
           teamId={teamId}

@@ -33,8 +33,8 @@ describe("headlineAccess (shape A)", () => {
       assert.equal(headlineAccess.canEdit(headline, v), want, "edit");
       assert.equal(headlineAccess.canDelete(headline, v), want, "delete");
       assert.equal(headlineAccess.canComplete(headline, v), want, "discuss");
-      // No headline thread yet; follow = see.
-      assert.equal(headlineAccess.canComment(headline, v), false, "comment");
+      // One thread, open to whoever sees it; follow = see.
+      assert.equal(headlineAccess.canComment(headline, v), want, "comment");
       assert.equal(headlineAccess.canFollow(headline, v), want, "follow");
       // Broadcast copies: checkable and archivable, never edited or deleted.
       assert.equal(headlineAccess.canSee(broadcast, v), want, "see broadcast");

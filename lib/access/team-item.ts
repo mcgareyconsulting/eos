@@ -69,8 +69,8 @@ export const issueAccess: CompletableAccessModule<IssueSubject> = {
   canComment: gate,
   // Spec §5.3: follow = canSee (owner + assigner locked, lib/follow.ts).
   canFollow: gate,
-  // SPEC P9: mentions on every item type, refused server-side unless the
-  // person canSee. Today mentions are parsed on to-do comments only.
+  // Spec §5.2: a mention is allowed only for a person who canSee; the
+  // comment action refuses the rest (entity-comments/actions.ts).
   canMention: (item, person) => gate(item, person),
   canDelete: gate,
   /** Solve / reopen / archive (setIssueStatus, setIssueArchived). */
@@ -80,12 +80,11 @@ export const issueAccess: CompletableAccessModule<IssueSubject> = {
 export const headlineAccess: CompletableAccessModule<HeadlineSubject> = {
   canSee: gate,
   canEdit: (item, viewer) => gate(item, viewer) && item.broadcast !== true,
-  // SPEC P9: headlines get a thread (spec §5.1). Today `entity_comments`
-  // accepts only issue / rock / todo.
-  canComment: () => false,
+  // Spec §5.1: a headline has one thread, open to whoever sees it.
+  canComment: gate,
   // Spec §5.3: follow = canSee; the creator is the locked owner.
   canFollow: gate,
-  // SPEC P9: mentions on headlines (needs the thread first).
+  // Spec §5.2.
   canMention: (item, person) => gate(item, person),
   canDelete: (item, viewer) => gate(item, viewer) && item.broadcast !== true,
   /** Mark discussed / archive — allowed on broadcast copies too. */
@@ -110,8 +109,7 @@ export const teamTodoAccess: CompletableAccessModule<TeamTodoSubject> = {
   canComment: seesTeamTodo,
   // Spec §5.3: follow = canSee.
   canFollow: seesTeamTodo,
-  // SPEC P9: refuse mentions of people who can't see it. Today mentions
-  // resolve against the to-do team's roster and are never refused.
+  // Spec §5.2: refused by the comment action unless the person canSee.
   canMention: (item, person) => seesTeamTodo(item, person),
   canDelete: gate,
   canComplete: seesTeamTodo,

@@ -13,12 +13,14 @@ import {
   addEntityComment,
   deleteEntityComment,
   loadCommentAuthorNames,
+  loadThreadInfo,
   type CommentEntityType,
 } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
 import { loadPersonNames } from "@/app/(app)/teams/[teamId]/todos/actions";
 import { RichText } from "@/components/rich-text";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { cn } from "@/lib/utils";
+import type { MentionCandidate } from "@/lib/mentions";
 
 type MaybeTimestamp =
   | { toMillis: () => number }
@@ -70,15 +72,17 @@ export function EntityComments({
   className?: string;
 }) {
   const db = getClientDb();
-  // A rock has one thread across every team that has it, so its query is
-  // by entity alone (the rule gates who may read it); other entities stay
-  // team-scoped.
+  // A rock's thread spans every team that has it, and a to-do's is filed
+  // under the to-do's own team (an off-team assignee reads it from theirs),
+  // so those queries are by entity alone and the rule gates who may read
+  // them (item-aware, docs/rules-notes/P9.md). Issue and headline threads
+  // stay team-scoped.
   const q = useMemo(
     () =>
-      entityType === "rock"
+      entityType === "rock" || entityType === "todo"
         ? fsQuery(
             collection(db, "entity_comments"),
-            where("entity_type", "==", "rock"),
+            where("entity_type", "==", entityType),
             where("entity_id", "==", entityId),
           )
         : fsQuery(
@@ -99,6 +103,27 @@ export function EntityComments({
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(composer === "inline");
 
+  // Who can be mentioned here and who can read the thread, from the server
+  // (the item's access module, not the team roster). Loaded when the
+  // composer opens.
+  const [info, setInfo] = useState<{
+    candidates: MentionCandidate[];
+    visibleTo: string;
+    isAdmin: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!composing || info) return;
+    let cancelled = false;
+    loadThreadInfo(entityType, entityId)
+      .then((got) => {
+        if (!cancelled) setInfo(got);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [composing, info, entityType, entityId]);
+
   // Authors off this roster (a rock's thread spans teams) are named on
   // demand.
   const [extraNames, setExtraNames] = useState<Record<string, string>>({});
@@ -108,9 +133,10 @@ export function EntityComments({
         (id) =>
           id !== userId &&
           !members.some((m) => m.user_id === id) &&
+          !info?.candidates.some((c) => c.id === id) &&
           !(id in extraNames),
       ),
-    [comments, members, userId, extraNames],
+    [comments, members, userId, extraNames, info],
   );
   useEffect(() => {
     if (unknownAuthors.length === 0) return;
@@ -136,24 +162,23 @@ export function EntityComments({
   const authorName = (id: string) => {
     if (id === userId) return "You";
     return (
-      members.find((m) => m.user_id === id)?.full_name ?? extraNames[id] ?? "—"
+      members.find((m) => m.user_id === id)?.full_name ??
+      info?.candidates.find((c) => c.id === id)?.name ??
+      extraNames[id] ??
+      "—"
     );
   };
 
-  // @mentions are a to-do feature for now — the client asked for exactly
-  // that scope. The same roster drives the picker and the read-side
-  // highlight, so what you picked is what gets lit up.
-  const mentionsOn = entityType === "todo";
-  const mentionCandidates = useMemo(
-    () =>
-      mentionsOn
-        ? members.map((m) => ({ id: m.user_id, name: m.full_name }))
-        : undefined,
-    [mentionsOn, members],
-  );
+  // @mentions work on every thread. The picker lists the people the server
+  // sent (greyed when they cannot see the item); the read-side highlight
+  // uses the same names, falling back to the roster until they arrive.
+  const mentionCandidates = info?.candidates;
   const mentionNames = useMemo(
-    () => (mentionsOn ? members.map((m) => m.full_name) : undefined),
-    [mentionsOn, members],
+    () =>
+      info
+        ? info.candidates.map((c) => c.name)
+        : members.map((m) => m.full_name),
+    [info, members],
   );
 
   function submit() {
@@ -214,7 +239,7 @@ export function EntityComments({
                     {" · "}
                     {when}
                   </span>
-                  {mine && (
+                  {(mine || info?.isAdmin) && (
                     <button
                       type="button"
                       title="Delete comment"
@@ -276,7 +301,7 @@ export function EntityComments({
               }
             }}
             rows={2}
-            placeholder={mentionsOn ? "Add a comment… @ to mention someone" : "Add a comment…"}
+            placeholder="Add a comment… @ to mention someone"
             mentionCandidates={mentionCandidates}
             className="w-full flex-1 rounded-[10px] focus-within:border-hpb-blue focus-within:shadow-[0_0_0_3px_rgba(0,51,160,.10)] focus-within:ring-0 dark:focus-within:border-hpb-blue"
           />
@@ -305,10 +330,13 @@ export function EntityComments({
         {error ? (
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
         ) : (
-          <p className="text-[11px] text-zinc-400">
-            Formatting supported · links open in a new tab
-            {mentionsOn ? " · @ mentions" : ""} · ⌘/Ctrl+Enter
-          </p>
+          <div className="space-y-0.5 text-[11px] text-zinc-400">
+            {info && <p>{info.visibleTo}</p>}
+            <p>
+              Formatting supported · links open in a new tab · @ mentions ·
+              ⌘/Ctrl+Enter
+            </p>
+          </div>
         )}
       </div>
       )}

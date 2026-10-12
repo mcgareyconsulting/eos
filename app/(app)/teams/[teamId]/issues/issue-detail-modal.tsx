@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailModal } from "@/components/detail-modal";
@@ -39,6 +40,7 @@ export function IssueDetailTrigger({
   members,
   className,
   children,
+  deepLink = false,
 }: {
   issue: IssueDetailData;
   ownerName: string;
@@ -47,8 +49,15 @@ export function IssueDetailTrigger({
   members: Member[];
   className?: string;
   children: React.ReactNode;
+  /**
+   * Open on arrival when the URL says `?issue=<this id>` (the link a
+   * notification carries). Set on the one trigger per issue the page
+   * renders, not on every surface.
+   */
+  deepLink?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const linked = useSearchParams().get("issue") === issue.id;
+  const [open, setOpen] = useState(deepLink && linked);
   return (
     <>
       <button

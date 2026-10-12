@@ -71,7 +71,7 @@ export type ItemCollection =
   | "headlines";
 
 /** `entity_comments.entity_type` values (CommentEntityType in entity-comments/actions.ts). */
-export type ThreadEntityType = "issue" | "rock" | "todo";
+export type ThreadEntityType = "issue" | "rock" | "todo" | "headline";
 
 export type ItemRegistryEntry<T extends ItemType = ItemType> = {
   type: T;
@@ -115,11 +115,9 @@ function teamPath(teamId: string, page: string, param: string, id: string): stri
   return `/teams/${teamId}/${page}?${param}=${encodeURIComponent(id)}`;
 }
 
-// Deep links. Only the To-Dos page reads its param today (`?todo=`, the
-// link notifications have always carried). SPEC P9: the Rocks, Issues,
-// Scorecard and Headlines pages learn to open `?rock=` / `?milestone=` / `?issue=` /
-// `?metric=` / `?headline=`; until then those links land on the right page
-// and the param is ignored.
+// Deep links. The To-Dos page reads `?todo=`, the Rocks page `?rock=` /
+// `?milestone=`, the Issues page `?issue=` and the Headlines page
+// `?headline=` (P9). `?metric=` on the Scorecard is still ignored (P7).
 
 export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } = {
   rock: {
@@ -154,7 +152,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     threadEntityType: "todo",
     events: TODO_EVENTS,
     // "The milestone in its rock". The link builder only gets the
-    // milestone's id; the Rocks page resolves its rock (SPEC P9).
+    // milestone's id; the Rocks page resolves its rock (P9).
     link: (teamId, id) => teamPath(teamId, "rocks", "milestone", id),
   },
   todo: {
@@ -204,8 +202,8 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     // A headline has no assignee, so no assigner (spec §5.0).
     hasAssigner: false,
     assignerField: null,
-    // SPEC P9: headlines get a thread (`entity_type: "headline"`). None today.
-    threadEntityType: null,
+    // Headlines have a thread (spec §5.1), `entity_type: "headline"`.
+    threadEntityType: "headline",
     events: ["comment", "text_changed", "discussed", "archived"],
     link: (teamId, id) => teamPath(teamId, "headlines", "headline", id),
   },

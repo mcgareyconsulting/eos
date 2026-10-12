@@ -169,8 +169,7 @@ export const rockAccess: AccessModule<RockSubject> & {
   canComment: seesFullRock,
   // Spec §5.3: follow = canSee (owner + assigner locked, lib/follow.ts).
   canFollow: seesFullRock,
-  // SPEC P9: mentions on rock comments, refused unless the person canSee.
-  // Today rock comments carry no mentions.
+  // Spec §5.2: refused by the comment action unless the person canSee.
   canMention: seesFullRock,
   // The audience may not delete the rock.
   canDelete: parentOrAdmin,
@@ -206,7 +205,7 @@ export const milestoneAccess: CompletableAccessModule<MilestoneSubject> = {
   canComment: seesMilestone,
   // setTodoFollowing / setFollowing: follow = canSee (spec §5.3).
   canFollow: seesMilestone,
-  // SPEC P9: mention = the comment set (assignee, parent, audience, admins);
+  // Spec §5.2: mention = the comment set (assignee, parent, audience, admins);
   // a person who sees it only in a block cannot be mentioned (§4).
   canMention: (subject, person) => seesMilestone(subject, person),
   // Through the rock modal (rock editors). deleteTodo on the milestone's

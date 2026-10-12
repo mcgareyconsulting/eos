@@ -12,7 +12,55 @@
 // Everything here is pure so the caret arithmetic and the matching rule can
 // be unit-tested without a textarea or a Firestore.
 
-export type MentionCandidate = { id: string; name: string };
+export type MentionCandidate = {
+  id: string;
+  name: string;
+  /**
+   * Shown greyed and not pickable: the person cannot see the item, and a
+   * mention never grants access (spec §5.2).
+   */
+  disabled?: boolean;
+};
+
+/** The note shown beside a person who cannot see the item. */
+export const CANNOT_SEE_NOTE = "Cannot see this item.";
+
+/** A person who might be mentioned, and whether they can see the item. */
+export type MentionPerson = { id: string; name: string; canSee: boolean };
+
+/** Picker candidates for a thread: everyone, the people who cannot see it greyed. */
+export function candidatesFromPeople(
+  people: readonly MentionPerson[],
+): MentionCandidate[] {
+  return people.map((p) => ({ id: p.id, name: p.name, disabled: !p.canSee }));
+}
+
+/**
+ * Splits the mentions in `body` into who may be mentioned and who may not
+ * (spec §5.2). The server refuses a comment whose `blocked` list is not
+ * empty rather than dropping the names silently.
+ */
+export function resolveMentions(
+  body: string,
+  people: readonly MentionPerson[],
+): { ids: string[]; blocked: MentionPerson[] } {
+  const all = mentionedIds(body, people);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const ids: string[] = [];
+  const blocked: MentionPerson[] = [];
+  for (const id of all) {
+    const p = byId.get(id)!;
+    if (p.canSee) ids.push(id);
+    else blocked.push(p);
+  }
+  return { ids, blocked };
+}
+
+/** The error shown when a comment mentions someone who cannot see the item. */
+export function blockedMentionMessage(blocked: readonly MentionPerson[]): string {
+  const names = [...new Set(blocked.map((p) => p.name))].join(", ");
+  return `${names} cannot see this item, so cannot be mentioned. Remove the mention and post again.`;
+}
 
 export type MentionMatch = {
   /** Index of the `@`. */
@@ -162,7 +210,7 @@ export function filterMentionCandidates<T extends MentionCandidate>(
   ) {
     return [];
   }
-  const out: T[] = [];
+  const hits: T[] = [];
   for (const c of candidates) {
     const name = c.name.trim();
     if (!name) continue;
@@ -171,10 +219,14 @@ export function filterMentionCandidates<T extends MentionCandidate>(
       q === "" ||
       lower.startsWith(q) ||
       lower.split(/\s+/).some((w) => w.startsWith(q));
-    if (hit) out.push(c);
-    if (out.length >= limit) break;
+    if (hit) hits.push(c);
   }
-  return out;
+  // People who cannot see the item sort after those who can, so the limit
+  // never hides a pickable person behind greyed ones.
+  return [
+    ...hits.filter((c) => !c.disabled),
+    ...hits.filter((c) => c.disabled),
+  ].slice(0, limit);
 }
 
 /**

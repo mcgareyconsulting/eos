@@ -17,6 +17,7 @@ import {
   loadUsersById,
 } from "@/lib/firebase/queries";
 import { isRecapTodoVisible } from "@/lib/recap-todos";
+import { outsideOwnerIds } from "@/lib/todo-lists";
 import { userDisplayName } from "@/lib/user-name";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import { blockMilestones } from "@/lib/rocks-share";
@@ -895,12 +896,24 @@ async function SegmentContent({
         source_rock_id: x.source_rock_id ?? null,
       };
     });
+    // Owners off the roster (a to-do assigned to another team, spec §3.1)
+    // get their own "Outside assignees" block; name them here.
+    const outsideNames = Object.fromEntries(
+      await loadUserNames(
+        db,
+        outsideOwnerIds(
+          initialTodos.filter((t) => !t.source_rock_id),
+          new Set(members.map((m) => m.user_id)),
+        ),
+      ),
+    );
     return (
       <SegmentTodos
         teamId={teamId}
         meetingId={meetingId}
         userId={userId}
         initialTodos={initialTodos}
+        outsideNames={outsideNames}
         members={members}
         initialSpeakingOrder={speakingOrder}
         initialAbsentUserIds={absentUserIds}

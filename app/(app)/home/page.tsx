@@ -49,6 +49,12 @@ import {
   type HomeMetricListItem,
 } from "./home-metrics-list";
 import { BoardColumn } from "@/components/board-column";
+import {
+  assignedPillText,
+  assignerIdOf,
+  isAssignedFromOtherTeam,
+  listShowsTodo,
+} from "@/lib/todo-lists";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +69,8 @@ type TodoRow = {
   source_rock_id: string | null;
   /** Already carried by the `...data` spread; typed so it can render. */
   weekly_focus?: boolean;
+  created_by?: string | null;
+  assigned_by?: string | null;
 };
 
 type RockRow = {
@@ -209,11 +217,13 @@ export default async function HomePage() {
   );
   const todos = [
     ...todoSnaps.flatMap((snap) => snap.docs),
-    // Milestones only: a plain to-do on a team I have left has no business
-    // on my Home.
-    ...myMilestonesSnap.docs.filter(
-      (d) => !teamTodoIds.has(d.id) && !!d.data().source_rock_id,
-    ),
+    // Mine on teams I'm not on: milestones on other teams' rocks, and (D1)
+    // plain to-dos a member of another team assigned to me (spec §3.1).
+    ...myMilestonesSnap.docs.filter((d) => {
+      if (teamTodoIds.has(d.id)) return false;
+      const t = d.data() as Omit<TodoRow, "id">;
+      return !!t.source_rock_id || isAssignedFromOtherTeam(t, user.id, myTeamIds);
+    }),
   ]
     .map((d) => {
       const data = d.data() as Omit<TodoRow, "id"> & {
@@ -224,9 +234,9 @@ export default async function HomePage() {
     .filter((t) => {
       // Active Home board: skip archived (can be incomplete if manual-archived).
       if (t.archived_at != null) return false;
-      // Privacy: private only for the owner; missing/legacy visibility = team.
-      if (t.visibility === "private") return t.owner_id === user.id;
-      return true;
+      // Privacy: a private to-do for its creator and its assignee only
+      // (spec §3.2); missing/legacy visibility = team.
+      return listShowsTodo(t, user.id);
     }) as TodoRow[];
 
   const rockById = new Map<string, RockRow>();
@@ -396,6 +406,34 @@ export default async function HomePage() {
   }
 
   const myTodos = selectHomeTodos(todos, user.id).sort(byDueDateAsc);
+
+  // D1: a to-do from a team I'm not on carries "Assigned by X · Team".
+  const crossTeamTodos = myTodos.filter((t) => !myTeamIds.has(t.team_id));
+  const crossTeamIds = crossTeamTodos.map((t) => t.team_id);
+  for (const [id, data] of await loadTeamsById(
+    db,
+    [...new Set(crossTeamIds)].filter((id) => !teamNameById.has(id)),
+  )) {
+    teamNameById.set(id, (data.name as string) ?? "Team");
+  }
+  await hydrateNames(
+    db,
+    crossTeamTodos
+      .map((t) => assignerIdOf(t) ?? "")
+      .filter((id) => id && !nameByUserId.has(id)),
+    nameByUserId,
+  );
+  const pillById = new Map(
+    crossTeamTodos.map((t) => [
+      t.id,
+      assignedPillText(
+        t,
+        user.id,
+        (id) => nameByUserId.get(id),
+        teamNameById.get(t.team_id),
+      ),
+    ]),
+  );
 
   const homeRocks: RockRow[] = rocks.filter(showOnHome).sort(byDueDateAsc);
 
@@ -572,7 +610,7 @@ export default async function HomePage() {
           <BoardColumn scroll title="To-Dos" count={myTodos.length}>
             {myTodos.length === 0 && <Empty>No open to-dos of yours.</Empty>}
             {myTodos.map((t) => (
-              <TodoRowLink key={t.id} todo={t} />
+              <TodoRowLink key={t.id} todo={t} pill={pillById.get(t.id)} />
             ))}
           </BoardColumn>
 
@@ -625,11 +663,13 @@ export default async function HomePage() {
   );
 }
 
-function TodoRowLink({ todo }: { todo: TodoRow }) {
+function TodoRowLink({ todo, pill }: { todo: TodoRow; pill?: string }) {
   const isPrivate = todoVisibilityLabel(todo.visibility) === "Private";
   return (
     <Link
-      href={`/teams/${todo.team_id}/todos`}
+      // Opens the row. A to-do from a team I'm not on redirects to my own
+      // team's To-Dos, where it sits under "Assigned to me from other teams".
+      href={`/teams/${todo.team_id}/todos?todo=${encodeURIComponent(todo.id)}`}
       className="grid grid-cols-[20px_1fr_auto] items-center gap-2.5 px-3.5 py-[11px] text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
     >
       <span
@@ -647,6 +687,11 @@ function TodoRowLink({ todo }: { todo: TodoRow }) {
           {todo.title}
         </span>
         {todo.weekly_focus ? <WeeklyFocusPill /> : null}
+        {pill ? (
+          <span className="min-w-0 truncate rounded-full bg-hpb-gold/15 px-2 py-0.5 text-[10.5px] font-medium text-hpb-brown dark:text-hpb-gold">
+            {pill}
+          </span>
+        ) : null}
       </div>
       <span
         className={cn(

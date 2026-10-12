@@ -20,4 +20,11 @@ describe("isRecapTodoVisible", () => {
   test("the owner still sees their own private to-do", () => {
     assert.equal(isRecapTodoVisible({ visibility: "private", owner_id: "u1" }, "u1"), true);
   });
+
+  test("the creator of a private to-do assigned to someone else sees it (P8a)", () => {
+    assert.equal(
+      isRecapTodoVisible({ visibility: "private", owner_id: "u2", created_by: "u1" }, "u1"),
+      true,
+    );
+  });
 });

@@ -1,5 +1,12 @@
 # Rock & milestone sharing — ruleset
 
+> **Superseded by P6a (`feat/rocks-audience`).** The rules now follow
+> `docs/PERMISSIONS_SPEC.md` §3.3 and §4, implemented in
+> `lib/access/rock.ts` (access) and `lib/rocks-share.ts` (placement, blocks,
+> save review). Locks, "Keep on this team", the 8-team cap, assignee full
+> view and `milestone_owner_ids` are gone. Rules: `docs/rules-notes/P6a.md`.
+> This file describes the production behaviour before that change.
+
 Status: **confirmed with daniel 2026-09-22, built on `fix/improved-rock-sharing`
 (uncommitted at time of writing).** Two items still need the client — see
 [Open for the client](#open-for-the-client). Supersedes the per-team share

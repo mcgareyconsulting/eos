@@ -141,10 +141,12 @@ export async function addEntityComment(
 }
 
 /**
- * The rock behind a comment, for a caller viewing from `teamId` — parent
- * team, a team it is shared with, the rock's owner, an assignee, or admin.
- * Mirrors the `rockFullAccess` rule; the Admin SDK bypasses rules, so this
- * is the gate.
+ * The rock behind a comment. One thread per rock, open to everyone with the
+ * full rock — the parent team, the audience (teams and persons) and admins
+ * (lib/access/rock.ts `rockAccess.canComment`), judged on the caller's full
+ * memberships; `teamId` is only the page it was posted from. A milestone
+ * assignee outside that set, or someone who sees the rock in a block, has
+ * no thread access. The Admin SDK bypasses rules, so this is the gate.
  */
 async function requireRockThreadAccess(
   db: FirebaseFirestore.Firestore,
@@ -156,15 +158,10 @@ async function requireRockThreadAccess(
   const snap = await db.collection("rocks").doc(rockId).get();
   const rock = snap.data();
   if (!snap.exists || !rock) notFound();
-  const shared = (rock.shared_team_ids as string[] | null) ?? [];
-  const owners = (rock.milestone_owner_ids as string[] | null) ?? [];
-  const ok =
-    isAdmin ||
-    rock.team_id === teamId ||
-    shared.includes(teamId) ||
-    rock.owner_id === uid ||
-    owners.includes(uid);
-  if (!ok) notFound();
+  const { rockAccess, rockSubjectOf } = await import("@/lib/access/rock");
+  const { loadViewer } = await import("@/lib/firebase/viewer");
+  const viewer = await loadViewer(db, uid, isAdmin);
+  if (!rockAccess.canComment(rockSubjectOf(rock), viewer)) notFound();
   return snap;
 }
 

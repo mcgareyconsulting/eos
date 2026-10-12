@@ -19,12 +19,14 @@ import {
 import { isRecapTodoVisible } from "@/lib/recap-todos";
 import { userDisplayName } from "@/lib/user-name";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { blockMilestones } from "@/lib/rocks-share";
 import {
-  carriersForViewer,
-  hasFullRockView,
-  isSharedIntoTeam,
-  rockAccessFor,
-} from "@/lib/rocks-share";
+  audienceTeamIdsOf,
+  audienceUserIdsOf,
+  isAudienceTeam,
+  isPrivateRock,
+  rockSubjectOf,
+} from "@/lib/access/rock";
 import {
   type Segment,
   isSegment,
@@ -671,7 +673,7 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [teamRocks, todosSnap, orgTeams, { membershipTeamIds }] =
+    const [teamRocks, todosSnap, orgTeams, { membershipTeamIds, leaderTeamIds }] =
       await Promise.all([
         loadTeamRocks(db, teamId),
         db
@@ -685,21 +687,25 @@ async function SegmentContent({
     const shareTeams = orgTeams
       .filter((t) => t.id !== teamId)
       .map((t) => ({ id: t.id, name: t.name }));
+    // A full rock (this team's, or one with this team in its audience).
+    // Audience and Private come out EFFECTIVE (legacy names folded in).
     const mapRock = (d: QueryDocumentSnapshot) => {
       const x = d.data();
+      const subject = rockSubjectOf(x);
       return {
         id: d.id,
-        team_id: x.team_id as string,
+        team_id: subject.team_id,
         title: x.title as string,
-        owner_id: (x.owner_id as string | null) ?? null,
+        owner_id: subject.owner_id,
         quarter: x.quarter as string,
         due_date: (x.due_date as string | null) ?? null,
         status: x.status as string,
         description: (x.description as string | null) ?? null,
         rock_type: (x.rock_type as string | null) ?? null,
         is_company_rock: x.is_company_rock === true,
-        shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
-        team_only: x.team_only === true,
+        audience_team_ids: audienceTeamIdsOf(subject),
+        audience_user_ids: audienceUserIdsOf(subject),
+        private: isPrivateRock(subject),
       };
     };
     const homeRocks = teamRocks.own
@@ -708,7 +714,7 @@ async function SegmentContent({
     const sharedRocks = teamRocks.shared
       .filter((d) => d.data().archived_at == null)
       .map(mapRock)
-      .filter((r) => isSharedIntoTeam(r, teamId));
+      .filter((r) => isAudienceTeam(r, teamId));
     const initialRocks = [...homeRocks, ...sharedRocks];
     const extraMilestones = await loadMilestonesForRocks(
       db,
@@ -725,13 +731,11 @@ async function SegmentContent({
         completed_at: x.completed_at ? true : null,
         source_rock_id: (x.source_rock_id as string | null) ?? null,
         description: (x.description as string | null) ?? null,
-        team_hidden: x.team_hidden === true,
       };
     };
-    // Shared-in rocks are full views (lib/rocks-share.ts): every milestone.
-    // Legacy "private" milestones stay off the L10 — the live subscription
+    // Audience rocks are full views: every milestone. Legacy "private"
+    // milestones stay off the L10 — the live subscription
     // (visibility == "team") could not keep them anyway.
-    const viewer = { uid: userId, isAdmin, teamIds: new Set(membershipTeamIds) };
     const rosterIds = new Set(members.map((m) => m.user_id));
     const initialTodos = [
       ...todosSnap.docs.map(mapTodo),
@@ -740,53 +744,38 @@ async function SegmentContent({
         .map(mapTodo),
     ];
 
-    // Rocks this room sees only through its people's milestones: one row
-    // per carrier, under that person's turn, with only their unlocked
-    // milestones (lib/rocks-share.ts assignmentCarriers). Static — the live
-    // subscriptions only cover this team's and shared-in rocks.
+    // Blocks (spec §4): each member's milestones on other teams'
+    // non-private rocks, under that person's turn — the rock's headline
+    // (title, owner, team) and the milestone, nothing else. Static — the
+    // live subscriptions only cover this team's and audience rocks.
     const assigned = await loadAssignedRocks(
       db,
       [...rosterIds],
-      new Set([...teamRocks.own, ...teamRocks.shared].map((d) => d.id)),
+      new Set(teamRocks.own.map((d) => d.id)),
     );
     const assignedTodos = assigned.milestones.map(mapTodo);
-    const initialAssigned = assigned.rocks.flatMap((d) => {
-      const rock = mapRock(d as QueryDocumentSnapshot);
+    const initialBlocks = assigned.rocks.flatMap((d) => {
+      const x = d.data() ?? {};
+      const subject = rockSubjectOf(x);
+      if (isPrivateRock(subject)) return [];
+      const headline = {
+        id: d.id,
+        title: String(x.title ?? "Rock"),
+        owner_id: subject.owner_id,
+        team_id: subject.team_id,
+      };
       const ms = assignedTodos.filter((t) => t.source_rock_id === d.id);
-      const full = hasFullRockView(rock, viewer, ms) ? ms : null;
-      // Viewer's own milestones join their turn, greyed where only they see
-      // them — the L10 matches the Rocks tab (carriersForViewer).
-      const { carriers, onlyViewerIds, viewerOnlyRow } = carriersForViewer(
-        rock,
-        teamId,
-        rosterIds,
-        ms,
-        assigned.parentMembers.get(d.id) ?? new Set(),
-        userId,
+      return [...blockMilestones(subject, teamId, rosterIds, ms)].map(
+        ([carrierId, list]) => ({ headline, carrierId, milestones: list }),
       );
-      return [...carriers].map(([carrierId, list]) => ({
-        rock,
-        carrierId,
-        milestones: list,
-        full,
-        onlyViewerIds: list
-          .filter((t) => onlyViewerIds.has(t.id))
-          .map((t) => t.id),
-        viewerOnly: carrierId === userId && viewerOnlyRow,
-      }));
     });
     const extraOwnerIds = [
       ...new Set(
         [
           ...sharedRocks.map((r) => r.owner_id),
-          // Guest-team members can own milestones on this team's rocks.
+          // Other teams' members can own milestones on this team's rocks.
           ...initialTodos.map((t) => t.owner_id),
-          // Assignment rows: the rock's real owner, and everyone on it for
-          // a viewer who has the rock in full.
-          ...initialAssigned.flatMap((a) => [
-            a.rock.owner_id,
-            ...(a.full ?? a.milestones).map((t) => t.owner_id),
-          ]),
+          ...initialBlocks.map((b) => b.headline.owner_id),
         ]
           .filter((id): id is string => !!id)
           .filter((id) => !members.some((m) => m.user_id === id)),
@@ -797,20 +786,11 @@ async function SegmentContent({
       const full_name = userDisplayName(data);
       if (full_name) extraOwnerNames.push({ user_id, full_name });
     }
-    // Rosters for shared-in rocks the viewer may edit as their parent team
-    // (lib/rocks-share.ts parent-team rule) — the in-meeting edit modal
-    // needs that team's people, not this one's. Bounded by the viewer's
-    // own memberships.
-    const editableParentIds = [
-      ...new Set(
-        sharedRocks
-          .filter((r) => rockAccessFor(r, viewer) === "edit")
-          .map((r) => r.team_id),
-      ),
-    ];
+    // Parent rosters for audience rocks — the in-meeting edit modal edits
+    // the rock against its parent team (the owner must be on it).
     const parentRosters = Object.fromEntries(
       await Promise.all(
-        editableParentIds.map(
+        [...new Set(sharedRocks.map((r) => r.team_id))].map(
           async (id) =>
             [
               id,
@@ -830,7 +810,7 @@ async function SegmentContent({
         defaultDue={toDateString(endOfQuarter())}
         initialRocks={initialRocks}
         initialTodos={initialTodos}
-        initialAssigned={initialAssigned}
+        initialBlocks={initialBlocks}
         members={members}
         initialAbsentUserIds={absentUserIds}
         initialSpeakingOrder={speakingOrder}
@@ -843,6 +823,7 @@ async function SegmentContent({
         canFlagCompany={canFlagCompany}
         isAdmin={isAdmin}
         viewerTeamIds={membershipTeamIds}
+        viewerLeaderTeamIds={leaderTeamIds}
         parentRosters={parentRosters}
       />
     );

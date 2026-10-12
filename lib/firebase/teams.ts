@@ -190,8 +190,9 @@ export const OWNER_NOT_ON_ROSTER = "Owner must be a member of this team.";
  * value the entity already carries (`keep` — re-saving an item whose owner has
  * since left the team must not become impossible).
  *
- * Not for rocks or milestones: a shared rock legitimately carries owners from
- * other teams (lib/rocks-share.ts), and those actions check their own rule.
+ * The rock OWNER uses this too (spec §3.3: on the parent team). Not for
+ * milestones: a milestone may be assigned to a person on any team, and the
+ * rock actions check that rule themselves.
  */
 export async function requireRosterOwner(
   teamId: string,

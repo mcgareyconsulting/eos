@@ -12,17 +12,20 @@ import {
 import { groupRocksForL10 } from "@/lib/l10/rock-order";
 import {
   groupSharedRocksByOwner,
-  isSharedIntoTeam,
   partitionSharedRocks,
-  rockAccessFor,
-  type RockViewer,
 } from "@/lib/rocks-share";
+import {
+  isAudienceTeam,
+  rockAccess,
+  type RockHeadline,
+} from "@/lib/access/rock";
+import { viewerOf } from "@/lib/access/types";
 import {
   COMPANY_SECTION_TITLE,
   DEPARTMENT_SECTION_TITLE,
   rockBucket,
 } from "../../rocks/rock-type";
-import { RockRow } from "../../rocks/rock-row";
+import { RockBlockRow, RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
@@ -50,28 +53,29 @@ type TodoDoc = WithId<
     | "due_date"
     | "source_rock_id"
     | "description"
-    | "team_hidden"
   >
 > & {
   completed_at: TodoDocRecord["completed_at"] | boolean;
 };
 
-/** A rock this room sees only through one person's milestones
- *  (lib/rocks-share.ts assignmentCarriers). */
-export type AssignedRow = {
-  rock: RockDoc;
+/** One entry in a member's block (spec §4; lib/rocks-share.ts
+ *  blockMilestones): another team's rock headline and that member's
+ *  milestones on it. Never more of the rock than the headline. */
+export type BlockRow = {
+  headline: RockHeadline;
   carrierId: string;
-  /** The carrier's unlocked milestones — what the room sees. */
   milestones: TodoDoc[];
-  /** Every milestone, when the viewer has the rock in full; else null. */
-  full: TodoDoc[] | null;
-  /** The viewer's own milestones the room doesn't see — greyed. */
-  onlyViewerIds: string[];
-  /** The row exists only for the viewer. */
-  viewerOnly: boolean;
 };
 
-type CarrierEntry = RockDoc & { __carrier: AssignedRow };
+type BlockEntry = {
+  id: string;
+  team_id: string;
+  owner_id: string;
+  status: "";
+  quarter: "";
+  due_date: null;
+  __block: BlockRow;
+};
 
 // created_at is a Firestore Timestamp over onSnapshot; toMillis() is the only
 // thing we read off it.
@@ -94,7 +98,7 @@ export function SegmentRocks({
   defaultDue,
   initialRocks,
   initialTodos,
-  initialAssigned = [],
+  initialBlocks = [],
   members,
   initialAbsentUserIds,
   initialSpeakingOrder,
@@ -107,6 +111,7 @@ export function SegmentRocks({
   canFlagCompany = false,
   isAdmin = false,
   viewerTeamIds = [],
+  viewerLeaderTeamIds = [],
   parentRosters = {},
 }: {
   teamId: string;
@@ -115,12 +120,12 @@ export function SegmentRocks({
   defaultDue: string;
   initialRocks: RockDoc[];
   initialTodos: TodoDoc[];
-  initialAssigned?: AssignedRow[];
+  initialBlocks?: BlockRow[];
   members: Member[];
   initialAbsentUserIds: string[];
   initialSpeakingOrder: string[];
   initialSpeakerIndex: number;
-  /** Who holds the wheel at render — see `presenting` below. */
+  /** Who holds the wheel at render (meeting doc `driver_id`). */
   initialDriverId?: string | null;
   teamName: string;
   shareTeams: { id: string; name: string }[];
@@ -129,11 +134,13 @@ export function SegmentRocks({
   /** Org admin — may set the Company flag from the in-meeting edit modal. */
   canFlagCompany?: boolean;
   isAdmin?: boolean;
-  /** Every team the viewer is rostered on — access to a shared-in rock follows these. */
+  /** Every team the viewer is rostered on — rock access follows these. */
   viewerTeamIds?: string[];
+  /** Teams the viewer leads — audience and Private follow these. */
+  viewerLeaderTeamIds?: string[];
   /**
-   * Rosters of the viewer's other teams, keyed by team id, for editing a
-   * shared-in rock as its parent team. A parent that arrives live without a
+   * Parent rosters of audience rocks, keyed by team id, for editing the
+   * rock against its parent team. A parent that arrives live without a
    * roster here falls back to this team's members.
    */
   parentRosters?: Record<string, Member[]>;
@@ -144,7 +151,17 @@ export function SegmentRocks({
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
     [db, teamId],
   );
-  const sharedRocksQuery = useMemo(
+  // Audience rocks: the new field, and the legacy one until P13 migrates
+  // every rock. Each keeps its server-rendered rows if the rules refuse it.
+  const audienceRocksQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "rocks"),
+        where("audience_team_ids", "array-contains", teamId),
+      ),
+    [db, teamId],
+  );
+  const legacySharedRocksQuery = useMemo(
     () =>
       fsQuery(
         collection(db, "rocks"),
@@ -182,15 +199,25 @@ export function SegmentRocks({
     [initialRocks, teamId],
   );
   const initialShared = useMemo(
-    () => initialRocks.filter((r) => isSharedIntoTeam(r, teamId)),
+    () => initialRocks.filter((r) => isAudienceTeam(r, teamId)),
     [initialRocks, teamId],
   );
   const homeRocks = useCollection<RockDoc>(rocksQuery, initialHome);
-  const sharedRocksLive = useCollection<RockDoc>(
-    sharedRocksQuery,
+  const audienceRocksLive = useCollection<RockDoc>(
+    audienceRocksQuery,
     initialShared,
-    "shared-rocks",
+    "audience-rocks",
   );
+  const legacyRocksLive = useCollection<RockDoc>(
+    legacySharedRocksQuery,
+    initialShared,
+    "legacy-shared-rocks",
+  );
+  const sharedRocksLive = useMemo(() => {
+    const byId = new Map<string, RockDoc>();
+    for (const r of [...legacyRocksLive, ...audienceRocksLive]) byId.set(r.id, r);
+    return [...byId.values()];
+  }, [audienceRocksLive, legacyRocksLive]);
   const liveTodos = useCollection<TodoDoc>(todosQuery, initialTodos);
   const statusUpdates = useCollection<StatusUpdateDoc>(statusQuery, []);
   const extraTodos = useMemo(
@@ -219,7 +246,7 @@ export function SegmentRocks({
       dedupe(
         homeRocks.filter((r) => r.archived_at == null),
         sharedRocksLive.filter(
-          (r) => r.archived_at == null && isSharedIntoTeam(r, teamId),
+          (r) => r.archived_at == null && isAudienceTeam(r, teamId),
         ),
       ),
     [homeRocks, sharedRocksLive, teamId],
@@ -229,7 +256,7 @@ export function SegmentRocks({
       dedupe(
         homeRocks.filter((r) => r.archived_at != null),
         sharedRocksLive.filter(
-          (r) => r.archived_at != null && isSharedIntoTeam(r, teamId),
+          (r) => r.archived_at != null && isAudienceTeam(r, teamId),
         ),
       ),
     [homeRocks, sharedRocksLive, teamId],
@@ -270,11 +297,7 @@ export function SegmentRocks({
   for (const n of extraOwnerNames) nameById.set(n.user_id, n.full_name);
   const teamNameById = new Map(allTeams.map((t) => [t.id, t.name]));
   const rosterIds = new Set(members.map((m) => m.user_id));
-  const viewer: RockViewer = {
-    uid: userId,
-    isAdmin,
-    teamIds: new Set(viewerTeamIds),
-  };
+  const viewer = viewerOf(userId, isAdmin, viewerTeamIds, viewerLeaderTeamIds);
 
   const toMilestone = (t: TodoDoc): MilestoneSerialized => ({
     id: t.id,
@@ -283,8 +306,7 @@ export function SegmentRocks({
     due_date: t.due_date,
     completed: !!t.completed_at,
     description: t.description ?? null,
-    locked: t.team_hidden === true,
-    // Always carry the name: a shared-in rock edited as its parent team
+    // Always carry the name: an audience rock edited as its parent team
     // renders with the parent's roster, which may not hold this owner.
     owner_label: t.owner_id ? (nameById.get(t.owner_id) ?? null) : null,
   });
@@ -334,40 +356,31 @@ export function SegmentRocks({
     ? archivedRocks
     : rocks.filter((r) => r.status !== "cancelled");
   const homeVisible = visible.filter((r) => r.team_id === teamId);
-  const sharedVisible = visible.filter((r) => isSharedIntoTeam(r, teamId));
+  const sharedVisible = visible.filter((r) => isAudienceTeam(r, teamId));
   // Same placement rule as the Rocks tab (lib/rocks-share.ts): a shared-in
   // rock whose owner is in this room walks with that owner's turn; anyone
   // else's sits below under "Shared by". Shared-in rocks skip the Company /
   // Department ladder — they are not this team's shared priorities.
   const { ownerOnRoster: sharedIntoSections, sharedBy: sharedRocksBelow } =
     partitionSharedRocks(sharedVisible, rosterIds);
-  // Assignment rows walk with their carrier's turn. Grouping reads owner_id,
-  // so each enters as the rock re-keyed to its carrier; it renders as the
-  // real rock (see the row below).
-  // The driver's screen is the room's screen (lib/l10/driver.ts): while the
-  // viewer holds the wheel, the "Only you" items they alone may see stay off
-  // it — a locked milestone, or a row that exists only for them.
-  const presenting = meeting.driver_id === userId;
-  const carrierEntries: CarrierEntry[] = showArchived
+  // Block entries walk with their member's turn. Grouping reads owner_id,
+  // so each enters keyed to its member; it renders as a headline only.
+  const blockEntries: BlockEntry[] = showArchived
     ? []
-    : initialAssigned
-        .filter((a) => a.rock.status !== "cancelled")
-        .map((a) =>
-          presenting
-            ? {
-                ...a,
-                milestones: a.milestones.filter(
-                  (t) => !a.onlyViewerIds.includes(t.id),
-                ),
-                onlyViewerIds: [],
-              }
-            : a,
-        )
-        .filter((a) => !(presenting && a.viewerOnly) && a.milestones.length > 0)
-        .map((a) => ({ ...a.rock, owner_id: a.carrierId, __carrier: a }));
-  const groups = groupRocksForL10<RockDoc | CarrierEntry>(
-    [...homeVisible, ...sharedIntoSections, ...carrierEntries],
-    (r) => (r.team_id === teamId ? rockBucket(r) : "owner"),
+    : initialBlocks
+        .filter((b) => b.milestones.length > 0)
+        .map((b) => ({
+          id: b.headline.id,
+          team_id: b.headline.team_id,
+          owner_id: b.carrierId,
+          status: "",
+          quarter: "",
+          due_date: null,
+          __block: b,
+        }));
+  const groups = groupRocksForL10<RockDoc | BlockEntry>(
+    [...homeVisible, ...sharedIntoSections, ...blockEntries],
+    (r) => (r.team_id === teamId && !("__block" in r) ? rockBucket(r) : "owner"),
     members,
     speakingOrder,
     absent,
@@ -378,40 +391,24 @@ export function SegmentRocks({
     id ? (nameById.get(id) ?? "—") : "—",
   );
 
-  // Mirrors the Rocks tab's rowProps: at "edit" a shared-in rock renders as
-  // its parent team so the server gates hold; otherwise against this team.
+  // Mirrors the Rocks tab's rowProps: everyone who sees a full rock here
+  // may edit it; rock actions run against its parent team, ticks and the
+  // thread from this team (lib/access/rock.ts).
   function rowProps(r: RockDoc) {
-    if (r.team_id === teamId) {
-      return {
-        teamId,
-        members,
-        teamName,
-        shareTeams,
-        canFlagCompany,
-        access: "edit" as const,
-        fromTeamName: undefined,
-      };
-    }
-    const access = rockAccessFor(r, viewer);
-    const fromTeamName = teamNameById.get(r.team_id) ?? "another team";
-    if (access === "edit") {
-      return {
-        teamId: r.team_id,
-        members: parentRosters[r.team_id] ?? members,
-        teamName: fromTeamName,
-        shareTeams: allTeams.filter((t) => t.id !== r.team_id),
-        canFlagCompany,
-        access,
-        fromTeamName,
-      };
-    }
+    const own = r.team_id === teamId;
+    const fromTeamName = own
+      ? undefined
+      : (teamNameById.get(r.team_id) ?? "another team");
     return {
-      teamId,
-      members,
-      teamName,
-      shareTeams,
-      canFlagCompany: false,
-      access,
+      teamId: r.team_id,
+      viewTeamId: teamId,
+      members: own ? members : (parentRosters[r.team_id] ?? members),
+      teamName: own ? teamName : fromTeamName,
+      shareTeams: own ? shareTeams : allTeams.filter((t) => t.id !== r.team_id),
+      canFlagCompany,
+      canEdit: rockAccess.canEdit(r, viewer),
+      canDelete: rockAccess.canDelete(r, viewer),
+      canManageAudience: rockAccess.canChangeAudience(r, viewer),
       fromTeamName,
     };
   }
@@ -500,27 +497,20 @@ export function SegmentRocks({
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {g.rocks.map((r) => {
-              const carrier = "__carrier" in r ? r.__carrier : null;
-              if (carrier) {
-                const rock = carrier.rock;
+              if ("__block" in r) {
+                const b = r.__block;
                 return (
-                  <RockRow
-                    key={`${rock.id}:${carrier.carrierId}`}
-                    {...rowProps(rock)}
-                    userId={userId}
-                    rock={rock}
-                    ownerName={ownerLabel(rock.owner_id, (id) =>
+                  <RockBlockRow
+                    key={`${b.headline.id}:${b.carrierId}`}
+                    viewTeamId={teamId}
+                    headline={b.headline}
+                    ownerName={ownerLabel(b.headline.owner_id, (id) =>
                       nameById.get(id),
                     )}
-                    milestones={carrier.milestones.map((t) => ({
-                      ...toMilestone(t),
-                      only_you: carrier.onlyViewerIds.includes(t.id),
-                    }))}
-                    fullMilestones={carrier.full?.map(toMilestone)}
-                    carrierView
-                    viewerOnly={carrier.viewerOnly}
-                    defaultDue={defaultDue}
-                    statusHistory={[]}
+                    fromTeamName={
+                      teamNameById.get(b.headline.team_id) ?? "another team"
+                    }
+                    milestones={b.milestones.map(toMilestone)}
                     currentUserId={userId}
                   />
                 );

@@ -17,7 +17,8 @@ import {
   type TodoMirror,
 } from "@/lib/google/tasks";
 import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
-import { canTickMilestone } from "@/lib/rocks-share";
+import { milestoneAccess, rockSubjectOf } from "@/lib/access/rock";
+import { loadViewer } from "@/lib/firebase/viewer";
 import { canMutateTodo, type TodoAccessCaller } from "@/lib/todo-access";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { purgeItem } from "@/lib/firebase/purge";
@@ -209,10 +210,12 @@ export async function addTodo(teamId: string, formData: FormData) {
 
 /**
  * The to-do a tick from `teamId` may complete. A plain to-do must live on
- * that team. A milestone goes through the sharing rule instead
- * (`canTickMilestone`): the parent team (or an admin) ticks anything, and
- * anyone else — a shared team's member, or an assignee from any team — ticks
- * only their own milestone or one on a rock they own. Admin SDK bypasses firestore.rules, so this is the real gate.
+ * that team. A milestone goes through the rock rule instead
+ * (lib/access/rock.ts `milestoneAccess.canComplete`): its assignee, the
+ * parent team, the rock's audience and admins — judged on the caller's
+ * full memberships, since the assignee and the audience tick from their own
+ * team's page or Home. A block view grants nothing beyond the assignee's own
+ * tick. Admin SDK bypasses firestore.rules, so this is the real gate.
  */
 async function requireTickableTodo(
   db: FirebaseFirestore.Firestore,
@@ -235,15 +238,17 @@ async function requireTickableTodo(
     if (data.team_id !== teamId) notFound();
     return snap;
   }
-  const rockTeamId = String(rock.team_id ?? "");
-  const ok = canTickMilestone(
+  const viewer = await loadViewer(db, uid, isAdmin);
+  const ok = milestoneAccess.canComplete(
     {
-      team_id: rockTeamId,
-      owner_id: (rock.owner_id as string | null) ?? null,
-      shared_team_ids: (rock.shared_team_ids as string[] | null) ?? [],
+      rock: rockSubjectOf(rock),
+      milestone: {
+        owner_id: (data.owner_id as string | null) ?? null,
+        team_id: String(data.team_id ?? ""),
+        visibility: data.visibility,
+      },
     },
-    { owner_id: (data.owner_id as string | null) ?? null },
-    { uid, fullAccess: isAdmin || rockTeamId === teamId },
+    viewer,
   );
   if (!ok) notFound();
   return snap;

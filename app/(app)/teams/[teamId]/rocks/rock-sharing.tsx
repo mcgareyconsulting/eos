@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, LockOpen, Users, X } from "lucide-react";
+import { Lock, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -12,86 +12,69 @@ import {
 } from "@/components/ui/modal";
 import type { SharingChange } from "@/lib/rocks-share";
 
-// The rock modal's sharing surface. The ruleset (lib/rocks-share.ts header):
-// a team share is always the whole rock; an assignee from outside the parent
-// team sees the whole rock and passes their own milestones to their teams,
-// unless a milestone is locked. The modal carries one summary line; the
-// controls live in SharingPane; ShareConfirmDialog reviews a save.
+// The rock modal's audience surface (docs/PERMISSIONS_SPEC.md §3.3):
+//   - The AUDIENCE (teams and persons) sees and edits the whole rock.
+//     Only leaders of the parent team and admins change it; everyone else
+//     sees the list read-only.
+//   - A milestone ASSIGNEE outside the parent team and the audience sees
+//     only their milestone and the rock's title — derived, never set.
+//   - PRIVATE (leaders/admins) clears the audience and keeps the rock off
+//     every block on other teams.
+// The modal carries one summary line; the controls live in AudiencePane;
+// ShareConfirmDialog reviews a save.
 
-type ShareTeam = { id: string; name: string };
+type Option = { id: string; name: string };
 
-/** Mirrors the server cap in actions.ts — firestore.rules unrolls the
- *  shared_team_ids check by index, so the rules only cover this many. */
-export const MAX_SHARED_TEAMS = 8;
+export const PRIVATE_HELP =
+  "Private rocks do not show on the L10 of your other teams.";
 
-export type PaneMilestone = {
-  key: string;
-  title: string;
-  ownerId: string;
-  ownerName: string;
-  locked: boolean;
-  /** Set when the lock is inert — see LockToggle's disabledReason. */
-  lockReason?: LockReason;
-};
+/** Assignees who will see only their milestone(s) — derived, never set. */
+export type HeadlinePerson = { id: string; name: string; teams: string; titles: string[] };
 
-/**
- * Why a milestone's lock is inert:
- *   "rock"   — the whole rock is kept on its team
- *   "team"   — the owner is on the rock's team; nothing of theirs travels
- *   "shared" — every team the owner is on already has the whole rock, so a
- *              lock would hide nothing
- */
-export type LockReason = "rock" | "team" | "shared";
-
-/** What reaches whom through assignments — derived, never set directly. */
-export type AssignmentReach = {
-  /** Outside every full team: they get the whole rock. */
-  people: { id: string; name: string; teams: string }[];
-  /** Teams without a share that see their people's milestones. */
-  teams: { id: string; name: string; titles: string[] }[];
-};
-
-/** One line in the rock form: who can see this rock, and the way in. */
-export function SharingSummary({
+/** One line in the rock form: who can see this rock. */
+export function AudienceSummary({
   parentTeamName,
-  sharedTeams,
-  reach,
-  lockedCount,
-  teamOnly = false,
-  onTeamOnlyChange,
+  audienceTeams,
+  audiencePeople,
+  headlinePeople,
+  isPrivate,
+  canManage,
+  onPrivateChange,
   onManage,
 }: {
   parentTeamName: string;
-  sharedTeams: ShareTeam[];
-  reach: AssignmentReach;
-  lockedCount: number;
-  teamOnly?: boolean;
-  /** The "Keep on this team" switch sits beside Manage sharing. */
-  onTeamOnlyChange: (on: boolean) => void;
+  audienceTeams: Option[];
+  audiencePeople: Option[];
+  headlinePeople: HeadlinePerson[];
+  isPrivate: boolean;
+  /** Leader of the parent team or admin (rockAccess.canChangeAudience). */
+  canManage: boolean;
+  onPrivateChange: (on: boolean) => void;
   onManage: () => void;
 }) {
+  const extra = [...audienceTeams, ...audiencePeople];
   return (
     <div>
       <div className="mb-1 text-[11.5px] font-semibold text-zinc-600 dark:text-zinc-400">
-        Sharing
+        Who sees this rock
       </div>
       <div className="flex items-center gap-3 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
         <Users className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
         <p className="min-w-0 flex-1 text-[13px] text-zinc-700 dark:text-zinc-300">
-          {teamOnly ? (
+          {isPrivate ? (
             <>
               <Lock className="-mt-0.5 inline h-3 w-3" aria-hidden />{" "}
-              Kept on <span className="font-semibold">{parentTeamName}</span>
+              Private to <span className="font-semibold">{parentTeamName}</span>
             </>
-          ) : sharedTeams.length === 0 ? (
+          ) : extra.length === 0 ? (
             <>
-              Only <span className="font-semibold">{parentTeamName}</span>
+              <span className="font-semibold">{parentTeamName}</span>
             </>
           ) : (
             <>
               <span className="font-semibold">{parentTeamName}</span>
               {" + "}
-              {sharedTeams.map((t, i) => (
+              {extra.map((t, i) => (
                 <span key={t.id}>
                   {i > 0 && ", "}
                   <span className="font-semibold">{t.name}</span>
@@ -99,43 +82,38 @@ export function SharingSummary({
               ))}
             </>
           )}
-          {reach.teams.length > 0 && (
+          {headlinePeople.length > 0 && (
             <span className="text-zinc-500">
-              {" · through assignments: "}
-              {reach.teams.map((t) => t.name).join(", ")}
-            </span>
-          )}
-          {lockedCount > 0 && (
-            <span className="text-zinc-500">
-              {" · "}
-              <Lock className="-mt-0.5 inline h-3 w-3" aria-hidden />{" "}
-              {lockedCount} kept off {lockedCount === 1 ? "its" : "their"} team
+              {" · only their milestone: "}
+              {headlinePeople.map((p) => p.name).join(", ")}
             </span>
           )}
         </p>
-        <KeepOnTeamSwitch
-          on={teamOnly}
-          disabled={sharedTeams.length > 0}
-          onChange={onTeamOnlyChange}
+        <PrivateSwitch
+          on={isPrivate}
+          disabled={!canManage}
+          onChange={onPrivateChange}
         />
         <button
           type="button"
           onClick={onManage}
           className="shrink-0 rounded-md border border-zinc-300 px-2.5 py-1 text-[12.5px] font-semibold text-hpb-blue hover:bg-zinc-50 dark:border-zinc-700 dark:text-hpb-gold dark:hover:bg-zinc-800"
         >
-          Manage sharing
+          {canManage ? "Manage audience" : "View audience"}
         </button>
       </div>
+      {!canManage && (
+        <p className="mt-1 text-[11px] text-zinc-500">
+          Only a leader of {parentTeamName} or an admin can change the audience
+          or make the rock private.
+        </p>
+      )}
     </div>
   );
 }
 
-/**
- * "Keep on this team": every milestone locked, including later ones, and
- * no team shares — disabled while any team is shared, as Add teams is while
- * this is on (see parseTeamOnly).
- */
-function KeepOnTeamSwitch({
+/** Private: leader/admin only. Turning it on clears the audience. */
+function PrivateSwitch({
   on,
   disabled,
   onChange,
@@ -153,8 +131,8 @@ function KeepOnTeamSwitch({
       onClick={() => onChange(!on)}
       title={
         disabled
-          ? "Remove the shared teams first — a rock kept on its team isn't shared"
-          : "Every milestone stays on this team, including ones added later. Assignees still see the whole rock."
+          ? `${PRIVATE_HELP} Only a leader of this team or an admin can change it.`
+          : `${PRIVATE_HELP} Turning it on removes the audience.`
       }
       className={cn(
         "inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-[12.5px] font-semibold transition-colors",
@@ -166,7 +144,7 @@ function KeepOnTeamSwitch({
       )}
     >
       <Lock className="h-3.5 w-3.5" aria-hidden />
-      Keep on this team
+      Private
       <span
         aria-hidden
         className={cn(
@@ -186,141 +164,135 @@ function KeepOnTeamSwitch({
 }
 
 /**
- * The control pane. Edits the rock modal's draft in place — "Done" only
- * closes it; the rock's Save is still the one commit.
+ * The audience pane. Edits the rock modal's draft in place — "Done" only
+ * closes it; the rock's Save is still the one commit. Read-only unless
+ * `canManage`.
  */
-export function SharingPane({
+export function AudiencePane({
   open,
   onClose,
   parentTeamName,
-  shareTeams,
-  sharedTeamIds,
-  teamOnly,
-  milestones,
-  reach,
+  teamOptions,
+  personOptions,
+  audienceTeamIds,
+  audienceUserIds,
+  isPrivate,
+  canManage,
+  headlinePeople,
   onTeamsChange,
-  onToggleLock,
+  onUsersChange,
 }: {
   open: boolean;
   onClose: () => void;
   parentTeamName: string;
-  /** Every team the rock may be shared into (the org, minus the parent). */
-  shareTeams: ShareTeam[];
-  sharedTeamIds: string[];
-  /** Set from the rock form's "Keep on this team" switch. */
-  teamOnly: boolean;
-  milestones: PaneMilestone[];
-  reach: AssignmentReach;
+  /** Every team that may be in the audience (the org, minus the parent). */
+  teamOptions: Option[];
+  /** Everyone in the directory; null while it loads. */
+  personOptions: Option[] | null;
+  audienceTeamIds: string[];
+  audienceUserIds: string[];
+  isPrivate: boolean;
+  canManage: boolean;
+  headlinePeople: HeadlinePerson[];
   onTeamsChange: (next: string[]) => void;
-  onToggleLock: (key: string) => void;
+  onUsersChange: (next: string[]) => void;
 }) {
-  const nameOf = new Map(shareTeams.map((t) => [t.id, t.name]));
-  const hasReach = reach.people.length > 0 || reach.teams.length > 0;
+  const teamName = new Map(teamOptions.map((t) => [t.id, t.name]));
+  const personName = new Map((personOptions ?? []).map((p) => [p.id, p.name]));
+  const editable = canManage && !isPrivate;
+  // Keep pick order stable: survivors first, new ones after.
+  const merge = (prev: string[], next: Set<string>) => [
+    ...prev.filter((id) => next.has(id)),
+    ...[...next].filter((id) => !prev.includes(id)),
+  ];
 
   return (
-    <ModalShell
-      open={open}
-      onClose={onClose}
-      ariaLabel="Sharing"
-      size="2xl"
-      portal
-    >
-      <ModalHeader title="Sharing" onClose={onClose} />
+    <ModalShell open={open} onClose={onClose} ariaLabel="Audience" size="2xl" portal>
+      <ModalHeader title="Audience" onClose={onClose} />
       <ModalBody className="space-y-5">
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-zinc-50 px-3 py-2.5 text-[12px] sm:grid-cols-[auto_1fr] dark:bg-zinc-800/50">
           <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
-            Shared team
-          </dt>
-          <dd className="text-zinc-500">The whole rock, every milestone.</dd>
-          <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
-            Assigned from another team
+            Audience (teams and persons)
           </dt>
           <dd className="text-zinc-500">
-            That person sees the whole rock; their teams see just their
-            milestones.
+            Sees and edits the whole rock. Cannot delete it or change the
+            audience.
           </dd>
           <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
-            <Lock className="-mt-0.5 inline h-3 w-3" aria-hidden /> Kept off
-            their team
+            Assigned a milestone
           </dt>
           <dd className="text-zinc-500">
-            The milestone stays with the person — their teams don&apos;t see it.
+            Sees only their milestone and the rock&apos;s title, owner and team.
           </dd>
+          <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
+            <Lock className="-mt-0.5 inline h-3 w-3" aria-hidden /> Private
+          </dt>
+          <dd className="text-zinc-500">{PRIVATE_HELP}</dd>
         </dl>
 
-        <section>
-          {/* Left-aligned: the menu is wider than its trigger and opens
-              rightward, so a right-aligned trigger would clip it. */}
-          <div className="mb-2 flex items-center gap-3">
-            <h3 className="text-[13px] font-semibold">Teams</h3>
+        {isPrivate && (
+          <p className="text-[12.5px] text-zinc-600 dark:text-zinc-400">
+            This rock is private: it has no audience, and every milestone must
+            be assigned to someone on {parentTeamName}.
+          </p>
+        )}
+
+        <AudienceList
+          title="Teams"
+          head={{ name: parentTeamName, tag: "Parent team · whole rock" }}
+          ids={audienceTeamIds}
+          nameOf={(id) => teamName.get(id) ?? "Unknown team"}
+          editable={editable}
+          picker={
             <MultiSelect
-              disabled={teamOnly}
+              disabled={!editable}
               label="Teams"
               triggerText="Add teams…"
-              options={shareTeams.map((t) => ({ value: t.id, label: t.name }))}
-              value={new Set(sharedTeamIds)}
-              onChange={(next) =>
-                // Keep pick order stable: survivors first, new ones after.
-                onTeamsChange([
-                  ...sharedTeamIds.filter((id) => next.has(id)),
-                  ...[...next].filter((id) => !sharedTeamIds.includes(id)),
-                ])
-              }
+              options={teamOptions.map((t) => ({ value: t.id, label: t.name }))}
+              value={new Set(audienceTeamIds)}
+              onChange={(next) => onTeamsChange(merge(audienceTeamIds, next))}
               searchable
-              max={MAX_SHARED_TEAMS}
               portal
               className="w-48"
             />
-          </div>
-          <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            <li className="flex items-center gap-3 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-                {parentTeamName}
-              </span>
-              <span className="shrink-0 text-[12px] text-zinc-500">
-                {teamOnly ? (
-                  <span className="inline-flex items-center gap-1 text-hpb-blue dark:text-hpb-gold">
-                    <Lock className="h-3 w-3" aria-hidden />
-                    Kept on this team
-                  </span>
-                ) : (
-                  "Parent team · whole rock"
-                )}
-              </span>
-            </li>
-            {sharedTeamIds.map((id) => (
-              <li key={id} className="flex items-center gap-3 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate text-[13px]">
-                  {nameOf.get(id) ?? "Unknown team"}
-                </span>
-                <span className="shrink-0 text-[12px] text-zinc-500">
-                  Whole rock
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onTeamsChange(sharedTeamIds.filter((x) => x !== id))
-                  }
-                  aria-label={`Stop sharing with ${nameOf.get(id) ?? "team"}`}
-                  className="w-6 shrink-0 rounded p-1 text-zinc-400 hover:text-red-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+          }
+          onRemove={(id) => onTeamsChange(audienceTeamIds.filter((x) => x !== id))}
+        />
 
-        {hasReach && (
+        <AudienceList
+          title="Persons"
+          ids={audienceUserIds}
+          nameOf={(id) => personName.get(id) ?? "Someone"}
+          editable={editable}
+          picker={
+            <MultiSelect
+              disabled={!editable || !personOptions}
+              label="Persons"
+              triggerText={personOptions ? "Add persons…" : "Loading…"}
+              options={(personOptions ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+              value={new Set(audienceUserIds)}
+              onChange={(next) => onUsersChange(merge(audienceUserIds, next))}
+              searchable
+              portal
+              className="w-48"
+            />
+          }
+          onRemove={(id) => onUsersChange(audienceUserIds.filter((x) => x !== id))}
+        />
+
+        {headlinePeople.length > 0 && (
           <section>
-            <h3 className="text-[13px] font-semibold">Through assignments</h3>
+            <h3 className="text-[13px] font-semibold">Only their milestone</h3>
             <p className="mb-2 mt-0.5 text-[12px] text-zinc-500">
-              Follows from who the milestones are assigned to — change an
-              owner or a lock below to change it.
+              Assignees outside {parentTeamName} and the audience. Add them to
+              the audience to give them the whole rock.
             </p>
             <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {reach.people.map((p) => (
-                <li key={`p-${p.id}`} className="flex items-start gap-3 px-3 py-2">
+              {headlinePeople.map((p) => (
+                <li key={p.id} className="flex items-start gap-3 px-3 py-2">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px]">{p.name}</span>
                     {p.teams && (
@@ -329,45 +301,11 @@ export function SharingPane({
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-[12px] text-zinc-600 dark:text-zinc-400">
-                    Whole rock · assignee
-                  </span>
-                </li>
-              ))}
-              {reach.teams.map((t) => (
-                <li key={`t-${t.id}`} className="flex items-start gap-3 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{t.name}</span>
                   <span className="max-w-[60%] shrink-0 truncate text-right text-[12px] text-zinc-600 dark:text-zinc-400">
-                    Title +{" "}
-                    {t.titles.length === 1
-                      ? `“${t.titles[0]}”`
-                      : `${t.titles.length} milestones`}
+                    {p.titles.length === 1
+                      ? `“${p.titles[0]}”`
+                      : `${p.titles.length} milestones`}
                   </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {milestones.length > 0 && (
-          <section>
-            <h3 className="mb-2 text-[13px] font-semibold">Milestones</h3>
-            <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {milestones.map((m) => (
-                <li key={m.key} className="flex items-center gap-3 px-3 py-2">
-                  <span className="min-w-0 flex-1 truncate text-[13px]">
-                    {m.title}
-                  </span>
-                  <span className="shrink-0 text-[12px] text-zinc-500">
-                    {m.ownerName}
-                  </span>
-                  <LockToggle
-                    value={m.locked || teamOnly}
-                    onToggle={() => onToggleLock(m.key)}
-                    disabled={!!m.lockReason}
-                    disabledReason={m.lockReason}
-                    withLabel
-                  />
                 </li>
               ))}
             </ul>
@@ -383,83 +321,79 @@ export function SharingPane({
   );
 }
 
-/**
- * Lock toggle for one milestone — used in the pane and on each modal row.
- * Disabled for a parent-team owner: their milestones don't travel, so there
- * is nothing to keep off.
- */
-export function LockToggle({
-  value,
-  onToggle,
-  disabled = false,
-  disabledReason = "team",
-  withLabel = false,
+function AudienceList({
+  title,
+  head,
+  ids,
+  nameOf,
+  editable,
+  picker,
+  onRemove,
 }: {
-  value: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-  disabledReason?: LockReason;
-  withLabel?: boolean;
+  title: string;
+  head?: { name: string; tag: string };
+  ids: string[];
+  nameOf: (id: string) => string;
+  editable: boolean;
+  picker: React.ReactNode;
+  onRemove: (id: string) => void;
 }) {
-  const Icon = value ? Lock : LockOpen;
-  const title = disabled
-    ? disabledReason === "rock"
-      ? "The whole rock is kept on this team"
-      : disabledReason === "shared"
-        ? "Their team already has the whole rock — nothing to keep off"
-        : "Owner is on this rock's team — nothing to keep off"
-    : value
-      ? "Kept off the assignee's team"
-      : "Shown to the assignee's team";
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      aria-pressed={value}
-      aria-label={title}
-      title={title}
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-1 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        value
-          ? "border-hpb-blue/40 bg-hpb-blue/[0.07] text-hpb-blue dark:border-hpb-gold/40 dark:bg-hpb-gold/10 dark:text-hpb-gold"
-          : "border-zinc-300 text-zinc-400 hover:text-zinc-700 disabled:hover:text-zinc-400 dark:border-zinc-700 dark:hover:text-zinc-200",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {withLabel && (
-        <span className="w-[5.5rem] text-left">
-          {disabled
-            ? disabledReason === "rock"
-              ? "Kept on team"
-              : disabledReason === "shared"
-                ? "Team has rock"
-                : "On this team"
-            : value
-              ? "Kept off team"
-              : "Shown to team"}
-        </span>
-      )}
-    </button>
+    <section>
+      {/* Left-aligned: the menu is wider than its trigger and opens
+          rightward, so a right-aligned trigger would clip it. */}
+      <div className="mb-2 flex items-center gap-3">
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+        {editable && picker}
+      </div>
+      <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        {head && (
+          <li className="flex items-center gap-3 px-3 py-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+              {head.name}
+            </span>
+            <span className="shrink-0 text-[12px] text-zinc-500">{head.tag}</span>
+          </li>
+        )}
+        {ids.map((id) => (
+          <li key={id} className="flex items-center gap-3 px-3 py-2">
+            <span className="min-w-0 flex-1 truncate text-[13px]">{nameOf(id)}</span>
+            <span className="shrink-0 text-[12px] text-zinc-500">Whole rock</span>
+            {editable && (
+              <button
+                type="button"
+                onClick={() => onRemove(id)}
+                aria-label={`Remove ${nameOf(id)} from the audience`}
+                className="w-6 shrink-0 rounded p-1 text-zinc-400 hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </li>
+        ))}
+        {!head && ids.length === 0 && (
+          <li className="px-3 py-2 text-[12.5px] text-zinc-400">None</li>
+        )}
+      </ul>
+    </section>
   );
 }
 
 /**
  * Two moments:
- *   - **Adding a rock** — always, parent team first, even when nobody else
- *     will see it.
+ *   - **Adding a rock** — always, parent team first.
  *   - **Editing** — when the save changes who sees the rock
- *     (lib/rocks-share.ts sharingChanges): a new team, a new assignee from
- *     outside, a milestone reaching a new team, or an unshared team that
- *     still sees part of the rock.
+ *     (lib/rocks-share.ts sharingChanges): a team or person joins the
+ *     audience, an assignee will see only their milestone, a milestone
+ *     reaches a new block, or the rock becomes private.
  */
 export function ShareConfirmDialog({
   open,
   creating,
   parentTeamName,
   changes,
-  lockedCount,
   teamName,
+  personName,
   pending,
   onBack,
   onConfirm,
@@ -468,98 +402,114 @@ export function ShareConfirmDialog({
   creating: boolean;
   parentTeamName: string;
   changes: SharingChange[];
-  lockedCount: number;
   teamName: (id: string) => string;
+  personName: (id: string) => string;
   pending: boolean;
   onBack: () => void;
   onConfirm: () => void;
 }) {
-  const added = changes.filter(
-    (c): c is Extract<SharingChange, { kind: "team-added" }> =>
-      c.kind === "team-added",
-  );
-  const people = changes.filter(
-    (c): c is Extract<SharingChange, { kind: "assignee-added" }> =>
-      c.kind === "assignee-added",
-  );
-  const stillSees = changes.filter(
-    (c): c is Extract<SharingChange, { kind: "still-sees" }> =>
-      c.kind === "still-sees",
-  );
-  const reached = new Map<string, { title: string; ownerName: string }[]>();
-  for (const c of changes) {
-    if (c.kind !== "milestone-to-team") continue;
-    const list = reached.get(c.teamId) ?? [];
+  const of = <K extends SharingChange["kind"]>(kind: K) =>
+    changes.filter((c): c is Extract<SharingChange, { kind: K }> => c.kind === kind);
+  const teams = of("team-added");
+  const people = of("person-added");
+  const headline = of("headline-only");
+  const priv = of("private-on")[0];
+  const blocks = new Map<string, { title: string; ownerName: string }[]>();
+  for (const c of of("block-added")) {
+    const list = blocks.get(c.teamId) ?? [];
     list.push({ title: c.title, ownerName: c.ownerName });
-    reached.set(c.teamId, list);
+    blocks.set(c.teamId, list);
   }
   const nobodyElse =
-    added.length === 0 && people.length === 0 && reached.size === 0;
+    teams.length === 0 && people.length === 0 && headline.length === 0 && blocks.size === 0;
+
+  const quoted = (titles: string[]) =>
+    titles.length === 1
+      ? `“${titles[0]}”`
+      : titles.map((t) => `“${t}”`).join(", ");
 
   return (
-    <ModalShell
-      open={open}
-      onClose={onBack}
-      ariaLabel="Review sharing"
-      size="lg"
-      portal
-    >
+    <ModalShell open={open} onClose={onBack} ariaLabel="Review who sees this rock" size="lg" portal>
       <ModalHeader
-        title={creating ? "Who will see this rock" : "Review sharing before saving"}
+        title={creating ? "Who will see this rock" : "Review who sees this rock"}
         onClose={onBack}
       />
       <ModalBody className="space-y-4">
         {creating && (
           <Block title={parentTeamName} tag="Parent team · Whole rock">
             {nobodyElse
-              ? "Only this team sees the rock — it isn't shared anywhere else."
-              : "Sees the rock and every milestone."}
+              ? "Only this team will see the rock."
+              : "Sees and edits the rock and every milestone."}
           </Block>
         )}
 
-        {added.map((c) => (
-          <Block key={`t-${c.teamId}`} title={teamName(c.teamId)} tag="Shared · Whole rock">
-            Sees the rock, every milestone, and its progress.
+        {priv && (
+          <Block title="Private" tag="Loses access">
+            {PRIVATE_HELP} These lose the rock:
+            <ul className="mt-1.5 space-y-1">
+              {[
+                ...priv.teamIds.map((id) => `${teamName(id)} (audience)`),
+                ...priv.userIds.map((id) => `${personName(id)} (audience)`),
+                ...priv.blockTeamIds.map((id) => `${teamName(id)} (members' blocks)`),
+              ].map((line) => (
+                <li
+                  key={line}
+                  className="rounded-md bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </Block>
+        )}
+
+        {teams.map((c) => (
+          <Block key={`t-${c.teamId}`} title={teamName(c.teamId)} tag="Audience · Whole rock">
+            {teamName(c.teamId)} will see the whole rock and can edit it.
           </Block>
         ))}
 
         {people.map((c) => (
-          <Block key={`p-${c.ownerId}`} title={c.ownerName} tag="Assignee · Whole rock">
-            Not on this rock&apos;s teams — assigning them a milestone gives
-            them the whole rock.
+          <Block key={`p-${c.userId}`} title={personName(c.userId)} tag="Audience · Whole rock">
+            {personName(c.userId)} will see the whole rock and can edit it.
           </Block>
         ))}
 
-        {[...reached.entries()].map(([teamId, items]) => (
-          <Block
-            key={`r-${teamId}`}
-            title={teamName(teamId)}
-            tag="Through assignment · No progress"
-          >
-            Sees the rock&apos;s title and only its people&apos;s milestones:
-            <ItemList items={items} />
+        {headline.map((c) => {
+          const teamsLabel = c.ownerTeamIds.map(teamName).join(", ");
+          return (
+            <Block
+              key={`h-${c.ownerId}`}
+              title={teamsLabel ? `${c.ownerName} (${teamsLabel})` : c.ownerName}
+              tag="Assignee · Only their milestone"
+            >
+              {c.ownerName}
+              {teamsLabel ? ` (${teamsLabel})` : ""} will see only{" "}
+              {quoted(c.titles)} and the rock&apos;s title. Add them to the
+              audience to give them the whole rock.
+            </Block>
+          );
+        })}
+
+        {[...blocks.entries()].map(([teamId, items]) => (
+          <Block key={`b-${teamId}`} title={teamName(teamId)} tag="Block · Title only">
+            Will see in their members&apos; blocks, read-only, with the
+            rock&apos;s title:
+            <ul className="mt-1.5 space-y-1">
+              {items.map((m, i) => (
+                <li
+                  key={i}
+                  className="flex items-baseline gap-2 rounded-md bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
+                >
+                  <span className="min-w-0 flex-1 truncate">“{m.title}”</span>
+                  <span className="shrink-0 text-zinc-600 dark:text-zinc-300">
+                    {m.ownerName}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Block>
         ))}
-
-        {stillSees.map((c) => (
-          <Block
-            key={`s-${c.teamId}`}
-            title={teamName(c.teamId)}
-            tag="Unshared · Still sees part"
-          >
-            No longer has the whole rock, but still sees its title and its
-            people&apos;s milestones:
-            <ItemList items={c.titles.map((title) => ({ title, ownerName: "" }))} />
-          </Block>
-        ))}
-
-        {lockedCount > 0 && (
-          <p className="flex items-center gap-1.5 border-t border-zinc-200 pt-3 text-[12px] text-zinc-500 dark:border-zinc-800">
-            <Lock className="h-3 w-3" aria-hidden />
-            {lockedCount} milestone{lockedCount === 1 ? " is" : "s are"} kept
-            off the assignee&apos;s team.
-          </p>
-        )}
       </ModalBody>
       <ModalFooter className="px-4 pb-4">
         <Button variant="ghost" onClick={onBack}>
@@ -572,7 +522,7 @@ export function ShareConfirmDialog({
               : "Saving…"
             : creating
               ? "Add Rock"
-              : "Save and share"}
+              : "Save"}
         </Button>
       </ModalFooter>
     </ModalShell>
@@ -602,25 +552,5 @@ function Block({
         {children}
       </div>
     </section>
-  );
-}
-
-function ItemList({ items }: { items: { title: string; ownerName: string }[] }) {
-  return (
-    <ul className="mt-1.5 space-y-1">
-      {items.map((m, i) => (
-        <li
-          key={i}
-          className="flex items-baseline gap-2 rounded-md bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
-        >
-          <span className="min-w-0 flex-1 truncate">“{m.title}”</span>
-          {m.ownerName && (
-            <span className="shrink-0 text-zinc-600 dark:text-zinc-300">
-              {m.ownerName}
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
   );
 }

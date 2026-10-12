@@ -16,11 +16,10 @@ import {
   type OrgPerson,
 } from "./owner-picker";
 import {
-  LockToggle,
-  type AssignmentReach,
+  AudiencePane,
+  AudienceSummary,
   ShareConfirmDialog,
-  SharingPane,
-  SharingSummary,
+  type HeadlinePerson,
 } from "./rock-sharing";
 import {
   sharingChanges,
@@ -50,10 +49,12 @@ type DraftMilestone = {
   key: string;
   id?: string;
   title: string;
+  /** "" = the rock owner (the default assignee, spec §3.3). */
   owner_id: string;
   due_date: string;
-  /** Locked: not passed on to the assignee's teams (lib/rocks-share.ts). */
-  locked: boolean;
+  /** Stored with no owner (a deactivation, spec §2.6) and not touched since:
+   *  saves as unassigned. Editing the row assigns it to the rock owner. */
+  unassigned?: boolean;
 };
 
 type RockForEdit = {
@@ -65,8 +66,10 @@ type RockForEdit = {
   due_date: string | null;
   rock_type?: string | null;
   is_company_rock?: boolean | null;
-  shared_team_ids?: string[] | null;
-  team_only?: boolean | null;
+  /** Effective audience (lib/access/rock.ts), legacy names folded in. */
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  private?: boolean | null;
 };
 
 /**
@@ -78,8 +81,8 @@ type RockForEdit = {
  * next modal retries.
  */
 let orgPeopleCache: Promise<OrgPerson[]> | null = null;
-function fetchOrgPeople(teamId: string): Promise<OrgPerson[]> {
-  orgPeopleCache ??= loadOrgPeople(teamId).catch((err) => {
+function fetchOrgPeople(): Promise<OrgPerson[]> {
+  orgPeopleCache ??= loadOrgPeople().catch((err) => {
     orgPeopleCache = null;
     throw err;
   });
@@ -87,15 +90,9 @@ function fetchOrgPeople(teamId: string): Promise<OrgPerson[]> {
 }
 
 let draftSeq = 0;
-function blankRow(ownerId: string): DraftMilestone {
+function blankRow(): DraftMilestone {
   draftSeq += 1;
-  return {
-    key: `draft-${draftSeq}`,
-    title: "",
-    owner_id: ownerId,
-    due_date: "",
-    locked: false,
-  };
+  return { key: `draft-${draftSeq}`, title: "", owner_id: "", due_date: "" };
 }
 
 /**
@@ -111,7 +108,7 @@ function serializeRows(rows: DraftMilestone[]): string {
   return JSON.stringify(
     rows
       .filter((r) => r.title.trim())
-      .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date, r.locked]),
+      .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date]),
   );
 }
 
@@ -133,6 +130,7 @@ export function NewRockButton({
   teamName,
   shareTeams = [],
   canFlagCompany = false,
+  canManageAudience = false,
 }: {
   teamId: string;
   members: Member[];
@@ -142,6 +140,7 @@ export function NewRockButton({
   teamName?: string;
   shareTeams?: ShareTeam[];
   canFlagCompany?: boolean;
+  canManageAudience?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -170,6 +169,7 @@ export function NewRockButton({
           teamName={teamName}
           shareTeams={shareTeams}
           canFlagCompany={canFlagCompany}
+          canManageAudience={canManageAudience}
           onClose={() => setOpen(false)}
         />
       )}
@@ -188,6 +188,7 @@ export function EditRockButton({
   teamName,
   shareTeams = [],
   canFlagCompany = false,
+  canManageAudience = false,
   className,
 }: {
   teamId: string;
@@ -199,6 +200,7 @@ export function EditRockButton({
   teamName?: string;
   shareTeams?: ShareTeam[];
   canFlagCompany?: boolean;
+  canManageAudience?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -225,6 +227,7 @@ export function EditRockButton({
           teamName={teamName}
           shareTeams={shareTeams}
           canFlagCompany={canFlagCompany}
+          canManageAudience={canManageAudience}
           rock={rock}
           milestones={milestones}
           onClose={() => setOpen(false)}
@@ -235,8 +238,8 @@ export function EditRockButton({
 }
 
 /**
- * Create/edit: parent team (context), rock kind, person owner, optional share,
- * rich description, milestones.
+ * Create/edit: parent team (context), rock kind, person owner (on the parent
+ * team), audience (leaders/admins), rich description, milestones.
  */
 export function RockModal({
   teamId,
@@ -247,6 +250,7 @@ export function RockModal({
   teamName,
   shareTeams = [],
   canFlagCompany = false,
+  canManageAudience = false,
   rock,
   milestones = [],
   focusMilestones = false,
@@ -266,6 +270,12 @@ export function RockModal({
    * value on save regardless of what the form sends.
    */
   canFlagCompany?: boolean;
+  /**
+   * Leader of the parent team or admin (rockAccess.canChangeAudience): may
+   * change the audience and Private. Everyone else sees them read-only; the
+   * server preserves the stored values on their save regardless.
+   */
+  canManageAudience?: boolean;
   /** Present = edit mode. */
   rock?: RockForEdit;
   milestones?: MilestoneSerialized[];
@@ -296,11 +306,13 @@ export function RockModal({
   const [companyRock, setCompanyRock] = useState(
     rock ? isCompanyRock(rock) : false,
   );
-  const [sharedTeamIds, setSharedTeamIds] = useState<string[]>(() => {
-    const ids = rock?.shared_team_ids ?? [];
-    return ids.filter((id) => id && id !== teamId);
-  });
-  const [teamOnly, setTeamOnly] = useState(rock?.team_only === true);
+  const [audienceTeamIds, setAudienceTeamIds] = useState<string[]>(() =>
+    (rock?.audience_team_ids ?? []).filter((id) => id && id !== teamId),
+  );
+  const [audienceUserIds, setAudienceUserIds] = useState<string[]>(
+    () => rock?.audience_user_ids ?? [],
+  );
+  const [isPrivate, setIsPrivate] = useState(rock?.private === true);
   const [orgPeople, setOrgPeople] = useState<OrgPerson[] | null>(null);
   const [paneOpen, setPaneOpen] = useState(false);
   const [changes, setChanges] = useState<SharingChange[]>([]);
@@ -318,16 +330,12 @@ export function RockModal({
           key: m.id,
           id: m.id,
           title: m.title,
-          owner_id: m.owner_id ?? currentUserId,
+          owner_id: m.owner_id ?? "",
           due_date: m.due_date ?? "",
-          locked: m.locked === true,
+          unassigned: !m.owner_id,
         }))
-      : [
-          blankRow(currentUserId),
-          blankRow(currentUserId),
-          blankRow(currentUserId),
-        ];
-    return focusMilestones ? [...base, blankRow(inheritOwner)] : base;
+      : [blankRow(), blankRow(), blankRow()];
+    return focusMilestones ? [...base, blankRow()] : base;
   });
   const [focusKey, setFocusKey] = useState<string | null>(() =>
     focusMilestones ? (rows[rows.length - 1]?.key ?? null) : null,
@@ -345,8 +353,7 @@ export function RockModal({
     ownerId,
     rockType,
     companyRock,
-    sharedTeamIds: sharedTeamIds.join(","),
-    teamOnly,
+    audience: [isPrivate, ...audienceTeamIds, "|", ...audienceUserIds].join(","),
     qtr,
     due,
     milestones: serializeRows(rows),
@@ -356,9 +363,10 @@ export function RockModal({
   // lookup needs is still loading at mount, and a baseline built then would
   // report every existing assignment as new.
   const [openedSharing] = useState(() => ({
-    teams: sharedTeamIds,
+    teams: audienceTeamIds,
+    users: audienceUserIds,
     rows,
-    teamOnly,
+    isPrivate,
   }));
 
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
@@ -370,8 +378,7 @@ export function RockModal({
         ownerId,
         rockType,
         companyRock,
-        sharedTeamIds: sharedTeamIds.join(","),
-        teamOnly,
+        audience: [isPrivate, ...audienceTeamIds, "|", ...audienceUserIds].join(","),
         qtr,
         due,
         milestones: serializeRows(rows),
@@ -383,9 +390,16 @@ export function RockModal({
 
   const filled = rows.filter((r) => r.title.trim());
 
+  // Touching an unassigned row assigns it (no new or changed milestone is
+  // saved without an owner, spec §2.6).
   function patchRow(key: string, patch: Partial<DraftMilestone>) {
-    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+    setRows((rs) =>
+      rs.map((r) => (r.key === key ? { ...r, ...patch, unassigned: false } : r)),
+    );
   }
+  /** The assignee a row saves with: its pick, else the rock owner. */
+  const ownerOf = (r: DraftMilestone): string | null =>
+    r.owner_id || (r.unassigned ? null : inheritOwner);
 
   const shareTeamName = new Map(shareTeams.map((t) => [t.id, t.name]));
   const teamNameById = new Map(shareTeamName);
@@ -405,14 +419,40 @@ export function RockModal({
     teamIdsOf(id)
       .map((t) => teamNameById.get(t) ?? "Team")
       .join(", ");
-  const snapshotOf = (teams: string[], rs: DraftMilestone[], only: boolean) =>
-    sharingSnapshot(teamId, teams, rs, only, inheritOwner, ownerNameOf, teamIdsOf);
+  const personNameOf = (id: string) => nameById.get(id) ?? "Someone";
+  const snapshotOf = (
+    teams: string[],
+    users: string[],
+    rs: DraftMilestone[],
+    priv: boolean,
+  ): SharingSnapshot => ({
+    parentTeamId: teamId,
+    private: priv,
+    audienceTeamIds: priv ? [] : [...teams],
+    audienceUserIds: priv ? [] : [...users],
+    milestones: Object.fromEntries(
+      rs
+        .filter((r) => r.title.trim())
+        .map((r) => {
+          const owner = ownerOf(r);
+          return [
+            r.key,
+            {
+              title: r.title.trim(),
+              ownerId: owner,
+              ownerName: owner ? ownerNameOf(owner) : "Unassigned",
+              ownerTeamIds: owner ? teamIdsOf(owner) : [],
+            },
+          ];
+        }),
+    ),
+  });
 
   // Prefetch on open (see orgPeopleCache). The picker's own request is the
   // retry path if this one failed.
   useEffect(() => {
     let cancelled = false;
-    fetchOrgPeople(teamId)
+    fetchOrgPeople()
       .then((people) => {
         if (!cancelled) setOrgPeople(people);
       })
@@ -420,76 +460,50 @@ export function RockModal({
     return () => {
       cancelled = true;
     };
-  }, [teamId]);
+  }, []);
 
-  // Who reaches the rock through assignments (lib/rocks-share.ts): people
-  // outside every full team get the whole rock; their teams without a
-  // share see just their unlocked milestones. Only known once the org list
-  // has loaded — nothing shows until then rather than guessing.
-  const fullTeams = new Set([teamId, ...sharedTeamIds]);
-  const reach: AssignmentReach = { people: [], teams: [] };
+  // Who sees the whole rock: the parent team, the audience teams and the
+  // audience persons. An assignee outside that set sees only their
+  // milestone(s) and the rock's title (lib/access/rock.ts). Only known once
+  // the org list has loaded — nothing shows until then rather than guessing.
+  const fullTeams = new Set([teamId, ...(isPrivate ? [] : audienceTeamIds)]);
+  const fullUsers = new Set(isPrivate ? [] : audienceUserIds);
+  const seesWhole = (id: string) =>
+    parentIds.has(id) ||
+    fullUsers.has(id) ||
+    teamIdsOf(id).some((t) => fullTeams.has(t));
+  const headlinePeople: HeadlinePerson[] = [];
   if (orgPeople) {
-    const seenPeople = new Set<string>();
-    const byTeam = new Map<string, string[]>();
+    const byOwner = new Map<string, string[]>();
     for (const r of filled) {
-      const owner = r.owner_id || inheritOwner;
-      if (parentIds.has(owner)) continue;
-      const teams = teamIdsOf(owner);
-      if (!teams.some((t) => fullTeams.has(t)) && !seenPeople.has(owner)) {
-        seenPeople.add(owner);
-        reach.people.push({
-          id: owner,
-          name: ownerNameOf(owner),
-          teams: teamNamesOf(owner),
-        });
-      }
-      if (r.locked || teamOnly) continue;
-      for (const t of teams) {
-        if (fullTeams.has(t)) continue;
-        const list = byTeam.get(t) ?? [];
-        list.push(r.title.trim());
-        byTeam.set(t, list);
-      }
+      const owner = ownerOf(r);
+      if (!owner || seesWhole(owner)) continue;
+      const list = byOwner.get(owner) ?? [];
+      list.push(r.title.trim());
+      byOwner.set(owner, list);
     }
-    for (const [id, titles] of byTeam) {
-      reach.teams.push({ id, name: teamNameById.get(id) ?? "Team", titles });
+    for (const [id, titles] of byOwner) {
+      headlinePeople.push({ id, name: ownerNameOf(id), teams: teamNamesOf(id), titles });
     }
   }
-  // Everyone on the rock's full teams — only for the picker's "outside"
-  // dot, and only once known.
+  // Everyone who sees the whole rock — only for the picker's "sees only
+  // their milestone" dot, and only once known.
   const insideIds = orgPeople
-    ? new Set(
-        orgPeople
-          .filter((p) => p.team_ids.some((t) => fullTeams.has(t)))
-          .map((p) => p.user_id),
-      )
+    ? new Set(orgPeople.filter((p) => seesWhole(p.user_id)).map((p) => p.user_id))
     : undefined;
-  // Individually locked milestones; with "Keep on this team" on, the rock
-  // itself says it and the per-milestone count would only repeat it.
-  // Why a row's lock is inert, if it is: the rock is kept on its team; the
-  // owner is on the parent team (nothing of theirs travels); or every team
-  // the owner is on already has the rock in full, so a lock would hide
-  // nothing (item 1 of the 2026-09-22 review). Undefined = live.
-  const lockReasonFor = (
-    ownerId: string,
-  ): "rock" | "team" | "shared" | undefined => {
-    if (teamOnly) return "rock";
-    if (parentIds.has(ownerId)) return "team";
-    const teams = teamIdsOf(ownerId);
-    if (orgPeople && teams.length > 0 && teams.every((t) => fullTeams.has(t))) {
-      return "shared";
+
+  function setPrivate(on: boolean) {
+    setIsPrivate(on);
+    // Private has no audience (spec §3.3): the switch clears it.
+    if (on) {
+      setAudienceTeamIds([]);
+      setAudienceUserIds([]);
     }
-    return undefined;
-  };
-  const lockedCount = teamOnly
-    ? 0
-    : filled.filter(
-        (r) => r.locked && !parentIds.has(r.owner_id || inheritOwner),
-      ).length;
+  }
 
   function needOrg() {
     if (orgPeople) return;
-    fetchOrgPeople(teamId)
+    fetchOrgPeople()
       .then(setOrgPeople)
       .catch(() => {});
   }
@@ -504,9 +518,27 @@ export function RockModal({
       setError("Owner is required — pick a person accountable for this rock.");
       return;
     }
+    if (isPrivate) {
+      const outside = filled.find((r) => {
+        const owner = ownerOf(r);
+        return owner && !parentIds.has(owner);
+      });
+      if (outside) {
+        const owner = ownerOf(outside) as string;
+        setError(
+          `${ownerNameOf(owner)} is not on this team; private rocks can't have outside assignees. Reassign “${outside.title.trim()}” first.`,
+        );
+        return;
+      }
+    }
     const changed = sharingChanges(
-      snapshotOf(openedSharing.teams, openedSharing.rows, openedSharing.teamOnly),
-      snapshotOf(sharedTeamIds, rows, teamOnly),
+      snapshotOf(
+        openedSharing.teams,
+        openedSharing.users,
+        openedSharing.rows,
+        openedSharing.isPrivate,
+      ),
+      snapshotOf(audienceTeamIds, audienceUserIds, rows, isPrivate),
     );
     // Adding always reviews who will see the rock; editing only when the
     // save changes it (see ShareConfirmDialog).
@@ -525,8 +557,10 @@ export function RockModal({
     fd.set("owner_id", ownerId);
     fd.set("rock_type", rockType);
     fd.set("is_company_rock", companyRock ? "true" : "false");
-    fd.set("shared_team_ids", JSON.stringify(sharedTeamIds));
-    fd.set("team_only", teamOnly ? "true" : "false");
+    // Leaders/admins only — the server keeps the stored values otherwise.
+    fd.set("audience_team_ids", JSON.stringify(isPrivate ? [] : audienceTeamIds));
+    fd.set("audience_user_ids", JSON.stringify(isPrivate ? [] : audienceUserIds));
+    fd.set("private", isPrivate ? "true" : "false");
     // The milestones this modal was shown: only these may be deleted by
     // leaving them out (see updateRockWithMilestones).
     fd.set("known_milestone_ids", JSON.stringify(milestones.map((m) => m.id)));
@@ -538,9 +572,10 @@ export function RockModal({
         filled.map((r) => ({
           id: r.id,
           title: r.title.trim(),
-          owner_id: r.owner_id || inheritOwner,
+          // "" = the rock owner, or unassigned for an untouched row
+          // stored without one (updateRockWithMilestones decides).
+          owner_id: r.owner_id,
           due_date: r.due_date || null,
-          locked: r.locked,
         })),
       ),
     );
@@ -687,9 +722,14 @@ export function RockModal({
                       {m.full_name}
                     </option>
                   ))}
+                  {rock?.owner_id && !parentIds.has(rock.owner_id) && (
+                    <option value={rock.owner_id}>
+                      {ownerNameOf(rock.owner_id)} (no longer on this team)
+                    </option>
+                  )}
                 </select>
                 <p className="mt-1 text-[11px] text-zinc-500">
-                  Accountable person — even for team rocks.
+                  Accountable person on this team — even for team rocks.
                 </p>
               </Field>
               <Field label="Quarter">
@@ -716,20 +756,25 @@ export function RockModal({
               </Field>
             </div>
 
-            {shareTeams.length > 0 && (
-              <SharingSummary
-                parentTeamName={teamName ?? "This team"}
-                sharedTeams={sharedTeamIds.map((id) => ({
-                  id,
-                  name: shareTeamName.get(id) ?? "Unknown team",
-                }))}
-                reach={reach}
-                lockedCount={lockedCount}
-                teamOnly={teamOnly}
-                onTeamOnlyChange={setTeamOnly}
-                onManage={() => setPaneOpen(true)}
-              />
-            )}
+            <AudienceSummary
+              parentTeamName={teamName ?? "This team"}
+              audienceTeams={audienceTeamIds.map((id) => ({
+                id,
+                name: shareTeamName.get(id) ?? "Unknown team",
+              }))}
+              audiencePeople={audienceUserIds.map((id) => ({
+                id,
+                name: personNameOf(id),
+              }))}
+              headlinePeople={headlinePeople}
+              isPrivate={isPrivate}
+              canManage={canManageAudience}
+              onPrivateChange={setPrivate}
+              onManage={() => {
+                needOrg();
+                setPaneOpen(true);
+              }}
+            />
 
             <div className="border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
               <div className="mb-2">
@@ -738,7 +783,7 @@ export function RockModal({
                   {filled.length === 0
                     ? "none yet"
                     : `${filled.length} to save`}{" "}
-                  · owner inherits the rock, dates optional
+                  · assignee defaults to the rock owner, dates optional
                 </span>
               </div>
 
@@ -764,8 +809,11 @@ export function RockModal({
                       className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                     />
                     <OwnerPicker
-                      value={r.owner_id || inheritOwner}
-                      valueName={ownerNameOf(r.owner_id || inheritOwner)}
+                      value={ownerOf(r) ?? ""}
+                      valueName={(() => {
+                        const owner = ownerOf(r);
+                        return owner ? ownerNameOf(owner) : "Unassigned";
+                      })()}
                       onChange={(id) => patchRow(r.key, { owner_id: id })}
                       team={{
                         id: teamId,
@@ -777,12 +825,6 @@ export function RockModal({
                       onNeedOrg={needOrg}
                       teamNameById={teamNameById}
                       className="w-[150px] shrink-0"
-                    />
-                    <LockToggle
-                      value={r.locked || teamOnly}
-                      disabled={!!lockReasonFor(r.owner_id || inheritOwner)}
-                      disabledReason={lockReasonFor(r.owner_id || inheritOwner)}
-                      onToggle={() => patchRow(r.key, { locked: !r.locked })}
                     />
                     <input
                       type="date"
@@ -810,7 +852,7 @@ export function RockModal({
               <button
                 type="button"
                 onClick={() => {
-                  const row = blankRow(inheritOwner);
+                  const row = blankRow();
                   setRows((rs) => [...rs, row]);
                   setFocusKey(row.key);
                 }}
@@ -857,28 +899,23 @@ export function RockModal({
           </footer>
         </form>
 
-        <SharingPane
+        <AudiencePane
           open={paneOpen}
           onClose={() => setPaneOpen(false)}
           parentTeamName={teamName ?? "This team"}
-          shareTeams={shareTeams}
-          sharedTeamIds={sharedTeamIds}
-          teamOnly={teamOnly}
-          reach={reach}
-          milestones={filled.map((r) => ({
-            key: r.key,
-            title: r.title.trim(),
-            ownerId: r.owner_id || inheritOwner,
-            ownerName: ownerNameOf(r.owner_id || inheritOwner),
-            locked: r.locked,
-            lockReason: lockReasonFor(r.owner_id || inheritOwner),
-          }))}
-          onTeamsChange={setSharedTeamIds}
-          onToggleLock={(key) =>
-            setRows((rs) =>
-              rs.map((r) => (r.key === key ? { ...r, locked: !r.locked } : r)),
-            )
+          teamOptions={shareTeams}
+          personOptions={
+            orgPeople
+              ? orgPeople.map((p) => ({ id: p.user_id, name: p.full_name }))
+              : null
           }
+          audienceTeamIds={audienceTeamIds}
+          audienceUserIds={audienceUserIds}
+          isPrivate={isPrivate}
+          canManage={canManageAudience}
+          headlinePeople={headlinePeople}
+          onTeamsChange={setAudienceTeamIds}
+          onUsersChange={setAudienceUserIds}
         />
 
         <ShareConfirmDialog
@@ -886,8 +923,8 @@ export function RockModal({
           creating={!editing}
           parentTeamName={teamName ?? "This team"}
           changes={changes}
-          lockedCount={lockedCount}
           teamName={(id) => teamNameById.get(id) ?? "A team"}
+          personName={personNameOf}
           pending={pending}
           onBack={() => setConfirming(false)}
           onConfirm={save}
@@ -928,38 +965,4 @@ function Field({
       {children}
     </label>
   );
-}
-
-/** The sharing-relevant slice of the draft, for `sharingChanges`. */
-function sharingSnapshot(
-  parentTeamId: string,
-  teams: string[],
-  rows: DraftMilestone[],
-  teamOnly: boolean,
-  inheritOwner: string,
-  nameOf: (ownerId: string) => string,
-  teamIdsOf: (ownerId: string) => string[],
-): SharingSnapshot {
-  return {
-    parentTeamId,
-    teamOnly,
-    teams: [...teams],
-    milestones: Object.fromEntries(
-      rows
-        .filter((r) => r.title.trim())
-        .map((r) => {
-          const owner = r.owner_id || inheritOwner;
-          return [
-            r.key,
-            {
-              title: r.title.trim(),
-              locked: r.locked,
-              ownerId: owner,
-              ownerName: nameOf(owner),
-              ownerTeamIds: teamIdsOf(owner),
-            },
-          ];
-        }),
-    ),
-  };
 }

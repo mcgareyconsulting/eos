@@ -7,6 +7,8 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { syncUserTeamIds } from "./membership";
 import { writeMembership } from "@/lib/team-invite";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { recordAccessChange } from "@/lib/access-audit";
 
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
@@ -17,6 +19,7 @@ export async function addExistingPersonToTeam(
   db: Firestore,
   teamId: string,
   userId: string,
+  actorUid: string,
 ): Promise<void> {
   if (!userId || typeof userId !== "string") {
     throw new Error("Choose a person from the directory");
@@ -35,6 +38,16 @@ export async function addExistingPersonToTeam(
     firstName: str(data.first_name) || dFirst,
     lastName: str(data.last_name) || dRest.join(" "),
     email: str(data.email),
+    actorUid,
+  });
+  await recordAccessChange(db, {
+    kind: "roster",
+    actorUid,
+    entityId: `${teamId}__${userId}`,
+    teamId,
+    targetUid: userId,
+    before: { on_roster: false },
+    after: { on_roster: true, role: "member" },
   });
 }
 
@@ -47,6 +60,7 @@ export async function removePersonFromTeam(
   team: { id: string; speakingOrder: string[] },
   userId: string,
   callerIsAdmin: boolean,
+  actorUid: string,
 ): Promise<void> {
   const teamId = team.id;
   const memberRef = db.collection("team_members").doc(`${teamId}__${userId}`);
@@ -74,13 +88,24 @@ export async function removePersonFromTeam(
     }
   }
 
+  await stampBeforeDelete(memberRef, actorUid);
   const batch = db.batch();
   batch.delete(memberRef);
   if (team.speakingOrder.includes(userId)) {
     batch.update(db.collection("teams").doc(teamId), {
       speaking_order: team.speakingOrder.filter((id) => id !== userId),
+      ...stamp(actorUid),
     });
   }
   await batch.commit();
   await syncUserTeamIds(db, userId);
+  await recordAccessChange(db, {
+    kind: "roster",
+    actorUid,
+    entityId: memberRef.id,
+    teamId,
+    targetUid: userId,
+    before: { on_roster: true, role: (memberSnap.data()?.role as string) ?? "member" },
+    after: { on_roster: false },
+  });
 }

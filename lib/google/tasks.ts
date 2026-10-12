@@ -39,6 +39,7 @@ import {
 } from "@/lib/google/token-cipher";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { richTextToPlain } from "@/lib/rich-text";
+import { stamp } from "@/lib/audit-stamp";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const TASKS_BASE = "https://tasks.googleapis.com/tasks/v1";
@@ -663,6 +664,7 @@ async function listTasklistTasks(
 export async function pullCompletionsForOwner(
   ownerUid: string,
   db: Firestore = getAdminDb(),
+  actorUid?: string,
 ): Promise<{ updated: number }> {
   if (!ownerUid || !googleOAuthConfigured()) return { updated: 0 };
   try {
@@ -724,6 +726,7 @@ export async function pullCompletionsForOwner(
       const before = (await ref.get()).data() ?? {};
       await ref.update({
         completed_at: FieldValue.serverTimestamp(),
+        ...(actorUid ? stamp(actorUid) : {}),
       });
       updated += 1;
 

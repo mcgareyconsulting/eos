@@ -57,11 +57,25 @@ class FakeDocRef {
     const next = applyPatch(opts?.merge && existing ? existing : {}, data);
     this.store.write(this.path, next);
   }
+  async create(data: DocData) {
+    // Real create() fails with gRPC ALREADY_EXISTS (code 6) on an existing doc.
+    if (this.store.raw(this.path)) {
+      throw Object.assign(new Error(`fake-firestore: create() on existing doc ${this.path}`), {
+        code: 6,
+      });
+    }
+    this.store.write(this.path, applyPatch({}, data));
+  }
   async update(data: DocData) {
     // Real Firestore rejects update() on a missing doc (NOT_FOUND); mirror
     // that so a test can't pass on a path that would fail in production.
     const existing = this.store.raw(this.path);
-    if (!existing) throw new Error(`fake-firestore: update() on missing doc ${this.path}`);
+    // `code: 5` is gRPC NOT_FOUND, which is what callers branch on.
+    if (!existing) {
+      throw Object.assign(new Error(`fake-firestore: update() on missing doc ${this.path}`), {
+        code: 5,
+      });
+    }
     this.store.write(this.path, applyPatch(existing, data));
   }
   async delete() {
@@ -160,6 +174,11 @@ export class FakeFirestore {
     return {
       doc: (id?: string) =>
         new FakeDocRef(this, `${name}/${id ?? `auto-${++this.autoId}`}`),
+      add: async (data: DocData) => {
+        const ref = new FakeDocRef(this, `${name}/auto-${++this.autoId}`);
+        await ref.set(data);
+        return ref;
+      },
       where: (field: string, op: string, value: unknown) =>
         new FakeQuery(this, name).where(field, op, value),
       orderBy: (field: string) => new FakeQuery(this, name).orderBy(field),

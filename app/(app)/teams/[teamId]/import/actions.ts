@@ -130,7 +130,7 @@ export async function importTeamFile(
   try {
     // Leader-or-admin, matching getImportableTeams: imports bulk-write team
     // data and (admin-only createOwners) roster rows.
-    const { db, isAdmin } = await requireTeamLeader(teamId);
+    const { db, isAdmin, uid: actorUid } = await requireTeamLeader(teamId);
     const members = await getTeamMembers(teamId);
 
     const kindRaw = String(formData.get("kind") ?? "");
@@ -239,6 +239,7 @@ export async function importTeamFile(
 
     const report = await runTeamImport(db, teamId, inputs, {
       dryRun,
+      actorUid,
       createOwners,
       fallbackOwnerId,
       includeArchived,

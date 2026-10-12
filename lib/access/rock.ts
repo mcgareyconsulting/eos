@@ -17,12 +17,10 @@
 // already in the full set). `milestone_owner_ids` grants nothing.
 
 import { canMutateTodo } from "@/lib/todo-access";
-import { todoCallerFor } from "./team-item";
 import {
   isLeaderOf,
   isMemberOf,
   isViewer,
-  passesTeamGate,
   type CompletableAccessModule,
   type AccessModule,
   type Viewer,
@@ -63,6 +61,8 @@ export type MilestoneSubject = {
     /** The milestone's `team_id` — always the rock's parent team. */
     team_id: string;
     visibility?: unknown;
+    /** Read only for a legacy "private" milestone (creator may tick it). */
+    created_by?: unknown;
   };
   rock: RockSubject;
 };
@@ -179,18 +179,13 @@ export const rockAccess: AccessModule<RockSubject> & {
   canSetCompanyFlag: (_rock, viewer) => viewer.isAdmin,
 };
 
-/** The to-do thread / follow gate a milestone uses today (it is a to-do). */
-function todoThreadGate(m: MilestoneSubject["milestone"], viewer: Viewer): boolean {
-  if (!passesTeamGate(viewer, m.team_id)) return false;
-  return m.visibility !== "private" || m.owner_id === viewer.uid;
-}
-
 function seesMilestone({ milestone, rock }: MilestoneSubject, viewer: Viewer): boolean {
   return seesFullRock(rock, viewer) || isViewer(viewer, milestone.owner_id);
 }
 
+/** A legacy "private" milestone: creator + assignee + admins (lib/todo-access.ts). */
 function mutable(m: MilestoneSubject["milestone"], viewer: Viewer): boolean {
-  return canMutateTodo(m, todoCallerFor(viewer, m.team_id));
+  return canMutateTodo(m, viewer);
 }
 
 export const milestoneAccess: CompletableAccessModule<MilestoneSubject> = {
@@ -200,16 +195,17 @@ export const milestoneAccess: CompletableAccessModule<MilestoneSubject> = {
   // Add / retitle / reassign go through the rock modal: rock editors.
   canEdit: ({ rock }, viewer) => rockAccess.canEdit(rock, viewer),
   // toggleTodo (requireTickableTodo): the assignee, the parent team, the
-  // audience and admins. A legacy "private" milestone keeps the to-do
-  // owner/leader rule on top.
+  // audience and admins. A legacy "private" milestone keeps the private
+  // to-do rule (creator + assignee + admins) on top.
   canComplete: (subject, viewer) =>
     seesMilestone(subject, viewer) && mutable(subject.milestone, viewer),
-  // A milestone's thread is its to-do thread (`entity_type: "todo"`),
-  // team-scoped today. SPEC P6b: the milestone assignee and the audience can
-  // comment too (spec §3.3 "Comment on a milestone and follow it").
-  canComment: ({ milestone }, viewer) => todoThreadGate(milestone, viewer),
-  // setTodoFollowing: same gate. SPEC P6b: assignee + audience can follow.
-  canFollow: ({ milestone }, viewer) => todoThreadGate(milestone, viewer),
+  // A milestone's thread is its to-do thread (`entity_type: "todo"`, filed
+  // under the milestone's team): the assignee, the parent team, the audience
+  // and admins (spec §3.3 "Comment on a milestone and follow it"). A block
+  // view grants nothing (§4).
+  canComment: seesMilestone,
+  // setTodoFollowing / setFollowing: follow = canSee (spec §5.3).
+  canFollow: seesMilestone,
   // SPEC P9: mention = the comment set (assignee, parent, audience, admins);
   // a person who sees it only in a block cannot be mentioned (§4).
   canMention: (subject, person) => seesMilestone(subject, person),

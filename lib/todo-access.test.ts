@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { canMutateTodo } from "./todo-access";
+import { canChangeTodoVisibility, canMutateTodo } from "./todo-access";
 
 const member = { uid: "u1", isAdmin: false, membershipRole: "member" };
 
@@ -11,27 +11,31 @@ describe("canMutateTodo", () => {
     assert.equal(canMutateTodo({ owner_id: "u2" }, member), true);
   });
 
-  test("a member may not change someone else's private to-do (C-11)", () => {
+  test("a member may not change someone else's private to-do", () => {
     assert.equal(
-      canMutateTodo({ visibility: "private", owner_id: "u2" }, member),
+      canMutateTodo({ visibility: "private", owner_id: "u2", created_by: "u3" }, member),
       false,
     );
   });
 
-  test("the owner may change their own private to-do", () => {
+  test("the assignee may change their private to-do", () => {
+    assert.equal(canMutateTodo({ visibility: "private", owner_id: "u1" }, member), true);
+  });
+
+  test("the creator may change a private to-do they assigned to someone else", () => {
     assert.equal(
-      canMutateTodo({ visibility: "private", owner_id: "u1" }, member),
+      canMutateTodo({ visibility: "private", owner_id: "u2", created_by: "u1" }, member),
       true,
     );
   });
 
-  test("a team leader may change a member's private to-do", () => {
+  test("a team leader has no power over a private to-do (spec §3.2)", () => {
     assert.equal(
       canMutateTodo(
-        { visibility: "private", owner_id: "u2" },
+        { visibility: "private", owner_id: "u2", created_by: "u2" },
         { ...member, membershipRole: "leader" },
       ),
-      true,
+      false,
     );
   });
 
@@ -45,11 +49,25 @@ describe("canMutateTodo", () => {
     );
   });
 
-  test("a private to-do with no owner is leader/admin only", () => {
+  test("a private to-do with no owner or creator is admin only", () => {
     assert.equal(canMutateTodo({ visibility: "private", owner_id: null }, member), false);
+    assert.equal(canMutateTodo({ visibility: "private" }, { ...member, uid: "" }), false);
+  });
+});
+
+describe("canChangeTodoVisibility", () => {
+  const priv = { visibility: "private", owner_id: "u2", created_by: "u3" };
+  test("private → team: creator or assignee only", () => {
+    assert.equal(canChangeTodoVisibility(priv, { uid: "u2" }, "team"), true);
+    assert.equal(canChangeTodoVisibility(priv, { uid: "u3" }, "team"), true);
+    assert.equal(canChangeTodoVisibility(priv, { uid: "admin" }, "team"), false);
+    assert.equal(canChangeTodoVisibility(priv, { uid: "u1" }, "team"), false);
+  });
+  test("keeping it private, or making a team to-do private, is not gated here", () => {
+    assert.equal(canChangeTodoVisibility(priv, { uid: "admin" }, "private"), true);
     assert.equal(
-      canMutateTodo({ visibility: "private" }, { ...member, uid: "" }),
-      false,
+      canChangeTodoVisibility({ visibility: "team", owner_id: "u2" }, { uid: "u1" }, "private"),
+      true,
     );
   });
 });

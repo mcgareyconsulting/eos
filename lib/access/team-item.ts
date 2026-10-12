@@ -1,16 +1,18 @@
 // Shape A — team item (docs/PERMISSIONS_SPEC.md §3, §3.1): issue, headline,
 // team to-do.
 //
-// Current production behaviour: every action on these is the team gate —
+// Issues and headlines: every action is the team gate —
 // `requireTeamAccess(teamId)` (rostered, or org admin) plus
-// `requireTeamDoc(...)` (the doc's `team_id` is that team). The to-do
-// mutations additionally run `canMutateTodo` (lib/todo-access.ts), which is a
-// no-op for a team-visible to-do and is kept in the chain here so the two
-// can't drift.
+// `requireTeamDoc(...)` (the doc's `team_id` is that team).
+//
+// Team to-dos (P8a): the team gate, plus the assignee from any team, who may
+// see, complete, comment and follow. The to-do actions ask this module
+// through `requireTodoAccess` (lib/firebase/todo-gate.ts).
 
-import { canMutateTodo, type TodoAccessCaller, type TodoAccessSubject } from "@/lib/todo-access";
+import type { TodoAccessCaller, TodoAccessSubject } from "@/lib/todo-access";
 import {
   isLeaderOf,
+  isViewer,
   passesTeamGate,
   type CompletableAccessModule,
   type Viewer,
@@ -90,26 +92,27 @@ export const headlineAccess: CompletableAccessModule<HeadlineSubject> = {
   canComplete: gate,
 };
 
-/** Shape A for a to-do whose `visibility` is not `"private"`. */
+/** Parent team, admins, or the assignee (`owner_id`) from any team. */
+function seesTeamTodo(item: TeamTodoSubject, viewer: Viewer): boolean {
+  return gate(item, viewer) || isViewer(viewer, item.owner_id);
+}
+
+/**
+ * Shape A for a to-do whose `visibility` is not `"private"`. A member may
+ * assign it to a person on any team (spec §3.1); that assignee sees the full
+ * to-do and its thread from any team (D1), completes it, comments and
+ * follows. Editing, archiving and deleting stay with the parent team and
+ * admins.
+ */
 export const teamTodoAccess: CompletableAccessModule<TeamTodoSubject> = {
-  // SPEC P8: the assignee (owner_id) sees the full to-do from any team
-  // (spec §3.1, D1). Today an off-team assignee can't open it.
-  canSee: gate,
-  canEdit: (item, viewer) =>
-    gate(item, viewer) &&
-    canMutateTodo(item, todoCallerFor(viewer, item.team_id)),
-  // SPEC P8: the assignee can comment from any team.
-  canComment: gate,
-  // SPEC P8: follow = canSee, so an off-team assignee may follow.
-  canFollow: gate,
+  canSee: seesTeamTodo,
+  canEdit: gate,
+  canComment: seesTeamTodo,
+  // Spec §5.3: follow = canSee.
+  canFollow: seesTeamTodo,
   // SPEC P9: refuse mentions of people who can't see it. Today mentions
-  // resolve against the viewing team's roster and are never refused.
-  canMention: (item, person) => gate(item, person),
-  canDelete: (item, viewer) =>
-    gate(item, viewer) &&
-    canMutateTodo(item, todoCallerFor(viewer, item.team_id)),
-  // SPEC P8: the assignee can tick it from any team (open-by-id route).
-  canComplete: (item, viewer) =>
-    gate(item, viewer) &&
-    canMutateTodo(item, todoCallerFor(viewer, item.team_id)),
+  // resolve against the to-do team's roster and are never refused.
+  canMention: (item, person) => seesTeamTodo(item, person),
+  canDelete: gate,
+  canComplete: seesTeamTodo,
 };

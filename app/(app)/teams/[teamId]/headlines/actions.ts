@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
+import { purgeItem } from "@/lib/firebase/purge";
 import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
 
 const KINDS = ["customer", "employee", "cascading", "general"] as const;
@@ -95,7 +96,8 @@ export async function deleteHeadline(teamId: string, headlineId: string) {
     throw new Error("Org-wide headlines are read-only");
   }
   await db.collection("headlines").doc(headlineId).delete();
-  // SPEC P9 hook: purgeItem(db, { type: "headline", id: headlineId }) here.
+  // Spec §5.1: the thread, notifications and activity go with the headline.
+  await purgeItem(db, { type: "headline", id: headlineId });
   revalidateHeadlines(teamId);
 }
 

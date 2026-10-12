@@ -11,6 +11,8 @@ import {
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
 import { assignmentPatch } from "@/lib/follow";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { purgeItem } from "@/lib/firebase/purge";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -154,7 +156,14 @@ export async function updateIssueMeta(
         }
       : {}),
   });
-  // SPEC P9: emitEvent(db, {type: "issue", id}, "owner_changed", uid, …).
+  // Spec §5.3: followers hear an owner change; the new owner is told they
+  // were assigned (unless they assigned themself). Never throws.
+  if (assignment.reassigned) {
+    await emitEvent(db, { type: "issue", id: issueId }, "owner_changed", uid, {
+      teamId,
+      direct: { assigned: owner_id && owner_id !== uid ? [owner_id] : [] },
+    });
+  }
 
   // Moving to long-term via the edit modal needs the same live-meeting pin
   // cleanup as setIssueType.
@@ -303,22 +312,16 @@ export async function setIssueType(
 export async function deleteIssue(teamId: string, issueId: string) {
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  // Cascade: issue + votes + comments (entity_comments).
-  // SPEC P9 hook: purgeItem(db, { type: "issue", id: issueId }) here.
-  const [votes, comments] = await Promise.all([
-    db.collection("issue_votes").where("issue_id", "==", issueId).get(),
-    db
-      .collection("entity_comments")
-      .where("team_id", "==", teamId)
-      .where("entity_type", "==", "issue")
-      .where("entity_id", "==", issueId)
-      .get(),
-  ]);
+  // Cascade: issue + votes, then its thread, notifications and activity.
+  const votes = await db
+    .collection("issue_votes")
+    .where("issue_id", "==", issueId)
+    .get();
   const batch = db.batch();
   batch.delete(db.collection("issues").doc(issueId));
   votes.docs.forEach((v) => batch.delete(v.ref));
-  comments.docs.forEach((c) => batch.delete(c.ref));
   await batch.commit();
+  await purgeItem(db, { type: "issue", id: issueId });
   revalidatePath(pathFor(teamId));
 }
 

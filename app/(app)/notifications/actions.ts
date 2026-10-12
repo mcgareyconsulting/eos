@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTeamMembers } from "@/lib/firebase/teams";
 import { canSeeItem, loadItem, loadViewer } from "@/lib/firebase/items";
+import { todoCan } from "@/lib/firebase/todo-gate";
 import {
   labelNotifications,
   peekItem,
@@ -25,6 +26,8 @@ export type TodoPeek = {
   todo: TodoBoardDoc;
   teamName: string;
   members: { user_id: string; full_name: string }[];
+  /** "assignee" for an off-team assignee: complete + comment only (P8a). */
+  access: "full" | "assignee";
 };
 
 /**
@@ -50,6 +53,7 @@ export async function loadTodoPeek(
     db.collection("teams").doc(teamId).get(),
   ]);
   return {
+    access: todoCan(item, viewer, "edit") ? "full" : "assignee",
     teamName: String(teamSnap.data()?.name ?? "Team"),
     members: members.map((m) => ({ user_id: m.user_id, full_name: m.full_name })),
     todo: {

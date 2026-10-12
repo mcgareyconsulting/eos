@@ -24,6 +24,13 @@ import { initials, ownerLabel } from "@/lib/user-name";
 import { AddTodoModal } from "./add-todo-modal";
 import { MilestoneTodoRow, type MilestoneTodoItem } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
+import { usePersonNames } from "./use-person-names";
+import {
+  OUTSIDE_GROUP_KEY,
+  OUTSIDE_GROUP_TITLE,
+  assignedPillText,
+  isAssignedFromOtherTeam,
+} from "@/lib/todo-lists";
 
 /**
  * The To-Dos tab, live.
@@ -126,10 +133,18 @@ function groupByOwner<T extends { owner_id: string | null }>(
 ): OwnerBucket<T>[] {
   const byOwner = new Map<string, T[]>();
   const unassigned: T[] = [];
+  const outside: T[] = [];
+  const rosterIds = new Set(members.map((m) => m.user_id));
 
   for (const t of items) {
     if (!t.owner_id) {
       unassigned.push(t);
+      continue;
+    }
+    // A to-do assigned to someone on another team (spec §3.1) stays on
+    // this team's list, in one block of its own.
+    if (!rosterIds.has(t.owner_id)) {
+      outside.push(t);
       continue;
     }
     const list = byOwner.get(t.owner_id) ?? [];
@@ -156,6 +171,9 @@ function groupByOwner<T extends { owner_id: string | null }>(
   );
   for (const uid of orphans) pushOwner(uid);
 
+  if (outside.length > 0) {
+    buckets.push({ key: OUTSIDE_GROUP_KEY, title: OUTSIDE_GROUP_TITLE, items: outside });
+  }
   if (unassigned.length > 0) {
     buckets.push({ key: "unassigned", title: "Unassigned", items: unassigned });
   }
@@ -189,7 +207,21 @@ export function TodosBoard({
   initialRocks,
   extraRocks = [],
   focusTodoId = null,
+  myTeamIds = [],
+  personNames = {},
+  teamNames = {},
+  focusExtra = null,
 }: {
+  /** Every team the viewer is rostered on — "other teams" is the rest. */
+  myTeamIds?: string[];
+  /** Server-resolved names for people off this roster (outside assignees,
+   *  assigners from other teams). Live arrivals are fetched on demand. */
+  personNames?: Record<string, string>;
+  /** Team names for the "Assigned by … · Team" pill. */
+  teamNames?: Record<string, string>;
+  /** A deep-linked to-do the viewer may see that no list on this page
+   *  shows them (an admin opening a private to-do, spec §3.2). Static. */
+  focusExtra?: TodoBoardDoc | null;
   teamId: string;
   userId: string;
   showArchived: boolean;
@@ -224,6 +256,20 @@ export function TodosBoard({
         where("team_id", "==", teamId),
         where("visibility", "==", "private"),
         where("owner_id", "==", userId),
+      ),
+    [db, teamId, userId],
+  );
+  // Private to-dos the viewer created for someone else (spec §3.2: the
+  // creator keeps access). Needs the creator clause in the todos read rule
+  // (docs/rules-notes/P8a.md); until it ships the listener is refused and
+  // the server's first paint stands.
+  const createdQuery = useMemo(
+    () =>
+      fsQuery(
+        collection(db, "todos"),
+        where("team_id", "==", teamId),
+        where("visibility", "==", "private"),
+        where("created_by", "==", userId),
       ),
     [db, teamId, userId],
   );
@@ -263,6 +309,18 @@ export function TodosBoard({
       ),
     [initialTodos, userId, teamId],
   );
+  // Created by me, owned by someone else (my own are in initialMine).
+  const initialCreated = useMemo(
+    () =>
+      initialTodos.filter(
+        (t) =>
+          t.visibility === "private" &&
+          t.owner_id !== userId &&
+          t.created_by === userId &&
+          (!t.team_id || t.team_id === teamId),
+      ),
+    [initialTodos, userId, teamId],
+  );
   const initialElsewhere = useMemo(
     () => initialTodos.filter((t) => t.team_id && t.team_id !== teamId),
     [initialTodos, teamId],
@@ -270,6 +328,16 @@ export function TodosBoard({
 
   const teamTodos = useCollection<TodoBoardDoc>(teamQuery, initialTeam, "todos-team");
   const myTodos = useCollection<TodoBoardDoc>(mineQuery, initialMine, "todos-mine");
+  const createdRaw = useCollection<TodoBoardDoc>(
+    createdQuery,
+    initialCreated,
+    "todos-created",
+  );
+  // A private to-do I created AND own comes through both listeners.
+  const createdTodos = useMemo(
+    () => createdRaw.filter((t) => t.owner_id !== userId),
+    [createdRaw, userId],
+  );
   const elsewhereRaw = useCollection<TodoBoardDoc>(
     elsewhereQuery,
     initialElsewhere,
@@ -281,6 +349,31 @@ export function TodosBoard({
         (t) => !!t.source_rock_id && t.team_id && t.team_id !== teamId,
       ),
     [elsewhereRaw, teamId],
+  );
+  // D1: plain to-dos assigned to me on teams I'm not on — their own section,
+  // worked through the to-do's own team (team-independent actions, P8a).
+  const myTeamSet = useMemo(() => new Set(myTeamIds), [myTeamIds]);
+  const assignedElsewhere = useMemo(
+    () =>
+      elsewhereRaw
+        .filter(
+          (t) =>
+            t.team_id !== teamId &&
+            isAssignedFromOtherTeam(t, userId, myTeamSet),
+        )
+        .sort(byDue),
+    [elsewhereRaw, teamId, userId, myTeamSet],
+  );
+  const nameOf = usePersonNames(
+    useMemo(
+      () =>
+        [
+          ...teamTodos.map((t) => t.owner_id ?? ""),
+          ...assignedElsewhere.map((t) => t.assigned_by ?? t.created_by ?? ""),
+        ].filter((id) => id && !members.some((m) => m.user_id === id)),
+      [teamTodos, assignedElsewhere, members],
+    ),
+    personNames,
   );
   const rocksLive = useCollection<RockBoardDoc>(rocksQuery, initialRocks, "todos-rocks");
   const rocks = useMemo(
@@ -307,8 +400,8 @@ export function TodosBoard({
   );
 
   const allRaw = useMemo(
-    () => [...teamTodos, ...myTodos, ...elsewhere],
-    [teamTodos, myTodos, elsewhere],
+    () => [...teamTodos, ...myTodos, ...createdTodos, ...elsewhere],
+    [teamTodos, myTodos, createdTodos, elsewhere],
   );
 
   // Split the subscription into the two lists the page renders. Milestones
@@ -374,9 +467,16 @@ export function TodosBoard({
     .filter((m) => isMilestoneDueSoon(m.due_date))
     .sort(byDue);
   const milestoneScopeIsSelf = ownerFilter === "all";
+  // They are the viewer's own: shown unfiltered or filtered to the viewer.
+  const showAssignedElsewhere =
+    assignedElsewhere.length > 0 &&
+    (ownerFilter === "all" || ownerFilter === userId);
 
   const ownerName = (id: string | null) =>
-    ownerLabel(id, (x) => members.find((m) => m.user_id === x)?.full_name);
+    ownerLabel(
+      id,
+      (x) => members.find((m) => m.user_id === x)?.full_name ?? nameOf(x),
+    );
 
   // Active: owner cards (open + done-this-week). Archived: flat list only —
   // owner cards with "0 · N done" + a DONE strip are noise when everything is
@@ -458,6 +558,55 @@ export function TodosBoard({
           )}
         </BoardColumn>
       ) : (
+        <>
+        {focusExtra && (
+          // A private to-do opened by link by someone no list shows it to
+          // (an admin). Static: no listener covers it.
+          <BoardColumn title="Linked to-do" count={1}>
+            <TodoListRow
+              teamId={teamId}
+              todo={boardToListItem(focusExtra)}
+              ownerName={ownerName(focusExtra.owner_id)}
+              members={members}
+              userId={userId}
+              focused
+            />
+          </BoardColumn>
+        )}
+        {showAssignedElsewhere && (
+          <BoardColumn
+            title="Assigned to me from other teams"
+            count={assignedElsewhere.length}
+          >
+            {assignedElsewhere.map((t) => {
+              const home = t.team_id ?? teamId;
+              return (
+                <TodoListRow
+                  key={t.id}
+                  // Acted on through its own team: the actions are gated by
+                  // the to-do, not the page (lib/firebase/todo-gate.ts).
+                  teamId={home}
+                  todo={boardToListItem(t)}
+                  ownerName="You"
+                  members={[]}
+                  userId={userId}
+                  focused={t.id === focusTodoId}
+                  hideOwner
+                  // A team to-do's off-team assignee completes and comments;
+                  // a private one is theirs to manage (spec §3 shapes A, B).
+                  access={t.visibility === "private" ? "full" : "assignee"}
+                  assignedPill={assignedPillText(
+                    t,
+                    userId,
+                    (id) =>
+                      members.find((m) => m.user_id === id)?.full_name ?? nameOf(id),
+                    teamNames[home],
+                  )}
+                />
+              );
+            })}
+          </BoardColumn>
+        )}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
           <BoardColumn
             title="To-Dos"
@@ -504,11 +653,14 @@ export function TodosBoard({
                     key={t.id}
                     teamId={teamId}
                     todo={t}
-                    ownerName={g.title}
+                    ownerName={
+                      g.key === OUTSIDE_GROUP_KEY ? ownerName(t.owner_id) : g.title
+                    }
                     members={members}
                     userId={userId}
                     focused={t.id === focusTodoId}
-                    hideOwner
+                    // The outside block mixes owners: name each row's.
+                    hideOwner={g.key !== OUTSIDE_GROUP_KEY}
                   />
                 ))}
               </div>
@@ -551,9 +703,29 @@ export function TodosBoard({
             )}
           </BoardColumn>
         </div>
+        </>
       )}
     </div>
   );
+}
+
+/** A board doc (live or server-projected) as the row's item. */
+function boardToListItem(t: TodoBoardDoc): TodoListItem {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description ?? null,
+    owner_id: t.owner_id ?? null,
+    due_date: t.due_date ?? null,
+    completed: !!t.completed_at,
+    visibility: t.visibility === "private" ? "private" : "team",
+    weekly_focus: t.weekly_focus === true,
+    archived: t.archived_at != null,
+    closed_on: formatClosedOn(t.archived_at),
+    follower_ids: t.follower_ids ?? null,
+    assigned_by: t.assigned_by ?? null,
+    created_by: t.created_by ?? null,
+  };
 }
 
 /**

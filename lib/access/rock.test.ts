@@ -168,10 +168,15 @@ describe("milestoneAccess", () => {
     assert.equal(milestoneAccess.canMention(theirs, viewerOf("u-x", false, [OTHER])), false);
   });
 
-  test("a milestone's thread is still its to-do thread (SPEC P6b widens it)", () => {
-    assert.equal(milestoneAccess.canComment(mine, VIEWERS.parentMember), true);
-    assert.equal(milestoneAccess.canComment(mine, VIEWERS.assignee), false);
-    assert.equal(milestoneAccess.canFollow(mine, VIEWERS.sharedMember), false);
+  test("thread + follow: assignee, parent team, audience, admins (spec §3.3)", () => {
+    for (const v of [VIEWERS.parentMember, VIEWERS.assignee, VIEWERS.sharedMember, audiencePerson, VIEWERS.admin]) {
+      assert.equal(milestoneAccess.canComment(mine, v), true);
+      assert.equal(milestoneAccess.canFollow(mine, v), true);
+    }
+    // Someone else's milestone: the assignee sees it only in a block (§4).
+    assert.equal(milestoneAccess.canComment(theirs, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canFollow(theirs, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canComment(mine, VIEWERS.outsider), false);
   });
 
   test("a legacy private milestone keeps the to-do owner rule for ticks", () => {

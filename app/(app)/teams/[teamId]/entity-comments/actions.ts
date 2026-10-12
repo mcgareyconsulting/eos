@@ -13,6 +13,8 @@ import { emitEvent } from "@/lib/firebase/notifications";
 import { autoFollow } from "@/lib/firebase/follow";
 import { recordActivity } from "@/lib/firebase/activity";
 import { mentionedIds } from "@/lib/mentions";
+import { requireFirebaseUser } from "@/lib/firebase/auth";
+import { requireTodoAccess } from "@/lib/firebase/todo-gate";
 import { snippetOf } from "@/lib/notifications";
 
 export type CommentEntityType = "issue" | "rock" | "todo";
@@ -54,27 +56,34 @@ export async function addEntityComment(
   formData: FormData,
 ) {
   if (!ENTITY_TYPES.includes(entityType)) throw new Error("Bad entity type");
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  // A to-do (or milestone) thread is gated by the item, not the page
+  // (P8a): an off-team assignee comments from their own team's page.
+  const { uid, db, isAdmin } =
+    entityType === "todo"
+      ? await requireFirebaseUser()
+      : await requireTeamAccess(teamId);
+  // To-do and milestone threads: lib/firebase/todo-gate.ts — a team to-do's
+  // parent team, assignee and admins; a private to-do's creator, assignee
+  // and admins; a milestone's assignee, parent team, audience and admins.
+  // Filed under the to-do's own team, whichever page posted it.
+  const todoGate =
+    entityType === "todo" ? await requireTodoAccess(entityId, "comment") : null;
   // A rock has ONE thread, filed under its parent team, open to everyone
   // with the whole rock (lib/access/rock.ts rockAccess.canComment) — including an
   // assignee posting from their own team's page, where `teamId` is not the
-  // rock's team. Other entities stay team-scoped.
+  // rock's team. Issues stay team-scoped.
   const parent =
     entityType === "rock"
       ? await requireRockThreadAccess(db, entityId, teamId, uid, isAdmin)
-      : await requireTeamDoc(db, parentCollection(entityType), entityId, teamId);
+      : entityType === "todo"
+        ? null
+        : await requireTeamDoc(db, parentCollection(entityType), entityId, teamId);
   const threadTeamId =
-    entityType === "rock" ? String(parent.data()?.team_id ?? teamId) : teamId;
-
-  // A private to-do is its owner's alone — the same test the todos rule and
-  // the To-Dos page apply to reading it, applied here to writing under it.
-  if (
-    entityType === "todo" &&
-    parent.data()?.visibility === "private" &&
-    String(parent.data()?.owner_id ?? "") !== String(uid)
-  ) {
-    notFound();
-  }
+    entityType === "rock"
+      ? String(parent?.data()?.team_id ?? teamId)
+      : todoGate
+        ? todoGate.teamId || teamId
+        : teamId;
 
   const body = String(formData.get("body") ?? "").trim();
   if (!body) throw new Error("Comment required");
@@ -84,7 +93,7 @@ export async function addEntityComment(
   // scope), so only to-do comments carry `mention_ids`.
   const members =
     entityType === "todo"
-      ? (await getTeamMembers(teamId)).map((m) => ({
+      ? (await getTeamMembers(threadTeamId)).map((m) => ({
           id: m.user_id,
           name: m.full_name,
         }))
@@ -113,7 +122,7 @@ export async function addEntityComment(
   }
 
   if (entityType === "todo") {
-    const data = parent.data() ?? {};
+    const data = todoGate?.data ?? {};
     const detail = snippetOf(body);
     // Mentioned people get `mention`, every other follower `comment`; the
     // send-time access check drops anyone who cannot see the to-do.
@@ -124,7 +133,7 @@ export async function addEntityComment(
     });
     await recordActivity({
       db,
-      teamId,
+      teamId: threadTeamId,
       entity: {
         type: "todo",
         id: entityId,
@@ -144,6 +153,7 @@ export async function addEntityComment(
   if (threadTeamId !== teamId) {
     revalidatePath(`/teams/${threadTeamId}/rocks`);
     revalidatePath(`/teams/${threadTeamId}/meetings`);
+    if (entityType === "todo") revalidatePath(`/teams/${threadTeamId}/todos`);
   }
 }
 
@@ -190,16 +200,18 @@ export async function deleteEntityComment(
   teamId: string,
   commentId: string,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireFirebaseUser();
   const ref = db.collection("entity_comments").doc(commentId);
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Comment not found");
   const data = snap.data()!;
-  // A rock's thread is read from any team that has the rock, so its
-  // team_id is the rock's, not necessarily the caller's; the author check
-  // below is what protects it.
-  if (data.entity_type !== "rock" && data.team_id !== teamId) {
-    throw new Error("Comment not found");
+  // A rock's thread is read from any team that has the rock, and a to-do's
+  // from any team its assignee is on (P8a), so their team_id is the item's,
+  // not necessarily the caller's; the author check below is what protects
+  // them. Issue threads stay team-scoped.
+  if (data.entity_type === "issue") {
+    await requireTeamAccess(teamId);
+    if (data.team_id !== teamId) throw new Error("Comment not found");
   }
   // Author can delete their own; leaders aren't special-cased here (keep simple).
   if (data.author_id !== uid) {
@@ -216,7 +228,7 @@ export async function deleteEntityComment(
     const p = parent.data() ?? {};
     await recordActivity({
       db,
-      teamId,
+      teamId: String(data.team_id ?? teamId),
       entity: {
         type: "todo",
         id: String(data.entity_id ?? ""),

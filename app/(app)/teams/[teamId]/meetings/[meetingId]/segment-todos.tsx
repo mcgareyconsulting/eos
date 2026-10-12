@@ -10,7 +10,13 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { initials } from "@/lib/user-name";
+import { initials, ownerLabel } from "@/lib/user-name";
+import {
+  OUTSIDE_GROUP_KEY,
+  OUTSIDE_GROUP_TITLE,
+  outsideOwnerIds,
+} from "@/lib/todo-lists";
+import { usePersonNames } from "../../todos/use-person-names";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
@@ -154,10 +160,18 @@ function groupTodosForMeeting(
 ): TodoGroup[] {
   const byOwner = new Map<string, TodoDoc[]>();
   const unassigned: TodoDoc[] = [];
+  const outside: TodoDoc[] = [];
+  const rosterIds = new Set(members.map((m) => m.user_id));
 
   for (const t of todos) {
     if (!t.owner_id) {
       unassigned.push(t);
+      continue;
+    }
+    // Assigned to someone on another team (spec §3.1): still this team's
+    // to-do, reviewed in its own block after the room's people.
+    if (!rosterIds.has(t.owner_id)) {
+      outside.push(t);
       continue;
     }
     const list = byOwner.get(t.owner_id) ?? [];
@@ -178,6 +192,17 @@ function groupTodosForMeeting(
       done: list.filter((t) => t.completed_at).sort(byDue),
       absent: absent.has(uid),
       isCurrentSpeaker: uid === currentSpeaker,
+    });
+  }
+
+  if (outside.length > 0) {
+    groups.push({
+      key: OUTSIDE_GROUP_KEY,
+      title: OUTSIDE_GROUP_TITLE,
+      open: outside.filter((t) => !t.completed_at).sort(byDue),
+      done: outside.filter((t) => t.completed_at).sort(byDue),
+      absent: false,
+      isCurrentSpeaker: false,
     });
   }
 
@@ -244,7 +269,10 @@ export function SegmentTodos({
   initialSpeakingOrder = [],
   initialAbsentUserIds = [],
   initialSpeakerIndex = 0,
+  outsideNames = {},
 }: {
+  /** Server-resolved names of this team's to-do owners off its roster. */
+  outsideNames?: Record<string, string>;
   teamId: string;
   meetingId: string;
   userId: string;
@@ -373,6 +401,12 @@ export function SegmentTodos({
       completed: false,
       rock_title: rockById.get(t.source_rock_id ?? "")?.title ?? "Rock",
     }));
+
+  // Names for outside assignees: the server's, then fetched for live arrivals.
+  const nameOf = usePersonNames(
+    outsideOwnerIds(pureTodos, new Set(members.map((m) => m.user_id))),
+    outsideNames,
+  );
 
   const groups = groupTodosForMeeting(
     showArchived ? archivedTodos : pureTodos,
@@ -511,10 +545,15 @@ export function SegmentTodos({
                   key={t.id}
                   teamId={teamId}
                   todo={toListItem(t)}
-                  ownerName={g.title}
+                  ownerName={
+                    g.key === OUTSIDE_GROUP_KEY
+                      ? ownerLabel(t.owner_id, nameOf)
+                      : g.title
+                  }
                   members={members}
                   userId={userId}
-                  hideOwner
+                  // The outside block mixes owners: name each row's.
+                  hideOwner={g.key !== OUTSIDE_GROUP_KEY}
                   surface="meeting"
                 />,
               ])}

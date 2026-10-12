@@ -11,8 +11,9 @@
 // (docs/PERMISSIONS_BUILD_GRAPH.md). Grep for `SPEC P` to find them all.
 //
 // The rock module (rock.ts) is live since P6a: rock pages and actions call
-// it. The others are still parity wrappers over lib/scorecard-share.ts and
-// lib/todo-access.ts until their packages land.
+// it. The to-do modules (team-item.ts `teamTodoAccess`, private-item.ts)
+// are live since P8a (lib/firebase/todo-gate.ts). The others are still
+// parity wrappers until their packages land.
 
 /** The person asking. Build it once per request from the session + roster. */
 export type Viewer = {

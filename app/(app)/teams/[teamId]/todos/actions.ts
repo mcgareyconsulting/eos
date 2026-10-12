@@ -5,11 +5,18 @@ import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { notFound } from "next/navigation";
 import { FieldValue } from "firebase-admin/firestore";
 import {
+  getOrgTeams,
   getTeamMembers,
-  requireRosterOwner,
   requireTeamAccess,
   requireTeamDoc,
 } from "@/lib/firebase/teams";
+import { requireFirebaseUser } from "@/lib/firebase/auth";
+import {
+  requireAssignablePerson,
+  requireTodoAccess,
+} from "@/lib/firebase/todo-gate";
+import { rockMilestoneCompleted } from "@/lib/firebase/rock-events";
+import { loadOrgPeople } from "../rocks/actions";
 import { normalizeDescription } from "@/lib/csv-import";
 import {
   upsertTaskForTodo,
@@ -17,9 +24,7 @@ import {
   type TodoMirror,
 } from "@/lib/google/tasks";
 import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
-import { milestoneAccess, rockSubjectOf } from "@/lib/access/rock";
-import { loadViewer } from "@/lib/firebase/viewer";
-import { canMutateTodo, type TodoAccessCaller } from "@/lib/todo-access";
+import { canChangeTodoVisibility } from "@/lib/todo-access";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { purgeItem } from "@/lib/firebase/purge";
 import { recordActivity } from "@/lib/firebase/activity";
@@ -58,16 +63,19 @@ function ownerUidOf(data: FirebaseFirestore.DocumentData): string {
 }
 
 /**
- * C-11: a private to-do is changed only by its owner, a team leader or an org
- * admin (lib/todo-access.ts). 404s like requireTeamDoc — a member can't read
- * someone else's private to-do either, so the refusal shouldn't confirm it
- * exists.
+ * The to-do `todoId` for a change made from team `teamId`'s page: the
+ * caller may `action` it (lib/firebase/todo-gate.ts — team + admins for a
+ * team to-do, creator + assignee + admins for a private one) and it lives
+ * on that team. 404s otherwise, like requireTeamDoc.
  */
-function requireMutableTodo(
-  data: FirebaseFirestore.DocumentData,
-  caller: TodoAccessCaller,
+async function requireTeamTodo(
+  teamId: string,
+  todoId: string,
+  action: "edit" | "delete",
 ) {
-  if (!canMutateTodo(data, caller)) notFound();
+  const gate = await requireTodoAccess(todoId, action);
+  if (gate.teamId !== teamId) notFound();
+  return gate;
 }
 
 function followerIdsOf(data: FirebaseFirestore.DocumentData): string[] {
@@ -114,15 +122,16 @@ export async function addTodo(teamId: string, formData: FormData) {
   if (!title) throw new Error("Title required");
   requireMaxLength(title, TITLE_MAX, "Title");
   requireMaxLength(description, LONG_TEXT_MAX, "Description");
-  // The owner's Google Tasks list receives this to-do: never a uid off the
-  // roster (C-03).
-  await requireRosterOwner(teamId, owner_id, { self: uid });
+  // A member may assign a to-do to anyone in the directory (spec §2.3,
+  // §3.1). The owner's Google Tasks list receives it, so the uid must still
+  // be a real, active person (C-03).
+  await requireAssignablePerson(db, owner_id, { self: uid });
 
   // Creator + owner follow from the start; that is the "assign and follow"
   // shape the client uses today (N61). "Add followers" picks ride along,
   // checked against the roster so a stale or hand-rolled form can't
   // subscribe someone who isn't on the team. A private to-do is readable by
-  // its owner only, so nobody else can meaningfully follow it.
+  // its creator and owner only, so nobody else can follow it.
   const roster = new Set(
     (await getTeamMembers(teamId)).map((m) => m.user_id),
   );
@@ -209,71 +218,27 @@ export async function addTodo(teamId: string, formData: FormData) {
 }
 
 /**
- * The to-do a tick from `teamId` may complete. A plain to-do must live on
- * that team. A milestone goes through the rock rule instead
- * (lib/access/rock.ts `milestoneAccess.canComplete`): its assignee, the
- * parent team, the rock's audience and admins — judged on the caller's
- * full memberships, since the assignee and the audience tick from their own
- * team's page or Home. A block view grants nothing beyond the assignee's own
- * tick. Admin SDK bypasses firestore.rules, so this is the real gate.
+ * Tick or untick a to-do or milestone. Team-independent (P8a): `teamId` is
+ * only the page to refresh. The gate is the item's own rule
+ * (lib/firebase/todo-gate.ts) on the caller's full memberships — a team
+ * to-do's parent team, its assignee from any team and admins; a private
+ * to-do's creator, assignee and admins; a milestone's assignee, parent
+ * team, audience and admins. A block view grants nothing beyond the
+ * assignee's own tick. Admin SDK bypasses firestore.rules, so this is the
+ * real gate.
  */
-async function requireTickableTodo(
-  db: FirebaseFirestore.Firestore,
-  todoId: string,
-  teamId: string,
-  uid: string,
-  isAdmin: boolean,
-) {
-  const snap = await db.collection("todos").doc(todoId).get();
-  if (!snap.exists) notFound();
-  const data = snap.data() ?? {};
-  const rockId = data.source_rock_id as string | null | undefined;
-  if (!rockId) {
-    if (data.team_id !== teamId) notFound();
-    return snap;
-  }
-  const rockSnap = await db.collection("rocks").doc(rockId).get();
-  const rock = rockSnap.data();
-  if (!rock) {
-    if (data.team_id !== teamId) notFound();
-    return snap;
-  }
-  const viewer = await loadViewer(db, uid, isAdmin);
-  const ok = milestoneAccess.canComplete(
-    {
-      rock: rockSubjectOf(rock),
-      milestone: {
-        owner_id: (data.owner_id as string | null) ?? null,
-        team_id: String(data.team_id ?? ""),
-        visibility: data.visibility,
-      },
-    },
-    viewer,
-  );
-  if (!ok) notFound();
-  return snap;
-}
-
 export async function toggleTodo(
   teamId: string,
   todoId: string,
   currentlyComplete: boolean,
 ) {
-  const { uid, db, isAdmin, membershipRole } =
-    await requireTeamAccess(teamId);
-  const snap = await requireTickableTodo(db, todoId, teamId, uid, isAdmin);
-  const data = snap.data() ?? {};
-  // A leader of the *viewing* team leads nothing on a milestone filed under
-  // another team's rock.
-  requireMutableTodo(data, {
-    uid,
-    isAdmin,
-    membershipRole: data.team_id === teamId ? membershipRole : null,
-  });
-  // A milestone ticked from another team's page (its assignee, from their
-  // own team) is still an event on the rock's team: file the notification
-  // and the activity row there, as that user — not under the viewing team.
-  const homeTeamId = String(data.team_id ?? teamId);
+  const gate = await requireTodoAccess(todoId, "complete");
+  const { uid, db } = gate;
+  const data = gate.data as FirebaseFirestore.DocumentData;
+  // Ticked from another team's page (an off-team assignee, the audience) it
+  // is still an event on the to-do's own team: file the notification and
+  // the activity row there, as that user — not under the viewing team.
+  const homeTeamId = gate.teamId || teamId;
   const nowComplete = !currentlyComplete;
   await db
     .collection("todos")
@@ -281,6 +246,13 @@ export async function toggleTodo(
     .update({
       completed_at: nowComplete ? FieldValue.serverTimestamp() : null,
     });
+  // A milestone done is also an event on its rock (spec §5.3). Only when
+  // the rock still exists (loadItem classified it as a milestone).
+  const rockId =
+    gate.item.ref.type === "milestone" ? String(data.source_rock_id ?? "") : "";
+  if (nowComplete && rockId) {
+    await rockMilestoneCompleted(db, rockId, uid, homeTeamId);
+  }
 
   await emitEvent(db, todoRef(todoId), nowComplete ? "completed" : "reopened", uid, {
     teamId: homeTeamId,
@@ -307,6 +279,10 @@ export async function toggleTodo(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
   revalidatePath(pathFor(teamId));
+  if (homeTeamId !== teamId) {
+    revalidatePath(pathFor(homeTeamId));
+    revalidatePath(`/teams/${homeTeamId}/meetings`);
+  }
   if (data.source_rock_id) {
     // A milestone ticked from a guest team: both teams' rock lists show it.
     revalidatePath(`/teams/${teamId}/rocks`);
@@ -325,11 +301,7 @@ export async function updateTodoMeta(
   todoId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin, membershipRole } =
-    await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  requireMutableTodo(data, { uid, isAdmin, membershipRole });
+  const { uid, db, data } = await requireTeamTodo(teamId, todoId, "edit");
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("Title required");
@@ -348,9 +320,18 @@ export async function updateTodoMeta(
   requireMaxLength(title, TITLE_MAX, "Title");
   requireMaxLength(description, LONG_TEXT_MAX, "Description");
 
+  // Spec §3.2: only the creator or the assignee may publish a private
+  // to-do to the team — not an admin, not a leader.
+  if (!canChangeTodoVisibility(data, { uid }, visibility)) {
+    throw new Error(
+      "Only the person who created this to-do or its owner can share it with the team",
+    );
+  }
+
   const prevOwner = ownerUidOf(data) || null;
   const reassigned = owner_id !== prevOwner;
-  await requireRosterOwner(teamId, owner_id, { self: uid, keep: prevOwner });
+  // Org-wide assignment (spec §3.1): any active directory person.
+  await requireAssignablePerson(db, owner_id, { self: uid, keep: prevOwner });
 
   // Assignment (lib/follow.ts): a new owner makes the caller the assigner;
   // new owner + new assigner lock, the old ones stay as plain followers.
@@ -524,10 +505,7 @@ export async function toggleWeeklyFocus(
   todoId: string,
   next: boolean,
 ) {
-  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  requireMutableTodo(data, { uid, isAdmin, membershipRole });
+  const { uid, db, data } = await requireTeamTodo(teamId, todoId, "edit");
   await db.collection("todos").doc(todoId).update({ weekly_focus: next });
   await recordActivity({
     db,
@@ -547,10 +525,7 @@ export async function toggleWeeklyFocus(
 }
 
 export async function deleteTodo(teamId: string, todoId: string) {
-  const { uid, db, isAdmin, membershipRole } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  requireMutableTodo(data, { uid, isAdmin, membershipRole });
+  const { db, data } = await requireTeamTodo(teamId, todoId, "delete");
   await db.collection("todos").doc(todoId).delete();
   // Spec §5.1: its thread, notifications and activity trace go with it.
   await purgeItem(db, { type: data.source_rock_id ? "milestone" : "todo", id: todoId });
@@ -578,11 +553,7 @@ export async function setTodoArchived(
   todoId: string,
   archived: boolean,
 ) {
-  const { uid, db, isAdmin, membershipRole } =
-    await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  requireMutableTodo(data, { uid, isAdmin, membershipRole });
+  const { uid, db, data } = await requireTeamTodo(teamId, todoId, "edit");
   if (data.source_rock_id) {
     throw new Error("Milestones are managed under Rocks, not archived here");
   }
@@ -693,4 +664,36 @@ export async function archiveTodosAtMeetingFinish(
   revalidatePath(pathFor(teamId));
   revalidatePath("/home");
   return ids.size;
+}
+
+/**
+ * The directory for the to-do owner picker (spec §2.5, §3.1): every person
+ * on any roster with their teams, and every team's name. Visible to every
+ * signed-in person, so no team gate. `loadOrgPeople` is the rock modal's
+ * loader (P6a), reused so the two pickers list the same people.
+ */
+export async function loadTodoDirectory(): Promise<{
+  people: { user_id: string; full_name: string; team_ids: string[] }[];
+  teams: { id: string; name: string }[];
+}> {
+  const [people, teams] = await Promise.all([loadOrgPeople(), getOrgTeams()]);
+  return { people, teams };
+}
+
+/**
+ * Display names for people the viewing roster doesn't hold — an off-team
+ * assignee, the assigner of a to-do from another team, a comment author on
+ * a to-do thread read from outside its team. Names are directory data
+ * (spec §2.5), so any signed-in person may ask.
+ */
+export async function loadPersonNames(
+  ids: string[],
+): Promise<Record<string, string>> {
+  if (!Array.isArray(ids)) return {};
+  const { db } = await requireFirebaseUser();
+  const clean = [
+    ...new Set(ids.filter((x): x is string => typeof x === "string" && !!x)),
+  ];
+  const names = await loadUserNames(db, clean.slice(0, 100));
+  return Object.fromEntries(names);
 }

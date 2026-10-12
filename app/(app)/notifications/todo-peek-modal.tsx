@@ -131,6 +131,7 @@ export function TodoPeekModal({
             userId={userId}
             initial={state.peek.todo}
             members={state.peek.members}
+            access={state.peek.access}
           />
         )}
       </div>
@@ -143,18 +144,22 @@ function LiveRow({
   userId,
   initial,
   members,
+  access,
 }: {
   teamId: string;
   userId: string;
   initial: TodoBoardDoc;
   members: TodoPeek["members"];
+  access: TodoPeek["access"];
 }) {
   const db = getClientDb();
   const ref = useMemo(() => doc(db, "todos", initial.id), [db, initial.id]);
   const live = useDoc<TodoBoardDoc>(ref, initial, "todo-peek");
   const todo = useMemo(() => toListItem(live), [live]);
   const ownerName =
-    members.find((m) => m.user_id === todo.owner_id)?.full_name ?? "—";
+    todo.owner_id === userId
+      ? "You"
+      : (members.find((m) => m.user_id === todo.owner_id)?.full_name ?? "—");
 
   return (
     <>
@@ -167,6 +172,7 @@ function LiveRow({
           userId={userId}
           defaultExpanded
           showActivity={false}
+          access={access}
         />
       </div>
       <aside className="min-h-0 overflow-y-auto border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 lg:border-l lg:border-t-0">

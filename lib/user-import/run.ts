@@ -19,6 +19,7 @@ import { isEmailAllowed, type Allowlist } from "../auth-allowlist";
 // path rather than through the barrel so this path doesn't drag in the six
 // kind-importers (and node:zlib) for one batching helper.
 import { Writer } from "../team-import/owners";
+import { recordAccessChanges, type AccessChangeInput } from "../access-audit";
 import { syncUsersTeamIds } from "../firebase/membership";
 import type {
   SeedIssue,
@@ -56,6 +57,8 @@ export type UserImportOptions = {
   allowlist?: Allowlist | null;
   /** Per-pairing preview cap; the overflow is reported as a count. */
   previewLimit?: number;
+  /** Signed-in admin, stamped on every write (C-07). Omitted by the CLI. */
+  actorUid?: string | null;
 };
 
 const CHUNK = 100;
@@ -68,7 +71,9 @@ export async function runUserImport(
 ): Promise<SeedReport> {
   const dryRun = opts.dryRun !== false;
   const previewLimit = opts.previewLimit ?? 250;
-  const writer = new Writer(db, dryRun);
+  const writer = new Writer(db, dryRun, opts.actorUid);
+  // In-app imports (actorUid set) leave access_change rows; the CLI does not.
+  const accessLog: AccessChangeInput[] = [];
 
   if (!hasSeedColumns(table)) {
     throw new Error(
@@ -182,6 +187,16 @@ export async function runUserImport(
           ...(found?.customClaims ?? {}),
           role: "admin",
         });
+        if (opts.actorUid) {
+          accessLog.push({
+            kind: "admin_role",
+            actorUid: opts.actorUid,
+            entityId: uid,
+            targetUid: uid,
+            before: { admin: false },
+            after: { admin: true },
+          });
+        }
       }
     } else if (wasAdmin) {
       // The file calls them a member but they hold the claim. Additive means
@@ -286,6 +301,17 @@ export async function runUserImport(
       role: "member",
       created_at: FieldValue.serverTimestamp(),
     });
+    if (opts.actorUid && !dryRun) {
+      accessLog.push({
+        kind: "roster",
+        actorUid: opts.actorUid,
+        entityId: id,
+        teamId: pair.teamId,
+        targetUid: pair.uid,
+        before: { on_roster: false },
+        after: { on_roster: true, role: "member" },
+      });
+    }
     addPreview({
       action: "create",
       name: nameByEmail.get(pair.email) ?? pair.email,
@@ -330,6 +356,7 @@ export async function runUserImport(
   }
 
   await writer.flush();
+  await recordAccessChanges(db, accessLog);
   // Recompute team_ids for everyone who just gained a membership.
   if (!dryRun) {
     await syncUsersTeamIds(
@@ -337,6 +364,7 @@ export async function runUserImport(
       pairs
         .filter((p) => !p.pending && !existingMembership.has(`${p.teamId}__${p.uid}`))
         .map((p) => p.uid),
+      opts.actorUid,
     );
   }
 

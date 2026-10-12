@@ -77,6 +77,29 @@ describe("requireTeamAccess", () => {
     assert.equal(result.membershipRole, null);
   });
 
+  test("admin viewing a team they are not on leaves one admin_view row per day", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "tv");
+    const deps = { user: fakeUser({ uid: "admin-view-1", isAdmin: true, db }) };
+    await requireTeamAccess("tv", deps);
+    await requireTeamAccess("tv", deps);
+    const rows = db.docsIn("audit_log").map((r) => r.data);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].entity_type, "admin_view");
+    assert.equal(rows[0].actor_uid, "admin-view-1");
+    assert.equal(rows[0].team_id, "tv");
+  });
+
+  test("admin who is a member, and plain members, leave no admin_view row", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "tm");
+    seedMembership(db, "tm", "admin-member-1", "member");
+    seedMembership(db, "tm", "plain-1", "member");
+    await requireTeamAccess("tm", { user: fakeUser({ uid: "admin-member-1", isAdmin: true, db }) });
+    await requireTeamAccess("tm", { user: fakeUser({ uid: "plain-1", isAdmin: false, db }) });
+    assert.equal(db.docsIn("audit_log").length, 0);
+  });
+
   test("non-member is 404'd, not told the team exists", async () => {
     const db = new FakeFirestore();
     seedTeam(db, "t1");

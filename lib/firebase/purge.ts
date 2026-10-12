@@ -6,6 +6,7 @@
 // no composite index is needed; `entity_type` is checked in code.
 
 import type { Firestore, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { stampBeforeDelete } from "@/lib/audit-stamp";
 import { registryFor, type ItemRef, type ItemType } from "@/lib/item-registry";
 
 /**
@@ -32,6 +33,8 @@ async function rowsFor(
 export async function purgeItem(
   db: Firestore,
   ref: ItemRef,
+  /** Who deleted the item; attributes the comment and activity deletes (C-07). */
+  actorUid?: string | null,
 ): Promise<{ comments: number; notifications: number; activity: number }> {
   const thread = registryFor(ref.type).threadEntityType;
   const [comments, notifications, activity] = await Promise.all([
@@ -41,6 +44,13 @@ export async function purgeItem(
     rowsFor(db, "notifications", ref.id, rowTypes(ref.type)),
     rowsFor(db, "entity_activity", ref.id, rowTypes(ref.type)),
   ]);
+  // Notifications are not audited, so they are not stamped.
+  if (actorUid) {
+    await stampBeforeDelete(
+      [...comments, ...activity].map((d) => d.ref),
+      actorUid,
+    );
+  }
   const all = [...comments, ...notifications, ...activity];
   for (let i = 0; i < all.length; i += 400) {
     const batch = db.batch();

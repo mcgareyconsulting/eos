@@ -10,6 +10,7 @@ const opts = {
   firstName: "Bob",
   lastName: "Smith",
   email: "bob@example.com",
+  actorUid: "leader-1",
 };
 
 describe("writeMembership", () => {

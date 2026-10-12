@@ -18,6 +18,7 @@ import {
   type ThreadContext,
 } from "@/lib/firebase/thread-gate";
 import { snippetOf } from "@/lib/notifications";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 
 export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
 
@@ -73,12 +74,13 @@ export async function addEntityComment(
     author_id: uid,
     mention_ids,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   // Spec §5.3: writing a comment, or being mentioned in one, follows the
   // item (only people who may follow it — a mention never grants access).
   const ref = item.ref;
-  await autoFollow(db, ref, [uid, ...mention_ids]);
+  await autoFollow(db, ref, [uid, ...mention_ids], {}, uid);
 
   // Mentioned people get `mention`, every other follower `comment`; the
   // send-time access check drops anyone who cannot see the item.
@@ -161,6 +163,7 @@ export async function deleteEntityComment(
   if (data.author_id !== uid && !isAdmin) {
     throw new Error("Only the author or an admin can delete this comment");
   }
+  await stampBeforeDelete(ref, uid);
   await ref.delete();
   // The trace keeps a record of the deletion; the row that carried the body
   // is gone, but the snippet on the trace says what it was.

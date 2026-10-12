@@ -11,6 +11,7 @@ import { HeadlineThread } from "./headline-thread";
 import {
   groupByOwner,
   isArchivedHeadline,
+  headlineCreatorLabel,
   splitCascadingSection,
 } from "@/lib/headlines";
 import { deleteHeadline, setHeadlineArchived } from "./actions";
@@ -75,15 +76,12 @@ export default async function HeadlinesPage({
   const archived = all.filter((h) => isArchivedHeadline(h));
   const headlines = (showArchived ? archived : active).filter(matchesOwner);
 
-  const creatorName = (h: HeadlineDoc) => {
-    if (h.created_by === uid) return "You";
-    if (h.created_by) {
-      return (
-        members.find((m) => m.user_id === h.created_by)?.full_name ?? "—"
-      );
-    }
-    return h.source_owner_name || h.from_label || "—";
-  };
+  const creatorName = (h: HeadlineDoc) =>
+    headlineCreatorLabel(
+      h,
+      uid,
+      (id) => members.find((m) => m.user_id === id)?.full_name,
+    );
 
   function renderRow(h: HeadlineDoc) {
     const kindLabel = KIND_LABEL[h.kind] ?? KIND_LABEL.customer;

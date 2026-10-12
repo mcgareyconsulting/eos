@@ -858,6 +858,7 @@ async function SegmentContent({
         broadcast: !!x.broadcast,
         from_label: x.from_label ?? null,
         source_owner_name: x.source_owner_name ?? null,
+        owner_unassigned: x.owner_unassigned === true,
       };
     });
     return (

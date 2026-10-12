@@ -12,6 +12,8 @@ import {
   type OwnedDoc,
 } from "@/lib/deactivation";
 import { LAST_ADMIN_MESSAGE, hasOtherAdmin } from "./admin-guard";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { recordAccessChange, recordAccessChanges } from "@/lib/access-audit";
 import { syncUserTeamIds } from "./membership";
 import { emitEvent } from "./notifications";
 import { leaderIdsOfTeams } from "./rock-events";
@@ -76,6 +78,10 @@ export async function deactivatePerson(
     .filter(Boolean);
   const batch = db.batch();
   for (const doc of memberships.docs) batch.delete(doc.ref);
+  await stampBeforeDelete(
+    memberships.docs.map((d) => d.ref),
+    actorUid,
+  );
   const teamDocs = teamIds.length
     ? await db.getAll(...teamIds.map((id) => db.collection("teams").doc(id)))
     : [];
@@ -86,7 +92,7 @@ export async function deactivatePerson(
     const patch: Record<string, unknown> = {};
     if (order.includes(uid)) patch.speaking_order = order.filter((id) => id !== uid);
     if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-    if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
+    if (Object.keys(patch).length > 0) batch.update(team.ref, { ...patch, ...stamp(actorUid) });
   }
   batch.set(
     db.collection("users").doc(uid),
@@ -95,17 +101,18 @@ export async function deactivatePerson(
       ...(account?.displayName ? { display_name: account.displayName } : {}),
       deactivated_at: FieldValue.serverTimestamp(),
       deactivated_by: actorUid,
+      ...stamp(actorUid),
     },
     { merge: true },
   );
   await batch.commit();
-  await syncUserTeamIds(db, uid);
+  await syncUserTeamIds(db, uid, actorUid);
 
   // 3. Unassign everything they own, in chunks.
   const plan = planUnassign(await loadOwned(db, uid));
   for (const part of chunk(plan.patches, BATCH_LIMIT)) {
     const b = db.batch();
-    for (const p of part) b.update(db.collection(p.collection).doc(p.id), p.patch);
+    for (const p of part) b.update(db.collection(p.collection).doc(p.id), { ...p.patch, ...stamp(actorUid) });
     await b.commit();
   }
 
@@ -118,6 +125,26 @@ export async function deactivatePerson(
       direct: { unassigned: leaders },
     });
   }
+
+  await recordAccessChanges(db, [
+    ...memberships.docs.map((d) => ({
+      kind: "roster" as const,
+      actorUid,
+      entityId: d.id,
+      teamId: (d.data()?.team_id as string) ?? null,
+      targetUid: uid,
+      before: { on_roster: true, role: (d.data()?.role as string) ?? "member" },
+      after: { on_roster: false },
+    })),
+    {
+      kind: "deactivation" as const,
+      actorUid,
+      entityId: uid,
+      targetUid: uid,
+      before: { deactivated: false },
+      after: { deactivated: true, items_unassigned: plan.patches.length },
+    },
+  ]);
 
   return {
     ok: true,
@@ -134,6 +161,7 @@ export async function reactivatePerson(
   db: Firestore,
   auth: Auth,
   uid: string,
+  actorUid: string,
 ): Promise<{ ok: true; signInRestored: boolean } | { ok: false; error: string }> {
   if (!uid) return { ok: false, error: "No user given" };
   const account = await auth.getUser(uid).catch(() => null);
@@ -142,8 +170,20 @@ export async function reactivatePerson(
     .collection("users")
     .doc(uid)
     .set(
-      { deactivated_at: FieldValue.delete(), deactivated_by: FieldValue.delete() },
+      {
+        deactivated_at: FieldValue.delete(),
+        deactivated_by: FieldValue.delete(),
+        ...stamp(actorUid),
+      },
       { merge: true },
     );
+  await recordAccessChange(db, {
+    kind: "deactivation",
+    actorUid,
+    entityId: uid,
+    targetUid: uid,
+    before: { deactivated: true },
+    after: { deactivated: false },
+  });
   return { ok: true, signInRestored: !!account };
 }

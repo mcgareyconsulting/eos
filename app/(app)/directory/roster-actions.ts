@@ -30,9 +30,9 @@ export async function addTeamMember(
   teamId: string,
   userId: string,
 ): Promise<Result> {
-  const { db, team } = await requireTeamLeader(teamId);
+  const { db, team, uid: actorUid } = await requireTeamLeader(teamId);
   return guarded(async () => {
-    await addExistingPersonToTeam(db, teamId, userId);
+    await addExistingPersonToTeam(db, teamId, userId, actorUid);
     return `Added to ${team.name}.`;
   });
 }
@@ -41,9 +41,9 @@ export async function removeTeamMember(
   teamId: string,
   userId: string,
 ): Promise<Result> {
-  const { db, team, isAdmin } = await requireTeamLeader(teamId);
+  const { db, team, isAdmin, uid: actorUid } = await requireTeamLeader(teamId);
   return guarded(async () => {
-    await removePersonFromTeam(db, team, userId, isAdmin);
+    await removePersonFromTeam(db, team, userId, isAdmin, actorUid);
     return `Removed from ${team.name}.`;
   });
 }

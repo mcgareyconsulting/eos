@@ -11,6 +11,7 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import {
   groupByOwner,
+  headlineCreatorLabel,
   isArchivedHeadline,
   splitCascadingSection,
 } from "@/lib/headlines";
@@ -102,11 +103,11 @@ export function SegmentHeadlines({
   };
 
   const creatorName = (h: HeadlineDoc) => {
-    if (h.created_by === userId) return "You";
-    if (h.created_by) {
-      return members.find((m) => m.user_id === h.created_by)?.full_name ?? "—";
-    }
-    return h.source_owner_name || h.from_label || "—";
+    return headlineCreatorLabel(
+      h,
+      userId,
+      (id) => members.find((m) => m.user_id === id)?.full_name,
+    );
   };
 
   // Team's own headlines (grouped by owner) separated from cascading —

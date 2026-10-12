@@ -13,6 +13,7 @@ import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
 import { assignmentPatch } from "@/lib/follow";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { purgeItem } from "@/lib/firebase/purge";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -47,6 +48,7 @@ async function clearLiveMeetingPin(
   db: Firestore,
   teamId: string,
   issueId: string,
+  actorUid: string,
 ) {
   // Team meeting history is small; filter in memory to avoid a composite index.
   const meetings = await db
@@ -60,7 +62,7 @@ async function clearLiveMeetingPin(
   if (openPinned.length > 0) {
     const batch = db.batch();
     for (const d of openPinned) {
-      batch.update(d.ref, { current_issue_id: null });
+      batch.update(d.ref, { current_issue_id: null, ...stamp(actorUid) });
     }
     await batch.commit();
   }
@@ -107,6 +109,7 @@ export async function addIssue(teamId: string, formData: FormData) {
     assigned_by: uid,
     follower_ids: [...new Set([uid, owner_id].filter((x): x is string => !!x))],
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   revalidatePath(pathFor(teamId));
@@ -155,6 +158,7 @@ export async function updateIssueMeta(
           follower_ids: assignment.follower_ids,
         }
       : {}),
+    ...stamp(uid),
   });
   // Spec §5.3: followers hear an owner change; the new owner is told they
   // were assigned (unless they assigned themself). Never throws.
@@ -168,7 +172,7 @@ export async function updateIssueMeta(
   // Moving to long-term via the edit modal needs the same live-meeting pin
   // cleanup as setIssueType.
   if (type === "long" && prevType !== "long") {
-    await clearLiveMeetingPin(db, teamId, issueId);
+    await clearLiveMeetingPin(db, teamId, issueId, uid);
   }
 
   revalidatePath(pathFor(teamId));
@@ -188,6 +192,18 @@ export async function castVote(
 ) {
   const { uid, db } = await requireTeamAccess(teamId);
   if (delta !== 1 && delta !== -1) throw new Error("Bad delta");
+
+  // Taking back your last credit on an issue deletes the vote row inside the
+  // transaction below, where a same-commit stamp is invisible to the audit
+  // trigger (see stampBeforeDelete). Stamp first when that looks likely; a
+  // race only costs attribution on that one row, never the vote.
+  if (delta === -1) {
+    const voteRef = db.collection("issue_votes").doc(`${issueId}__${uid}`);
+    const pre = await voteRef.get();
+    if (pre.exists && Number(pre.data()?.count ?? 0) <= 1) {
+      await stampBeforeDelete(voteRef, uid);
+    }
+  }
 
   await db.runTransaction(async (tx) => {
     const voteId = `${issueId}__${uid}`;
@@ -254,7 +270,7 @@ export async function castVote(
     if (nextCount <= 0) {
       tx.delete(voteRef);
     } else if (voteSnap.exists) {
-      tx.update(voteRef, { count: nextCount });
+      tx.update(voteRef, { count: nextCount, ...stamp(uid) });
     } else {
       tx.set(voteRef, {
         issue_id: issueId,
@@ -262,9 +278,10 @@ export async function castVote(
         team_id: teamId,
         count: nextCount,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(uid),
       });
     }
-    tx.update(issueRef, { votes: FieldValue.increment(delta) });
+    tx.update(issueRef, { votes: FieldValue.increment(delta), ...stamp(uid) });
   });
 
   revalidatePath(pathFor(teamId));
@@ -276,9 +293,9 @@ export async function setIssueStatus(
   status: string,
 ) {
   if (!STATUSES.includes(status as Status)) throw new Error("Bad status");
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  const update: Record<string, unknown> = { status };
+  const update: Record<string, unknown> = { status, ...stamp(uid) };
   if (status === "solved" || status === "dropped") {
     update.resolved_at = FieldValue.serverTimestamp();
   } else {
@@ -297,12 +314,12 @@ export async function setIssueType(
   type: string,
 ) {
   if (!TYPES.includes(type as Type)) throw new Error("Bad type");
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  await db.collection("issues").doc(issueId).update({ type });
+  await db.collection("issues").doc(issueId).update({ type, ...stamp(uid) });
 
   if (type === "long") {
-    await clearLiveMeetingPin(db, teamId, issueId);
+    await clearLiveMeetingPin(db, teamId, issueId, uid);
   }
 
   revalidatePath(pathFor(teamId));
@@ -310,18 +327,22 @@ export async function setIssueType(
 }
 
 export async function deleteIssue(teamId: string, issueId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
   // Cascade: issue + votes, then its thread, notifications and activity.
   const votes = await db
     .collection("issue_votes")
     .where("issue_id", "==", issueId)
     .get();
+  await stampBeforeDelete(
+    [db.collection("issues").doc(issueId), ...votes.docs.map((v) => v.ref)],
+    uid,
+  );
   const batch = db.batch();
   batch.delete(db.collection("issues").doc(issueId));
   votes.docs.forEach((v) => batch.delete(v.ref));
   await batch.commit();
-  await purgeItem(db, { type: "issue", id: issueId });
+  await purgeItem(db, { type: "issue", id: issueId }, uid);
   revalidatePath(pathFor(teamId));
 }
 
@@ -340,16 +361,17 @@ export async function setIssueArchived(
   issueId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
   await db
     .collection("issues")
     .doc(issueId)
-    .update(
-      archived
+    .update({
+      ...(archived
         ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, status: "open", resolved_at: null },
-    );
+        : { archived_at: null, status: "open", resolved_at: null }),
+      ...stamp(uid),
+    });
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/meetings`);
 }
@@ -362,7 +384,7 @@ export async function archiveIssuesClosedDuringMeeting(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
   const startMs =
@@ -388,7 +410,7 @@ export async function archiveIssuesClosedDuringMeeting(
   const batch = db.batch();
   for (const d of snap.docs) {
     if (!ids.has(d.id)) continue;
-    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) });
   }
   await batch.commit();
   revalidatePath(pathFor(teamId));

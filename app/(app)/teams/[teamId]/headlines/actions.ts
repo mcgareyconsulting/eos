@@ -5,6 +5,7 @@ import { LONG_TEXT_MAX, TITLE_MAX, requireMaxLength } from "@/lib/text-limits";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess, requireTeamDoc } from "@/lib/firebase/teams";
 import { purgeItem } from "@/lib/firebase/purge";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { selectHeadlinesDiscussedDuringMeeting } from "@/lib/todos-archive";
 
 const KINDS = ["customer", "employee", "cascading", "general"] as const;
@@ -46,6 +47,7 @@ export async function addHeadline(teamId: string, formData: FormData) {
     discussed_at: null,
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
 
   revalidateHeadlines(teamId);
@@ -63,7 +65,7 @@ export async function updateHeadline(
   headlineId: string,
   formData: FormData,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
   if (snap.data()?.broadcast) {
     throw new Error("Org-wide headlines are read-only");
@@ -84,20 +86,22 @@ export async function updateHeadline(
     title,
     body,
     kind,
+    ...stamp(uid),
   });
 
   revalidateHeadlines(teamId);
 }
 
 export async function deleteHeadline(teamId: string, headlineId: string) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "headlines", headlineId, teamId);
   if (snap.data()?.broadcast) {
     throw new Error("Org-wide headlines are read-only");
   }
+  await stampBeforeDelete(db.collection("headlines").doc(headlineId), uid);
   await db.collection("headlines").doc(headlineId).delete();
   // Spec §5.1: the thread, notifications and activity go with the headline.
-  await purgeItem(db, { type: "headline", id: headlineId });
+  await purgeItem(db, { type: "headline", id: headlineId }, uid);
   revalidateHeadlines(teamId);
 }
 
@@ -119,7 +123,7 @@ export async function setHeadlineDiscussed(
   headlineId: string,
   discussed: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "headlines", headlineId, teamId);
   await db
     .collection("headlines")
@@ -127,6 +131,7 @@ export async function setHeadlineDiscussed(
     .update({
       discussed,
       discussed_at: discussed ? FieldValue.serverTimestamp() : null,
+      ...stamp(uid),
     });
   revalidateHeadlines(teamId);
 }
@@ -141,21 +146,22 @@ export async function setHeadlineArchived(
   headlineId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "headlines", headlineId, teamId);
   // Restore clears discuss so standing items don't re-archive on next Finish.
   await db
     .collection("headlines")
     .doc(headlineId)
-    .update(
-      archived
+    .update({
+      ...(archived
         ? { archived_at: FieldValue.serverTimestamp() }
         : {
             archived_at: null,
             discussed: false,
             discussed_at: null,
-          },
-    );
+          }),
+      ...stamp(uid),
+    });
   revalidateHeadlines(teamId);
 }
 
@@ -167,7 +173,7 @@ export async function archiveHeadlinesDiscussedDuringMeeting(
   teamId: string,
   meetingId: string,
 ): Promise<number> {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   const m = meetingSnap.data() ?? {};
   const startMs =
@@ -193,7 +199,7 @@ export async function archiveHeadlinesDiscussedDuringMeeting(
   const batch = db.batch();
   for (const d of snap.docs) {
     if (!ids.has(d.id)) continue;
-    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp() });
+    batch.update(d.ref, { archived_at: FieldValue.serverTimestamp(), ...stamp(uid) });
   }
   await batch.commit();
   revalidateHeadlines(teamId);

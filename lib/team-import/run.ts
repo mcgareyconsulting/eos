@@ -221,7 +221,11 @@ export async function runTeamImport(
 
   await writer.flush();
   // Placeholder owners got a team_members row in the batch just flushed.
-  if (!dryRun) await syncUsersTeamIds(db, owners.created.map((c) => c.user_id));
+  if (!dryRun) await syncUsersTeamIds(
+      db,
+      owners.created.map((c) => c.user_id),
+      options.actorUid,
+    );
 
   return {
     dryRun,

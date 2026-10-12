@@ -98,7 +98,7 @@ export async function removePersonFromTeam(
     });
   }
   await batch.commit();
-  await syncUserTeamIds(db, userId);
+  await syncUserTeamIds(db, userId, actorUid);
   await recordAccessChange(db, {
     kind: "roster",
     actorUid,

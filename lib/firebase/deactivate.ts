@@ -106,7 +106,7 @@ export async function deactivatePerson(
     { merge: true },
   );
   await batch.commit();
-  await syncUserTeamIds(db, uid);
+  await syncUserTeamIds(db, uid, actorUid);
 
   // 3. Unassign everything they own, in chunks.
   const plan = planUnassign(await loadOwned(db, uid));

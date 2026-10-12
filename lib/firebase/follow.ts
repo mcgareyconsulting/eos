@@ -2,6 +2,7 @@
 // Gated by `accessFor(type).canFollow` (docs/PERMISSIONS_SPEC.md §5.3).
 
 import type { Firestore } from "firebase-admin/firestore";
+import { stamp } from "@/lib/audit-stamp";
 import type { Viewer } from "@/lib/access";
 import { registryFor, type ItemRef } from "@/lib/item-registry";
 import { applyFollow, storedFollowerIds, withAutoFollowers } from "@/lib/follow";
@@ -40,7 +41,7 @@ export async function setFollowingAs(
     await db
       .collection(registryFor(item.ref.type).collection)
       .doc(item.ref.id)
-      .update({ follower_ids: change.follower_ids });
+      .update({ follower_ids: change.follower_ids, ...stamp(viewer.uid) });
   }
   return { ok: true, item, changed: change.changed };
 }
@@ -55,6 +56,8 @@ export async function autoFollow(
   ref: ItemRef,
   uids: readonly (string | null | undefined)[],
   deps: ViewerDeps = {},
+  /** The person whose comment triggered this, stamped for the audit log (C-07). */
+  actorUid?: string | null,
 ): Promise<string[]> {
   try {
     const item = await loadItem(db, ref);
@@ -71,7 +74,7 @@ export async function autoFollow(
     await db
       .collection(registryFor(item.ref.type).collection)
       .doc(item.ref.id)
-      .update({ follower_ids });
+      .update({ follower_ids, ...(actorUid ? stamp(actorUid) : {}) });
     return allowed;
   } catch (e) {
     console.error(`[follow] auto-follow on ${ref.type}/${ref.id} failed:`, e);

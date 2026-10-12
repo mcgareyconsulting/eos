@@ -135,7 +135,7 @@ async function applyTeams(
 
   await stampBeforeDelete(droppedRefs, actorUid);
   await batch.commit();
-  await syncUserTeamIds(db, uid);
+  await syncUserTeamIds(db, uid, actorUid);
   await Promise.all(accessLog.map((e) => recordAccessChange(db, e)));
   return { added, removed, reroled };
 }
@@ -434,7 +434,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
     }
     await batch.commit();
     if (leaderUid) {
-      await syncUserTeamIds(db, leaderUid);
+      await syncUserTeamIds(db, leaderUid, actorUid);
       await recordAccessChange(db, {
         kind: "roster",
         actorUid,

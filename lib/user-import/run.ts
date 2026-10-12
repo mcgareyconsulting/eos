@@ -364,6 +364,7 @@ export async function runUserImport(
       pairs
         .filter((p) => !p.pending && !existingMembership.has(`${p.teamId}__${p.uid}`))
         .map((p) => p.uid),
+      opts.actorUid,
     );
   }
 

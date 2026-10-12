@@ -103,5 +103,5 @@ export async function writeMembership(
   });
 
   await batch.commit();
-  await syncUserTeamIds(db, opts.userId);
+  await syncUserTeamIds(db, opts.userId, opts.actorUid);
 }

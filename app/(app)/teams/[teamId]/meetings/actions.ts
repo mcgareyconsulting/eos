@@ -1,5 +1,6 @@
 "use server";
 
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { revalidatePath } from "next/cache";
 import { LONG_TEXT_MAX, requireMaxLength } from "@/lib/text-limits";
 import { redirect } from "next/navigation";
@@ -72,7 +73,7 @@ export async function createAgenda(
     items,
     created_by: uid,
     created_at: FieldValue.serverTimestamp(),
-    updated_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   revalidatePath(listPath(teamId));
   return { id: ref.id };
@@ -83,7 +84,7 @@ export async function updateAgenda(
   agendaId: string,
   input: { name: string; items: AgendaItem[] },
 ): Promise<void> {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid, db } = await requireTeamLeader(teamId);
   await requireTeamDoc(db, "agendas", agendaId, teamId);
   const name = validateAgendaName(input.name);
   const items = normalizeAgendaItems(input.items);
@@ -92,7 +93,7 @@ export async function updateAgenda(
   await db.collection("agendas").doc(agendaId).update({
     name,
     items,
-    updated_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   revalidatePath(listPath(teamId));
 }
@@ -101,8 +102,9 @@ export async function deleteAgenda(
   teamId: string,
   agendaId: string,
 ): Promise<void> {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid, db } = await requireTeamLeader(teamId);
   await requireTeamDoc(db, "agendas", agendaId, teamId);
+  await stampBeforeDelete(db.collection("agendas").doc(agendaId), uid);
   await db.collection("agendas").doc(agendaId).delete();
   revalidatePath(listPath(teamId));
 }
@@ -208,6 +210,7 @@ export async function startMeeting(
           FieldValue.serverTimestamp(),
         ended_reason: "stale",
         current_segment: "done",
+        ...stamp(uid),
       });
     }
     await batch.commit();
@@ -220,7 +223,7 @@ export async function startMeeting(
   // Fresh Issues hour: clear last meeting's vote tallies + any leftover credits
   // so ranking starts at zero. Tallies are kept on issue docs between meetings
   // (so the Issues tab still shows how the room ranked them after Finish).
-  await resetTeamIssueVotes(db, teamId);
+  await resetTeamIssueVotes(db, teamId, uid);
 
   // Take a copy of the team's durable rotation for this meeting. Reconciling
   // here (rather than trusting the stored array) means a meeting always opens
@@ -252,6 +255,7 @@ export async function startMeeting(
     agenda_id: agenda.agenda_id,
     agenda_name: agenda.agenda_name,
     agenda_items: agenda.agenda_items,
+    ...stamp(uid),
   });
   revalidatePath(`/teams/${teamId}/issues`);
   redirect(detailPath(teamId, ref.id));
@@ -260,16 +264,20 @@ export async function startMeeting(
 // Wipe per-user vote credits and denormalized issue.votes for a team.
 // Used at L10 start so each meeting re-ranks from a clean slate; not at end,
 // so the Issues tab keeps last-meeting totals until the next L10 begins.
-async function resetTeamIssueVotes(db: Firestore, teamId: string) {
+async function resetTeamIssueVotes(db: Firestore, teamId: string, uid: string) {
   const [voteRows, issueRows] = await Promise.all([
     db.collection("issue_votes").where("team_id", "==", teamId).get(),
     db.collection("issues").where("team_id", "==", teamId).get(),
   ]);
   // Batches cap at 500 ops; teams are well under that for votes + issues.
+  await stampBeforeDelete(
+    voteRows.docs.map((d) => d.ref),
+    uid,
+  );
   const batch = db.batch();
   voteRows.docs.forEach((d) => batch.delete(d.ref));
   issueRows.docs.forEach((d) => {
-    if ((d.data().votes ?? 0) !== 0) batch.update(d.ref, { votes: 0 });
+    if ((d.data().votes ?? 0) !== 0) batch.update(d.ref, { votes: 0, ...stamp(uid) });
   });
   if (!voteRows.empty || issueRows.docs.some((d) => (d.data().votes ?? 0) !== 0)) {
     await batch.commit();
@@ -335,6 +343,7 @@ export async function advanceSegment(
     if (target === "done" || target === current) return;
 
     tx.update(ref, {
+      ...stamp(uid),
       current_segment: target,
       segment_started_at: FieldValue.serverTimestamp(),
       // Every stage after Segue is its own round-robin, so a stage change
@@ -387,6 +396,7 @@ export async function takeWheel(teamId: string, meetingId: string) {
     tx.update(ref, {
       driver_id: uid,
       driver_since: FieldValue.serverTimestamp(),
+      ...stamp(uid),
     });
   });
 }
@@ -404,7 +414,7 @@ export async function setSpeakingOrder(
   meetingId: string,
   uids: string[],
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid: actorUid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
 
   // Never trust a client-supplied uid list: it becomes the team's durable
@@ -420,9 +430,13 @@ export async function setSpeakingOrder(
   if (!isPermutation) throw new Error("Invalid speaking order");
 
   const batch = db.batch();
-  batch.update(db.collection("teams").doc(teamId), { speaking_order: uids });
+  batch.update(db.collection("teams").doc(teamId), {
+    speaking_order: uids,
+    ...stamp(actorUid),
+  });
   batch.update(db.collection("meetings").doc(meetingId), {
     speaking_order: uids,
+    ...stamp(actorUid),
   });
   await batch.commit();
 }
@@ -434,7 +448,7 @@ export async function setSpeakingIndex(
   meetingId: string,
   index: number,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   let order = (snap.data()?.speaking_order as string[]) ?? [];
   const update: Record<string, unknown> = {};
@@ -447,6 +461,7 @@ export async function setSpeakingIndex(
     update.speaking_order = order;
   }
   update.speaking_index = clampSpeakerIndex(index, order.length);
+  Object.assign(update, stamp(uid));
   await db.collection("meetings").doc(meetingId).update(update);
 }
 
@@ -458,12 +473,12 @@ export async function setDiscussingIssue(
   meetingId: string,
   issueId: string | null,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db
     .collection("meetings")
     .doc(meetingId)
-    .update({ current_issue_id: issueId });
+    .update({ current_issue_id: issueId, ...stamp(uid) });
 }
 
 /**
@@ -490,12 +505,12 @@ export async function setVotingOpen(
   meetingId: string,
   open: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "meetings", meetingId, teamId);
   await db
     .collection("meetings")
     .doc(meetingId)
-    .update({ voting_open: open });
+    .update({ voting_open: open, ...stamp(uid) });
 }
 
 // Group-transport action — ending the meeting is the driver's call (Finish),
@@ -527,6 +542,7 @@ export async function endMeeting(teamId: string, meetingId: string) {
       tx.update(ref, {
         current_segment: "done",
         ended_at: FieldValue.serverTimestamp(),
+        ...stamp(uid),
       });
       return "ended";
     },
@@ -552,6 +568,10 @@ export async function endMeeting(teamId: string, meetingId: string) {
         .where("team_id", "==", teamId)
         .get();
       if (!voteRows.empty) {
+        await stampBeforeDelete(
+          voteRows.docs.map((d) => d.ref),
+          uid,
+        );
         const batch = db.batch();
         voteRows.docs.forEach((d) => batch.delete(d.ref));
         await batch.commit();
@@ -601,14 +621,14 @@ export async function saveMeetingNotes(
   meetingId: string,
   formData: FormData,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   if (meetingSnap.data()?.ended_at != null) {
     throw new Error("Meeting notes cannot be edited after the meeting ends.");
   }
   const notes = String(formData.get("notes") ?? "");
   requireMaxLength(notes, LONG_TEXT_MAX, "Meeting notes");
-  await db.collection("meetings").doc(meetingId).update({ notes });
+  await db.collection("meetings").doc(meetingId).update({ notes, ...stamp(uid) });
   revalidatePath(detailPath(teamId, meetingId));
 }
 
@@ -648,6 +668,7 @@ export async function rateMeeting(
     rating: Math.round(rating),
     notes,
     created_at: existing.data()?.created_at ?? FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   revalidatePath(detailPath(teamId, meetingId));
 }
@@ -660,7 +681,7 @@ export async function setAttendeeAbsence(
   userId: string,
   absent: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const meetingSnap = await requireTeamDoc(db, "meetings", meetingId, teamId);
   if (meetingSnap.data()?.ended_at != null) {
     throw new Error("Attendance is frozen once the meeting has concluded.");
@@ -670,6 +691,7 @@ export async function setAttendeeAbsence(
     absent_user_ids: absent
       ? FieldValue.arrayUnion(userId)
       : FieldValue.arrayRemove(userId),
+    ...stamp(uid),
   });
   revalidatePath(detailPath(teamId, meetingId));
 }
@@ -689,7 +711,7 @@ export async function deleteMeeting(teamId: string, meetingId: string) {
  * Must be a full permutation of the current roster.
  */
 export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid: actorUid, db } = await requireTeamLeader(teamId);
   const members = await getTeamMembers(teamId);
   const memberIds = new Set(members.map((m) => m.user_id));
   const unique = new Set(uids);
@@ -699,7 +721,7 @@ export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
     uids.every((uid) => memberIds.has(uid));
   if (!isPermutation) throw new Error("Invalid speaking order");
 
-  await db.collection("teams").doc(teamId).update({ speaking_order: uids });
+  await db.collection("teams").doc(teamId).update({ speaking_order: uids, ...stamp(actorUid) });
   revalidatePath(`/teams/${teamId}/meetings`);
 }
 
@@ -708,7 +730,7 @@ export async function setTeamSpeakingOrder(teamId: string, uids: string[]) {
 // is where the Meet REST API `spaces.create` would mint a per-meeting link at
 // meeting start instead of a fixed team-level URL. Leaders only.
 export async function setMeetLink(teamId: string, formData: FormData) {
-  const { db } = await requireTeamLeader(teamId);
+  const { uid, db } = await requireTeamLeader(teamId);
   const raw = String(formData.get("meet_link") ?? "").trim();
 
   // Accept a Meet URL or a blank (to clear). Reject anything that isn't a
@@ -730,6 +752,6 @@ export async function setMeetLink(teamId: string, formData: FormData) {
   await db
     .collection("teams")
     .doc(teamId)
-    .set({ meet_link: meetLink }, { merge: true });
+    .set({ meet_link: meetLink, ...stamp(uid) }, { merge: true });
   revalidatePath(`/teams/${teamId}/meetings`);
 }

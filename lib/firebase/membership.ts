@@ -19,6 +19,7 @@
 // or doubled call heals on the next one. A role change alone does not change
 // the set, so role-only writes do not need to call it.
 
+import { stamp } from "@/lib/audit-stamp";
 import type { Firestore } from "firebase-admin/firestore";
 
 export const TEAM_IDS_FIELD = "team_ids";
@@ -81,6 +82,8 @@ export function planTeamIdsSync(
 export async function syncUserTeamIds(
   db: Firestore,
   uid: string,
+  /** The signed-in person behind the roster change, stamped for the audit log (C-07). */
+  actorUid?: string | null,
 ): Promise<TeamIdsPlan> {
   const [memberships, profile] = await Promise.all([
     db.collection("team_members").where("user_id", "==", uid).get(),
@@ -94,7 +97,10 @@ export async function syncUserTeamIds(
     await db
       .collection("users")
       .doc(uid)
-      .set({ [TEAM_IDS_FIELD]: plan.after }, { merge: true });
+      .set(
+        { [TEAM_IDS_FIELD]: plan.after, ...(actorUid ? stamp(actorUid) : {}) },
+        { merge: true },
+      );
   }
   return plan;
 }
@@ -103,11 +109,12 @@ export async function syncUserTeamIds(
 export async function syncUsersTeamIds(
   db: Firestore,
   uids: Iterable<string>,
+  actorUid?: string | null,
 ): Promise<Map<string, TeamIdsPlan>> {
   const out = new Map<string, TeamIdsPlan>();
   for (const uid of new Set(uids)) {
     if (!uid) continue;
-    out.set(uid, await syncUserTeamIds(db, uid));
+    out.set(uid, await syncUserTeamIds(db, uid, actorUid));
   }
   return out;
 }

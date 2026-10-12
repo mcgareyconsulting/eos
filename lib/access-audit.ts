@@ -130,3 +130,64 @@ export async function recordAdminView(
     if (!isAlreadyExists(err)) console.error("admin_view audit write failed", err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Event shaping for items
+// ---------------------------------------------------------------------------
+
+type RockAccessFields = {
+  audience_team_ids: readonly string[];
+  audience_user_ids: readonly string[];
+  private: boolean;
+};
+
+/**
+ * access_change rows for one rock save: one `rock_audience` row when either
+ * audience list changed (before/after carry both lists, plus the added and
+ * removed ids), one `rock_private` row when Private flipped. Empty when
+ * nothing about who can see the rock changed.
+ */
+export function rockAccessEvents(
+  actorUid: string,
+  rockId: string,
+  teamId: string,
+  before: RockAccessFields,
+  after: RockAccessFields,
+): AccessChangeInput[] {
+  const out: AccessChangeInput[] = [];
+  const teams = diffIds(before.audience_team_ids, after.audience_team_ids);
+  const users = diffIds(before.audience_user_ids, after.audience_user_ids);
+  const audienceChanged =
+    teams.added.length + teams.removed.length + users.added.length + users.removed.length > 0;
+  if (audienceChanged) {
+    out.push({
+      kind: "rock_audience",
+      actorUid,
+      entityId: rockId,
+      teamId,
+      before: {
+        audience_team_ids: [...before.audience_team_ids],
+        audience_user_ids: [...before.audience_user_ids],
+      },
+      after: {
+        audience_team_ids: [...after.audience_team_ids],
+        audience_user_ids: [...after.audience_user_ids],
+        added_team_ids: teams.added,
+        removed_team_ids: teams.removed,
+        added_user_ids: users.added,
+        removed_user_ids: users.removed,
+      },
+    });
+  }
+  if (before.private !== after.private) {
+    out.push({
+      kind: "rock_private",
+      actorUid,
+      entityId: rockId,
+      teamId,
+      before: { private: before.private },
+      after: { private: after.private },
+    });
+  }
+  return out;
+}

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "./auth";
 import { getAdminAuth } from "./admin";
+import { adminViewDocId, recordAdminView } from "@/lib/access-audit";
 
 // Test-only seam: every export below resolves its user/auth dependency
 // through this (defaulted) bag instead of calling requireFirebaseUser /
@@ -13,6 +14,20 @@ export type TeamsDeps = {
   user?: typeof requireFirebaseUser;
   auth?: typeof getAdminAuth;
 };
+
+// Admin-view log dedupe. The audit doc id already makes the row unique per
+// admin/team/day; this process-local memo only saves the repeat write attempt
+// on every navigation. Bounded so a long-lived instance cannot grow it forever.
+const adminViewSeen = new Set<string>();
+
+async function noteAdminView(db: Firestore, uid: string, teamId: string) {
+  const now = new Date();
+  const key = adminViewDocId(uid, teamId, now);
+  if (adminViewSeen.has(key)) return;
+  await recordAdminView(db, uid, teamId, now);
+  if (adminViewSeen.size > 5000) adminViewSeen.clear();
+  adminViewSeen.add(key);
+}
 
 // Mirror of lib/teams.ts `requireTeamAccess()` for Firebase. Verifies the
 // current user is a member of the requested team, or an org admin (god mode).
@@ -29,6 +44,10 @@ export const requireTeamAccess = cache(
 
     const teamSnap = await db.collection("teams").doc(teamId).get();
     if (!teamSnap.exists) notFound();
+
+    // An admin opening a team they are not on leaves one audit row per admin
+    // per team per day (spec section 6). Never blocks or fails the page.
+    if (!membership.exists && isAdmin) await noteAdminView(db, uid, teamId);
 
     return {
       uid,

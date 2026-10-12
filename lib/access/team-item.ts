@@ -65,9 +65,8 @@ export const issueAccess: CompletableAccessModule<IssueSubject> = {
   canSee: gate,
   canEdit: gate,
   canComment: gate,
-  // SPEC P5: issues become followable (follow = canSee, owner + assigner
-  // locked in). Today only to-dos carry `follower_ids`.
-  canFollow: () => false,
+  // Spec §5.3: follow = canSee (owner + assigner locked, lib/follow.ts).
+  canFollow: gate,
   // SPEC P9: mentions on every item type, refused server-side unless the
   // person canSee. Today mentions are parsed on to-do comments only.
   canMention: (item, person) => gate(item, person),
@@ -82,8 +81,8 @@ export const headlineAccess: CompletableAccessModule<HeadlineSubject> = {
   // SPEC P9: headlines get a thread (spec §5.1). Today `entity_comments`
   // accepts only issue / rock / todo.
   canComment: () => false,
-  // SPEC P5: headlines become followable; the creator is the locked owner.
-  canFollow: () => false,
+  // Spec §5.3: follow = canSee; the creator is the locked owner.
+  canFollow: gate,
   // SPEC P9: mentions on headlines (needs the thread first).
   canMention: (item, person) => gate(item, person),
   canDelete: (item, viewer) => gate(item, viewer) && item.broadcast !== true,

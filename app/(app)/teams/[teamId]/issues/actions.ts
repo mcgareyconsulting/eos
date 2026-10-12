@@ -10,6 +10,7 @@ import {
 } from "@/lib/firebase/teams";
 import { MAX_VOTES_PER_TEAM } from "@/lib/issues";
 import { selectIssuesClosedDuringMeeting } from "@/lib/todos-archive";
+import { assignmentPatch } from "@/lib/follow";
 
 const STATUSES = ["open", "solving", "solved", "dropped"] as const;
 type Status = (typeof STATUSES)[number];
@@ -98,6 +99,11 @@ export async function addIssue(teamId: string, formData: FormData) {
     archived_at: null,
     resolution_todo_id: null,
     source_meeting_id,
+    // Follow (lib/follow.ts): the creator assigned it; creator + owner
+    // follow, both locked while the assignment stands.
+    created_by: uid,
+    assigned_by: uid,
+    follower_ids: [...new Set([uid, owner_id].filter((x): x is string => !!x))],
     created_at: FieldValue.serverTimestamp(),
   });
 
@@ -132,13 +138,23 @@ export async function updateIssueMeta(
     keep: (snap.data()?.owner_id as string | null | undefined) ?? null,
   });
 
+  // A new owner makes the caller the assigner; old owner and assigner stay
+  // as plain followers (lib/follow.ts). Unchanged owner: fields untouched.
+  const assignment = assignmentPatch("issue", snap.data() ?? {}, owner_id, uid);
   await db.collection("issues").doc(issueId).update({
     title,
     type,
     owner_id,
     priority,
     description,
+    ...(assignment.reassigned
+      ? {
+          assigned_by: assignment.assigned_by,
+          follower_ids: assignment.follower_ids,
+        }
+      : {}),
   });
+  // SPEC P9: emitEvent(db, {type: "issue", id}, "owner_changed", uid, …).
 
   // Moving to long-term via the edit modal needs the same live-meeting pin
   // cleanup as setIssueType.
@@ -287,7 +303,8 @@ export async function setIssueType(
 export async function deleteIssue(teamId: string, issueId: string) {
   const { db } = await requireTeamAccess(teamId);
   await requireTeamDoc(db, "issues", issueId, teamId);
-  // Cascade: issue + votes + comments (entity_comments)
+  // Cascade: issue + votes + comments (entity_comments).
+  // SPEC P9 hook: purgeItem(db, { type: "issue", id: issueId }) here.
   const [votes, comments] = await Promise.all([
     db.collection("issue_votes").where("issue_id", "==", issueId).get(),
     db

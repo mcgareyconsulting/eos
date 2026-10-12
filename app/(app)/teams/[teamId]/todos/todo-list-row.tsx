@@ -15,6 +15,7 @@ import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoModal } from "./edit-todo-modal";
 import { FollowButton } from "./follow-button";
+import { effectiveFollowers, isLockedFollower } from "@/lib/follow";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
 import { Eyebrow } from "@/components/ui/text";
 
@@ -33,6 +34,9 @@ export type TodoListItem = {
   closed_on?: string | null;
   /** Who gets notified about it — see lib/notifications.ts. */
   follower_ids?: string[] | null;
+  /** Who made the current assignment (locked follower); legacy: created_by. */
+  assigned_by?: string | null;
+  created_by?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -84,7 +88,9 @@ export function TodoListRow({
     rootRef.current?.scrollIntoView({ block: "center" });
   }, [focused]);
 
-  const followerIds = todo.follower_ids ?? [];
+  // Owner + assigner always follow and cannot unfollow (lib/follow.ts).
+  const followerIds = effectiveFollowers("todo", todo);
+  const lockedFollow = isLockedFollower("todo", todo, userId);
   const following = followerIds.includes(userId);
   const remove = deleteTodo.bind(null, teamId, todo.id);
   const toggleArchive = setTodoArchived.bind(
@@ -331,6 +337,7 @@ export function TodoListRow({
               teamId={teamId}
               todoId={todo.id}
               following={following}
+              locked={lockedFollow}
               followerCount={followerIds.length}
               className="pt-1"
             />

@@ -1,34 +1,28 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ACCESS_EXEMPT_KINDS,
+  NO_ACCESS_TEXT,
   addedFollowerRecipients,
   applyFollowerEdit,
-  commentRecipients,
-  followersAfterOwnerChange,
+  filterByAccess,
   initialFollowers,
+  itemLabel,
+  kindForEvent,
   notificationColumn,
   notificationHref,
   notificationVerb,
-  recipientsFor,
+  planRecipients,
   snippetOf,
   summarizeTodoChanges,
-  toggleFollower,
+  todoEditEvents,
 } from "./notifications";
-import { writeNotifications } from "./firebase/notifications";
-import { FakeFirestore } from "./test-support/fake-firestore";
 
-describe("follow relation", () => {
+describe("to-do follower pickers", () => {
   test("a new to-do is followed by its creator and its owner", () => {
-    assert.deepEqual(
-      initialFollowers({ creatorId: "me", ownerId: "you" }),
-      ["me", "you"],
-    );
-    assert.deepEqual(initialFollowers({ creatorId: "me", ownerId: "me" }), [
-      "me",
-    ]);
-    assert.deepEqual(initialFollowers({ creatorId: "me", ownerId: null }), [
-      "me",
-    ]);
+    assert.deepEqual(initialFollowers({ creatorId: "me", ownerId: "you" }), ["me", "you"]);
+    assert.deepEqual(initialFollowers({ creatorId: "me", ownerId: "me" }), ["me"]);
+    assert.deepEqual(initialFollowers({ creatorId: "me", ownerId: null }), ["me"]);
   });
 
   test("explicit picks at creation follow too, without doubling anyone", () => {
@@ -51,23 +45,9 @@ describe("follow relation", () => {
       }),
       ["them"],
     );
-    assert.deepEqual(
-      addedFollowerRecipients({ creatorId: "me", ownerId: null, extraIds: [] }),
-      [],
-    );
   });
 
-  test("reassigning adds the new owner and keeps everyone else", () => {
-    assert.deepEqual(followersAfterOwnerChange(["a", "b"], "c"), [
-      "a",
-      "b",
-      "c",
-    ]);
-    assert.deepEqual(followersAfterOwnerChange(["a", "b"], "b"), ["a", "b"]);
-    assert.deepEqual(followersAfterOwnerChange(undefined, "z"), ["z"]);
-  });
-
-  test("editing the follower list keeps the owner and diffs the rest", () => {
+  test("editing the list keeps the locked followers and diffs the rest", () => {
     assert.deepEqual(
       applyFollowerEdit({
         current: ["me", "you", "old"],
@@ -77,7 +57,18 @@ describe("follow relation", () => {
       }),
       { next: ["you", "new", "me"], added: ["new"], removed: ["old"] },
     );
-    // Private: nobody but the owner, whatever was picked.
+    // The assigner cannot be unticked either.
+    assert.deepEqual(
+      applyFollowerEdit({
+        current: ["boss", "you", "x"],
+        ownerId: "you",
+        lockedIds: ["boss"],
+        picked: [],
+        visibility: "team",
+      }),
+      { next: ["you", "boss"], added: [], removed: ["x"] },
+    );
+    // Private: only the locked followers stay.
     assert.deepEqual(
       applyFollowerEdit({
         current: ["me", "you"],
@@ -88,50 +79,100 @@ describe("follow relation", () => {
       { next: ["you"], added: [], removed: ["me"] },
     );
   });
-
-  test("toggle follows and unfollows without duplicates", () => {
-    assert.deepEqual(toggleFollower(["a"], "b", true), ["a", "b"]);
-    assert.deepEqual(toggleFollower(["a", "b"], "b", true), ["a", "b"]);
-    assert.deepEqual(toggleFollower(["a", "b"], "a", false), ["b"]);
-    assert.deepEqual(toggleFollower(null, "a", false), []);
-  });
 });
 
-describe("who gets told", () => {
+describe("planRecipients", () => {
   test("the actor never hears about their own action", () => {
     assert.deepEqual(
-      recipientsFor({
-        followerIds: ["me", "you"],
-        actorId: "me",
-        visibility: "team",
-        ownerId: "you",
-      }),
-      ["you"],
+      planRecipients({ followers: ["me", "you"], event: "completed", actorId: "me" }),
+      [{ uid: "you", kind: "completed" }],
     );
-  });
-
-  test("a private to-do only ever tells its owner", () => {
     assert.deepEqual(
-      recipientsFor({
-        followerIds: ["creator", "owner", "lurker"],
-        actorId: "creator",
-        visibility: "private",
-        ownerId: "owner",
+      planRecipients({
+        followers: [],
+        event: null,
+        actorId: "me",
+        direct: { assigned: ["me"] },
       }),
-      ["owner"],
+      [],
     );
   });
 
   test("a mentioned follower gets the mention, not a second comment row", () => {
-    const r = commentRecipients({
-      followerIds: ["author", "owner", "watcher"],
-      mentionedIds: ["owner", "outsider", "author"],
-      actorId: "author",
-      visibility: "team",
-      ownerId: "owner",
+    assert.deepEqual(
+      planRecipients({
+        followers: ["author", "owner", "watcher"],
+        event: "comment",
+        actorId: "author",
+        direct: { mention: ["owner", "outsider", "author"] },
+      }),
+      [
+        { uid: "owner", kind: "mention" },
+        { uid: "outsider", kind: "mention" },
+        { uid: "watcher", kind: "comment" },
+      ],
+    );
+  });
+
+  test("direct kinds follow the precedence order; one row per person", () => {
+    const plan = planRecipients({
+      followers: ["a", "b", "c", "d"],
+      event: "reassigned",
+      actorId: "z",
+      direct: { following: ["a", "b"], assigned: ["a"], unassigned: ["c"] },
     });
-    assert.deepEqual(r.mention, ["owner", "outsider"]);
-    assert.deepEqual(r.comment, ["watcher"]);
+    assert.deepEqual(plan, [
+      { uid: "a", kind: "assigned" },
+      { uid: "c", kind: "unassigned" },
+      { uid: "b", kind: "following" },
+      { uid: "d", kind: "updated" },
+    ]);
+  });
+
+  test("no event: followers hear nothing, only the named people", () => {
+    assert.deepEqual(
+      planRecipients({
+        followers: ["f1", "f2"],
+        event: null,
+        actorId: "z",
+        direct: { audience_added: ["f1", "x"] },
+      }),
+      [
+        { uid: "f1", kind: "audience_added" },
+        { uid: "x", kind: "audience_added" },
+      ],
+    );
+  });
+
+  test("events map onto the hub's kinds", () => {
+    assert.equal(kindForEvent("comment"), "comment");
+    for (const e of ["completed", "solved", "discussed", "milestone_completed"] as const) {
+      assert.equal(kindForEvent(e), "completed", e);
+    }
+    assert.equal(kindForEvent("reopened"), "reopened");
+    for (const e of ["title_changed", "owner_changed", "value_posted", "archived"] as const) {
+      assert.equal(kindForEvent(e), "updated", e);
+    }
+  });
+});
+
+describe("filterByAccess (send-time check)", () => {
+  const plan = [
+    { uid: "sees", kind: "comment" as const },
+    { uid: "blind", kind: "mention" as const },
+    { uid: "blind2", kind: "assigned" as const },
+    { uid: "lost", kind: "unassigned" as const },
+    { uid: "leader", kind: "metric_private" as const },
+  ];
+  test("drops recipients who cannot see the item", () => {
+    const out = filterByAccess(plan, (uid) => uid === "sees");
+    assert.deepEqual(
+      out.map((d) => d.uid),
+      ["sees", "lost", "leader"],
+    );
+  });
+  test("only the 'you lost it' kinds are exempt", () => {
+    assert.deepEqual([...ACCESS_EXEMPT_KINDS].sort(), ["metric_private", "unassigned"]);
   });
 });
 
@@ -139,7 +180,7 @@ describe("what the row says", () => {
   const nameOf = (id: string) => ({ s: "Steph Benes" })[id];
   const due = (iso: string) => `d(${iso})`;
 
-  test("summarises title, owner and due changes; ignores the rest", () => {
+  test("summarises title, owner and due changes for the trace", () => {
     assert.equal(
       summarizeTodoChanges(
         { title: "A", owner_id: "j", due_date: "2026-09-20" },
@@ -151,41 +192,84 @@ describe("what the row says", () => {
     );
     assert.equal(
       summarizeTodoChanges(
-        { title: "A", owner_id: "j", due_date: "2026-09-20" },
-        { title: "A ", owner_id: "j", due_date: "2026-09-20" },
+        { title: "A", owner_id: "j", due_date: null },
+        { title: "A ", owner_id: "j", due_date: null },
         nameOf,
         due,
       ),
       null,
     );
-    assert.equal(
-      summarizeTodoChanges(
-        { title: "A", owner_id: "j", due_date: "2026-09-20" },
-        { title: "A", owner_id: null, due_date: null },
-        nameOf,
-        due,
-      ),
-      "Owner No Owner · Due date cleared",
+  });
+
+  test("to-do edits fire the spec's events, most significant first", () => {
+    const base = { title: "A", owner_id: "j", due_date: null, description: null };
+    assert.deepEqual(todoEditEvents(base, { ...base }), []);
+    assert.deepEqual(
+      todoEditEvents(base, { ...base, title: "B", owner_id: "k", description: "x" }),
+      ["reassigned", "title_changed", "description_changed"],
     );
+    assert.deepEqual(todoEditEvents(base, { ...base, due_date: "2026-10-01" }), [
+      "due_date_changed",
+    ]);
   });
 
   test("snippets collapse whitespace and truncate with an ellipsis", () => {
     assert.equal(snippetOf("  hello\n\n  world "), "hello world");
-    const long = "x".repeat(200);
-    const s = snippetOf(long, 20);
+    const s = snippetOf("x".repeat(200), 20);
     assert.equal(s.length, 20);
     assert.ok(s.endsWith("…"));
   });
 
-  test("verbs and links", () => {
+  test("verbs: with a read-time title, or the item's noun without one", () => {
     assert.equal(
-      notificationVerb({ kind: "assigned", entity_title: "Call Jane" }),
+      notificationVerb({ kind: "assigned", entity_type: "todo" }, "Call Jane"),
       "assigned you “Call Jane”",
     );
+    assert.equal(
+      notificationVerb({ kind: "assigned", entity_type: "todo" }),
+      "assigned you a to-do",
+    );
+    assert.equal(
+      notificationVerb({ kind: "updated", event: "due_date_changed", entity_type: "todo" }, "X"),
+      "changed the due date of “X”",
+    );
+    assert.equal(
+      notificationVerb({ kind: "mention", event: "comment", entity_type: "issue" }),
+      "mentioned you on an issue",
+    );
+    // Legacy rows: no event.
+    assert.equal(
+      notificationVerb({ kind: "updated", entity_type: "todo" }),
+      "updated a to-do",
+    );
+    assert.equal(
+      notificationVerb({ kind: "following", entity_type: "todo" }, "Ship it"),
+      "added you as a follower on “Ship it”",
+    );
+  });
+
+  test("links come from the registry", () => {
     assert.equal(
       notificationHref({ team_id: "t1", entity_type: "todo", entity_id: "a b" }),
       "/teams/t1/todos?todo=a%20b",
     );
+    assert.equal(
+      notificationHref({ team_id: "t1", entity_type: "issue", entity_id: "i1" }),
+      "/teams/t1/issues?issue=i1",
+    );
+  });
+
+  test("labels: title + snippet per type", () => {
+    assert.deepEqual(itemLabel("metric", { name: " Calls ", description: "x" }), {
+      title: "Calls",
+      snippet: "x",
+    });
+    assert.deepEqual(itemLabel("headline", { title: "H", body: "b" }), {
+      title: "H",
+      snippet: "b",
+    });
+    assert.deepEqual(itemLabel("todo", { title: "T" }), { title: "T", snippet: null });
+    assert.equal(NO_ACCESS_TEXT, "You do not have access to this item.");
   });
 });
 
@@ -198,72 +282,12 @@ describe("hub columns", () => {
       "reopened",
       "updated",
       "assigned",
+      "unassigned",
+      "audience_added",
+      "metric_private",
       "following",
     ] as const) {
       assert.equal(notificationColumn({ kind }), "activity");
     }
-  });
-
-  test("the following verb reads as an invitation, not an assignment", () => {
-    assert.equal(
-      notificationVerb({ kind: "following", entity_title: "Ship it" }),
-      "added you as a follower on “Ship it”",
-    );
-  });
-});
-
-describe("writing rows", () => {
-  test("one row per recipient, actor name resolved once from /users", async () => {
-    const fake = new FakeFirestore();
-    fake.seed("users", "actor", { display_name: "Steph Benes" });
-    const n = await writeNotifications({
-      db: fake.asFirestore(),
-      recipientIds: ["a", "b", "a", ""],
-      kind: "completed",
-      team: { id: "t1", name: "ESD" },
-      entity: { type: "todo", id: "todo-1", title: "Ship it" },
-      actor: { id: "actor" },
-    });
-    assert.equal(n, 2);
-    const rows = fake.docsIn("notifications").map((d) => d.data);
-    assert.equal(rows.length, 2);
-    assert.deepEqual(
-      rows.map((r) => r.user_id).sort(),
-      ["a", "b"],
-    );
-    assert.equal(rows[0].actor_name, "Steph Benes");
-    assert.equal(rows[0].kind, "completed");
-    assert.equal(rows[0].detail, null);
-    assert.equal(rows[0].read_at, null);
-  });
-
-  test("no recipients writes nothing and never touches /users", async () => {
-    const fake = new FakeFirestore();
-    const n = await writeNotifications({
-      db: fake.asFirestore(),
-      recipientIds: [],
-      kind: "comment",
-      team: { id: "t1", name: "ESD" },
-      entity: { type: "todo", id: "todo-1", title: "Ship it" },
-      actor: { id: "ghost" },
-    });
-    assert.equal(n, 0);
-    assert.equal(fake.docsIn("notifications").length, 0);
-  });
-
-  test("an unnamed actor falls back to Someone", async () => {
-    const fake = new FakeFirestore();
-    await writeNotifications({
-      db: fake.asFirestore(),
-      recipientIds: ["a"],
-      kind: "mention",
-      team: { id: "t1", name: "ESD" },
-      entity: { type: "todo", id: "todo-1", title: "Ship it" },
-      actor: { id: "ghost" },
-      detail: "  hey  ",
-    });
-    const row = fake.docsIn("notifications")[0].data;
-    assert.equal(row.actor_name, "Someone");
-    assert.equal(row.detail, "hey");
   });
 });

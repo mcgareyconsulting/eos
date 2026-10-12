@@ -95,6 +95,7 @@ export async function deleteHeadline(teamId: string, headlineId: string) {
     throw new Error("Org-wide headlines are read-only");
   }
   await db.collection("headlines").doc(headlineId).delete();
+  // SPEC P9 hook: purgeItem(db, { type: "headline", id: headlineId }) here.
   revalidateHeadlines(teamId);
 }
 

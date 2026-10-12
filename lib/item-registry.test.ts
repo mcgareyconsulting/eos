@@ -58,10 +58,10 @@ describe("item registry (spec §5.0)", () => {
     assert.equal(ownerOf("rock", {}), null);
   });
 
-  test("assigner: every type but headline; no field stores it yet", () => {
+  test("assigner: every type but headline, stored as assigned_by", () => {
     for (const type of ITEM_TYPES) {
       assert.equal(registryFor(type).hasAssigner, type !== "headline", type);
-      assert.equal(registryFor(type).assignerField, null, type);
+      assert.equal(registryFor(type).assignerField, type === "headline" ? null : "assigned_by", type);
     }
   });
 

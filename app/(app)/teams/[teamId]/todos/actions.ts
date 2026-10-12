@@ -19,7 +19,8 @@ import {
 import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
 import { canTickMilestone } from "@/lib/rocks-share";
 import { canMutateTodo, type TodoAccessCaller } from "@/lib/todo-access";
-import { notify } from "@/lib/firebase/notifications";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { purgeItem } from "@/lib/firebase/purge";
 import { recordActivity } from "@/lib/firebase/activity";
 import { autoArchiveActivity, joinNames } from "@/lib/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
@@ -27,12 +28,12 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   addedFollowerRecipients,
   applyFollowerEdit,
-  followersAfterOwnerChange,
   initialFollowers,
-  recipientsFor,
   summarizeTodoChanges,
-  toggleFollower,
+  todoEditEvents,
 } from "@/lib/notifications";
+import { assignerOf, assignmentPatch } from "@/lib/follow";
+import { setFollowing } from "../follow/actions";
 
 // Build the Google Tasks mirror payload from a to-do doc's fields plus any
 // just-applied overrides. Every to-do write passes the *complete* current
@@ -74,21 +75,9 @@ function followerIdsOf(data: FirebaseFirestore.DocumentData): string[] {
     : [];
 }
 
-/** The pieces every to-do notification needs — see lib/notifications.ts. */
-function notifyTarget(
-  teamId: string,
-  teamName: string,
-  todoId: string,
-  data: FirebaseFirestore.DocumentData,
-) {
-  return {
-    team: { id: teamId, name: teamName },
-    entity: {
-      type: "todo" as const,
-      id: todoId,
-      title: String(data.title ?? "To-do"),
-    },
-  };
+/** The ref every to-do notification is keyed by (milestones reclassify on load). */
+function todoRef(todoId: string) {
+  return { type: "todo" as const, id: todoId };
 }
 
 const VISIBILITIES = ["team", "private"] as const;
@@ -99,7 +88,7 @@ function pathFor(teamId: string) {
 }
 
 export async function addTodo(teamId: string, formData: FormData) {
-  const { uid, db, team } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
 
   const title = String(formData.get("title") ?? "").trim();
   const owner_id = String(formData.get("owner_id") ?? "") || uid;
@@ -163,34 +152,24 @@ export async function addTodo(teamId: string, formData: FormData) {
     source_rock_id: null,
     google_task_id: null,
     created_by: uid,
+    // The creator made the assignment: a locked follower (lib/follow.ts).
+    assigned_by: uid,
     follower_ids,
     created_at: FieldValue.serverTimestamp(),
   });
 
-  const target = notifyTarget(teamId, team.name, ref.id, { title });
   const dueDetail = due_date ? `Due ${formatDateOnly(due_date)}` : null;
-  if (owner_id !== uid) {
-    await notify({
-      db,
-      recipientIds: [owner_id],
-      kind: "assigned",
-      ...target,
-      actor: { id: uid },
-      detail: dueDetail,
-    });
-  }
   const addedFollowers = addedFollowerRecipients({
     creatorId: uid,
     ownerId: owner_id,
     extraIds: picked,
   });
-  await notify({
-    db,
-    recipientIds: addedFollowers,
-    kind: "following",
-    ...target,
-    actor: { id: uid },
-    detail: dueDetail,
+  await emitEvent(db, todoRef(ref.id), null, uid, {
+    teamId,
+    direct: {
+      assigned: owner_id !== uid ? [owner_id] : [],
+      following: addedFollowers,
+    },
   });
 
   const names = await loadUserNames(db, [owner_id, ...addedFollowers]);
@@ -275,7 +254,7 @@ export async function toggleTodo(
   todoId: string,
   currentlyComplete: boolean,
 ) {
-  const { uid, db, team, isAdmin, membershipRole } =
+  const { uid, db, isAdmin, membershipRole } =
     await requireTeamAccess(teamId);
   const snap = await requireTickableTodo(db, todoId, teamId, uid, isAdmin);
   const data = snap.data() ?? {};
@@ -290,10 +269,6 @@ export async function toggleTodo(
   // own team) is still an event on the rock's team: file the notification
   // and the activity row there, as that user — not under the viewing team.
   const homeTeamId = String(data.team_id ?? teamId);
-  const homeTeam =
-    homeTeamId === teamId
-      ? team
-      : { name: String((await db.collection("teams").doc(homeTeamId).get()).data()?.name ?? "Team") };
   const nowComplete = !currentlyComplete;
   await db
     .collection("todos")
@@ -302,17 +277,8 @@ export async function toggleTodo(
       completed_at: nowComplete ? FieldValue.serverTimestamp() : null,
     });
 
-  await notify({
-    db,
-    recipientIds: recipientsFor({
-      followerIds: followerIdsOf(data),
-      actorId: uid,
-      visibility: data.visibility,
-      ownerId: data.owner_id,
-    }),
-    kind: nowComplete ? "completed" : "reopened",
-    ...notifyTarget(homeTeamId, homeTeam.name, todoId, data),
-    actor: { id: uid },
+  await emitEvent(db, todoRef(todoId), nowComplete ? "completed" : "reopened", uid, {
+    teamId: homeTeamId,
   });
   await recordActivity({
     db,
@@ -354,7 +320,7 @@ export async function updateTodoMeta(
   todoId: string,
   formData: FormData,
 ) {
-  const { uid, db, team, isAdmin, membershipRole } =
+  const { uid, db, isAdmin, membershipRole } =
     await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
@@ -381,11 +347,16 @@ export async function updateTodoMeta(
   const reassigned = owner_id !== prevOwner;
   await requireRosterOwner(teamId, owner_id, { self: uid, keep: prevOwner });
 
+  // Assignment (lib/follow.ts): a new owner makes the caller the assigner;
+  // new owner + new assigner lock, the old ones stay as plain followers.
+  const assignment = assignmentPatch("todo", data, owner_id, uid);
+
   // Followers. When the Edit form's picker was used (`followers_edited`),
-  // the list is exactly what was left checked, plus the owner
-  // (lib/notifications.ts applyFollowerEdit). Otherwise — an older form, or
-  // a surface without the picker — the old rule holds: a new owner starts
-  // following and nobody is dropped.
+  // the list is exactly what was left checked, plus the locked followers
+  // (lib/notifications.ts applyFollowerEdit) — and, on a reassignment, the
+  // old owner and assigner, who stay followers until they unfollow
+  // themselves. Otherwise — an older form, or a surface without the picker
+  // — nobody is dropped.
   let follower_ids: string[];
   let addedFollowers: string[] = [];
   let removedFollowers: string[] = [];
@@ -399,6 +370,10 @@ export async function updateTodoMeta(
     const edit = applyFollowerEdit({
       current: followerIdsOf(data),
       ownerId: owner_id,
+      lockedIds: [
+        assignment.assigned_by,
+        ...(reassigned ? [prevOwner, assignerOf("todo", data)] : []),
+      ],
       picked,
       visibility,
     });
@@ -408,9 +383,7 @@ export async function updateTodoMeta(
     addedFollowers = edit.added.filter((id) => id !== owner_id && id !== uid);
     removedFollowers = edit.removed;
   } else {
-    follower_ids = reassigned
-      ? followersAfterOwnerChange(followerIdsOf(data), owner_id)
-      : followerIdsOf(data);
+    follower_ids = assignment.follower_ids;
   }
 
   await db.collection("todos").doc(todoId).update({
@@ -421,6 +394,7 @@ export async function updateTodoMeta(
     visibility,
     weekly_focus: formData.get("weekly_focus") === "on",
     follower_ids,
+    assigned_by: assignment.assigned_by,
   });
 
   const taskId = await upsertTaskForTodo(
@@ -436,8 +410,31 @@ export async function updateTodoMeta(
     await db.collection("todos").doc(todoId).update({ google_task_id: taskId });
   }
 
-  // Tell followers what moved. The new owner hears "assigned you" instead of
-  // the generic summary; the actor hears nothing either way.
+  // Tell followers what moved (spec §5.3: title, due date, description,
+  // reassigned) — one row per person, for the most significant change. The
+  // new owner hears "assigned you"; added followers hear "added you"; the
+  // actor hears nothing. Rows are pointers: the summary is not copied in.
+  const prevDescription =
+    normalizeDescription(String(data.description ?? "")) || null;
+  const [event] = todoEditEvents(
+    {
+      title: String(data.title ?? ""),
+      owner_id: prevOwner,
+      due_date: (data.due_date as string | null) ?? null,
+      description: prevDescription,
+    },
+    { title, owner_id, due_date, description },
+  );
+  if (event || addedFollowers.length > 0) {
+    await emitEvent(db, todoRef(todoId), event ?? null, uid, {
+      teamId,
+      direct: {
+        assigned: reassigned && owner_id !== uid ? [owner_id] : [],
+        following: addedFollowers,
+      },
+    });
+  }
+
   const names = await loadUserNames(db, [
     owner_id,
     ...addedFollowers,
@@ -453,43 +450,6 @@ export async function updateTodoMeta(
     (id) => names.get(id),
     formatDateOnly,
   );
-  if (summary) {
-    const target = notifyTarget(teamId, team.name, todoId, { title });
-    const recipients = recipientsFor({
-      followerIds: follower_ids,
-      actorId: uid,
-      visibility,
-      ownerId: owner_id,
-    });
-    const assigned = reassigned && owner_id !== uid ? [owner_id] : [];
-    await notify({
-      db,
-      recipientIds: assigned,
-      kind: "assigned",
-      ...target,
-      actor: { id: uid },
-      detail: due_date ? `Due ${formatDateOnly(due_date)}` : null,
-    });
-    await notify({
-      db,
-      recipientIds: recipients.filter((id) => !assigned.includes(id)),
-      kind: "updated",
-      ...target,
-      actor: { id: uid },
-      detail: summary,
-    });
-  }
-  if (addedFollowers.length > 0) {
-    await notify({
-      db,
-      recipientIds: addedFollowers,
-      kind: "following",
-      ...notifyTarget(teamId, team.name, todoId, { title }),
-      actor: { id: uid },
-      detail: due_date ? `Due ${formatDateOnly(due_date)}` : null,
-    });
-  }
-
   // The trace records every change the form made, told or not.
   const entity = {
     type: "todo" as const,
@@ -501,8 +461,6 @@ export async function updateTodoMeta(
   if (summary) {
     await recordActivity({ db, teamId, entity, kind: "updated", actor, detail: summary });
   }
-  const prevDescription =
-    normalizeDescription(String(data.description ?? "")) || null;
   if (prevDescription !== description) {
     await recordActivity({ db, teamId, entity, kind: "description", actor });
   }
@@ -534,44 +492,16 @@ export async function updateTodoMeta(
 }
 
 /**
- * Follow or unfollow a to-do — the explicit half of the follow relation
- * (creator and owner follow automatically; anyone else on the team opts in
- * from the row, and anyone can opt out).
- *
- * Any member may follow any team-visible to-do. A private to-do is readable
- * by its owner only, so following one you don't own would subscribe you to
- * rows you can't open; the notification fan-out already filters that
- * (recipientsFor), so this only refuses the obvious case.
+ * Follow or unfollow a to-do (or milestone) — the to-do row's Follow
+ * control. A thin alias for the generic `setFollowing` (follow/actions.ts):
+ * gated by `canFollow`, and the owner and current assigner cannot unfollow.
  */
 export async function setTodoFollowing(
   teamId: string,
   todoId: string,
   following: boolean,
 ) {
-  const { uid, db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "todos", todoId, teamId);
-  const data = snap.data() ?? {};
-  if (data.visibility === "private" && ownerUidOf(data) !== uid) {
-    throw new Error("Only the owner can follow a private to-do");
-  }
-  await db
-    .collection("todos")
-    .doc(todoId)
-    .update({ follower_ids: toggleFollower(followerIdsOf(data), uid, following) });
-  await recordActivity({
-    db,
-    teamId,
-    entity: {
-      type: "todo",
-      id: todoId,
-      visibility: data.visibility,
-      ownerId: data.owner_id,
-    },
-    kind: following ? "followed" : "unfollowed",
-    actor: { id: uid },
-  });
-  revalidatePath(pathFor(teamId));
-  revalidatePath(`/teams/${teamId}/meetings`);
+  await setFollowing(todoRef(todoId), teamId, following);
 }
 
 /**
@@ -617,6 +547,8 @@ export async function deleteTodo(teamId: string, todoId: string) {
   const data = snap.data() ?? {};
   requireMutableTodo(data, { uid, isAdmin, membershipRole });
   await db.collection("todos").doc(todoId).delete();
+  // Spec §5.1: its thread, notifications and activity trace go with it.
+  await purgeItem(db, { type: data.source_rock_id ? "milestone" : "todo", id: todoId });
   await deleteTaskForTodo(ownerUidOf(data), data.google_task_id);
   revalidatePath(pathFor(teamId));
 }
@@ -641,7 +573,7 @@ export async function setTodoArchived(
   todoId: string,
   archived: boolean,
 ) {
-  const { uid, db, team, isAdmin, membershipRole } =
+  const { uid, db, isAdmin, membershipRole } =
     await requireTeamAccess(teamId);
   const snap = await requireTeamDoc(db, "todos", todoId, teamId);
   const data = snap.data() ?? {};
@@ -666,18 +598,7 @@ export async function setTodoArchived(
     );
 
   if (closingNow) {
-    await notify({
-      db,
-      recipientIds: recipientsFor({
-        followerIds: followerIdsOf(data),
-        actorId: uid,
-        visibility: data.visibility,
-        ownerId: data.owner_id,
-      }),
-      kind: "completed",
-      ...notifyTarget(teamId, team.name, todoId, data),
-      actor: { id: uid },
-    });
+    await emitEvent(db, todoRef(todoId), "completed", uid, { teamId });
     await recordActivity({
       db,
       teamId,

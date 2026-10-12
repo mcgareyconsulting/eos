@@ -96,7 +96,7 @@ describe("rockAccess — parity with lib/rocks-share.ts", () => {
         );
         assert.equal(rockAccess.canComment(rock, v), threadViaAction, "canComment");
         assert.equal(rockAccess.canMention(rock, v), rockAccess.canSee(rock, v), "canMention");
-        assert.equal(rockAccess.canFollow(rock, v), false, "canFollow");
+        assert.equal(rockAccess.canFollow(rock, v), rockAccess.canSee(rock, v), "canFollow = canSee");
         assert.equal(rockAccess.canSetCompanyFlag(rock, v), v.isAdmin, "company flag");
       });
     }

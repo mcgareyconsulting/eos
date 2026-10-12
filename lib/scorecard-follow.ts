@@ -6,7 +6,13 @@
 
 import { metricAccess, type MetricSubject } from "@/lib/access/metric";
 import type { Viewer } from "@/lib/access/types";
-import { lockedFollowers, storedFollowerIds } from "@/lib/follow";
+import {
+  effectiveFollowers,
+  isFollowing,
+  isLockedFollower,
+  lockedFollowers,
+  storedFollowerIds,
+} from "@/lib/follow";
 import type { MetricEvent } from "@/lib/item-registry";
 
 type Doc = Readonly<Record<string, unknown>>;
@@ -63,4 +69,16 @@ export function metricEditEvents(
 export function isNewValue(prev: unknown, next: number | null): boolean {
   if (next === null) return false;
   return prev !== next;
+}
+
+/** What a row's Follow control shows for `uid` (owner and assigner are locked). */
+export function metricFollowState(
+  doc: Doc,
+  uid: string,
+): { following: boolean; locked: boolean; count: number } {
+  return {
+    following: isFollowing("metric", doc, uid),
+    locked: isLockedFollower("metric", doc, uid),
+    count: effectiveFollowers("metric", doc).length,
+  };
 }

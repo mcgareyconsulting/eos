@@ -13,6 +13,7 @@ import {
   metricGroupForTeam,
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
+import { metricFollowState } from "@/lib/scorecard-follow";
 import { normalizeMetricInterval } from "@/lib/scorecard-periods";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { EntityPageHeader } from "@/components/entity-page-header";
@@ -107,6 +108,7 @@ export default async function ScorecardPage({
         direction: x.direction,
         owner_id: x.owner_id ?? null,
         is_public: x.is_public === true,
+        follow: metricFollowState({ ...x, team_id: home }, uid),
         // The group as *this* team stores it — its own for a borrowed row —
         // which is what the inline editor edits. `sectionName` below is the
         // one that decides which header the row renders under.

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { metricFollowState } from "@/lib/scorecard-follow";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import {
   canArchiveMetric,
@@ -59,6 +60,7 @@ export function SegmentScorecard({
   speakingOrder: speakingOrderProp,
   absentUserIds = [],
   isAdmin = false,
+  isLeader = false,
   viewerId,
   teamNameById = {},
   ownerNameById = {},
@@ -78,6 +80,8 @@ export function SegmentScorecard({
   absentUserIds?: string[];
   /** Org admins may log values on a borrowed measurable; nobody else may. */
   isAdmin?: boolean;
+  /** Leader of this team: may archive its own measurables (spec 3.4). */
+  isLeader?: boolean;
   /** Archive / Restore in the room is owner-or-admin, as on the tab. */
   viewerId: string;
   /**
@@ -162,11 +166,23 @@ export function SegmentScorecard({
             teamId,
             uid: viewerId,
             isAdmin,
+            // Leaders of the home team only; a borrowed row is not theirs.
+            isLeader: !borrowed && isLeader,
           }),
+          follow: metricFollowState(m, viewerId),
           isArchived: isArchivedMetric(m),
         };
       });
-  }, [owned, sharedIn, teamId, teamNameById, ownerNameById, isAdmin, viewerId]);
+  }, [
+    owned,
+    sharedIn,
+    teamId,
+    teamNameById,
+    ownerNameById,
+    isAdmin,
+    isLeader,
+    viewerId,
+  ]);
 
   // Counted across both views so the toggle's numbers hold steady, the same
   // way the standalone tabs count regardless of the period tab.

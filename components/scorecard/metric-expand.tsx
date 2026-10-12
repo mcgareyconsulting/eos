@@ -26,6 +26,7 @@ import {
   type ScorecardColumn,
 } from "@/lib/scorecard-periods";
 import { TrendChart } from "./trend-chart";
+import { MetricFollowButton } from "./metric-follow-button";
 
 /**
  * The drop-down panel under an expanded grid row: five facts, the Trends
@@ -53,6 +54,7 @@ export function MetricExpand({
   values,
   panelWidth,
   manage,
+  follow,
 }: {
   metric: {
     id: string;
@@ -79,6 +81,8 @@ export function MetricExpand({
    * passes `showManage={false}` — a meeting reads the scorecard, it does not
    * restructure it.
    */
+  /** Follow control for the row (spec 3.4). Absent = none (e.g. the metric board). */
+  follow?: { teamId: string; following: boolean; locked: boolean; count: number };
   manage?: {
     teamId: string;
     group: string | null;
@@ -190,6 +194,18 @@ export function MetricExpand({
             width={panelWidth ? panelWidth - 37 : undefined}
           />
         </div>
+
+        {follow && (
+          <div className="flex items-center border-t border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+            <MetricFollowButton
+              teamId={follow.teamId}
+              metricId={metric.id}
+              following={follow.following}
+              locked={follow.locked}
+              followerCount={follow.count}
+            />
+          </div>
+        )}
 
         {manage?.archiveOnly ? (
           // The L10's bar: Archive / Restore and nothing else. Edit, Group and

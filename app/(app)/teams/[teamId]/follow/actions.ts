@@ -54,6 +54,7 @@ export async function setFollowing(
   for (const t of new Set([teamId, item.teamId].filter(Boolean))) {
     revalidatePath(`/teams/${t}/todos`);
     revalidatePath(`/teams/${t}/meetings`);
+    if (item.ref.type === "metric") revalidatePath(`/teams/${t}/scorecard`);
     if (item.ref.type !== "todo") {
       revalidatePath(`/teams/${t}/rocks`);
       revalidatePath(`/teams/${t}/issues`);

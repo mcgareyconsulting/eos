@@ -149,3 +149,22 @@ export function assignmentPatch(
     reassigned: true,
   };
 }
+
+/**
+ * Stored followers after the item's audience shrank (a to-do went from team
+ * to private): the locked owner and assigner always stay; every other
+ * follower stays only if `canSee` says they still can. Going back to team
+ * adds nobody — the list is not rebuilt from the past, so people pruned on
+ * the way to private do not come back (spec §3.2, §5.3).
+ */
+export function followersAfterAccessChange(
+  type: ItemType,
+  doc: Doc,
+  canSee: (uid: string) => boolean,
+): string[] {
+  const locked = lockedFollowers(type, doc);
+  return uniq([
+    ...locked,
+    ...storedFollowerIds(doc).filter((id) => canSee(id)),
+  ]);
+}

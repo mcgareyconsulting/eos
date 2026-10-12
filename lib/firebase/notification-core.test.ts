@@ -209,6 +209,7 @@ describe("read-time peek", () => {
       title: "Ship it",
       snippet: "the thing",
       href: "/teams/T/todos?todo=t1",
+      assignedBy: "lead",
     });
     assert.deepEqual(await peekItem(db, { type: "todo", id: "t1" }, v.get("out")!), {
       access: "none",
@@ -239,7 +240,7 @@ describe("read-time peek", () => {
     const v = await loadViewers(f.asFirestore(), ["mem"], noAdmins);
     const labels = await labelNotifications(f.asFirestore(), v.get("mem")!, ["n1", "n2"]);
     assert.deepEqual(Object.keys(labels), ["n1"]);
-    assert.deepEqual(labels.n1, { actorName: "Lee Lead", peek: { access: "none" } });
+    assert.deepEqual(labels.n1, { actorName: "Lee Lead", assignedByName: null, peek: { access: "none" } });
   });
 
   test("a todos doc with a rock is reclassified as a milestone", async () => {

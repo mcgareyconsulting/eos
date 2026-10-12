@@ -33,12 +33,19 @@ import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
 import {
   addedFollowerRecipients,
+  assignmentRecipients,
   applyFollowerEdit,
   initialFollowers,
   summarizeTodoChanges,
   todoEditEvents,
 } from "@/lib/notifications";
-import { assignerOf, assignmentPatch } from "@/lib/follow";
+import {
+  assignerOf,
+  assignmentPatch,
+  followersAfterAccessChange,
+} from "@/lib/follow";
+import { todoAccess } from "@/lib/access";
+import { loadViewers } from "@/lib/firebase/items";
 import { setFollowing } from "../follow/actions";
 
 // Build the Google Tasks mirror payload from a to-do doc's fields plus any
@@ -301,7 +308,13 @@ export async function updateTodoMeta(
   todoId: string,
   formData: FormData,
 ) {
-  const { uid, db, data } = await requireTeamTodo(teamId, todoId, "edit");
+  const { uid, db, data, item } = await requireTeamTodo(
+    teamId,
+    todoId,
+    "edit",
+  );
+  // A milestone is a todos doc too; locked followers follow its registry entry.
+  const itemType = item.ref.type;
 
   const title = String(formData.get("title") ?? "").trim();
   if (!title) throw new Error("Title required");
@@ -335,7 +348,7 @@ export async function updateTodoMeta(
 
   // Assignment (lib/follow.ts): a new owner makes the caller the assigner;
   // new owner + new assigner lock, the old ones stay as plain followers.
-  const assignment = assignmentPatch("todo", data, owner_id, uid);
+  const assignment = assignmentPatch(itemType, data, owner_id, uid);
 
   // Followers. When the Edit form's picker was used (`followers_edited`),
   // the list is exactly what was left checked, plus the locked followers
@@ -358,7 +371,7 @@ export async function updateTodoMeta(
       ownerId: owner_id,
       lockedIds: [
         assignment.assigned_by,
-        ...(reassigned ? [prevOwner, assignerOf("todo", data)] : []),
+        ...(reassigned ? [prevOwner, assignerOf(itemType, data)] : []),
       ],
       picked,
       visibility,
@@ -370,6 +383,28 @@ export async function updateTodoMeta(
     removedFollowers = edit.removed;
   } else {
     follower_ids = assignment.follower_ids;
+  }
+
+  // Team -> private: drop followers who can no longer see it (only the
+  // creator, the assignee and admins can). Private -> team adds nobody back.
+  if (visibility === "private" && data.visibility !== "private") {
+    const next = {
+      ...data,
+      team_id: String(data.team_id ?? teamId),
+      owner_id,
+      visibility,
+      assigned_by: assignment.assigned_by,
+    };
+    const candidates = [...new Set([...follower_ids, ...followerIdsOf(data)])];
+    const viewers = await loadViewers(db, candidates);
+    follower_ids = followersAfterAccessChange(
+      itemType,
+      { ...next, follower_ids: candidates },
+      (id) => {
+        const v = viewers.get(id);
+        return !!v && todoAccess.canSee(next, v);
+      },
+    );
   }
 
   await db.collection("todos").doc(todoId).update({
@@ -411,11 +446,18 @@ export async function updateTodoMeta(
     },
     { title, owner_id, due_date, description },
   );
-  if (event || addedFollowers.length > 0) {
+  const who = assignmentRecipients({
+    prevOwnerId: prevOwner,
+    nextOwnerId: owner_id,
+    actorId: uid,
+  });
+  if (event || addedFollowers.length > 0 || reassigned) {
     await emitEvent(db, todoRef(todoId), event ?? null, uid, {
-      teamId,
+      // File under the to-do's own team, not the page it was edited from.
+      teamId: item.teamId || teamId,
       direct: {
-        assigned: reassigned && owner_id !== uid ? [owner_id] : [],
+        assigned: who.assigned,
+        unassigned: who.unassigned,
         following: addedFollowers,
       },
     });

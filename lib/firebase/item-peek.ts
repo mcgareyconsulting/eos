@@ -7,6 +7,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import type { Viewer } from "@/lib/access";
 import { isItemType, linkFor, type ItemRef } from "@/lib/item-registry";
 import { itemLabel } from "@/lib/notifications";
+import { assignerIdOf } from "@/lib/todo-lists";
 import { canSeeItem, loadItem } from "./items";
 import { loadUserNames } from "./user-names";
 
@@ -20,6 +21,8 @@ export type ItemPeek =
       title: string;
       snippet: string | null;
       href: string;
+      /** To-dos and milestones: who made the current assignment (D1 context). */
+      assignedBy: string | null;
     }
   | { access: "none" };
 
@@ -59,6 +62,10 @@ export async function peekItem(
     title,
     snippet,
     href: linkFor(item.ref, item.teamId),
+    assignedBy:
+      item.ref.type === "todo" || item.ref.type === "milestone"
+        ? assignerIdOf(item.data)
+        : null,
   };
 }
 
@@ -66,6 +73,8 @@ export async function peekItem(
 export type NotificationLabel = {
   actorName: string;
   peek: ItemPeek;
+  /** Display name of `peek.assignedBy`, when there is one. */
+  assignedByName: string | null;
 };
 
 /**
@@ -85,10 +94,6 @@ export async function labelNotifications(
     .filter((s) => s.exists && s.data()?.user_id === viewer.uid)
     .map((s) => ({ id: s.id, data: s.data() ?? {} }));
 
-  const actorNames = await loadUserNames(
-    db,
-    rows.map((r) => String(r.data.actor_id ?? "")),
-  );
   const peeks = new Map<string, ItemPeek>();
   for (const r of rows) {
     const key = `${r.data.entity_type}/${r.data.entity_id}`;
@@ -102,11 +107,23 @@ export async function labelNotifications(
       ),
     );
   }
+  const assignerIds = [...peeks.values()].flatMap((p) =>
+    p.access === "ok" && p.assignedBy ? [p.assignedBy] : [],
+  );
+  const actorNames = await loadUserNames(db, [
+    ...rows.map((r) => String(r.data.actor_id ?? "")),
+    ...assignerIds,
+  ]);
   const out: Record<string, NotificationLabel> = {};
   for (const r of rows) {
+    const peek = peeks.get(`${r.data.entity_type}/${r.data.entity_id}`) ?? NO_ACCESS;
     out[r.id] = {
+      assignedByName:
+        peek.access === "ok" && peek.assignedBy
+          ? (actorNames.get(peek.assignedBy) ?? null)
+          : null,
       actorName: actorNames.get(String(r.data.actor_id ?? "")) ?? "Someone",
-      peek: peeks.get(`${r.data.entity_type}/${r.data.entity_id}`) ?? NO_ACCESS,
+      peek,
     };
   }
   return out;

@@ -228,7 +228,11 @@ export function DirectoryTable({
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <AccessChip access={p.access} />
+                  {p.deactivated ? (
+                    <Chip tone="amber">Deactivated</Chip>
+                  ) : (
+                    <AccessChip access={p.access} />
+                  )}
                   {/* Account state is an admin concern — it's what the old
                       People tab existed to show, and means nothing to
                       anyone who can't fix it. */}

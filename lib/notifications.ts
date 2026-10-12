@@ -312,7 +312,7 @@ export function summarizeTodoChanges(
   }
   if ((before.owner_id ?? null) !== (after.owner_id ?? null)) {
     const name = after.owner_id ? nameOf(after.owner_id) : null;
-    parts.push(`Owner ${name?.trim() || (after.owner_id ? "—" : "No Owner")}`);
+    parts.push(`Owner ${name?.trim() || (after.owner_id ? "—" : "Unassigned")}`);
   }
   if ((before.due_date ?? null) !== (after.due_date ?? null)) {
     parts.push(after.due_date ? `Due ${formatDue(after.due_date)}` : "Due date cleared");

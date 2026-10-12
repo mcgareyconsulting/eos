@@ -160,7 +160,9 @@ export async function updateMetric(
   const unitRaw = String(formData.get("unit") ?? "number");
   const directionRaw = String(formData.get("direction") ?? "gte");
   const goalRaw = String(formData.get("goal") ?? "").trim();
-  const owner_id = String(formData.get("owner_id") ?? "") || uid;
+  const owner_id = String(formData.get("owner_id") ?? "");
+  // Spec §2.6: an edited metric needs an owner (a deactivation can leave it null).
+  if (!owner_id) throw new Error("Choose an owner.");
   const intervalRaw = String(formData.get("interval") ?? "weekly");
   await requireRosterOwner(teamId, owner_id, {
     self: uid,

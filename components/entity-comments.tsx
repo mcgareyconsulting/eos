@@ -15,6 +15,7 @@ import {
   loadCommentAuthorNames,
   type CommentEntityType,
 } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
+import { loadPersonNames } from "@/app/(app)/teams/[teamId]/todos/actions";
 import { RichText } from "@/components/rich-text";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { cn } from "@/lib/utils";
@@ -114,7 +115,13 @@ export function EntityComments({
   useEffect(() => {
     if (unknownAuthors.length === 0) return;
     let cancelled = false;
-    loadCommentAuthorNames(teamId, unknownAuthors)
+    // A to-do thread can be read by its assignee from outside the team
+    // (P8a), who can't pass loadCommentAuthorNames' team gate; names are
+    // directory data, so the to-do path uses the ungated loader.
+    (entityType === "todo"
+      ? loadPersonNames(unknownAuthors)
+      : loadCommentAuthorNames(teamId, unknownAuthors)
+    )
       .then((got) => {
         if (cancelled) return;
         // Remember misses too, so an unnamed author isn't refetched forever.
@@ -125,7 +132,7 @@ export function EntityComments({
     return () => {
       cancelled = true;
     };
-  }, [teamId, unknownAuthors]);
+  }, [teamId, entityType, unknownAuthors]);
   const authorName = (id: string) => {
     if (id === userId) return "You";
     return (

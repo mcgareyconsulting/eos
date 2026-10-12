@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { normalizeDescription } from "@/lib/csv-import";
+import { canChangeTodoVisibility } from "@/lib/todo-access";
 import { updateTodoMeta } from "./actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,7 @@ type TodoForEdit = {
   visibility: "team" | "private";
   weekly_focus?: boolean;
   follower_ids?: string[] | null;
+  created_by?: string | null;
 };
 
 /** Every field the form owns, in one shape — see draftChanged. */
@@ -189,6 +191,7 @@ export function EditTodoModal({
 
         <ModalBody as="form" onSubmit={submit}>
           <TodoFormFields
+            teamId={teamId}
             members={members}
             title={title}
             onTitleChange={setTitle}
@@ -200,6 +203,7 @@ export function EditTodoModal({
             onDueChange={setDue}
             visibility={visibility}
             onVisibilityChange={setVisibility}
+            canPublish={canChangeTodoVisibility(todo, { uid: currentUserId }, "team")}
             weeklyFocus={weeklyFocus}
             onWeeklyFocusChange={setWeeklyFocus}
             followers={{

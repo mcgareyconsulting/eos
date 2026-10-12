@@ -5,6 +5,7 @@ import { UserPlus, X } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Input, Select } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { TodoOwnerField } from "./todo-owner-field";
 
 export type Member = { user_id: string; full_name: string };
 
@@ -144,6 +145,7 @@ function FollowerPicker({
 }
 
 export function TodoFormFields({
+  teamId,
   members,
 
   title,
@@ -161,6 +163,7 @@ export function TodoFormFields({
   showVisibility = true,
   visibility,
   onVisibilityChange,
+  canPublish = true,
 
   weeklyFocus,
   onWeeklyFocusChange,
@@ -169,6 +172,8 @@ export function TodoFormFields({
 
   error,
 }: {
+  /** The to-do's team — the owner picker's first tab. */
+  teamId: string;
   members: Member[];
 
   title: string;
@@ -187,12 +192,15 @@ export function TodoFormFields({
   showVisibility?: boolean;
   visibility: "team" | "private";
   onVisibilityChange: (value: "team" | "private") => void;
+  /** False on a private to-do the viewer neither created nor owns (an
+   *  admin): only the creator or the owner may share it (spec §3.2). */
+  canPublish?: boolean;
 
   weeklyFocus: boolean;
   onWeeklyFocusChange: (value: boolean) => void;
 
   /** The "Add followers" picker. Hidden for a private to-do, which only its
-   *  owner can read, let alone follow. `creatorFollows` is the Add form:
+   *  creator and owner can read — and both already follow it. `creatorFollows` is the Add form:
    *  the signed-in user is about to become the creator, who always follows. */
   followers?: {
     currentUserId: string;
@@ -224,19 +232,19 @@ export function TodoFormFields({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Owner">
-          <Select
+        {/* A div, not Field's <label>: the picker is a button + popover,
+            and a wrapping label would re-click it. */}
+        <div className="block">
+          <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            Owner
+          </span>
+          <TodoOwnerField
+            teamId={teamId}
+            members={members}
             value={ownerId}
-            onChange={(e) => onOwnerChange(e.target.value)}
-            className={SELECT_FILL}
-          >
-            {members.map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.full_name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+            onChange={onOwnerChange}
+          />
+        </div>
 
         {showVisibility && (
           <Field label="Visibility">
@@ -245,9 +253,16 @@ export function TodoFormFields({
               onChange={(e) => onVisibilityChange(e.target.value as "team" | "private")}
               className={SELECT_FILL}
             >
-              <option value="team">Team</option>
+              <option value="team" disabled={!canPublish}>
+                Team
+              </option>
               <option value="private">Private</option>
             </Select>
+            {!canPublish && (
+              <span className="mt-1 block text-[11px] leading-snug text-zinc-500">
+                Only its creator or owner can share it with the team.
+              </span>
+            )}
           </Field>
         )}
       </div>

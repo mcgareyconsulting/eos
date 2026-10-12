@@ -173,6 +173,7 @@ export function AddTodoModal({
 
         <ModalBody as="form" onSubmit={submit}>
           <TodoFormFields
+            teamId={teamId}
             members={members}
             title={title}
             onTitleChange={setTitle}

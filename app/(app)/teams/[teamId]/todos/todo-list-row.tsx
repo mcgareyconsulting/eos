@@ -65,6 +65,14 @@ export function TodoListRow({
    * name is wrong anyway: everything closed by Finish goes then, not Monday.
    */
   surface = "page",
+  /**
+   * "assignee": the viewer is the to-do's assignee from outside its team
+   * (spec §3 shape A) — they complete, comment and follow, but the edit,
+   * weekly-focus, archive and delete controls are the team's.
+   */
+  access = "full",
+  /** "Assigned by <name> · <team>" — rows from another team (D1). */
+  assignedPill,
 }: {
   teamId: string;
   todo: TodoListItem;
@@ -77,7 +85,10 @@ export function TodoListRow({
   commentComposer?: "inline" | "collapsed";
   showActivity?: boolean;
   surface?: "page" | "meeting";
+  access?: "full" | "assignee";
+  assignedPill?: string | null;
 }) {
+  const manage = access === "full";
   const [expanded, setExpanded] = useState(focused || defaultExpanded);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -163,10 +174,15 @@ export function TodoListRow({
           {todo.visibility === "private" && (
             <span
               className="ml-1.5 inline-flex translate-y-px items-center text-zinc-400"
-              title="Private — only you can see this to-do"
+              title="Private — only its creator, its owner and admins can see it"
             >
               <Lock className="h-3 w-3" />
               <span className="sr-only">Private</span>
+            </span>
+          )}
+          {assignedPill && (
+            <span className="ml-1.5 inline-flex max-w-full translate-y-[-1px] items-center rounded-full bg-hpb-gold/15 px-2 py-0.5 align-middle text-[10.5px] font-medium text-hpb-brown dark:text-hpb-gold">
+              <span className="truncate">{assignedPill}</span>
             </span>
           )}
           {archived && (
@@ -206,7 +222,7 @@ export function TodoListRow({
           className="flex shrink-0 items-center gap-0.5"
           onClick={(e) => e.stopPropagation()}
         >
-          {!archived && (
+          {manage && !archived && (
             <form action={toggleFocus}>
               <button
                 type="submit"
@@ -235,7 +251,7 @@ export function TodoListRow({
               </button>
             </form>
           )}
-          {!archived && (
+          {manage && !archived && (
             <EditTodoModal
               teamId={teamId}
               todo={todo}
@@ -243,6 +259,7 @@ export function TodoListRow({
               currentUserId={userId}
             />
           )}
+          {manage && (
           <form action={toggleArchive}>
             <button
               type="submit"
@@ -267,7 +284,8 @@ export function TodoListRow({
               <Archive className="h-4 w-4" />
             </button>
           </form>
-          {!archived && (
+          )}
+          {manage && !archived && (
             <ConfirmSubmitForm
               action={remove}
               confirmMessage="Delete this to-do? This can't be undone."
@@ -330,8 +348,8 @@ export function TodoListRow({
           </dl>
 
           {/* Follow + comments: the surface the notifications feed off.
-              Private to-dos are the owner's alone, so no follow control —
-              they already follow their own. */}
+              A private to-do is its creator's and owner's alone, and both
+              are locked followers, so no follow control. */}
           {todo.visibility !== "private" && (
             <FollowButton
               teamId={teamId}

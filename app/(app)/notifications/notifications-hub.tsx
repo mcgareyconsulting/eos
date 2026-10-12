@@ -36,6 +36,7 @@ import {
   type NotificationKind,
 } from "@/lib/notifications";
 import type { ItemEvent } from "@/lib/item-registry";
+import { assignedPillText } from "@/lib/todo-lists";
 import type { NotificationLabel } from "@/lib/firebase/item-peek";
 import { EmptyState } from "@/components/empty-state";
 import { LocalTime } from "@/components/local-time";
@@ -294,6 +295,7 @@ export function NotificationsHub({
           rows={activity}
           onOpen={setPeek}
           labels={labels}
+          viewerId={userId}
           emptyTitle={showArchived ? "Nothing archived" : "Nothing here"}
           emptyHint={
             showArchived
@@ -307,6 +309,7 @@ export function NotificationsHub({
           rows={mentions}
           onOpen={setPeek}
           labels={labels}
+          viewerId={userId}
           emptyTitle={showArchived ? "No archived mentions" : "No mentions"}
           emptyHint={
             showArchived
@@ -338,6 +341,7 @@ function HubColumn({
   rows,
   onOpen,
   labels,
+  viewerId,
   emptyTitle,
   emptyHint,
 }: {
@@ -346,6 +350,7 @@ function HubColumn({
   rows: NotificationRow[];
   onOpen: (n: NotificationRow) => void;
   labels: Record<string, NotificationLabel>;
+  viewerId: string;
   emptyTitle: string;
   emptyHint: string;
 }) {
@@ -365,6 +370,7 @@ function HubColumn({
                 key={n.id}
                 n={n}
                 label={labels[n.id]}
+                viewerId={viewerId}
                 onOpen={onOpen}
               />
             ))}
@@ -378,9 +384,11 @@ function HubColumn({
 function NotificationItem({
   n,
   label,
+  viewerId,
   onOpen,
 }: {
   n: NotificationRow;
+  viewerId: string;
   /** Undefined while loading; `peek.access === "none"` when denied. */
   label: NotificationLabel | undefined;
   onOpen: (n: NotificationRow) => void;
@@ -474,7 +482,14 @@ function NotificationItem({
                 className="hover:underline"
                 title="Open on its team's page"
               >
-                {visible.teamName}
+                {visible.assignedBy
+                  ? assignedPillText(
+                      { assigned_by: visible.assignedBy },
+                      viewerId,
+                      () => label?.assignedByName ?? undefined,
+                      visible.teamName,
+                    )
+                  : visible.teamName}
               </Link>
               {" · "}
             </>

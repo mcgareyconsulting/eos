@@ -10,7 +10,6 @@
 // the spec needs a field that does not exist yet the entry says so with a
 // `// SPEC Pn:` marker.
 
-import { notificationHref } from "@/lib/notifications";
 import type { AccessShape, ItemType } from "@/lib/access/types";
 
 export type { ItemType } from "@/lib/access/types";
@@ -88,10 +87,11 @@ export type ItemRegistryEntry<T extends ItemType = ItemType> = {
   /** Spec §5.0 "Assigner": does this type have one? */
   hasAssigner: boolean;
   /**
-   * The stored field naming who made the current assignment, or null when
-   * nothing stores it yet.
+   * The stored field naming who made the current assignment (spec §5.3
+   * locked follower), or null for a type without an assigner. Legacy docs
+   * lack it; lib/follow.ts `assignerOf` falls back to `created_by` (§8).
    */
-  assignerField: string | null;
+  assignerField: "assigned_by" | null;
   /** The thread this item's comments live in today, or null for none. */
   threadEntityType: ThreadEntityType | null;
   /** What followers are notified about (spec §5.3). */
@@ -111,15 +111,13 @@ const TODO_EVENTS: readonly TodoEvent[] = [
 ];
 
 function teamPath(teamId: string, page: string, param: string, id: string): string {
-  // Same form as notificationHref: the team id is a Firestore doc id, used
-  // raw; the item id is encoded.
+  // The team id is a Firestore doc id, used raw; the item id is encoded.
   return `/teams/${teamId}/${page}?${param}=${encodeURIComponent(id)}`;
 }
 
 // Deep links. Only the To-Dos page reads its param today (`?todo=`, the
-// link notifications already carry — reused verbatim from
-// lib/notifications.ts). SPEC P5: the Rocks, Issues, Scorecard and
-// Headlines pages learn to open `?rock=` / `?milestone=` / `?issue=` /
+// link notifications have always carried). SPEC P9: the Rocks, Issues,
+// Scorecard and Headlines pages learn to open `?rock=` / `?milestone=` / `?issue=` /
 // `?metric=` / `?headline=`; until then those links land on the right page
 // and the param is ignored.
 
@@ -130,9 +128,9 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     collection: "rocks",
     ownerField: "owner_id",
     hasAssigner: true,
-    // SPEC P5: `assigned_by`, written on every owner change (locked
-    // follower, spec §5.3). Does not exist today.
-    assignerField: null,
+    // Written on every owner change (lib/follow.ts assignmentPatch).
+    // SPEC P6: the rock actions start writing it (rocks/** is P6's).
+    assignerField: "assigned_by",
     threadEntityType: "rock",
     events: [
       "comment",
@@ -150,13 +148,13 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     collection: "todos",
     ownerField: "owner_id",
     hasAssigner: true,
-    // SPEC P5: `assigned_by`. Does not exist today.
-    assignerField: null,
+    // Milestone owner changes run through the rock modal (SPEC P6 writes it).
+    assignerField: "assigned_by",
     // A milestone is a to-do: it uses the to-do thread (spec change 2).
     threadEntityType: "todo",
     events: TODO_EVENTS,
     // "The milestone in its rock". The link builder only gets the
-    // milestone's id; the Rocks page resolves its rock (P5).
+    // milestone's id; the Rocks page resolves its rock (SPEC P9).
     link: (teamId, id) => teamPath(teamId, "rocks", "milestone", id),
   },
   todo: {
@@ -165,13 +163,12 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     collection: "todos",
     ownerField: "owner_id",
     hasAssigner: true,
-    // SPEC P5: `assigned_by`. Does not exist today (`created_by` does; the
-    // §8 migration seeds the assigner from it).
-    assignerField: null,
+    // Written by addTodo / updateTodoMeta; legacy docs fall back to
+    // `created_by` (the §8 migration seeds it from there).
+    assignerField: "assigned_by",
     threadEntityType: "todo",
     events: TODO_EVENTS,
-    link: (teamId, id) =>
-      notificationHref({ team_id: teamId, entity_type: "todo", entity_id: id }),
+    link: (teamId, id) => teamPath(teamId, "todos", "todo", id),
   },
   issue: {
     type: "issue",
@@ -179,8 +176,8 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     collection: "issues",
     ownerField: "owner_id",
     hasAssigner: true,
-    // SPEC P5: `assigned_by`. Does not exist today.
-    assignerField: null,
+    // Written by addIssue / updateIssueMeta (lib/follow.ts assignmentPatch).
+    assignerField: "assigned_by",
     threadEntityType: "issue",
     events: ["comment", "solved", "archived", "owner_changed"],
     link: (teamId, id) => teamPath(teamId, "issues", "issue", id),
@@ -191,8 +188,8 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     collection: "scorecard_metrics",
     ownerField: "owner_id",
     hasAssigner: true,
-    // SPEC P5: `assigned_by`. Does not exist today.
-    assignerField: null,
+    // SPEC P7: metric owner changes write it (scorecard/** is P7's).
+    assignerField: "assigned_by",
     // A metric has no thread (spec §5.1).
     threadEntityType: null,
     events: ["value_posted", "goal_changed", "owner_changed"],

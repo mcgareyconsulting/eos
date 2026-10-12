@@ -104,9 +104,8 @@ export const rockAccess: AccessModule<RockSubject> & {
   // `rockFullAccess` rule: one thread, open to everyone with the full rock.
   // SPEC P6: narrows with canSee (assignees and off-team owner drop out).
   canComment: seesFullRock,
-  // SPEC P5: rocks become followable (follow = canSee; owner + assigner
-  // locked). Today nothing follows a rock.
-  canFollow: () => false,
+  // Spec §5.3: follow = canSee (owner + assigner locked, lib/follow.ts).
+  canFollow: seesFullRock,
   // SPEC P9: mentions on rock comments, refused unless the person canSee.
   // Today rock comments carry no mentions.
   canMention: seesFullRock,

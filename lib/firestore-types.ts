@@ -20,7 +20,7 @@ export type WithId<T> = T & { id: string };
 // rocks
 // ---------------------------------------------------------------------------
 
-export type RockDoc = {
+export type RockDoc = FollowFields & {
   team_id: string;
   title: string;
   owner_id: string | null;
@@ -89,13 +89,27 @@ export type TodoDoc = {
   // each reassignment, and toggled by the Follow control on the row. Absent
   // on docs that predate the feature (treated as nobody following).
   follower_ids?: string[] | null;
+  // Who made the current assignment — a follower who cannot unfollow
+  // (lib/follow.ts). Written by addTodo / updateTodoMeta; absent on older
+  // docs, where `created_by` stands in (spec §8 migration).
+  assigned_by?: string | null;
+};
+
+/**
+ * The follow fields every followable item carries (docs/PERMISSIONS_SPEC.md
+ * §5.3, lib/follow.ts). Optional everywhere: legacy docs predate them.
+ */
+export type FollowFields = {
+  follower_ids?: string[] | null;
+  /** Types with an assigner only (not headlines). */
+  assigned_by?: string | null;
 };
 
 // ---------------------------------------------------------------------------
 // issues
 // ---------------------------------------------------------------------------
 
-export type IssueDoc = {
+export type IssueDoc = FollowFields & {
   team_id: string;
   title: string;
   description: string | null;
@@ -116,7 +130,7 @@ export type IssueDoc = {
 // headlines
 // ---------------------------------------------------------------------------
 
-export type HeadlineDoc = {
+export type HeadlineDoc = Omit<FollowFields, "assigned_by"> & {
   team_id: string;
   title: string;
   body: string | null;
@@ -140,7 +154,7 @@ export type HeadlineDoc = {
 // scorecard_metrics
 // ---------------------------------------------------------------------------
 
-export type ScorecardMetricDoc = {
+export type ScorecardMetricDoc = FollowFields & {
   team_id: string;
   name: string;
   unit: ScorecardUnit;

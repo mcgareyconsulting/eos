@@ -34,7 +34,7 @@ export type DirectKind =
   | "assigned"
   /** Your assignment was removed (spec §5.3). SPEC P8b/P10 produce it. */
   | "unassigned"
-  /** You or your team were added to a rock's audience. SPEC P6b. */
+  /** You or your team were added to a rock's audience (rocks/actions.ts via emitAudienceAdded). */
   | "audience_added"
   /** A metric your team uses became private (to its leaders). SPEC P7b. */
   | "metric_private"

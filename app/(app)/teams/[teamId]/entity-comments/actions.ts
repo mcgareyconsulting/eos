@@ -44,7 +44,8 @@ function parentCollection(
  * get a `mention` row, every other follower of the to-do gets a `comment`
  * row (lib/firebase/notifications.ts emitEvent, access-checked at send
  * time). The author and the mentioned people auto-follow the item, on every
- * thread type. Issue and rock comments notify nobody yet (SPEC P9).
+ * thread type. Rock comments notify the rock's followers; issue comments
+ * notify nobody yet (SPEC P9).
  */
 export async function addEntityComment(
   teamId: string,
@@ -55,7 +56,7 @@ export async function addEntityComment(
   if (!ENTITY_TYPES.includes(entityType)) throw new Error("Bad entity type");
   const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   // A rock has ONE thread, filed under its parent team, open to everyone
-  // with the whole rock (lib/rocks-share.ts hasFullRockView) — including an
+  // with the whole rock (lib/access/rock.ts rockAccess.canComment) — including an
   // assignee posting from their own team's page, where `teamId` is not the
   // rock's team. Other entities stay team-scoped.
   const parent =
@@ -104,6 +105,12 @@ export async function addEntityComment(
   // item (only people who may follow it — a mention never grants access).
   const ref = { type: entityType, id: entityId };
   await autoFollow(db, ref, [uid, ...mention_ids]);
+
+  if (entityType === "rock") {
+    // Every follower of the rock hears a comment (spec §5.3); the send-time
+    // check drops anyone who cannot see the rock.
+    await emitEvent(db, ref, "comment", uid, { teamId: threadTeamId });
+  }
 
   if (entityType === "todo") {
     const data = parent.data() ?? {};

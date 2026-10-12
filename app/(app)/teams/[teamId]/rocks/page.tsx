@@ -116,6 +116,11 @@ function mapFullRock(id: string, x: FirebaseFirestore.DocumentData) {
     audience_team_ids: audienceTeamIdsOf(subject),
     audience_user_ids: audienceUserIdsOf(subject),
     private: isPrivateRock(subject),
+    assigned_by: (x.assigned_by as string | null) ?? null,
+    created_by: (x.created_by as string | null) ?? null,
+    follower_ids: Array.isArray(x.follower_ids)
+      ? (x.follower_ids as unknown[]).filter((v): v is string => typeof v === "string")
+      : [],
     // archived_at is a Firestore Timestamp — pass millis, the raw class
     // instance can't cross into the client RockRow.
     archived_at: archivedAtMillis(x.archived_at),

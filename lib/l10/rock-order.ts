@@ -34,13 +34,19 @@ export type SortableRock = {
 };
 
 // Within a section: status (on_track, off_track, done, cancelled), then
-// quarter (so Q3/Q4 sit together), then due date (undated last).
+// quarter (so Q3/Q4 sit together), then due date (undated last). A row with
+// no known status (a block entry, which carries only the rock's headline)
+// sorts after the section's own rocks.
+function statusRank(status: string): number {
+  const i = STATUS_ORDER.indexOf(status);
+  return i < 0 ? STATUS_ORDER.length : i;
+}
+
 export function compareRocksForSection(
   a: SortableRock,
   b: SortableRock,
 ): number {
-  const byStatus =
-    STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+  const byStatus = statusRank(a.status) - statusRank(b.status);
   if (byStatus !== 0) return byStatus;
   const qa = a.quarter ?? "";
   const qb = b.quarter ?? "";

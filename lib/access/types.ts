@@ -10,9 +10,9 @@
 // `// SPEC Pn:` marker naming the build package that will change it
 // (docs/PERMISSIONS_BUILD_GRAPH.md). Grep for `SPEC P` to find them all.
 //
-// Nothing calls these modules yet (P3 is "no behaviour change"); the
-// existing call sites keep using lib/rocks-share.ts, lib/scorecard-share.ts
-// and lib/todo-access.ts, and the parity tests prove the wrappers agree.
+// The rock module (rock.ts) is live since P6a: rock pages and actions call
+// it. The others are still parity wrappers over lib/scorecard-share.ts and
+// lib/todo-access.ts until their packages land.
 
 /** The person asking. Build it once per request from the session + roster. */
 export type Viewer = {
@@ -105,4 +105,19 @@ export function passesTeamGate(
 /** `id` is a non-empty string equal to the viewer's uid. */
 export function isViewer(viewer: Viewer, id: unknown): boolean {
   return typeof id === "string" && id !== "" && id === viewer.uid;
+}
+
+/** Build a Viewer from plain lists (pages pass these across the RSC boundary). */
+export function viewerOf(
+  uid: string,
+  isAdmin: boolean,
+  teamIds: Iterable<string>,
+  leaderOf: Iterable<string> = [],
+): Viewer {
+  return {
+    uid,
+    isAdmin,
+    teamIds: new Set(teamIds),
+    leaderOf: new Set(leaderOf),
+  };
 }

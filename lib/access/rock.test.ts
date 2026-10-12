@@ -1,205 +1,185 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  canSetRockStatus,
-  canTickMilestone,
-  hasFullRockView,
-  rockAccessFor,
-  type MilestoneLike,
-} from "@/lib/rocks-share";
-import { milestoneAccess, rockAccess, toRockViewer, type RockSubject } from "./rock";
-import {
-  actionTeams,
-  OTHER,
-  PARENT,
-  SHARED,
-  VIEWER_ENTRIES,
-  VIEWERS,
-} from "./test-viewers";
-import type { Viewer } from "./types";
+  milestoneAccess,
+  rockAccess,
+  rockSubjectOf,
+  rockViewFor,
+  type RockSubject,
+} from "./rock";
+import { OTHER, PARENT, SHARED, UNRELATED, VIEWER_ENTRIES, VIEWERS } from "./test-viewers";
+import { viewerOf, type Viewer } from "./types";
 
-const milestones: (MilestoneLike & { id: string; team_id: string })[] = [
-  { id: "m-asg", owner_id: VIEWERS.assignee.uid, team_id: PARENT },
-  { id: "m-mem", owner_id: VIEWERS.parentMember.uid, team_id: PARENT },
-  { id: "m-locked", owner_id: VIEWERS.assignee.uid, team_id: PARENT, team_hidden: true },
-  { id: "m-none", owner_id: null, team_id: PARENT },
-];
+// The spec model (docs/PERMISSIONS_SPEC.md §3.3), P6a.
 
-function withMs(rock: RockSubject): RockSubject {
-  return {
-    ...rock,
-    milestones,
-    milestone_owner_ids: [
-      ...new Set(milestones.map((m) => m.owner_id).filter((x): x is string => !!x)),
-    ],
-  };
-}
+/** A person in the audience by name, on an unrelated team. */
+const audiencePerson: Viewer = viewerOf("u-aud", false, [UNRELATED]);
 
-const ROCKS: Record<string, RockSubject> = {
-  plain: { team_id: PARENT, owner_id: VIEWERS.parentMember.uid },
-  shared: { team_id: PARENT, owner_id: VIEWERS.parentMember.uid, shared_team_ids: [SHARED] },
-  offTeamOwner: {
-    team_id: PARENT,
-    owner_id: VIEWERS.offTeamOwner.uid,
-    shared_team_ids: [SHARED],
-  },
-  ownerOffAllTeams: { team_id: PARENT, owner_id: VIEWERS.assignee.uid },
-  teamOnly: {
-    team_id: PARENT,
-    owner_id: VIEWERS.parentMember.uid,
-    team_only: true,
-  },
-  withMilestones: withMs({ team_id: PARENT, owner_id: VIEWERS.parentMember.uid }),
-  sharedWithMilestones: withMs({
-    team_id: PARENT,
-    owner_id: VIEWERS.offTeamOwner.uid,
-    shared_team_ids: [SHARED],
-  }),
-  ownerless: { team_id: PARENT, owner_id: null, shared_team_ids: [OTHER] },
+const rock: RockSubject = {
+  team_id: PARENT,
+  owner_id: VIEWERS.parentMember.uid,
+  audience_team_ids: [SHARED],
+  audience_user_ids: [audiencePerson.uid],
 };
 
-/** Line-for-line replica of requireRockThreadAccess (entity-comments/actions.ts), from team `teamId`. */
-function currentRockThreadGate(rock: RockSubject, v: Viewer, teamId: string): boolean {
-  const shared = rock.shared_team_ids ?? [];
-  const owners = rock.milestone_owner_ids ?? [];
-  return (
-    v.isAdmin ||
-    rock.team_id === teamId ||
-    shared.includes(teamId) ||
-    rock.owner_id === v.uid ||
-    owners.includes(v.uid)
-  );
-}
+const ALL: [string, Viewer][] = [...VIEWER_ENTRIES, ["audiencePerson", audiencePerson]];
 
-describe("rockAccess — parity with lib/rocks-share.ts", () => {
-  for (const [rockName, rock] of Object.entries(ROCKS)) {
-    for (const [viewerName, v] of VIEWER_ENTRIES) {
-      test(`${rockName} × ${viewerName}`, () => {
-        const rv = toRockViewer(v);
-        const ms = rock.milestones ?? (rock.milestone_owner_ids ?? []).map((owner_id) => ({ owner_id }));
-        assert.equal(rockAccess.canSee(rock, v), hasFullRockView(rock, rv, ms), "canSee");
-        assert.equal(rockAccess.canEdit(rock, v), rockAccessFor(rock, rv) === "edit", "canEdit");
-        assert.equal(rockAccess.canDelete(rock, v), rockAccessFor(rock, rv) === "edit", "canDelete");
-        assert.equal(
-          rockAccess.canSetStatus(rock, v),
-          rockAccessFor(rock, rv) !== "read",
-          "canSetStatus vs rockAccessFor",
-        );
-        // The single-team form the server action uses, from any team the
-        // viewer can act through (an admin acts as the parent team).
-        const viaAction = v.isAdmin
-          ? canSetRockStatus(rock, rock.team_id, v.uid)
-          : actionTeams(v).some((t) => canSetRockStatus(rock, t, v.uid));
-        assert.equal(rockAccess.canSetStatus(rock, v), viaAction, "canSetStatus vs canSetRockStatus");
-        const threadViaAction = actionTeams(v).some((t) =>
-          currentRockThreadGate(rock, v, t),
-        );
-        assert.equal(rockAccess.canComment(rock, v), threadViaAction, "canComment");
-        assert.equal(rockAccess.canMention(rock, v), rockAccess.canSee(rock, v), "canMention");
-        assert.equal(rockAccess.canFollow(rock, v), false, "canFollow");
-        assert.equal(rockAccess.canSetCompanyFlag(rock, v), v.isAdmin, "company flag");
-      });
-    }
-  }
-});
-
-describe("milestoneAccess — parity with lib/rocks-share.ts", () => {
-  for (const [rockName, rock] of Object.entries(ROCKS)) {
-    for (const m of milestones) {
-      for (const [viewerName, v] of VIEWER_ENTRIES) {
-        test(`${rockName} / ${m.id} × ${viewerName}`, () => {
-          const subject = { rock, milestone: m };
-          const expectedTick = canTickMilestone(rock, m, {
-            uid: v.uid,
-            fullAccess: v.isAdmin || v.teamIds.has(rock.team_id),
-          });
-          assert.equal(milestoneAccess.canComplete(subject, v), expectedTick, "canComplete");
-          assert.equal(milestoneAccess.canSee(subject, v), rockAccess.canSee(rock, v), "canSee");
-          assert.equal(milestoneAccess.canEdit(subject, v), rockAccess.canEdit(rock, v), "canEdit");
-        });
-      }
-    }
-  }
-});
-
-describe("rockAccess — current behaviour, spelled out", () => {
-  const rock = ROCKS.sharedWithMilestones;
-  const expectSee: Record<keyof typeof VIEWERS, boolean> = {
+describe("rockAccess — who gets the full rock", () => {
+  const expectFull: Record<string, boolean> = {
     admin: true,
     parentLeader: true,
     parentMember: true,
-    sharedMember: true,
-    // Today an assignee gets the full rock (SPEC P6 strips this).
-    assignee: true,
+    sharedMember: true, // audience team
+    audiencePerson: true, // audience person
+    // A milestone assignee outside that set: headline only.
+    assignee: false,
+    // Owning the rock grants nothing by itself (the owner must be on the
+    // parent team; a legacy off-team owner here sits on SHARED, which is in
+    // the audience, so test them on a rock without it below).
     offTeamOwner: true,
     otherLeader: false,
     outsider: false,
   };
-  for (const [name, v] of VIEWER_ENTRIES) {
-    test(`canSee: ${name} → ${expectSee[name]}`, () => {
-      assert.equal(rockAccess.canSee(rock, v), expectSee[name]);
+  for (const [name, v] of ALL) {
+    test(`${name} → ${expectFull[name]}`, () => {
+      for (const fn of [
+        rockAccess.canSee,
+        rockAccess.canEdit,
+        rockAccess.canSetStatus,
+        rockAccess.canComment,
+        rockAccess.canMention,
+      ]) {
+        assert.equal(fn(rock, v), expectFull[name]);
+      }
     });
   }
 
-  test("only the parent team and admins edit, delete, share or set Keep-on-this-team", () => {
-    for (const [name, v] of VIEWER_ENTRIES) {
+  test("an off-team owner without audience gets nothing", () => {
+    const r: RockSubject = { team_id: PARENT, owner_id: VIEWERS.offTeamOwner.uid };
+    assert.equal(rockAccess.canSee(r, VIEWERS.offTeamOwner), false);
+    assert.equal(rockAccess.canSetStatus(r, VIEWERS.offTeamOwner), false);
+  });
+
+  test("milestone_owner_ids grants nothing", () => {
+    const stored = rockSubjectOf({
+      team_id: PARENT,
+      owner_id: VIEWERS.parentMember.uid,
+      milestone_owner_ids: [VIEWERS.assignee.uid],
+    });
+    assert.equal(rockAccess.canSee(stored, VIEWERS.assignee), false);
+  });
+
+  test("legacy shared_team_ids still grants the audience until migration", () => {
+    const legacy = rockSubjectOf({
+      team_id: PARENT,
+      owner_id: VIEWERS.parentMember.uid,
+      shared_team_ids: [SHARED],
+    });
+    assert.equal(rockAccess.canEdit(legacy, VIEWERS.sharedMember), true);
+  });
+
+  test("a private rock has no audience, whatever is stored", () => {
+    const priv: RockSubject = { ...rock, private: true };
+    assert.equal(rockAccess.canSee(priv, VIEWERS.sharedMember), false);
+    assert.equal(rockAccess.canSee(priv, audiencePerson), false);
+    assert.equal(rockAccess.canSee(priv, VIEWERS.parentMember), true);
+    assert.equal(rockAccess.canSee({ ...rock, private: null, team_only: true }, VIEWERS.sharedMember), false);
+  });
+});
+
+describe("rockAccess — delete, audience, Private, Company", () => {
+  test("delete: parent team and admins only (the audience may not)", () => {
+    for (const [name, v] of ALL) {
       const want = name === "admin" || name === "parentLeader" || name === "parentMember";
-      assert.equal(rockAccess.canEdit(rock, v), want, `edit ${name}`);
-      assert.equal(rockAccess.canDelete(rock, v), want, `delete ${name}`);
+      assert.equal(rockAccess.canDelete(rock, v), want, name);
+    }
+  });
+
+  test("audience and Private: leaders of the parent team and admins only", () => {
+    for (const [name, v] of ALL) {
+      const want = name === "admin" || name === "parentLeader";
       assert.equal(rockAccess.canChangeAudience(rock, v), want, `audience ${name}`);
       assert.equal(rockAccess.canSetPrivate(rock, v), want, `private ${name}`);
     }
   });
 
-  test("the off-team owner may move the status from a shared team", () => {
-    assert.equal(rockAccess.canSetStatus(rock, VIEWERS.offTeamOwner), true);
-    assert.equal(rockAccess.canSetStatus(rock, VIEWERS.sharedMember), false);
-    assert.equal(rockAccess.canSetStatus(rock, VIEWERS.assignee), false);
+  test("a leader of another team leads nothing here", () => {
+    const shared: RockSubject = { ...rock, audience_team_ids: [UNRELATED] };
+    assert.equal(rockAccess.canEdit(shared, VIEWERS.otherLeader), true);
+    assert.equal(rockAccess.canChangeAudience(shared, VIEWERS.otherLeader), false);
   });
 
-  test("the rock owner may tick any milestone; an assignee only their own", () => {
-    const own = { rock, milestone: milestones[1] }; // m-mem
-    assert.equal(milestoneAccess.canComplete(own, VIEWERS.offTeamOwner), true);
-    assert.equal(milestoneAccess.canComplete(own, VIEWERS.assignee), false);
+  test("Company flag: admins only; follow: not yet", () => {
+    for (const [, v] of ALL) {
+      assert.equal(rockAccess.canSetCompanyFlag(rock, v), v.isAdmin);
+      assert.equal(rockAccess.canFollow(rock, v), false);
+    }
+  });
+});
+
+describe("rockViewFor", () => {
+  test("full / headline / none", () => {
+    const owners = [VIEWERS.assignee.uid, null];
+    assert.equal(rockViewFor(rock, VIEWERS.parentMember, owners), "full");
+    assert.equal(rockViewFor(rock, VIEWERS.assignee, owners), "headline");
+    assert.equal(rockViewFor(rock, VIEWERS.outsider, owners), "none");
+    assert.equal(rockViewFor(rock, audiencePerson, []), "full");
+  });
+});
+
+describe("milestoneAccess", () => {
+  const mine = {
+    rock,
+    milestone: { owner_id: VIEWERS.assignee.uid, team_id: PARENT, visibility: "team" },
+  };
+  const theirs = {
+    rock,
+    milestone: { owner_id: VIEWERS.parentMember.uid, team_id: PARENT, visibility: "team" },
+  };
+
+  test("the assignee sees and ticks their own milestone, not others'", () => {
+    assert.equal(milestoneAccess.canSee(mine, VIEWERS.assignee), true);
+    assert.equal(milestoneAccess.canComplete(mine, VIEWERS.assignee), true);
+    assert.equal(milestoneAccess.canSee(theirs, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canComplete(theirs, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canEdit(mine, VIEWERS.assignee), false);
+  });
+
+  test("the rock owner off the parent team no longer ticks every milestone", () => {
+    const r: RockSubject = { team_id: PARENT, owner_id: VIEWERS.offTeamOwner.uid };
     assert.equal(
-      milestoneAccess.canComplete({ rock, milestone: milestones[0] }, VIEWERS.assignee),
-      true,
+      milestoneAccess.canComplete({ rock: r, milestone: theirs.milestone }, VIEWERS.offTeamOwner),
+      false,
     );
-    assert.equal(milestoneAccess.canComplete(own, VIEWERS.outsider), false);
   });
 
-  test("a milestone's thread is its to-do thread: parent team and admins only", () => {
-    const subject = { rock, milestone: milestones[0] };
-    assert.equal(milestoneAccess.canComment(subject, VIEWERS.parentMember), true);
-    assert.equal(milestoneAccess.canComment(subject, VIEWERS.admin), true);
-    assert.equal(milestoneAccess.canComment(subject, VIEWERS.assignee), false);
-    assert.equal(milestoneAccess.canComment(subject, VIEWERS.sharedMember), false);
-    assert.equal(milestoneAccess.canFollow(subject, VIEWERS.parentMember), true);
-    assert.equal(milestoneAccess.canFollow(subject, VIEWERS.assignee), false);
+  test("parent team, audience and admins tick and edit any milestone", () => {
+    for (const v of [VIEWERS.parentMember, VIEWERS.sharedMember, audiencePerson, VIEWERS.admin]) {
+      assert.equal(milestoneAccess.canComplete(theirs, v), true);
+      assert.equal(milestoneAccess.canEdit(theirs, v), true);
+      assert.equal(milestoneAccess.canDelete(theirs, v), true);
+    }
+    assert.equal(milestoneAccess.canComplete(theirs, VIEWERS.outsider), false);
   });
 
-  test("a legacy private milestone's thread is its owner's alone", () => {
-    const m = { id: "m-priv", owner_id: VIEWERS.parentMember.uid, team_id: PARENT, visibility: "private" };
-    const other = { rock, milestone: { ...m, owner_id: VIEWERS.parentLeader.uid } };
-    assert.equal(milestoneAccess.canComment({ rock, milestone: m }, VIEWERS.parentMember), true);
-    assert.equal(milestoneAccess.canComment(other, VIEWERS.parentMember), false);
-    assert.equal(milestoneAccess.canComment(other, VIEWERS.admin), false);
+  test("mention = can see (a block view grants nothing)", () => {
+    assert.equal(milestoneAccess.canMention(mine, VIEWERS.assignee), true);
+    assert.equal(milestoneAccess.canMention(theirs, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canMention(theirs, viewerOf("u-x", false, [OTHER])), false);
   });
 
-  test("delete a milestone: the to-do gate on its team", () => {
-    const subject = { rock, milestone: milestones[0] };
-    assert.equal(milestoneAccess.canDelete(subject, VIEWERS.parentMember), true);
-    assert.equal(milestoneAccess.canDelete(subject, VIEWERS.admin), true);
-    assert.equal(milestoneAccess.canDelete(subject, VIEWERS.assignee), false);
+  test("a milestone's thread is still its to-do thread (SPEC P6b widens it)", () => {
+    assert.equal(milestoneAccess.canComment(mine, VIEWERS.parentMember), true);
+    assert.equal(milestoneAccess.canComment(mine, VIEWERS.assignee), false);
+    assert.equal(milestoneAccess.canFollow(mine, VIEWERS.sharedMember), false);
   });
 
-  test("milestone_owner_ids stands in for milestones when they aren't loaded", () => {
-    const bare: RockSubject = {
-      team_id: PARENT,
-      owner_id: VIEWERS.parentMember.uid,
-      milestone_owner_ids: [VIEWERS.assignee.uid],
+  test("a legacy private milestone keeps the to-do owner rule for ticks", () => {
+    const priv = {
+      rock,
+      milestone: { owner_id: VIEWERS.parentLeader.uid, team_id: PARENT, visibility: "private" },
     };
-    assert.equal(rockAccess.canSee(bare, VIEWERS.assignee), true);
-    assert.equal(rockAccess.canSee(bare, VIEWERS.outsider), false);
+    assert.equal(milestoneAccess.canComplete(priv, VIEWERS.parentMember), false);
+    assert.equal(milestoneAccess.canComplete(priv, VIEWERS.parentLeader), true);
   });
 });

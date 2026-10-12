@@ -35,16 +35,19 @@ export type RockDoc = {
   // Non-admin edits must leave this key out of the patch entirely so the
   // stored value survives (see updateRockWithMilestones).
   is_company_rock?: boolean;
-  // Teams this rock is shared with. Must flow through to RockRow — the edit
-  // modal seeds its share picker from it, and saving without it wipes the
-  // field on the rock doc.
+  // The audience (docs/PERMISSIONS_SPEC.md §3.3, lib/access/rock.ts): teams
+  // and persons who see and edit the whole rock. Only leaders of the parent
+  // team and admins change them; any other save preserves them. No cap.
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  // Private: parent team only — no audience, no blocks on other teams.
+  // Leader/admin-only; every milestone assignee must be on the parent team.
+  private?: boolean;
+  // LEGACY, read-only fallbacks until the P13 migration. A save writes the
+  // fields above and deletes these. `shared_team_ids` = audience teams,
+  // `team_only` = private. `milestone_owner_ids` grants nothing any more.
   shared_team_ids?: string[] | null;
-  // "Keep on this team" (lib/rocks-share.ts): every milestone treated as
-  // locked, and no team shares. Absent reads as off.
   team_only?: boolean;
-  // Owners of every milestone on the rock, rewritten on each save. Lets
-  // firestore.rules grant assignees what lib/rocks-share.ts hasFullRockView
-  // grants server-side (the rock doc, its comments, its status history).
   milestone_owner_ids?: string[];
   // Timestamp from onSnapshot, absent from the server prefetch (which
   // filters archived rocks out entirely) or on legacy docs created before the
@@ -54,7 +57,7 @@ export type RockDoc = {
 
 // ---------------------------------------------------------------------------
 // todos (also used for rock milestones, which are todos with source_rock_id
-// set; a milestone's sharing lock is `team_hidden`, not visibility)
+// set; a milestone's reach is its rock's — lib/access/rock.ts)
 // ---------------------------------------------------------------------------
 
 export type TodoDoc = {
@@ -74,9 +77,6 @@ export type TodoDoc = {
   // (treat as active either way).
   archived_at?: { toDate: () => Date; toMillis: () => number } | null;
   visibility: "team" | "private";
-  // Milestones only: locked — not passed on to the assignee's teams
-  // (lib/rocks-share.ts). Absent reads as unlocked.
-  team_hidden?: boolean;
   weekly_focus?: boolean;
   source_issue_id: string | null;
   source_meeting_id: string | null;

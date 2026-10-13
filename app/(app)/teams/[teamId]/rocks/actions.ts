@@ -42,6 +42,7 @@ import { recordActivity } from "@/lib/firebase/activity";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { formatDateOnly } from "@/lib/dates";
 import {
+  milestoneEditEvent,
   milestoneTraceRows,
   type MilestoneTraceFields,
 } from "@/lib/milestone-activity";
@@ -385,6 +386,28 @@ async function recordMilestoneTraces(
     }
   }
   await Promise.all(writes);
+}
+
+/**
+ * Followers of an edited milestone hear about it as they would a to-do edit
+ * (title / due date / description — lib/milestone-activity.ts
+ * milestoneEditEvent). Owner changes go out through notifyMilestoneOwners.
+ * Best-effort, after the commit; emitEvent logs and swallows its own errors.
+ */
+async function notifyMilestoneFollowers(
+  db: Firestore,
+  teamId: string,
+  actorUid: string,
+  saved: readonly MilestoneTrace[],
+) {
+  await Promise.all(
+    saved.map((s) => {
+      const event = milestoneEditEvent(s.before, s.after);
+      return event
+        ? emitEvent(db, { type: "todo", id: s.id }, event, actorUid, { teamId })
+        : null;
+    }),
+  );
 }
 
 function milestoneDoc(
@@ -1032,6 +1055,7 @@ export async function updateRockWithMilestones(
   );
 
   await recordMilestoneTraces(db, teamId, uid, traces);
+  await notifyMilestoneFollowers(db, teamId, uid, traces);
   await purgeRemovedMilestones(db, removed, uid);
   await notifyMilestoneOwners(db, teamId, uid, handoffs);
   // Rock-level events: owner / due date to the followers, `assigned` and

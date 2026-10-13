@@ -6,7 +6,7 @@
 // Nothing new is stored — the same ActivityKind values, on the same trace.
 
 import type { ActivityKind } from "./activity";
-import { summarizeTodoChanges } from "./notifications";
+import { summarizeTodoChanges, todoEditEvents } from "./notifications";
 
 export type MilestoneTraceFields = {
   title: string;
@@ -49,4 +49,22 @@ export function milestoneTraceRows(
     rows.push({ kind: "description", detail: null });
   }
   return rows;
+}
+
+/**
+ * What a rock save tells a milestone's followers, as a to-do edit would
+ * (todoEditEvents): the most significant change, or null. A reassignment is
+ * left out — the save already tells the old and new owner directly
+ * (notifyMilestoneOwners), and the event would tell them twice.
+ */
+export function milestoneEditEvent(
+  before: MilestoneTraceFields | null,
+  after: MilestoneTraceFields,
+): "title_changed" | "due_date_changed" | "description_changed" | null {
+  if (!before) return null; // created: the owner hears "assigned"
+  const [event] = todoEditEvents(
+    { ...before, owner_id: after.owner_id },
+    after,
+  ).filter((e) => e !== "reassigned");
+  return (event as "title_changed" | "due_date_changed" | "description_changed") ?? null;
 }

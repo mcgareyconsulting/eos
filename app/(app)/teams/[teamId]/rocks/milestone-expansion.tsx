@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { doc } from "firebase/firestore";
+import { useCallback, useEffect, useState } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RichText } from "@/components/rich-text";
 import { getClientDb } from "@/lib/firebase/client";
-import { useDoc } from "@/lib/firebase/use-collection";
+import { useAuthUid } from "@/lib/firebase/use-collection";
 import { cn } from "@/lib/utils";
 import { emptyKeys, toggleKey, withDraft } from "./milestone-expand";
 
@@ -152,14 +152,54 @@ function DescriptionText({ value }: { value: string | null | undefined }) {
  */
 function LiveDescription({ milestoneId }: { milestoneId: string }) {
   const db = getClientDb();
-  const ref = useMemo(() => doc(db, "todos", milestoneId), [db, milestoneId]);
-  const live = useDoc<{ description?: string | null } | null>(
-    ref,
-    null,
-    "milestone-description",
-  );
-  if (!live) {
-    return <p className="text-[12.5px] italic text-zinc-400">Loading…</p>;
+  const uid = useAuthUid();
+  // Never stuck on "Loading…": a deleted milestone or a failed read says so.
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "ready"; description: string | null }
+    | { status: "missing" }
+    | { status: "error" }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      doc(db, "todos", milestoneId),
+      (snap) => {
+        setState(
+          snap.exists()
+            ? {
+                status: "ready",
+                description:
+                  (snap.data() as { description?: string | null }).description ??
+                  null,
+              }
+            : { status: "missing" },
+        );
+      },
+      (err) => {
+        console.error("[milestone-description] subscription error:", err);
+        setState({ status: "error" });
+      },
+    );
+  }, [db, milestoneId, uid]);
+
+  switch (state.status) {
+    case "loading":
+      return <p className="text-[12.5px] italic text-zinc-400">Loading…</p>;
+    case "missing":
+      return (
+        <p className="text-[12.5px] italic text-zinc-400">
+          This milestone no longer exists.
+        </p>
+      );
+    case "error":
+      return (
+        <p className="text-[12.5px] italic text-zinc-400">
+          Couldn&apos;t load the description.
+        </p>
+      );
+    case "ready":
+      return <DescriptionText value={state.description} />;
   }
-  return <DescriptionText value={live.description} />;
 }

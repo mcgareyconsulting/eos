@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   CheckCircle2,
@@ -21,6 +21,7 @@ import {
 import { CommentCard } from "@/components/entity-comments";
 import { LocalTime } from "@/components/local-time";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { commentDraftKey, setCommentDraft } from "@/lib/comment-drafts";
 import {
   useCommentActions,
   useCommentAuthorName,
@@ -187,10 +188,15 @@ export function ActivityFeed({
 
   const [composing, setComposing] = useState(false);
   const [body, setBodyState] = useState("");
+  const draftKey = commentDraftKey(entityType, entityId);
   const setBody = (next: string) => {
     setBodyState(next);
-    onDraftChange?.(next.trim().length > 0);
+    const has = next.trim().length > 0;
+    setCommentDraft(draftKey, has);
+    onDraftChange?.(has);
   };
+  // Gone from screen, the draft is gone too.
+  useEffect(() => () => setCommentDraft(draftKey, false), [draftKey]);
   const collapse = () => {
     setBody("");
     setError(null);

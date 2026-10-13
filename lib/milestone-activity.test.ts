@@ -1,6 +1,10 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { milestoneTraceRows, type MilestoneTraceFields } from "./milestone-activity";
+import {
+  milestoneEditEvent,
+  milestoneTraceRows,
+  type MilestoneTraceFields,
+} from "./milestone-activity";
 
 const names = new Map([
   ["ann", "Ann Lee"],
@@ -71,5 +75,26 @@ describe("milestoneTraceRows", () => {
       milestoneTraceRows({ ...base, description: "x" }, base, "ann", nameOf, due),
       [{ kind: "description", detail: null }],
     );
+  });
+});
+
+describe("milestoneEditEvent (followers hear a milestone edit like a to-do edit)", () => {
+  const base = { title: "Kickoff", owner_id: "a", due_date: "2026-10-01", description: null };
+  test("description change", () => {
+    assert.equal(
+      milestoneEditEvent(base, { ...base, description: "<p>Scope</p>" }),
+      "description_changed",
+    );
+  });
+  test("title outranks description; nothing changed → null", () => {
+    assert.equal(
+      milestoneEditEvent(base, { ...base, title: "Kick-off", description: "x" }),
+      "title_changed",
+    );
+    assert.equal(milestoneEditEvent(base, base), null);
+  });
+  test("reassignment alone is left to the owner notices; created → null", () => {
+    assert.equal(milestoneEditEvent(base, { ...base, owner_id: "b" }), null);
+    assert.equal(milestoneEditEvent(null, base), null);
   });
 });

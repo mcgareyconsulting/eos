@@ -68,6 +68,7 @@ export function MilestoneTodoRow({
             todoId={milestone.id}
             completed={milestone.completed}
             appearance="milestone"
+            guardDraft
           />
         </div>
 

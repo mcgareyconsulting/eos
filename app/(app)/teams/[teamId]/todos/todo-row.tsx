@@ -3,6 +3,7 @@
 import { useOptimistic, useTransition } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { commentDraftKey, hasCommentDraft } from "@/lib/comment-drafts";
 import { toggleTodo } from "./actions";
 
 export function TodoCheckbox({
@@ -10,12 +11,16 @@ export function TodoCheckbox({
   todoId,
   completed,
   appearance = "default",
+  guardDraft = false,
 }: {
   teamId: string;
   todoId: string;
   completed: boolean;
   /** milestone = green 16px square with white check (rocks checklist). */
   appearance?: "default" | "milestone";
+  /** Ticking moves this row to another list or hides it (milestones), so
+   *  ask before discarding a comment typed in its expansion. */
+  guardDraft?: boolean;
 }) {
   const [, start] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(
@@ -24,6 +29,14 @@ export function TodoCheckbox({
   );
 
   function onToggle() {
+    if (
+      guardDraft &&
+      hasCommentDraft(commentDraftKey("todo", todoId)) &&
+      !window.confirm(
+        "You have a comment that hasn't been posted. Ticking this closes it and discards the comment. Tick anyway?",
+      )
+    )
+      return;
     const next = !optimistic;
     start(async () => {
       setOptimistic(next);

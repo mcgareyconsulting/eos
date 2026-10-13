@@ -227,6 +227,7 @@ function MilestoneTick({
       todoId={todoId}
       completed={completed}
       appearance="milestone"
+      guardDraft
     />
   );
 }

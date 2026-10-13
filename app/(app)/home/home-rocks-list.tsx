@@ -265,6 +265,7 @@ export function HomeRocksList({
                                 todoId={m.id}
                                 completed={false}
                                 appearance="milestone"
+                                guardDraft
                               />
                             ) : (
                               <span

@@ -210,7 +210,7 @@ export function DirectoryTable({
                           key={t.id}
                           name={t.name}
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
-                          leader={t.role === "leader"}
+                          role={t.role}
                           remove={
                             showLeaderTools && isLeaderOf(viewer, t.id) && t.role !== "leader" ? (
                               <RemoveFromTeamButton
@@ -274,24 +274,31 @@ function Blank() {
 function TeamChip({
   name,
   href,
-  leader,
+  role,
   remove,
 }: {
   name: string;
   href: string | null;
-  leader: boolean;
+  role: string;
   remove: React.ReactNode;
 }) {
   const cls =
     "inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
+  // Role is per team, so every chip names it — a person can lead one team
+  // and be a plain member of the next.
+  const leader = role === "leader";
   const label = (
     <>
       {name}
-      {leader && (
-        <span className="ml-1 font-semibold text-hpb-blue dark:text-hpb-gold">
+      <span
+        className={
           leader
-        </span>
-      )}
+            ? "ml-1 font-semibold text-hpb-blue dark:text-hpb-gold"
+            : "ml-1 text-zinc-400 dark:text-zinc-500"
+        }
+      >
+        {leader ? "leader" : "member"}
+      </span>
     </>
   );
   return (

@@ -133,6 +133,7 @@ export function RockRow({
     title: m.title,
     due_date: m.due_date,
     completed: m.completed,
+    description: m.description,
     owner_name: m.owner_id
       ? (m.owner_label ??
         members.find((x) => x.user_id === m.owner_id)?.full_name ??
@@ -353,6 +354,7 @@ export function RockRow({
                 milestones={milestones}
                 readOnly={!canEdit}
                 currentUserId={currentUserId}
+                userId={userId}
               />
 
               <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">

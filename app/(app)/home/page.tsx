@@ -71,6 +71,8 @@ type TodoRow = {
   weekly_focus?: boolean;
   created_by?: string | null;
   assigned_by?: string | null;
+  /** A milestone's notes, shown when it is expanded on the Rocks list. */
+  description?: string | null;
 };
 
 type RockRow = {
@@ -491,6 +493,7 @@ export default async function HomePage() {
           id: m.id,
           title: m.title,
           due_date: m.due_date,
+          description: m.description ?? null,
           isMine,
           // Tick through the rock's team when the viewer is on it, else any
           // of their teams (an admin with none still has the rock's team).
@@ -630,12 +633,12 @@ export default async function HomePage() {
                 count={companyRocks.length}
                 flush
               >
-                <HomeRocksList rocks={companyRocks} />
+                <HomeRocksList rocks={companyRocks} userId={user.id} />
               </BoardColumn>
             )}
             {myRocks.length > 0 && (
               <BoardColumn scroll title="My Rocks" count={myRocks.length} flush>
-                <HomeRocksList rocks={myRocks} />
+                <HomeRocksList rocks={myRocks} userId={user.id} />
               </BoardColumn>
             )}
             {departmentalRocks.length > 0 && (
@@ -645,12 +648,12 @@ export default async function HomePage() {
                 count={departmentalRocks.length}
                 flush
               >
-                <HomeRocksList rocks={departmentalRocks} />
+                <HomeRocksList rocks={departmentalRocks} userId={user.id} />
               </BoardColumn>
             )}
             {rockItems.length === 0 && (
               <BoardColumn scroll title="Rocks" count={0} flush>
-                <HomeRocksList rocks={[]} />
+                <HomeRocksList rocks={[]} userId={user.id} />
               </BoardColumn>
             )}
           </div>

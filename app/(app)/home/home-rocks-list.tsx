@@ -13,6 +13,11 @@ import {
   type RockStatus,
 } from "@/app/(app)/teams/[teamId]/rocks/status";
 import { TodoCheckbox } from "@/app/(app)/teams/[teamId]/todos/todo-row";
+import {
+  ExpandChevron,
+  MilestoneExpansion,
+  useExpandedMilestones,
+} from "@/app/(app)/teams/[teamId]/rocks/milestone-expansion";
 
 export type HomeRockListItem = {
   id: string;
@@ -52,6 +57,8 @@ export type HomeMilestoneListItem = {
   /** Resolved display name; "You" when viewer owns it */
   ownerLabel: string;
   isMine: boolean;
+  /** Rich text, shown read-only when the milestone is expanded. */
+  description?: string | null;
   /**
    * Set on the viewer's own milestones: the team the tick runs through
    * (toggleTodo checks access to it; milestoneAccess.canComplete lets an
@@ -67,9 +74,22 @@ const ROCK_COLS =
 /**
  * Rocks column: 6-column table (3a). Expand shows milestones in-column
  * with a status rail; viewer's milestones use blue "You" in the owner cell.
+ *
+ * A milestone's name opens it in place (MilestoneExpansion: description and
+ * activity feed). Every milestone listed here is one the viewer may comment
+ * on: a full rock's (seesFullRock) or, on a headline rock, only their own
+ * (the assignee) — milestoneAccess.canComment covers both.
  */
-export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
+export function HomeRocksList({
+  rocks,
+  userId,
+}: {
+  rocks: HomeRockListItem[];
+  /** The viewer, for the milestone feeds. */
+  userId: string;
+}) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const expandMs = useExpandedMilestones();
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -234,55 +254,71 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                       <li
                         key={m.id}
                         className={cn(
-                          "grid grid-cols-[21px_minmax(0,1fr)_116px_110px_96px_88px] items-center gap-2.5 px-4 py-[7px]",
                           i > 0 &&
                             "border-t border-zinc-100 dark:border-zinc-800",
                         )}
                       >
-                        <div className="flex justify-center">
-                          {m.tickTeamId ? (
-                            <TodoCheckbox
-                              teamId={m.tickTeamId}
-                              todoId={m.id}
-                              completed={false}
-                              appearance="milestone"
-                            />
-                          ) : (
-                            <span
-                              className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
-                              aria-hidden
-                            />
-                          )}
+                        <div className="grid grid-cols-[21px_minmax(0,1fr)_116px_110px_96px_88px] items-center gap-2.5 px-4 py-[7px]">
+                          <div className="flex justify-center">
+                            {m.tickTeamId ? (
+                              <TodoCheckbox
+                                teamId={m.tickTeamId}
+                                todoId={m.id}
+                                completed={false}
+                                appearance="milestone"
+                              />
+                            ) : (
+                              <span
+                                className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
+                                aria-hidden
+                              />
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => expandMs.toggle(m.id)}
+                            aria-expanded={expandMs.isOpen(m.id)}
+                            className="flex min-w-0 items-center gap-1 text-left text-[12.5px] font-semibold text-zinc-600 hover:text-hpb-blue dark:text-zinc-300 dark:hover:text-hpb-gold"
+                          >
+                            <span className="min-w-0 truncate">{m.title}</span>
+                            <ExpandChevron open={expandMs.isOpen(m.id)} />
+                          </button>
+                          <div
+                            className={cn(
+                              "truncate text-[11.5px]",
+                              m.isMine
+                                ? "font-extrabold text-hpb-blue"
+                                : "font-semibold text-zinc-500 dark:text-zinc-400",
+                            )}
+                          >
+                            {m.ownerLabel}
+                          </div>
+                          <div />
+                          <div
+                            className={cn(
+                              "text-[11.5px] font-semibold tabular-nums",
+                              dueToneClass(m.due_date),
+                            )}
+                          >
+                            {m.due_date ? formatDateShort(m.due_date) : "—"}
+                          </div>
+                          <div className="justify-self-end">
+                            {m.due_date ? (
+                              <span className={urgencyChipClass(m.due_date)}>
+                                {relativeDueLabel(m.due_date)}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="min-w-0 truncate text-[12.5px] font-semibold text-zinc-600 dark:text-zinc-300">
-                          {m.title}
-                        </div>
-                        <div
-                          className={cn(
-                            "truncate text-[11.5px]",
-                            m.isMine
-                              ? "font-extrabold text-hpb-blue"
-                              : "font-semibold text-zinc-500 dark:text-zinc-400",
-                          )}
-                        >
-                          {m.ownerLabel}
-                        </div>
-                        <div />
-                        <div
-                          className={cn(
-                            "text-[11.5px] font-semibold tabular-nums",
-                            dueToneClass(m.due_date),
-                          )}
-                        >
-                          {m.due_date ? formatDateShort(m.due_date) : "—"}
-                        </div>
-                        <div className="justify-self-end">
-                          {m.due_date ? (
-                            <span className={urgencyChipClass(m.due_date)}>
-                              {relativeDueLabel(m.due_date)}
-                            </span>
-                          ) : null}
-                        </div>
+                        <MilestoneExpansion
+                          open={expandMs.isOpen(m.id)}
+                          draftKey={m.id}
+                          teamId={m.tickTeamId ?? r.team_id}
+                          userId={userId}
+                          milestoneId={m.id}
+                          description={m.description}
+                          className="mb-2.5 ml-[47px] mr-4 rounded-[10px] border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+                        />
                       </li>
                     ))}
                   </ul>

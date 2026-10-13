@@ -36,6 +36,12 @@ import {
   type RockType,
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
+import {
+  ExpandChevron,
+  MilestoneExpansion,
+  useExpandedMilestones,
+  useMilestoneDrafts,
+} from "./milestone-expansion";
 import { IconButton } from "@/components/ui/button";
 import {
   DiscardChangesDialog,
@@ -55,6 +61,8 @@ type DraftMilestone = {
   /** "" = the rock owner (the default assignee, spec §3.3). */
   owner_id: string;
   due_date: string;
+  /** Rich text, "" = none. Saved with the rock like the other fields. */
+  description: string;
   /** Stored with no owner (a deactivation, spec §2.6) and not touched since:
    *  saves as unassigned. Editing the row assigns it to the rock owner. */
   unassigned?: boolean;
@@ -95,7 +103,13 @@ function fetchOrgPeople(): Promise<OrgPerson[]> {
 let draftSeq = 0;
 function blankRow(): DraftMilestone {
   draftSeq += 1;
-  return { key: `draft-${draftSeq}`, title: "", owner_id: "", due_date: "" };
+  return {
+    key: `draft-${draftSeq}`,
+    title: "",
+    owner_id: "",
+    due_date: "",
+    description: "",
+  };
 }
 
 /**
@@ -111,7 +125,7 @@ function serializeRows(rows: DraftMilestone[]): string {
   return JSON.stringify(
     rows
       .filter((r) => r.title.trim())
-      .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date]),
+      .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date, r.description]),
   );
 }
 
@@ -337,6 +351,7 @@ export function RockModal({
           title: m.title,
           owner_id: m.owner_id ?? "",
           due_date: m.due_date ?? "",
+          description: m.description ?? "",
           unassigned: !m.owner_id,
         }))
       : [blankRow(), blankRow(), blankRow()];
@@ -374,9 +389,14 @@ export function RockModal({
     isPrivate,
   }));
 
+  // A milestone's name area expands it: its description editor and, once it
+  // exists, its activity feed. A comment typed there and not yet posted
+  // counts as unsaved work too (the same guard, its own message).
+  const expand = useExpandedMilestones();
+  const commentDrafts = useMilestoneDrafts();
+
   // Backdrop, Escape, ×, and Cancel all go through this — see useDiscardGuard.
-  const guard = useDiscardGuard(
-    draftChanged(
+  const formDirty = draftChanged(
       {
         title,
         description,
@@ -389,9 +409,8 @@ export function RockModal({
         milestones: serializeRows(rows),
       },
       opened,
-    ),
-    onClose,
-  );
+    );
+  const guard = useDiscardGuard(formDirty || commentDrafts.hasDraft, onClose);
 
   const filled = rows.filter((r) => r.title.trim());
 
@@ -587,6 +606,7 @@ export function RockModal({
           // stored without one (updateRockWithMilestones decides).
           owner_id: r.owner_id,
           due_date: r.due_date || null,
+          description: r.description,
         })),
       ),
     );
@@ -609,8 +629,11 @@ export function RockModal({
     <ModalShell
       open
       onClose={guard.requestClose}
-      // Escape belongs to whichever dialog is stacked on top.
+      // Escape belongs to whichever dialog is stacked on top — and not to
+      // this one when something inside claimed it (a milestone's comment
+      // composer folds itself away on Escape).
       dismissible={!guard.asking && !paneOpen && !confirming}
+      escape="topmost"
       ariaLabel={editing ? "Edit Rock" : "Add Rock"}
       size="5xl"
     >
@@ -807,62 +830,103 @@ export function RockModal({
 
               <div className="space-y-1.5">
                 {rows.map((r, i) => (
-                  <div key={r.key} className="flex items-center gap-1.5">
-                    <span className="w-4 shrink-0 text-right text-[11px] font-semibold tabular-nums text-zinc-400">
-                      {i + 1}
-                    </span>
-                    <input
-                      autoFocus={r.key === focusKey}
-                      value={r.title}
-                      onChange={(e) =>
-                        patchRow(r.key, { title: e.target.value })
+                  <div key={r.key}>
+                    <div className="flex items-center gap-1.5">
+                      {/* The title is an input (click = type), so the number
+                          beside it, with a chevron, is the expand toggle. */}
+                      <button
+                        type="button"
+                        onClick={() => expand.toggle(r.key)}
+                        aria-expanded={expand.isOpen(r.key)}
+                        aria-label={`${expand.isOpen(r.key) ? "Hide" : "Show"} details for milestone ${i + 1}`}
+                        title="Description and activity"
+                        className="flex shrink-0 items-center gap-0.5 rounded px-0.5 py-1 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:hover:bg-zinc-800"
+                      >
+                        <ExpandChevron open={expand.isOpen(r.key)} />
+                        <span
+                          className={cn(
+                            "w-4 text-right text-[11px] font-semibold tabular-nums",
+                            r.description.trim()
+                              ? "text-hpb-blue dark:text-hpb-gold"
+                              : "text-zinc-400",
+                          )}
+                        >
+                          {i + 1}
+                        </span>
+                      </button>
+                      <input
+                        autoFocus={r.key === focusKey}
+                        value={r.title}
+                        onChange={(e) =>
+                          patchRow(r.key, { title: e.target.value })
+                        }
+                        placeholder={
+                          i === 0
+                            ? "First proof it's moving"
+                            : i === 1
+                              ? "Mid-quarter checkpoint"
+                              : "What lands it"
+                        }
+                        className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
+                      />
+                      <OwnerPicker
+                        value={ownerOf(r) ?? ""}
+                        valueName={(() => {
+                          const owner = ownerOf(r);
+                          return owner ? ownerNameOf(owner) : "Unassigned";
+                        })()}
+                        onChange={(id) => patchRow(r.key, { owner_id: id })}
+                        team={{
+                          id: teamId,
+                          name: teamName ?? "This team",
+                          people: members,
+                        }}
+                        insideIds={insideIds}
+                        orgPeople={orgPeople}
+                        onNeedOrg={needOrg}
+                        teamNameById={teamNameById}
+                        className="w-[150px] shrink-0"
+                      />
+                      <input
+                        type="date"
+                        value={r.due_date}
+                        onChange={(e) =>
+                          patchRow(r.key, { due_date: e.target.value })
+                        }
+                        aria-label="Milestone due date"
+                        className="w-[126px] shrink-0 rounded-md border border-zinc-300 bg-white px-1.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRows((rs) => rs.filter((x) => x.key !== r.key))
+                        }
+                        aria-label="Remove milestone"
+                        className="shrink-0 rounded p-1 text-zinc-300 hover:text-red-600 dark:text-zinc-600"
+                      >
+                        <X className="h-[15px] w-[15px]" />
+                      </button>
+                    </div>
+                    <MilestoneExpansion
+                      open={expand.isOpen(r.key)}
+                      draftKey={r.key}
+                      teamId={teamId}
+                      userId={currentUserId}
+                      members={members}
+                      milestoneId={r.id}
+                      onDraft={commentDrafts.report}
+                      className="mb-2 ml-[29px] mr-7 mt-1.5 rounded-md border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-950/30"
+                      descriptionEditor={
+                        <RichTextEditor
+                          value={r.description}
+                          onChange={(next) =>
+                            patchRow(r.key, { description: next })
+                          }
+                          placeholder="Notes or context"
+                          rows={3}
+                        />
                       }
-                      placeholder={
-                        i === 0
-                          ? "First proof it's moving"
-                          : i === 1
-                            ? "Mid-quarter checkpoint"
-                            : "What lands it"
-                      }
-                      className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-hpb-blue/30 dark:border-zinc-700 dark:bg-zinc-900"
                     />
-                    <OwnerPicker
-                      value={ownerOf(r) ?? ""}
-                      valueName={(() => {
-                        const owner = ownerOf(r);
-                        return owner ? ownerNameOf(owner) : "Unassigned";
-                      })()}
-                      onChange={(id) => patchRow(r.key, { owner_id: id })}
-                      team={{
-                        id: teamId,
-                        name: teamName ?? "This team",
-                        people: members,
-                      }}
-                      insideIds={insideIds}
-                      orgPeople={orgPeople}
-                      onNeedOrg={needOrg}
-                      teamNameById={teamNameById}
-                      className="w-[150px] shrink-0"
-                    />
-                    <input
-                      type="date"
-                      value={r.due_date}
-                      onChange={(e) =>
-                        patchRow(r.key, { due_date: e.target.value })
-                      }
-                      aria-label="Milestone due date"
-                      className="w-[126px] shrink-0 rounded-md border border-zinc-300 bg-white px-1.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setRows((rs) => rs.filter((x) => x.key !== r.key))
-                      }
-                      aria-label="Remove milestone"
-                      className="shrink-0 rounded p-1 text-zinc-300 hover:text-red-600 dark:text-zinc-600"
-                    >
-                      <X className="h-[15px] w-[15px]" />
-                    </button>
                   </div>
                 ))}
               </div>
@@ -955,9 +1019,11 @@ export function RockModal({
           onKeepEditing={guard.keepEditing}
           onDiscard={guard.discard}
           message={
-            editing
-              ? "Your edits to this Rock haven't been saved. Close now and they're gone."
-              : "This Rock hasn't been added yet. Close now and what you've typed — including its milestones — is gone."
+            !formDirty
+              ? "You have a milestone comment you haven't posted. Close now and it's gone."
+              : editing
+                ? "Your edits to this Rock haven't been saved. Close now and they're gone."
+                : "This Rock hasn't been added yet. Close now and what you've typed — including its milestones — is gone."
           }
         />
     </ModalShell>

@@ -37,6 +37,14 @@ import { loadUsersById } from "@/lib/firebase/queries";
 import { userDisplayName } from "@/lib/user-name";
 import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { recordAccessChanges, rockAccessEvents } from "@/lib/access-audit";
+import { normalizeDescription } from "@/lib/csv-import";
+import { recordActivity } from "@/lib/firebase/activity";
+import { loadUserNames } from "@/lib/firebase/user-names";
+import { formatDateOnly } from "@/lib/dates";
+import {
+  milestoneTraceRows,
+  type MilestoneTraceFields,
+} from "@/lib/milestone-activity";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
 
@@ -229,8 +237,8 @@ export async function deleteRock(teamId: string, rockId: string) {
 
 // The modal (rock-modal.tsx) saves a rock and its milestones in one step,
 // so both of these take a `milestones` field: a JSON array of
-// { id?, title, owner_id, due_date }. `id` present = existing todo doc to
-// update; absent = create. On an edit, a milestone the modal was *shown*
+// { id?, title, owner_id, due_date, description? }. `id` present = existing
+// todo doc to update; absent = create. On an edit, a milestone the modal was *shown*
 // (`known_milestone_ids`) and that is missing from the array is deleted.
 // One batch, so the list can never show a rock whose milestones silently
 // failed to write.
@@ -242,6 +250,9 @@ type MilestoneInput = {
    *  and this save leaves it untouched (spec §2.6). */
   owner_id: string;
   due_date: string | null;
+  /** Rich text, normalized like a to-do's; null = none. `undefined` = the
+   *  client sent no description (an older modal): the stored one is kept. */
+  description?: string | null;
 };
 
 function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
@@ -261,7 +272,14 @@ function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
       const owner_id = String(x.owner_id ?? "").trim();
       const dueRaw = String(x.due_date ?? "").trim();
       const id = typeof x.id === "string" && x.id ? x.id : undefined;
-      return { id, title, owner_id, due_date: dueRaw || null };
+      // Same normalizing and limit as a to-do's description (addTodo).
+      let description: string | null | undefined;
+      if ("description" in x) {
+        description =
+          normalizeDescription(String(x.description ?? "")) || null;
+        requireMaxLength(description, LONG_TEXT_MAX, "Milestone description");
+      }
+      return { id, title, owner_id, due_date: dueRaw || null, description };
     })
     .filter((m) => m.title.length > 0);
 }
@@ -275,18 +293,98 @@ function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
 function milestoneOwnerFor(
   m: MilestoneInput,
   rockOwner: string,
-  stored: { owner_id?: unknown; title?: unknown; due_date?: unknown } | null,
+  stored: {
+    owner_id?: unknown;
+    title?: unknown;
+    due_date?: unknown;
+    description?: unknown;
+  } | null,
 ): string | null {
   if (m.owner_id) return m.owner_id;
   if (
     stored &&
     (stored.owner_id == null || stored.owner_id === "") &&
     stored.title === m.title &&
-    (stored.due_date ?? null) === m.due_date
+    (stored.due_date ?? null) === m.due_date &&
+    (m.description === undefined ||
+      storedDescription(stored) === m.description)
   ) {
     return null;
   }
   return rockOwner;
+}
+
+/** A stored milestone's description, normalized as a save would write it. */
+function storedDescription(stored: { description?: unknown }): string | null {
+  return normalizeDescription(String(stored.description ?? "")) || null;
+}
+
+/** A milestone's fields as its activity trace compares them. */
+function traceFields(x: {
+  title?: unknown;
+  owner_id?: unknown;
+  due_date?: unknown;
+  description?: unknown;
+}): MilestoneTraceFields {
+  return {
+    title: String(x.title ?? ""),
+    owner_id: (x.owner_id as string | null | undefined) || null,
+    due_date: (x.due_date as string | null | undefined) ?? null,
+    description: storedDescription(x),
+  };
+}
+
+type MilestoneTrace = {
+  id: string;
+  before: MilestoneTraceFields | null;
+  after: MilestoneTraceFields;
+};
+
+/**
+ * The milestones' own activity traces for a rock save — the rows a to-do's
+ * create / edit would write (lib/milestone-activity.ts), so a milestone's
+ * feed shows its edits like a to-do's. Best-effort, after the commit, like
+ * recordActivity everywhere; only the existing to-do trace type.
+ */
+async function recordMilestoneTraces(
+  db: Firestore,
+  teamId: string,
+  actorUid: string,
+  saved: readonly MilestoneTrace[],
+) {
+  const names = await loadUserNames(
+    db,
+    saved.map((s) => s.after.owner_id ?? ""),
+  );
+  const writes: Promise<void>[] = [];
+  for (const s of saved) {
+    const rows = milestoneTraceRows(
+      s.before,
+      s.after,
+      actorUid,
+      (id) => names.get(id),
+      formatDateOnly,
+    );
+    for (const row of rows) {
+      writes.push(
+        recordActivity({
+          db,
+          teamId,
+          entity: {
+            type: "todo",
+            id: s.id,
+            // Always team: a milestone's reach is its rock's (milestoneDoc).
+            visibility: "team",
+            ownerId: s.after.owner_id,
+          },
+          kind: row.kind,
+          actor: { id: actorUid },
+          detail: row.detail,
+        }),
+      );
+    }
+  }
+  await Promise.all(writes);
 }
 
 function milestoneDoc(
@@ -304,7 +402,7 @@ function milestoneDoc(
     title: m.title,
     owner_id: ownerId,
     due_date: m.due_date,
-    description: null,
+    description: m.description ?? null,
     completed_at: null,
     archived_at: null,
     // A milestone is always team-visible as a to-do; its reach is the
@@ -695,6 +793,17 @@ export async function createRockWithMilestones(
   }
   await batch.commit();
 
+  await recordMilestoneTraces(
+    db,
+    teamId,
+    uid,
+    created.map((c) => ({
+      id: c.ref.id,
+      before: null,
+      after: traceFields({ ...c.m, owner_id: c.ownerId }),
+    })),
+  );
+
   await recordAccessChanges(
     db,
     rockAccessEvents(
@@ -851,8 +960,20 @@ export async function updateRockWithMilestones(
     prevOwnerId: string | null;
     ownerId: string | null;
   }[] = [];
+  const traces: MilestoneTrace[] = [];
   for (const { m, existing, ownerId } of planned) {
     if (existing) {
+      const stored = existing.data();
+      traces.push({
+        id: existing.id,
+        before: traceFields(stored),
+        after: traceFields({
+          ...m,
+          owner_id: ownerId,
+          description:
+            m.description === undefined ? stored.description : m.description,
+        }),
+      });
       const prevOwnerId = (existing.data().owner_id as string | null) || null;
       const handoff = !!ownerId && prevOwnerId !== ownerId;
       if (handoff) handoffs.push({ id: existing.id, prevOwnerId, ownerId });
@@ -865,6 +986,7 @@ export async function updateRockWithMilestones(
         title: m.title,
         owner_id: ownerId,
         due_date: m.due_date,
+        ...(m.description !== undefined ? { description: m.description } : {}),
         visibility: "team",
         ...stamp(uid),
         // Retired: the milestone lock (spec §3.3).
@@ -874,6 +996,11 @@ export async function updateRockWithMilestones(
       const ref = db.collection("todos").doc();
       const owner = ownerId ?? owner_id;
       handoffs.push({ id: ref.id, prevOwnerId: null, ownerId: owner });
+      traces.push({
+        id: ref.id,
+        before: null,
+        after: traceFields({ ...m, owner_id: owner }),
+      });
       batch.set(
         ref,
         milestoneDoc(
@@ -904,6 +1031,7 @@ export async function updateRockWithMilestones(
     ),
   );
 
+  await recordMilestoneTraces(db, teamId, uid, traces);
   await purgeRemovedMilestones(db, removed, uid);
   await notifyMilestoneOwners(db, teamId, uid, handoffs);
   // Rock-level events: owner / due date to the followers, `assigned` and

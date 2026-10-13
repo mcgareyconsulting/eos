@@ -388,6 +388,7 @@ export function SegmentTodos({
       due_date: t.due_date,
       completed: false,
       rock_title: rockById.get(t.source_rock_id ?? "")?.title ?? "Rock",
+      description: t.description ?? null,
     }));
 
   // Names for outside assignees: the server's, then fetched for live arrivals.
@@ -588,6 +589,8 @@ export function SegmentTodos({
                       milestone={m}
                       ownerName={g.title}
                       hideOwner
+                      userId={userId}
+                      members={members}
                     />
                   ))}
                 </div>

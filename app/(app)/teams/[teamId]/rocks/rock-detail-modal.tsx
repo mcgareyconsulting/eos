@@ -31,6 +31,7 @@ import {
   MilestoneChecklist,
   type MilestoneSerialized,
 } from "./milestone-checklist";
+import { useMilestoneDrafts } from "./milestone-expansion";
 import { type StatusUpdateSerialized } from "./status-history";
 
 // Plain-data shapes only: the trigger renders from both Server Components
@@ -58,6 +59,8 @@ export type RockDetailMilestone = {
   due_date: string | null;
   completed: boolean;
   owner_name: string | null;
+  /** Rich text; shown when the milestone is expanded. */
+  description?: string | null;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -185,7 +188,7 @@ function RockDetailModal({
     owner_label: m.owner_name,
     due_date: m.due_date,
     completed: m.completed,
-    description: null,
+    description: m.description ?? null,
   }));
 
   // Status history folds into the feed as status-change events, each note
@@ -199,10 +202,15 @@ function RockDetailModal({
     [statusHistory],
   );
 
-  // An unsent comment in the feed puts "Discard?" in front of every way
-  // out — backdrop, Escape, the × — like the app's other forms.
+  // An unsent comment in the feed — the rock's, or an expanded milestone's
+  // — puts "Discard?" in front of every way out — backdrop, Escape, the × —
+  // like the app's other forms.
   const [hasDraft, setHasDraft] = useState(false);
-  const guard = useDiscardGuard(hasDraft, onClose);
+  const milestoneDrafts = useMilestoneDrafts();
+  const guard = useDiscardGuard(
+    hasDraft || milestoneDrafts.hasDraft,
+    onClose,
+  );
 
   return (
     <>
@@ -349,11 +357,17 @@ function RockDetailModal({
           {milestones.length === 0 ? (
             <p className="text-[13px] italic text-zinc-400">No milestones yet.</p>
           ) : (
+            // A name opens the milestone in place: description + its own
+            // feed. Anyone who sees this rock may comment on its milestones
+            // (milestoneAccess.canComment ⊇ seesFullRock), read-only or not.
             <MilestoneChecklist
               teamId={teamId}
+              members={members}
               milestones={checklist}
               variant="modal"
               readOnly={readOnly}
+              userId={userId}
+              onDraft={milestoneDrafts.report}
             />
           )}
         </div>

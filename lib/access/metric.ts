@@ -90,7 +90,7 @@ export const metricAccess: AccessModule<MetricSubject> & {
   // A metric has no thread (spec §5.1 agrees).
   canComment: () => false,
   // Follow a metric only when it is on the scorecard of one of your teams
-  // (admins: any) — never from the metric board. Notifications are P7b.
+  // (admins: any) — never from the "Add existing" picker. Notifications are P7b.
   canFollow: (metric, viewer) =>
     viewer.isAdmin || onSomeScorecard(metric, viewer),
   // No thread, so nowhere to mention; defined as canSee per the interface.

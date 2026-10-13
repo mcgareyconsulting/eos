@@ -81,7 +81,7 @@ export function MetricExpand({
    * passes `showManage={false}` — a meeting reads the scorecard, it does not
    * restructure it.
    */
-  /** Follow control for the row (spec 3.4). Absent = none (e.g. the metric board). */
+  /** Follow control for the row (spec 3.4). Absent = none. */
   follow?: { teamId: string; following: boolean; locked: boolean; count: number };
   manage?: {
     teamId: string;

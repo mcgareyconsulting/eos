@@ -169,8 +169,9 @@ export type ScorecardMetricDoc = FollowFields & {
   // `initialMetrics` until the realtime listener replaces it.
   group?: string | null;
   interval?: string | null;
-  // Public metrics are visible to every person (org metric board) and can be
-  // tracked by other teams. Missing/false = private. Default false.
+  // Public metrics are visible to every person (other teams find them in the
+  // scorecard's "Add existing" picker) and can be tracked by other teams.
+  // Missing/false = private. Default false.
   is_public?: boolean | null;
   // Teams tracking this measurable ("track" in the UI; field name kept until a
   // migration). Only a public metric can be tracked; becoming private clears

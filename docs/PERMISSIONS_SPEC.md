@@ -244,8 +244,10 @@ complete it and comment (section 3.3).
 - The person who creates a metric selects public or private. The default is
   private.
 - Members of the parent team and admins can change the setting at all times.
-- A public metric shows on the metric board of the organization. The board
-  shows the name, owner, team and values.
+- A member of a different team can find a public metric with the "Add
+  existing measurable" search on the scorecard of their team. The search
+  shows the name, owner, team and recent values. There is no metric board
+  for the organization.
 - A member of a different team can track a public metric. Then the metric
   shows on the scorecard of their team. That team cannot change it.
 - Public, track and follow are three different functions:
@@ -256,7 +258,8 @@ complete it and comment (section 3.3).
 - You can track a metric and not follow it.
 - You can follow a metric only if it is on the scorecard of one of your
   teams. This is a metric of your team, or a public metric that your team
-  tracks. You cannot follow a metric from the metric board.
+  tracks. You cannot follow a metric from the "Add existing measurable"
+  search.
 - When your team stops tracking a metric, you stop following it. When a
   metric becomes private, all followers on other teams stop following it.
 - When a metric becomes private, the application removes it from all other

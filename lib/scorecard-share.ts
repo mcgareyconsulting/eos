@@ -47,7 +47,7 @@ export function inCatalogFor(
   return isAdmin || isPublicMetric(metric) || isHomeTeam(metric, askingTeamId);
 }
 
-/** Public metrics show on the org metric board and can be tracked. */
+/** Public metrics are listed in every team's "Add existing" picker and can be tracked. */
 export function isPublicMetric(metric: ShareableMetric): boolean {
   return metric.is_public === true;
 }

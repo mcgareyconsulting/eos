@@ -67,10 +67,8 @@ export type CatalogMetric = {
   alreadyOnScorecard: boolean;
   /** Owned by the asking team, so it can never be added or hidden. */
   isHome: boolean;
-  /** Public metrics are on the org board and trackable; private ones only reach a catalog via their own team. */
+  /** Public metrics are listed for every team and trackable; private ones only reach a catalog via their own team. */
   isPublic: boolean;
-  /** Teams tracking it. The org board uses this to say where it is already tracked. */
-  trackingTeamIds: string[];
 };
 
 /**
@@ -105,17 +103,6 @@ export async function loadOrgMetricCatalog(
   return loadCatalog(db, teamId, (m) =>
     inCatalogFor(m, teamId, opts.isAdmin === true),
   );
-}
-
-/**
- * The org metric board: every active public metric, regardless of team. No
- * asking team, so `alreadyOnScorecard` / `isHome` are false; the page derives
- * per-team state from `teamId` and `trackingTeamIds`.
- */
-export async function loadPublicMetricBoard(
-  db: FirebaseFirestore.Firestore,
-): Promise<CatalogMetric[]> {
-  return loadCatalog(db, "", (m) => isPublicMetric(m));
 }
 
 async function loadCatalog(
@@ -189,7 +176,6 @@ async function loadCatalog(
           isHomeTeam(shareable, teamId) || isSharedIntoTeam(shareable, teamId),
         isHome: isHomeTeam(shareable, teamId),
         isPublic: isPublicMetric(shareable),
-        trackingTeamIds: (x.shared_team_ids ?? []).filter((t) => t !== home),
       };
     })
     .sort(

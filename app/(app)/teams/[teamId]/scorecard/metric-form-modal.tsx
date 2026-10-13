@@ -486,7 +486,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
               <span className="block text-[11px] text-zinc-500">
                 {isEdit && metric?.is_public && !isPublic
                   ? "Making this private removes it from every team that tracks it."
-                  : "Everyone can see it on the metric board and other teams can track it. Private by default."}
+                  : 'Other teams can find it in "Add existing measurable" on their scorecard and track it. Private by default.'}
               </span>
             </span>
           </label>

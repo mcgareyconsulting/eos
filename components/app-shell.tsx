@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Home, Settings, Shield } from "lucide-react";
+import { Home, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
@@ -72,7 +72,6 @@ export function AppShell({
           <div className="flex-1 overflow-y-auto">
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
-              <NavLink href="/metrics" icon={BarChart3} label="Metric board" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
             </nav>
 

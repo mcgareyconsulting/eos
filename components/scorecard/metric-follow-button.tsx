@@ -9,7 +9,7 @@ import { setFollowing } from "@/app/(app)/teams/[teamId]/follow/actions";
  * Follow / Unfollow toggle for a scorecard metric — the to-do FollowButton
  * pattern over the generic `setFollowing` action. Following means a
  * notification when a value is posted or the goal or owner changes (spec
- * §5.3). Only rendered on a scorecard row, never on the metric board.
+ * §5.3). Only rendered on a scorecard row, never in the "Add existing" picker.
  */
 export function MetricFollowButton({
   teamId,

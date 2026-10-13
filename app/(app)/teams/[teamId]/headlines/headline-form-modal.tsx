@@ -7,7 +7,10 @@ import { entityAddButtonClass } from "@/components/entity-page-header";
 import { addHeadline, updateHeadline } from "./actions";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
+import type { HeadlineKind } from "@/lib/headlines";
+import { HEADLINE_KIND_OPTIONS } from "./headline-kind";
 import {
   DiscardChangesDialog,
   draftChanged,
@@ -16,14 +19,7 @@ import {
   useDiscardGuard,
 } from "@/components/ui/modal";
 
-const KIND_OPTIONS = [
-  { value: "customer", label: "Customer" },
-  { value: "employee", label: "Employee" },
-  { value: "cascading", label: "Cascading" },
-  { value: "general", label: "General / FYI" },
-] as const;
-
-type Kind = (typeof KIND_OPTIONS)[number]["value"];
+type Kind = HeadlineKind;
 
 export type HeadlineEditValues = {
   id: string;
@@ -200,16 +196,12 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
               <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Category
               </span>
-              <Select
+              <SelectMenu<Kind>
+                variant="field"
+                options={HEADLINE_KIND_OPTIONS}
                 value={kind}
-                onChange={(e) => setKind(e.target.value as Kind)}
-              >
-                {KIND_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
+                onChange={setKind}
+              />
             </label>
 
             <label className="block space-y-1">

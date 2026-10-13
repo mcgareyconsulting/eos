@@ -23,15 +23,9 @@ import {
 } from "@/lib/firestore-types";
 import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
+import { headlineKind } from "./headline-kind";
 
 type HeadlineDoc = WithId<HeadlineDocRecord>;
-
-const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
-  customer: "Customer",
-  employee: "Employee",
-  cascading: "Cascading",
-  general: "General / FYI",
-};
 
 export default async function HeadlinesPage({
   params,
@@ -84,7 +78,7 @@ export default async function HeadlinesPage({
     );
 
   function renderRow(h: HeadlineDoc) {
-    const kindLabel = KIND_LABEL[h.kind] ?? KIND_LABEL.customer;
+    const kind = headlineKind(h.kind);
     const remove = deleteHeadline.bind(null, teamId, h.id);
     const when =
       h.created_at?.toDate?.()?.toLocaleString(undefined, {
@@ -155,7 +149,13 @@ export default async function HeadlinesPage({
           )}
           {body && <HeadlineBody body={body} />}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-            {kindLabel}
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${kind.dotClassName}`}
+                aria-hidden
+              />
+              {kind.label}
+            </span>
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
             {creatorName(h)} · {when}
           </div>

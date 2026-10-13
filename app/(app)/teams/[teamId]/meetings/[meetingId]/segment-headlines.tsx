@@ -23,6 +23,7 @@ import { deleteHeadline } from "../../headlines/actions";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { HeadlineFormModal } from "../../headlines/headline-form-modal";
+import { headlineKind } from "../../headlines/headline-kind";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { LocalTime } from "@/components/local-time";
 import { QuickAddIssue } from "@/components/quick-add-issue";
@@ -59,13 +60,6 @@ export type HeadlineDoc = WithId<
 };
 
 type Member = { user_id: string; full_name: string };
-
-const KIND_LABEL: Record<HeadlineDoc["kind"], string> = {
-  customer: "Customer",
-  employee: "Employee",
-  cascading: "Cascading",
-  general: "General / FYI",
-};
 
 export function SegmentHeadlines({
   teamId,
@@ -121,7 +115,7 @@ export function SegmentHeadlines({
   const ownerGroups = groupByOwner(sortedTeam, creatorName);
 
   function renderRow(h: HeadlineDoc) {
-    const kindLabel = KIND_LABEL[h.kind] ?? KIND_LABEL.customer;
+    const kind = headlineKind(h.kind);
     const remove = deleteHeadline.bind(null, teamId, h.id);
     const body = normalizeDescription(h.body);
     const readOnly = !!h.broadcast;
@@ -156,7 +150,13 @@ export function SegmentHeadlines({
           </div>
           {body && <HeadlineBody body={body} />}
           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-            {kindLabel}
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${kind.dotClassName}`}
+                aria-hidden
+              />
+              {kind.label}
+            </span>
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
             {creatorName(h)} ·{" "}
             <LocalTime

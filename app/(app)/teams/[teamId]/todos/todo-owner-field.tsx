@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { OwnerPicker, type OrgPerson } from "../rocks/owner-picker";
+import { OwnerPicker, type OrgPerson } from "@/components/ui/owner-picker";
 import { loadTodoDirectory } from "./actions";
 
 type Member = { user_id: string; full_name: string };

@@ -14,7 +14,7 @@ import {
 import {
   OwnerPicker,
   type OrgPerson,
-} from "./owner-picker";
+} from "@/components/ui/owner-picker";
 import {
   AudiencePane,
   AudienceSummary,

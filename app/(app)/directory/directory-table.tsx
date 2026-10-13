@@ -21,6 +21,11 @@ const ACCESS_OPTIONS = (Object.keys(ACCESS_LABEL) as DirectoryPerson["access"][]
   (value) => ({ value, label: ACCESS_LABEL[value] }),
 );
 
+/** The Team and Role access cells stack one line per team; both use these
+ *  so each role pill sits level with its team. */
+const ROWS_CLASS = "flex flex-col gap-1";
+const ROW_CLASS = "flex h-5 min-w-0 items-center";
+
 /** Team-filter value for people on no roster. Not a real team id. */
 const NO_TEAM = "__none__";
 
@@ -204,16 +209,14 @@ export function DirectoryTable({
                   {p.teams.length === 0 ? (
                     <span className="text-xs text-zinc-400">No team</span>
                   ) : (
-                    // One team per line, its role in a second column so the
-                    // roles line up — a person can lead one team and be a
-                    // plain member of the next.
-                    <div className="inline-grid max-w-full grid-cols-[minmax(0,auto)_auto] items-center gap-x-1.5 gap-y-1">
+                    // One team per line; the Role access cell lines up a
+                    // pill beside each (same ROW_CLASS height and gap).
+                    <div className={ROWS_CLASS}>
                       {p.teams.map((t) => (
                         <TeamRow
                           key={t.id}
                           name={t.name}
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
-                          role={t.role}
                           remove={
                             showLeaderTools && isLeaderOf(viewer, t.id) && t.role !== "leader" ? (
                               <RemoveFromTeamButton
@@ -231,22 +234,42 @@ export function DirectoryTable({
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {p.deactivated ? (
-                    <Chip tone="amber">Deactivated</Chip>
-                  ) : (
-                    <AccessChip access={p.access} />
-                  )}
-                  {/* Account state is an admin concern — it's what the old
-                      People tab existed to show, and means nothing to
-                      anyone who can't fix it. */}
-                  {isAdmin && p.hasAuth === false && (
-                    <Chip tone="amber" title="No sign-in account — a placeholder left by a data import.">
-                      No account
-                    </Chip>
-                  )}
-                  {isAdmin && p.hasAuth && p.hasSignedIn === false && (
-                    <Chip tone="zinc">Never signed in</Chip>
-                  )}
+                  {/* One pill per team line: Admin everywhere for an admin,
+                      otherwise that team's role. No team (or deactivated)
+                      → a single pill. Account state rides the first line. */}
+                  <div className={ROWS_CLASS}>
+                    {(p.deactivated || p.teams.length === 0
+                      ? [null]
+                      : p.teams
+                    ).map((t, i) => (
+                      <div key={t?.id ?? "none"} className={ROW_CLASS}>
+                        {p.deactivated ? (
+                          <Chip tone="amber">Deactivated</Chip>
+                        ) : (
+                          <AccessChip
+                            access={
+                              p.access === "admin" || !t
+                                ? p.access
+                                : t.role === "leader"
+                                  ? "leader"
+                                  : "member"
+                            }
+                          />
+                        )}
+                        {/* Account state is an admin concern — it's what the
+                            old People tab existed to show, and means nothing
+                            to anyone who can't fix it. */}
+                        {i === 0 && isAdmin && p.hasAuth === false && (
+                          <Chip tone="amber" title="No sign-in account — a placeholder left by a data import.">
+                            No account
+                          </Chip>
+                        )}
+                        {i === 0 && isAdmin && p.hasAuth && p.hasSignedIn === false && (
+                          <Chip tone="zinc">Never signed in</Chip>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </td>
                 <td className="break-all px-3 py-2 text-zinc-600 dark:text-zinc-400">
                   {p.email ?? <Blank />}
@@ -274,47 +297,39 @@ function Blank() {
   return <span className="text-zinc-400">—</span>;
 }
 
-/** One grid row of the Team cell: the team chip, then its role (and the
- *  leader's remove control) in the second column. Renders two grid items. */
+/** One line of the Team cell: the team chip, plus the leader's remove
+ *  control. Its role shows on the same line of the Role access cell. */
 function TeamRow({
   name,
   href,
-  role,
   remove,
 }: {
   name: string;
   href: string | null;
-  role: string;
   remove: React.ReactNode;
 }) {
   const cls =
-    "block max-w-full truncate rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
-  const leader = role === "leader";
+    "block min-w-0 max-w-full truncate rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] leading-4 text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
   return (
-    <>
-      <span className="min-w-0">
-        {href ? (
-          <Link
-            href={href}
-            title={name}
-            className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}
-          >
-            {name}
-          </Link>
-        ) : (
-          <span
-            className={cls}
-            title={`${name} — you can see who is on this team, but not its data, until a leader adds you.`}
-          >
-            {name}
-          </span>
-        )}
-      </span>
-      <span className="inline-flex items-center">
-        <Chip tone={leader ? "blue" : "zinc"}>{leader ? "Leader" : "Member"}</Chip>
-        {remove}
-      </span>
-    </>
+    <div className={ROW_CLASS}>
+      {href ? (
+        <Link
+          href={href}
+          title={name}
+          className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}
+        >
+          {name}
+        </Link>
+      ) : (
+        <span
+          className={cls}
+          title={`${name} — you can see who is on this team, but not its data, until a leader adds you.`}
+        >
+          {name}
+        </span>
+      )}
+      {remove}
+    </div>
   );
 }
 

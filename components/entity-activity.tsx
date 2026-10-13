@@ -201,3 +201,11 @@ export function EntityActivity({
     </section>
   );
 }
+
+// The trace's icon and tint per kind, for ActivityFeed (which shows the same
+// rows inside an item's merged timeline).
+export {
+  KIND_ICON as ACTIVITY_KIND_ICON,
+  KIND_TONE as ACTIVITY_KIND_TONE,
+  DEFAULT_TONE as ACTIVITY_DEFAULT_TONE,
+};

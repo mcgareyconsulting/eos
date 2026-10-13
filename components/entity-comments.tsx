@@ -1,51 +1,85 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import {
-  collection,
-  query as fsQuery,
-  where,
-} from "firebase/firestore";
+import { useState } from "react";
 import { MessageSquare, Plus, Trash2 } from "lucide-react";
-import { getClientDb } from "@/lib/firebase/client";
-import { useCollection } from "@/lib/firebase/use-collection";
-import {
-  addEntityComment,
-  deleteEntityComment,
-  loadCommentAuthorNames,
-  loadThreadInfo,
-  type CommentEntityType,
-} from "@/app/(app)/teams/[teamId]/entity-comments/actions";
-import { loadPersonNames } from "@/app/(app)/teams/[teamId]/todos/actions";
+import type { CommentEntityType } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
 import { RichText } from "@/components/rich-text";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import {
+  useCommentActions,
+  useCommentAuthorName,
+  useEntityComments,
+  useMentionNames,
+  useThreadInfo,
+  type ThreadMember,
+} from "@/components/use-entity-thread";
+import { tsMs } from "@/lib/activity-feed";
 import { cn } from "@/lib/utils";
-import type { MentionCandidate } from "@/lib/mentions";
 
-type MaybeTimestamp =
-  | { toMillis: () => number }
-  | number
-  | null
-  | undefined;
-
-type CommentDoc = {
-  id: string;
-  team_id: string;
-  entity_type: CommentEntityType;
-  entity_id: string;
-  body: string;
-  author_id: string;
-  /** Roster uids `@`-mentioned in the body; absent on older comments. */
-  mention_ids?: string[];
-  created_at: MaybeTimestamp;
+const WHEN: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
 };
 
-type Member = { user_id: string; full_name: string };
-
-function tsMs(t: MaybeTimestamp): number | null {
-  if (t == null) return null;
-  if (typeof t === "number") return t;
-  return typeof t.toMillis === "function" ? t.toMillis() : null;
+/**
+ * One comment: author · time, a delete control for its author or an admin,
+ * and the rich-text body. Shared by EntityComments and ActivityFeed.
+ */
+export function CommentCard({
+  authorName,
+  createdMs,
+  body,
+  mentionNames,
+  canDelete,
+  onDelete,
+  className,
+}: {
+  authorName: string;
+  createdMs: number | null;
+  body: string;
+  mentionNames: readonly string[];
+  canDelete: boolean;
+  onDelete: () => void;
+  className?: string;
+}) {
+  const when =
+    createdMs != null ? new Date(createdMs).toLocaleString(undefined, WHEN) : "—";
+  return (
+    <div
+      className={cn(
+        "group rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-zinc-500">
+          <span className="font-medium text-zinc-700 dark:text-zinc-300">
+            {authorName}
+          </span>
+          {" · "}
+          {when}
+        </span>
+        {canDelete && (
+          <button
+            type="button"
+            title="Delete comment"
+            aria-label="Delete comment"
+            className="shrink-0 text-zinc-300 opacity-0 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-600"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <RichText
+        value={body}
+        mentionNames={mentionNames}
+        className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
+      />
+    </div>
+  );
 }
 
 export function EntityComments({
@@ -61,7 +95,7 @@ export function EntityComments({
   entityType: CommentEntityType;
   entityId: string;
   userId: string;
-  members: Member[];
+  members: ThreadMember[];
   /**
    * "inline" keeps the editor always open under the thread. "collapsed"
    * hides it behind a + Comment button and folds it away again after a
@@ -71,130 +105,35 @@ export function EntityComments({
   composer?: "inline" | "collapsed";
   className?: string;
 }) {
-  const db = getClientDb();
-  // A rock's thread spans every team that has it, and a to-do's is filed
-  // under the to-do's own team (an off-team assignee reads it from theirs),
-  // so those queries are by entity alone and the rule gates who may read
-  // them (item-aware, docs/rules-notes/P9.md). Issue and headline threads
-  // stay team-scoped.
-  const q = useMemo(
-    () =>
-      entityType === "rock" || entityType === "todo"
-        ? fsQuery(
-            collection(db, "entity_comments"),
-            where("entity_type", "==", entityType),
-            where("entity_id", "==", entityId),
-          )
-        : fsQuery(
-            collection(db, "entity_comments"),
-            where("team_id", "==", teamId),
-            where("entity_type", "==", entityType),
-            where("entity_id", "==", entityId),
-          ),
-    [db, teamId, entityType, entityId],
-  );
-  const comments = useCollection<CommentDoc>(q, []);
+  const comments = useEntityComments(teamId, entityType, entityId);
   const sorted = [...comments].sort(
     (a, b) => (tsMs(a.created_at) ?? 0) - (tsMs(b.created_at) ?? 0),
   );
 
   const [body, setBody] = useState("");
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(composer === "inline");
-
-  // Who can be mentioned here and who can read the thread, from the server
-  // (the item's access module, not the team roster). Loaded when the
-  // composer opens.
-  const [info, setInfo] = useState<{
-    candidates: MentionCandidate[];
-    visibleTo: string;
-    isAdmin: boolean;
-  } | null>(null);
-  useEffect(() => {
-    if (!composing || info) return;
-    let cancelled = false;
-    loadThreadInfo(entityType, entityId)
-      .then((got) => {
-        if (!cancelled) setInfo(got);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [composing, info, entityType, entityId]);
-
-  // Authors off this roster (a rock's thread spans teams) are named on
-  // demand.
-  const [extraNames, setExtraNames] = useState<Record<string, string>>({});
-  const unknownAuthors = useMemo(
-    () =>
-      [...new Set(comments.map((c) => c.author_id))].filter(
-        (id) =>
-          id !== userId &&
-          !members.some((m) => m.user_id === id) &&
-          !info?.candidates.some((c) => c.id === id) &&
-          !(id in extraNames),
-      ),
-    [comments, members, userId, extraNames, info],
+  const { pending, error, setError, post, remove } = useCommentActions(
+    teamId,
+    entityType,
+    entityId,
   );
-  useEffect(() => {
-    if (unknownAuthors.length === 0) return;
-    let cancelled = false;
-    // A to-do thread can be read by its assignee from outside the team
-    // (P8a), who can't pass loadCommentAuthorNames' team gate; names are
-    // directory data, so the to-do path uses the ungated loader.
-    (entityType === "todo"
-      ? loadPersonNames(unknownAuthors)
-      : loadCommentAuthorNames(teamId, unknownAuthors)
-    )
-      .then((got) => {
-        if (cancelled) return;
-        // Remember misses too, so an unnamed author isn't refetched forever.
-        const filled = Object.fromEntries(unknownAuthors.map((id) => [id, "—"]));
-        setExtraNames((prev) => ({ ...prev, ...filled, ...got }));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [teamId, entityType, unknownAuthors]);
-  const authorName = (id: string) => {
-    if (id === userId) return "You";
-    return (
-      members.find((m) => m.user_id === id)?.full_name ??
-      info?.candidates.find((c) => c.id === id)?.name ??
-      extraNames[id] ??
-      "—"
-    );
-  };
 
-  // @mentions work on every thread. The picker lists the people the server
-  // sent (greyed when they cannot see the item); the read-side highlight
-  // uses the same names, falling back to the roster until they arrive.
+  const info = useThreadInfo(entityType, entityId, composing);
+  const authorName = useCommentAuthorName({
+    teamId,
+    entityType,
+    comments,
+    userId,
+    members,
+    info,
+  });
   const mentionCandidates = info?.candidates;
-  const mentionNames = useMemo(
-    () =>
-      info
-        ? info.candidates.map((c) => c.name)
-        : members.map((m) => m.full_name),
-    [info, members],
-  );
+  const mentionNames = useMentionNames(info, members);
 
   function submit() {
-    const t = body.trim();
-    if (!t) return;
-    const fd = new FormData();
-    fd.set("body", t);
-    start(async () => {
-      try {
-        setError(null);
-        await addEntityComment(teamId, entityType, entityId, fd);
-        setBody("");
-        if (composer === "collapsed") setComposing(false);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
+    post(body, () => {
+      setBody("");
+      if (composer === "collapsed") setComposing(false);
     });
   }
 
@@ -214,68 +153,18 @@ export function EntityComments({
         </p>
       ) : (
         <ul className="space-y-2">
-          {sorted.map((c) => {
-            const whenMs = tsMs(c.created_at);
-            const when =
-              whenMs != null
-                ? new Date(whenMs).toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })
-                : "—";
-            const mine = c.author_id === userId;
-            return (
-              <li
-                key={c.id}
-                className="group rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-zinc-500">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                      {authorName(c.author_id)}
-                    </span>
-                    {" · "}
-                    {when}
-                  </span>
-                  {(mine || info?.isAdmin) && (
-                    <button
-                      type="button"
-                      title="Delete comment"
-                      aria-label="Delete comment"
-                      className="shrink-0 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            "Delete this comment? This can't be undone.",
-                          )
-                        ) {
-                          return;
-                        }
-                        start(async () => {
-                          try {
-                            await deleteEntityComment(teamId, c.id);
-                          } catch (e) {
-                            setError(
-                              e instanceof Error ? e.message : String(e),
-                            );
-                          }
-                        });
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-                <RichText
-                  value={c.body}
-                  mentionNames={mentionNames}
-                  className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
-                />
-              </li>
-            );
-          })}
+          {sorted.map((c) => (
+            <li key={c.id}>
+              <CommentCard
+                authorName={authorName(c.author_id)}
+                createdMs={tsMs(c.created_at)}
+                body={c.body}
+                mentionNames={mentionNames}
+                canDelete={c.author_id === userId || !!info?.isAdmin}
+                onDelete={() => remove(c.id)}
+              />
+            </li>
+          ))}
         </ul>
       )}
 

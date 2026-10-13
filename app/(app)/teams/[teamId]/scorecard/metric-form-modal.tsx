@@ -3,16 +3,20 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Plus } from "lucide-react";
-import {
-  PERIOD_LABELS,
-  SCORECARD_PERIODS,
-  type MetricInterval,
-  type ScorecardPeriod,
-} from "@/lib/scorecard-periods";
+import type { MetricInterval, ScorecardPeriod } from "@/lib/scorecard-periods";
 import { formatGoalInput, parseScorecardValue } from "@/lib/scorecard";
 import { addMetric, setMetricPublic, updateMetric } from "./actions";
+import {
+  DIRECTION_OPTIONS,
+  PERIOD_OPTIONS,
+  UNIT_OPTIONS,
+  YESNO_GOAL_OPTIONS,
+  metricOwnerLabel,
+} from "./metric-form-options";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Combobox, SelectMenu } from "@/components/ui/select-menu";
+import { OwnerPicker } from "@/components/ui/owner-picker";
 import {
   DiscardChangesDialog,
   draftChanged,
@@ -23,8 +27,16 @@ import {
   useDiscardGuard,
 } from "@/components/ui/modal";
 
+// 32px like the SelectMenu triggers beside it on the goal row.
 const inputClass =
-  "w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
+  "h-8 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950";
+
+const labelTextClass = "text-xs font-medium text-zinc-600 dark:text-zinc-400";
+
+/** The Owner picker never opens its "Whole org" tab (`teamOnly`), so these
+ *  are never read; they only satisfy its props. */
+const NO_ORG_TEAM_NAMES: ReadonlyMap<string, string> = new Map();
+const noop = () => {};
 
 type Member = { user_id: string; full_name: string };
 
@@ -38,6 +50,8 @@ export type MetricFormMetric = {
   group?: string | null;
   interval?: string | null;
   is_public?: boolean | null;
+  /** Server-resolved owner name, for an owner no longer on the roster. */
+  ownerName?: string | null;
 };
 
 /**
@@ -238,6 +252,12 @@ export function MetricFormModal(props: MetricFormModalProps) {
       setError("Name required");
       return;
     }
+    // The native Owner select was `required`; the picker can't be, so the
+    // same block lives here (updateMetric refuses an empty owner too).
+    if (!ownerId) {
+      setError("Choose an owner.");
+      return;
+    }
     if (goal.trim()) {
       const parsed = parseScorecardValue(goal, unit);
       if (!parsed.ok) {
@@ -310,7 +330,7 @@ export function MetricFormModal(props: MetricFormModalProps) {
         // Escape belongs to the discard confirm while it is up.
         dismissible={!guard.asking}
         ariaLabel={isEdit ? "Edit measurable" : "Add measurable"}
-        size="lg"
+        size="3xl"
       >
         <ModalHeader
           title={isEdit ? "Edit measurable" : "Add measurable"}
@@ -332,31 +352,25 @@ export function MetricFormModal(props: MetricFormModalProps) {
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* What is measured and against what, on one row at this width:
+              Interval · Unit · Comparison · Goal. Yes/No has no comparison
+              (always "eq"), so its goal takes both of those columns. Two
+              columns below `sm`. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Interval
-              </span>
-              <Select
+              <span className={labelTextClass}>Interval</span>
+              <SelectMenu
                 name="interval"
+                options={PERIOD_OPTIONS}
                 value={interval}
                 disabled={intervalLocked}
-                onChange={(e) =>
-                  setMetricInterval(e.target.value as ScorecardPeriod)
-                }
-                className={intervalLocked ? "disabled:cursor-not-allowed disabled:opacity-60" : undefined}
+                onChange={setMetricInterval}
                 title={
                   intervalLocked && metric
                     ? `Set by the group "${metric.group}" — change the group to change the period`
                     : "How often this measurable is recorded"
                 }
-              >
-                {SCORECARD_PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    {PERIOD_LABELS[p]}
-                  </option>
-                ))}
-              </Select>
+              />
               {intervalLocked && (
                 <span className="block text-[11px] text-zinc-500">
                   Set by the group “{metric?.group}”.
@@ -365,114 +379,100 @@ export function MetricFormModal(props: MetricFormModalProps) {
             </label>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Unit
-              </span>
-              <Select
+              <span className={labelTextClass}>Unit</span>
+              <SelectMenu
                 name="unit"
+                options={UNIT_OPTIONS}
                 value={unit}
-                onChange={(e) => changeUnit(e.target.value)}
-              >
-                <option value="number">Number</option>
-                <option value="currency">Currency</option>
-                <option value="percent">Percent</option>
-                <option value="yesno">Yes/No</option>
-                <option value="time">Time</option>
-              </Select>
+                onChange={changeUnit}
+              />
             </label>
+
+            {unit === "yesno" ? (
+              <label className="col-span-2 block space-y-1">
+                <span className={labelTextClass}>
+                  Goal{" "}
+                  <span className="font-normal text-zinc-400">(optional)</span>
+                </span>
+                <SelectMenu
+                  name="goal"
+                  options={YESNO_GOAL_OPTIONS}
+                  value={goal}
+                  onChange={setGoal}
+                />
+              </label>
+            ) : (
+              <>
+                <label className="block space-y-1">
+                  <span className={labelTextClass}>Goal comparison</span>
+                  <SelectMenu
+                    name="direction"
+                    options={DIRECTION_OPTIONS}
+                    value={direction}
+                    onChange={setDirection}
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className={labelTextClass}>Goal</span>
+                  <GoalInput unit={unit} value={goal} onChange={setGoal} />
+                </label>
+              </>
+            )}
           </div>
 
-          {unit === "yesno" ? (
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Goal{" "}
-                <span className="font-normal text-zinc-400">(optional)</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* Team roster only (`teamOnly`): addMetric / updateMetric require
+                the owner on this team (requireRosterOwner), so the picker's
+                "Whole org" tab would only offer saves the server refuses.
+                Not a <label> wrapper — the picker names itself ("Owner: …"). */}
+            <div className="space-y-1">
+              <span className={`block ${labelTextClass}`} aria-hidden>
+                Owner
               </span>
-              <select
-                name="goal"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">No goal</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </select>
-            </label>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Goal comparison
-                </span>
-                <select
-                  name="direction"
-                  value={direction}
-                  onChange={(e) => setDirection(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="gte">At least (&gt;=)</option>
-                  <option value="lte">At most (&lt;=)</option>
-                  <option value="eq">Exactly (=)</option>
-                </select>
-              </label>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Goal
-                </span>
-                <GoalInput unit={unit} value={goal} onChange={setGoal} />
-              </label>
-            </div>
-          )}
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Owner
-            </span>
-            <Select
-              name="owner_id"
-              value={ownerId}
-              onChange={(e) => setOwnerId(e.target.value)}
-              required
-            >
-              {!ownerId && (
-                <option value="" disabled>
-                  Choose an owner
-                </option>
-              )}
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.full_name}
-                </option>
-              ))}
-            </Select>
-          </label>
-
-          {isEdit ? (
-            <p className="text-[11px] text-zinc-500">
-              Group is edited from the row itself, next to this button.
-            </p>
-          ) : (
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Group{" "}
-                <span className="font-normal text-zinc-400">(optional)</span>
-              </span>
-              <Input
-                name="group"
-                list="scorecard-add-groups"
-                value={group}
-                onChange={(e) => setGroup(e.target.value)}
-                placeholder="e.g. Weekly, Compliance"
+              <OwnerPicker
+                variant="field"
+                label="Owner"
+                name="owner_id"
+                value={ownerId}
+                valueName={metricOwnerLabel({
+                  ownerId,
+                  members,
+                  selfId: isEdit ? undefined : props.defaultOwnerId,
+                  resolvedName: metric?.ownerName,
+                })}
+                onChange={setOwnerId}
+                team={{ id: teamId, name: "This team", people: members }}
+                teamOnly
+                orgPeople={null}
+                onNeedOrg={noop}
+                teamNameById={NO_ORG_TEAM_NAMES}
               />
-              <datalist id="scorecard-add-groups">
-                {props.groups.map((g) => (
-                  <option key={g} value={g} />
-                ))}
-              </datalist>
-            </label>
-          )}
+            </div>
+
+            {isEdit ? (
+              <p className="self-end pb-2 text-[11px] text-zinc-500">
+                Group is edited from the row itself, next to this button.
+              </p>
+            ) : (
+              <label className="block space-y-1">
+                <span className={labelTextClass}>
+                  Group{" "}
+                  <span className="font-normal text-zinc-400">(optional)</span>
+                </span>
+                {/* Pick an existing group or type a new one; the text is the
+                    value either way, exactly as the datalist field sent it. */}
+                <Combobox
+                  name="group"
+                  options={props.groups}
+                  value={group}
+                  onChange={setGroup}
+                  placeholder="e.g. Weekly, Compliance"
+                  createLabel={(text) => <>New group “{text}”</>}
+                />
+              </label>
+            )}
+          </div>
 
           <label className="flex items-start gap-2 text-sm">
             <input

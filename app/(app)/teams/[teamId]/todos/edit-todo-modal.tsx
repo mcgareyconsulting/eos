@@ -184,7 +184,7 @@ export function EditTodoModal({
         // Escape belongs to the discard confirm while it is up.
         dismissible={!guard.asking}
         ariaLabel="Edit to-do"
-        size="lg"
+        size="3xl"
         portal
       >
         <ModalHeader title="Edit to-do" onClose={guard.requestClose} />
@@ -204,6 +204,8 @@ export function EditTodoModal({
             visibility={visibility}
             onVisibilityChange={setVisibility}
             canPublish={canChangeTodoVisibility(todo, { uid: currentUserId }, "team")}
+            viewerId={currentUserId}
+            creatorId={todo.created_by ?? null}
             weeklyFocus={weeklyFocus}
             onWeeklyFocusChange={setWeeklyFocus}
             followers={{

@@ -167,7 +167,7 @@ export function AddTodoModal({
         // Escape belongs to the discard confirm while it is up.
         dismissible={!guard.asking}
         ariaLabel="Add to-do"
-        size="lg"
+        size="3xl"
       >
         <ModalHeader title="Add to-do" onClose={guard.requestClose} />
 
@@ -186,6 +186,8 @@ export function AddTodoModal({
             showVisibility={!meetingId}
             visibility={visibility}
             onVisibilityChange={setVisibility}
+            viewerId={currentUserId}
+            creatorId={currentUserId}
             weeklyFocus={weeklyFocus}
             onWeeklyFocusChange={setWeeklyFocus}
             followers={{

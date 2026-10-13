@@ -85,7 +85,8 @@ export function TodoOwnerField({
             .catch(() => {});
         }}
         teamNameById={teamNameById}
-        className="h-9 w-full text-sm"
+        variant="field"
+        label="Owner"
       />
       {!onTeam && (
         <p className="mt-1 text-[11px] leading-snug text-zinc-500">

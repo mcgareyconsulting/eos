@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { UserPlus, X } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import { Lock, UserPlus, Users, X } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TodoOwnerField } from "./todo-owner-field";
+import {
+  stepChoice,
+  todoVisibilityChoices,
+  type TodoVisibility,
+} from "./todo-visibility";
 
 export type Member = { user_id: string; full_name: string };
 
@@ -144,6 +149,116 @@ function FollowerPicker({
   );
 }
 
+const VISIBILITY_ICON: Record<TodoVisibility, typeof Users> = {
+  team: Users,
+  private: Lock,
+};
+
+/**
+ * Team / Private as a segmented toggle — the same two-button shape as the
+ * rock modal's Individual / Team kind, rather than a dropdown: with two
+ * choices both stay in view and one click switches, and the line under it
+ * says who can see the to-do for the choice that is on (the wording lives in
+ * ./todo-visibility.ts, from the permissions spec). A radiogroup with a
+ * roving tab stop: Tab lands on the checked choice, arrows move and select.
+ * The value reaches the server the same way as before (the modal's own
+ * FormData `visibility`, "team" | "private").
+ */
+function VisibilityToggle({
+  value,
+  onChange,
+  canPublish,
+  creatorId,
+  ownerId,
+  viewerId,
+}: {
+  value: TodoVisibility;
+  onChange: (value: TodoVisibility) => void;
+  canPublish: boolean;
+  creatorId: string | null;
+  ownerId: string;
+  viewerId: string;
+}) {
+  const labelId = useId();
+  const descId = useId();
+  const refs = useRef<Partial<Record<TodoVisibility, HTMLButtonElement | null>>>({});
+  const choices = todoVisibilityChoices({ canPublish, creatorId, ownerId, viewerId });
+  const current = choices.find((c) => c.value === value) ?? choices[0];
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = stepChoice(choices, value, delta);
+    if (next !== value) onChange(next);
+    refs.current[next]?.focus();
+  }
+
+  return (
+    // A div, not Field's <label>: a label forwards clicks on its text to its
+    // first button, so clicking the help line would flip the value.
+    <div className="block">
+      <span
+        id={labelId}
+        className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400"
+      >
+        Visibility
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby={labelId}
+        aria-describedby={descId}
+        onKeyDown={onKeyDown}
+        className="flex h-8 rounded-md border border-zinc-300 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        {choices.map((c) => {
+          const Icon = VISIBILITY_ICON[c.value];
+          const checked = c.value === value;
+          return (
+            <button
+              key={c.value}
+              ref={(el) => {
+                refs.current[c.value] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              disabled={c.disabled}
+              tabIndex={checked ? 0 : -1}
+              onClick={() => {
+                if (!checked) onChange(c.value);
+              }}
+              className={cn(
+                "inline-flex flex-1 items-center justify-center gap-1.5 rounded px-3 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40",
+                checked
+                  ? "bg-hpb-blue text-white"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800",
+                c.disabled &&
+                  "cursor-not-allowed opacity-50 hover:bg-transparent dark:hover:bg-transparent",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden />
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+      <span
+        id={descId}
+        className="mt-1 block text-[11px] leading-snug text-zinc-500"
+      >
+        {current.description}
+        {!canPublish && " Only its creator or owner can share it with the team."}
+      </span>
+    </div>
+  );
+}
+
 export function TodoFormFields({
   teamId,
   members,
@@ -164,6 +279,8 @@ export function TodoFormFields({
   visibility,
   onVisibilityChange,
   canPublish = true,
+  viewerId,
+  creatorId,
 
   weeklyFocus,
   onWeeklyFocusChange,
@@ -195,6 +312,11 @@ export function TodoFormFields({
   /** False on a private to-do the viewer neither created nor owns (an
    *  admin): only the creator or the owner may share it (spec §3.2). */
   canPublish?: boolean;
+  /** The signed-in user, and who created the to-do (the viewer, on Add;
+   *  null on a legacy to-do with no `created_by`). The Private help line
+   *  names exactly who can see it, from the viewer's seat. */
+  viewerId: string;
+  creatorId: string | null;
 
   weeklyFocus: boolean;
   onWeeklyFocusChange: (value: boolean) => void;
@@ -231,51 +353,46 @@ export function TodoFormFields({
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        {/* A div, not Field's <label>: the picker is a button + popover,
-            and a wrapping label would re-click it. */}
-        <div className="block">
-          <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            Owner
-          </span>
-          <TodoOwnerField
-            teamId={teamId}
-            members={members}
-            value={ownerId}
-            onChange={onOwnerChange}
-          />
-        </div>
-
-        {showVisibility && (
-          <Field label="Visibility">
-            <Select
-              value={visibility}
-              onChange={(e) => onVisibilityChange(e.target.value as "team" | "private")}
-              className={SELECT_FILL}
-            >
-              <option value="team" disabled={!canPublish}>
-                Team
-              </option>
-              <option value="private">Private</option>
-            </Select>
-            {!canPublish && (
-              <span className="mt-1 block text-[11px] leading-snug text-zinc-500">
-                Only its creator or owner can share it with the team.
-              </span>
-            )}
-          </Field>
-        )}
+      {/* Owner on its own full-width row, so the directory picker's trigger
+          has room for the name. A div, not Field's <label>: the picker is a
+          button + popover, and a wrapping label would re-click it. */}
+      <div className="block">
+        <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          Owner
+        </span>
+        <TodoOwnerField
+          teamId={teamId}
+          members={members}
+          value={ownerId}
+          onChange={onOwnerChange}
+        />
       </div>
 
-      <Field label="Due date">
-        <Input
-          type="date"
-          value={due}
-          onChange={(e) => onDueChange(e.target.value)}
-          size="sm"
-          className={SELECT_FILL}
-        />
-      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Due date">
+          <Input
+            type="date"
+            value={due}
+            onChange={(e) => onDueChange(e.target.value)}
+            size="sm"
+            className={SELECT_FILL}
+          />
+        </Field>
+
+        {/* Hidden on a to-do captured in an L10 (add-todo-modal.tsx passes
+            showVisibility={!meetingId} and submits "team"): a private to-do
+            never shows on the L10 it was made in (spec §3.2). */}
+        {showVisibility && (
+          <VisibilityToggle
+            value={visibility}
+            onChange={onVisibilityChange}
+            canPublish={canPublish}
+            creatorId={creatorId}
+            ownerId={ownerId}
+            viewerId={viewerId}
+          />
+        )}
+      </div>
 
       {followers && visibility !== "private" && (
         <div className="block">

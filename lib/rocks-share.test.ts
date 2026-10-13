@@ -9,7 +9,10 @@ import {
   isPrivateRock,
   partitionSharedRocks,
   sharedBySectionTitle,
+  audienceRemovals,
+  sharingChangeKey,
   sharingChanges,
+  sharingPicture,
   type SharingSnapshot,
 } from "./rocks-share";
 
@@ -262,5 +265,72 @@ describe("sharingChanges (save review)", () => {
 
   test("Private on a rock nobody else sees says nothing", () => {
     assert.deepEqual(sharingChanges(base, { ...base, private: true }), []);
+  });
+});
+
+describe("sharingPicture (review shows everything, not just the change)", () => {
+  const shared: SharingSnapshot = {
+    parentTeamId: "esd",
+    private: false,
+    audienceTeamIds: ["it"],
+    audienceUserIds: [],
+    milestones: {
+      a: { title: "Kickoff", ownerId: "jordan", ownerName: "Jordan", ownerTeamIds: ["esd"] },
+      b: { title: "Vendor", ownerId: "joe", ownerName: "Joe", ownerTeamIds: ["ops"] },
+    },
+  };
+
+  test("adding one person still lists the team already in the audience", () => {
+    const after = { ...shared, audienceUserIds: ["sam"] };
+    const changes = sharingChanges(shared, after);
+    assert.deepEqual(changes, [{ kind: "person-added", userId: "sam" }]);
+    const picture = sharingPicture(after);
+    const keys = picture.map(sharingChangeKey);
+    assert.ok(keys.includes("team:it"), "existing audience team");
+    assert.ok(keys.includes("person:sam"), "the new person");
+    assert.ok(keys.includes("headline:joe"), "existing assignee outside the audience");
+    assert.ok(keys.includes("block:ops|Vendor|Joe"), "existing block");
+    const isNew = new Set(changes.map(sharingChangeKey));
+    assert.deepEqual(
+      picture.filter((c) => isNew.has(sharingChangeKey(c))).map(sharingChangeKey),
+      ["person:sam"],
+    );
+  });
+
+  test("private: nothing beyond the parent team", () => {
+    assert.deepEqual(sharingPicture({ ...shared, private: true, audienceTeamIds: [] }), [
+      // Joe still sees his own milestone as an assignee.
+      {
+        kind: "headline-only",
+        ownerId: "joe",
+        ownerName: "Joe",
+        ownerTeamIds: ["ops"],
+        titles: ["Vendor"],
+      },
+    ]);
+  });
+
+  test("never reports private-on", () => {
+    assert.ok(sharingPicture(shared).every((c) => c.kind !== "private-on"));
+  });
+});
+
+describe("audienceRemovals", () => {
+  const before: SharingSnapshot = {
+    parentTeamId: "esd",
+    private: false,
+    audienceTeamIds: ["it", "ops"],
+    audienceUserIds: ["sam"],
+    milestones: {},
+  };
+
+  test("teams and persons dropped while still shared", () => {
+    const after = { ...before, audienceTeamIds: ["it"], audienceUserIds: [] };
+    assert.deepEqual(audienceRemovals(before, after), { teamIds: ["ops"], userIds: ["sam"] });
+  });
+
+  test("going private is private-on's job, not a removal", () => {
+    const after = { ...before, private: true, audienceTeamIds: [], audienceUserIds: [] };
+    assert.deepEqual(audienceRemovals(before, after), { teamIds: [], userIds: [] });
   });
 });

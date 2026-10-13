@@ -10,7 +10,7 @@ import {
   ModalHeader,
   ModalShell,
 } from "@/components/ui/modal";
-import type { SharingChange } from "@/lib/rocks-share";
+import { sharingChangeKey, type SharingChange } from "@/lib/rocks-share";
 
 // The rock modal's audience surface (docs/PERMISSIONS_SPEC.md §3.3):
 //   - The AUDIENCE (teams and persons) sees and edits the whole rock.
@@ -386,12 +386,17 @@ function AudienceList({
  *     (lib/rocks-share.ts sharingChanges): a team or person joins the
  *     audience, an assignee will see only their milestone, a milestone
  *     reaches a new block, or the rock becomes private.
+ * Either way it lists everyone who will see the rock (`picture`), not just
+ * what this save changes — what's new carries a "New" badge, and anyone
+ * this save drops from the audience is listed as losing it.
  */
 export function ShareConfirmDialog({
   open,
   creating,
   parentTeamName,
   changes,
+  picture,
+  removed,
   teamName,
   personName,
   pending,
@@ -401,7 +406,12 @@ export function ShareConfirmDialog({
   open: boolean;
   creating: boolean;
   parentTeamName: string;
+  /** What this save changes — decides the "New" badges and Private. */
   changes: SharingChange[];
+  /** Everyone the saved rock reaches (lib/rocks-share.ts sharingPicture). */
+  picture: SharingChange[];
+  /** Audience this save drops while the rock stays shared. */
+  removed: { teamIds: string[]; userIds: string[] };
   teamName: (id: string) => string;
   personName: (id: string) => string;
   pending: boolean;
@@ -409,17 +419,26 @@ export function ShareConfirmDialog({
   onConfirm: () => void;
 }) {
   const of = <K extends SharingChange["kind"]>(kind: K) =>
-    changes.filter((c): c is Extract<SharingChange, { kind: K }> => c.kind === kind);
+    picture.filter((c): c is Extract<SharingChange, { kind: K }> => c.kind === kind);
+  const newKeys = new Set(changes.map(sharingChangeKey));
+  // A new rock is all new; badges only mean something on an edit.
+  const isNew = (c: SharingChange) => !creating && newKeys.has(sharingChangeKey(c));
   const teams = of("team-added");
   const people = of("person-added");
   const headline = of("headline-only");
-  const priv = of("private-on")[0];
-  const blocks = new Map<string, { title: string; ownerName: string }[]>();
+  const priv = changes.find(
+    (c): c is Extract<SharingChange, { kind: "private-on" }> => c.kind === "private-on",
+  );
+  const blocks = new Map<string, { title: string; ownerName: string; isNew: boolean }[]>();
   for (const c of of("block-added")) {
     const list = blocks.get(c.teamId) ?? [];
-    list.push({ title: c.title, ownerName: c.ownerName });
+    list.push({ title: c.title, ownerName: c.ownerName, isNew: isNew(c) });
     blocks.set(c.teamId, list);
   }
+  const lost = [
+    ...removed.teamIds.map((id) => teamName(id)),
+    ...removed.userIds.map((id) => personName(id)),
+  ];
   const nobodyElse =
     teams.length === 0 && people.length === 0 && headline.length === 0 && blocks.size === 0;
 
@@ -435,13 +454,11 @@ export function ShareConfirmDialog({
         onClose={onBack}
       />
       <ModalBody className="space-y-4">
-        {creating && (
-          <Block title={parentTeamName} tag="Parent team · Whole rock">
-            {nobodyElse
-              ? "Only this team will see the rock."
-              : "Sees and edits the rock and every milestone."}
-          </Block>
-        )}
+        <Block title={parentTeamName} tag="Parent team · Whole rock">
+          {nobodyElse
+            ? "Only this team sees the rock."
+            : "Sees and edits the rock and every milestone."}
+        </Block>
 
         {priv && (
           <Block title="Private" tag="Loses access">
@@ -464,14 +481,24 @@ export function ShareConfirmDialog({
         )}
 
         {teams.map((c) => (
-          <Block key={`t-${c.teamId}`} title={teamName(c.teamId)} tag="Audience · Whole rock">
-            {teamName(c.teamId)} will see the whole rock and can edit it.
+          <Block
+            key={`t-${c.teamId}`}
+            title={teamName(c.teamId)}
+            tag="Audience · Whole rock"
+            isNew={isNew(c)}
+          >
+            {teamName(c.teamId)} sees the whole rock and can edit it.
           </Block>
         ))}
 
         {people.map((c) => (
-          <Block key={`p-${c.userId}`} title={personName(c.userId)} tag="Audience · Whole rock">
-            {personName(c.userId)} will see the whole rock and can edit it.
+          <Block
+            key={`p-${c.userId}`}
+            title={personName(c.userId)}
+            tag="Audience · Whole rock"
+            isNew={isNew(c)}
+          >
+            {personName(c.userId)} sees the whole rock and can edit it.
           </Block>
         ))}
 
@@ -482,9 +509,10 @@ export function ShareConfirmDialog({
               key={`h-${c.ownerId}`}
               title={teamsLabel ? `${c.ownerName} (${teamsLabel})` : c.ownerName}
               tag="Assignee · Only their milestone"
+              isNew={isNew(c)}
             >
               {c.ownerName}
-              {teamsLabel ? ` (${teamsLabel})` : ""} will see only{" "}
+              {teamsLabel ? ` (${teamsLabel})` : ""} sees only{" "}
               {quoted(c.titles)} and the rock&apos;s title. Add them to the
               audience to give them the whole rock.
             </Block>
@@ -492,8 +520,13 @@ export function ShareConfirmDialog({
         })}
 
         {[...blocks.entries()].map(([teamId, items]) => (
-          <Block key={`b-${teamId}`} title={teamName(teamId)} tag="Block · Title only">
-            Will see in their members&apos; blocks, read-only, with the
+          <Block
+            key={`b-${teamId}`}
+            title={teamName(teamId)}
+            tag="Block · Title only"
+            isNew={items.some((m) => m.isNew)}
+          >
+            Sees in their members&apos; blocks, read-only, with the
             rock&apos;s title:
             <ul className="mt-1.5 space-y-1">
               {items.map((m, i) => (
@@ -502,6 +535,7 @@ export function ShareConfirmDialog({
                   className="flex items-baseline gap-2 rounded-md bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
                 >
                   <span className="min-w-0 flex-1 truncate">“{m.title}”</span>
+                  {m.isNew && items.some((x) => !x.isNew) && <NewBadge />}
                   <span className="shrink-0 text-zinc-600 dark:text-zinc-300">
                     {m.ownerName}
                   </span>
@@ -510,6 +544,22 @@ export function ShareConfirmDialog({
             </ul>
           </Block>
         ))}
+
+        {lost.length > 0 && (
+          <Block title="No longer in the audience" tag="Loses access">
+            This save removes them from the audience:
+            <ul className="mt-1.5 space-y-1">
+              {lost.map((name, i) => (
+                <li
+                  key={i}
+                  className="rounded-md bg-zinc-50 px-2.5 py-1.5 text-[13px] text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200"
+                >
+                  {name}
+                </li>
+              ))}
+            </ul>
+          </Block>
+        )}
       </ModalBody>
       <ModalFooter className="px-4 pb-4">
         <Button variant="ghost" onClick={onBack}>
@@ -532,17 +582,21 @@ export function ShareConfirmDialog({
 function Block({
   title,
   tag,
+  isNew = false,
   children,
 }: {
   title: string;
   tag: string;
+  /** This save adds it (the dialog lists everyone, not just changes). */
+  isNew?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100">
-          {title}
+        <h3 className="flex min-w-0 items-baseline gap-1.5 text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100">
+          <span className="min-w-0 truncate">{title}</span>
+          {isNew && <NewBadge />}
         </h3>
         <span className="shrink-0 text-[11.5px] font-semibold text-zinc-500">
           {tag}
@@ -552,5 +606,13 @@ function Block({
         {children}
       </div>
     </section>
+  );
+}
+
+function NewBadge() {
+  return (
+    <span className="shrink-0 rounded-full bg-hpb-green/10 px-1.5 py-px text-[10.5px] font-semibold text-hpb-green ring-1 ring-inset ring-hpb-green/25">
+      New
+    </span>
   );
 }

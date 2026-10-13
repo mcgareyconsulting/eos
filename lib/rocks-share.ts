@@ -274,3 +274,55 @@ export function sharingChanges(
   }
   return out;
 }
+
+/**
+ * Everything the saved rock shares, as the review dialog lists it: every
+ * audience team and person, every assignee who sees only their milestones,
+ * every block milestone — not just what this save adds. It is
+ * `sharingChanges` from a rock shared with nobody, so the entries read the
+ * same; `sharingChangeKey` matches them against the real changes to badge
+ * the new ones.
+ */
+export function sharingPicture(after: SharingSnapshot): SharingChange[] {
+  const nobody: SharingSnapshot = {
+    parentTeamId: after.parentTeamId,
+    private: false,
+    audienceTeamIds: [],
+    audienceUserIds: [],
+    milestones: {},
+  };
+  return sharingChanges(nobody, after).filter((c) => c.kind !== "private-on");
+}
+
+/** Identity of a review entry, so a picture entry can be found among the changes. */
+export function sharingChangeKey(c: SharingChange): string {
+  switch (c.kind) {
+    case "team-added":
+      return `team:${c.teamId}`;
+    case "person-added":
+      return `person:${c.userId}`;
+    case "headline-only":
+      return `headline:${c.ownerId}`;
+    case "block-added":
+      return `block:${c.teamId}|${c.title}|${c.ownerName}`;
+    case "private-on":
+      return "private-on";
+  }
+}
+
+/**
+ * Audience teams and persons a save removes while the rock stays shared.
+ * (Turning Private on is reported by `sharingChanges` as "private-on".)
+ */
+export function audienceRemovals(
+  before: SharingSnapshot,
+  after: SharingSnapshot,
+): { teamIds: string[]; userIds: string[] } {
+  if (before.private || after.private) return { teamIds: [], userIds: [] };
+  const teams = new Set(after.audienceTeamIds);
+  const users = new Set(after.audienceUserIds);
+  return {
+    teamIds: before.audienceTeamIds.filter((id) => !teams.has(id)),
+    userIds: before.audienceUserIds.filter((id) => !users.has(id)),
+  };
+}

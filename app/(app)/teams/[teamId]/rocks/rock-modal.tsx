@@ -23,7 +23,9 @@ import {
   type HeadlinePerson,
 } from "./rock-sharing";
 import {
+  audienceRemovals,
   sharingChanges,
+  sharingPicture,
   type SharingSnapshot,
   type SharingChange,
 } from "@/lib/rocks-share";
@@ -313,6 +315,12 @@ export function RockModal({
   const [orgPeople, setOrgPeople] = useState<OrgPerson[] | null>(null);
   const [paneOpen, setPaneOpen] = useState(false);
   const [changes, setChanges] = useState<SharingChange[]>([]);
+  // The review lists everyone the saved rock reaches, not just the change.
+  const [picture, setPicture] = useState<SharingChange[]>([]);
+  const [removed, setRemoved] = useState<{ teamIds: string[]; userIds: string[] }>({
+    teamIds: [],
+    userIds: [],
+  });
   const [confirming, setConfirming] = useState(false);
   const [qtr, setQtr] = useState(rock?.quarter ?? quarter ?? "");
   // Due is a create-mode suggestion only. An existing rock with a
@@ -533,19 +541,20 @@ export function RockModal({
         return;
       }
     }
-    const changed = sharingChanges(
-      snapshotOf(
-        openedSharing.teams,
-        openedSharing.users,
-        openedSharing.rows,
-        openedSharing.isPrivate,
-      ),
-      snapshotOf(audienceTeamIds, audienceUserIds, rows, isPrivate),
+    const before = snapshotOf(
+      openedSharing.teams,
+      openedSharing.users,
+      openedSharing.rows,
+      openedSharing.isPrivate,
     );
+    const after = snapshotOf(audienceTeamIds, audienceUserIds, rows, isPrivate);
+    const changed = sharingChanges(before, after);
     // Adding always reviews who will see the rock; editing only when the
     // save changes it (see ShareConfirmDialog).
     if (!editing || changed.length > 0) {
       setChanges(changed);
+      setPicture(sharingPicture(after));
+      setRemoved(audienceRemovals(before, after));
       setConfirming(true);
       return;
     }
@@ -932,6 +941,8 @@ export function RockModal({
           creating={!editing}
           parentTeamName={teamName ?? "This team"}
           changes={changes}
+          picture={picture}
+          removed={removed}
           teamName={(id) => teamNameById.get(id) ?? "A team"}
           personName={personNameOf}
           pending={pending}

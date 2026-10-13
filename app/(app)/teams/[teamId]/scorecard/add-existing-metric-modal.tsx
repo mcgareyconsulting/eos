@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ChevronRight, Loader2, Search } from "lucide-react";
 import { ModalBody, ModalHeader, ModalShell } from "@/components/ui/modal";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 import type { CatalogMetric } from "@/lib/firebase/scorecard-catalog";
 import {
   STATUS_TONE,
@@ -134,6 +135,14 @@ export function AddExistingMetricModal({
   // each row: the answer is nearly always the same for a batch, and a picker
   // per row would crowd out the trend data the list exists to show.
   const [addGroup, setAddGroup] = useState("");
+  const groupFieldId = useId();
+  const addGroupOptions = useMemo(
+    () => [
+      { value: "", label: "Matching cadence (Weekly, Monthly…)" },
+      ...teamGroups.map((g) => ({ value: g, label: g })),
+    ],
+    [teamGroups],
+  );
   const [pending, start] = useTransition();
 
   // Searching overrides the collapse entirely rather than auto-expanding the
@@ -268,24 +277,30 @@ export function AddExistingMetricModal({
               true statement about them; the owning team's sections are not
               offered, since "Customer" describes their scorecard, not this
               one. */}
-          <label className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-            <span className="font-medium">Add to group</span>
-            <Select
+          {/* The menu portals above the dialog (never clipped by its
+              scrolling body), and Escape on the open menu closes only the
+              menu. Labelled by id rather than a wrapping <label>, so the hint
+              is a description and not part of the control's name. */}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+            <span id={`${groupFieldId}-label`} className="font-medium">
+              Add to group
+            </span>
+            <SelectMenu
+              variant="field"
+              aria-labelledby={`${groupFieldId}-label`}
+              aria-describedby={`${groupFieldId}-hint`}
               value={addGroup}
-              onChange={(e) => setAddGroup(e.target.value)}
-              className="h-8 w-56"
+              onChange={setAddGroup}
+              options={addGroupOptions}
+              className="w-56"
+            />
+            <span
+              id={`${groupFieldId}-hint`}
+              className="text-zinc-400 dark:text-zinc-500"
             >
-              <option value="">Matching cadence (Weekly, Monthly…)</option>
-              {teamGroups.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </Select>
-            <span className="text-zinc-400 dark:text-zinc-500">
               You can move it later from the row.
             </span>
-          </label>
+          </div>
 
           {error && (
             <p

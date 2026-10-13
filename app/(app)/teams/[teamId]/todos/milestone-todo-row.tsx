@@ -7,10 +7,7 @@ import { cn } from "@/lib/utils";
 import { TodoCheckbox } from "./todo-row";
 import { Eyebrow } from "@/components/ui/text";
 import { useAuthUid } from "@/lib/firebase/use-collection";
-import {
-  ExpandChevron,
-  MilestoneExpansion,
-} from "../rocks/milestone-expansion";
+import { MilestoneExpansion } from "../rocks/milestone-expansion";
 
 export type MilestoneTodoItem = {
   id: string;
@@ -83,11 +80,6 @@ export function MilestoneTodoRow({
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
             {milestone.title}
           </span>
-          {viewerId ? (
-            <span className="ml-1 inline-block align-[-2px]">
-              <ExpandChevron open={expanded} />
-            </span>
-          ) : null}
         </button>
 
         <div

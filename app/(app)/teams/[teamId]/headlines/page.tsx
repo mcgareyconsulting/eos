@@ -7,7 +7,11 @@ import { OwnerFilter } from "@/components/owner-filter";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
-import { HeadlineThread } from "./headline-thread";
+import {
+  HeadlineDetailProvider,
+  HeadlineDetailTrigger,
+} from "./headline-detail-modal";
+import { headlineDetailFrom } from "./headline-detail";
 import {
   groupByOwner,
   isArchivedHeadline,
@@ -122,9 +126,12 @@ export default async function HeadlinesPage({
             discussed={discussed}
           />
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div
+        {/* Title, pills, preview and meta open the detail modal (full
+            description, comments). The checkbox and hover actions stay
+            outside the button. */}
+        <HeadlineDetailTrigger headlineId={h.id} className="flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span
               className={`font-medium ${
                 discussed && !archivedRow
                   ? "text-zinc-500 dark:text-zinc-400"
@@ -132,7 +139,7 @@ export default async function HeadlinesPage({
               }`}
             >
               {h.title}
-            </div>
+            </span>
             {discussed && !archivedRow && (
               <Pill>Discussed · closes Monday</Pill>
             )}
@@ -141,14 +148,14 @@ export default async function HeadlinesPage({
                 Org-wide · text is read-only
               </span>
             )}
-          </div>
+          </span>
           {archivedRow && closedOn && (
-            <div className="mt-0.5 text-xs tabular-nums text-zinc-500">
+            <span className="mt-0.5 block text-xs tabular-nums text-zinc-500">
               Closed On: {closedOn}
-            </div>
+            </span>
           )}
           {body && <HeadlineBody body={body} />}
-          <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
+          <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-500">
             <span className="inline-flex items-center gap-1.5">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${kind.dotClassName}`}
@@ -158,14 +165,8 @@ export default async function HeadlinesPage({
             </span>
             {h.from_label ? ` · ${h.from_label}` : ""} ·{" "}
             {creatorName(h)} · {when}
-          </div>
-          <HeadlineThread
-            teamId={teamId}
-            headlineId={h.id}
-            userId={uid}
-            members={members}
-          />
-        </div>
+          </span>
+        </HeadlineDetailTrigger>
         {/* Archive stays available on a broadcast copy — closing this team's
             own copy is a per-team act and leaves every other team's queue
             alone. Edit and delete do not: those would rewrite the org's
@@ -220,74 +221,96 @@ export default async function HeadlinesPage({
     splitCascadingSection(active.filter(matchesOwner));
   const ownerGroups = groupByOwner(teamHeadlines, creatorName);
 
+  // Plain data for the detail modal — every headline a row can open, in
+  // either tab (Timestamps can't cross into the client component).
+  const details = all.map((h) =>
+    headlineDetailFrom(h, {
+      body: normalizeDescription(h.body) || null,
+      ownerLabel: creatorName(h),
+    }),
+  );
+
   return (
-    <div className="space-y-6">
-      <EntityPageHeader
-        title="Headlines"
-        filter={<OwnerFilter members={members} currentUserId={uid} />}
-        tabs={
-          <EntityViewTabs
-            basePath={`/teams/${teamId}/headlines`}
-            showArchived={showArchived}
-            activeCount={active.length}
-            archivedCount={archived.length}
-            owner={ownerFilter !== "all" ? ownerFilter : undefined}
-          />
-        }
-        add={<HeadlineFormModal mode="create" teamId={teamId} />}
-      />
-
-      {showArchived ? (
-        <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-          {headlines.length === 0 && (
-            <EmptyState
-              icon={Archive}
-              title="No archived headlines"
-              hint="Headlines marked discussed are archived when an L10 ends."
+    <HeadlineDetailProvider
+      teamId={teamId}
+      userId={uid}
+      // Names only — the roster's emails and roles have no use client-side.
+      members={members.map(({ user_id, full_name }) => ({
+        user_id,
+        full_name,
+      }))}
+      headlines={details}
+      surface="page"
+      deepLink
+    >
+      <div className="space-y-6">
+        <EntityPageHeader
+          title="Headlines"
+          filter={<OwnerFilter members={members} currentUserId={uid} />}
+          tabs={
+            <EntityViewTabs
+              basePath={`/teams/${teamId}/headlines`}
+              showArchived={showArchived}
+              activeCount={active.length}
+              archivedCount={archived.length}
+              owner={ownerFilter !== "all" ? ownerFilter : undefined}
             />
-          )}
-          {headlines.map(renderRow)}
-        </div>
-      ) : ownerGroups.length === 0 && cascadingHeadlines.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={Megaphone}
-            title="No headlines yet"
-            hint="Share customer wins, employee news, and cascading messages."
-          />
-        </Card>
-      ) : (
-        <>
-          {/* overflow-hidden: the first child is an owner header with its own
-              background, which otherwise paints square over the rounded top
-              corners and reads as a missing border. */}
-          {ownerGroups.length > 0 && (
-            <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-              {ownerGroups.map((group) => (
-                <div key={group.name}>
-                  <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                    {group.name}
-                  </div>
-                  <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                    {group.headlines.map(renderRow)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          }
+          add={<HeadlineFormModal mode="create" teamId={teamId} />}
+        />
 
-          {cascadingHeadlines.length > 0 && (
-            <div>
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-                Cascading
-              </h2>
-              <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-                {cascadingHeadlines.map(renderRow)}
+        {showArchived ? (
+          <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            {headlines.length === 0 && (
+              <EmptyState
+                icon={Archive}
+                title="No archived headlines"
+                hint="Headlines marked discussed are archived when an L10 ends."
+              />
+            )}
+            {headlines.map(renderRow)}
+          </div>
+        ) : ownerGroups.length === 0 && cascadingHeadlines.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={Megaphone}
+              title="No headlines yet"
+              hint="Share customer wins, employee news, and cascading messages."
+            />
+          </Card>
+        ) : (
+          <>
+            {/* overflow-hidden: the first child is an owner header with its own
+                background, which otherwise paints square over the rounded top
+                corners and reads as a missing border. */}
+            {ownerGroups.length > 0 && (
+              <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+                {ownerGroups.map((group) => (
+                  <div key={group.name}>
+                    <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
+                      {group.name}
+                    </div>
+                    <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {group.headlines.map(renderRow)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+            )}
+
+            {cascadingHeadlines.length > 0 && (
+              <div>
+                <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+                  Cascading
+                </h2>
+                <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+                  {cascadingHeadlines.map(renderRow)}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </HeadlineDetailProvider>
   );
 }

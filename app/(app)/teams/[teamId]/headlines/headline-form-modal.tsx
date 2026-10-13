@@ -54,6 +54,11 @@ type HeadlineFormModalProps =
       mode: "edit";
       teamId: string;
       headline: HeadlineEditValues;
+      /**
+       * "icon" (default): the pencil in a row's hover cluster. "button": a
+       * labelled Edit button, for the headline detail modal's action row.
+       */
+      trigger?: "icon" | "button";
     };
 
 /**
@@ -129,7 +134,12 @@ export function HeadlineFormModal(props: HeadlineFormModalProps) {
 
   return (
     <>
-      {isEdit ? (
+      {isEdit && props.trigger === "button" ? (
+        <Button variant="outline" onClick={openModal}>
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+          Edit
+        </Button>
+      ) : isEdit ? (
         <button
           type="button"
           onClick={openModal}

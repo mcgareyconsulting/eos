@@ -143,6 +143,9 @@ export type HeadlineDoc = Omit<FollowFields, "assigned_by"> & {
   target_team_ids?: string[];
   created_at: Timestamp | null;
   discussed?: boolean;
+  // Written alongside `discussed` by setHeadlineDiscussed (null when cleared);
+  // the headline detail feed reads it for its "Marked discussed" row.
+  discussed_at?: Timestamp | null;
   archived_at?: Timestamp | null;
   // Org-wide cascade from outside this team — show, don't delete.
   broadcast?: boolean;

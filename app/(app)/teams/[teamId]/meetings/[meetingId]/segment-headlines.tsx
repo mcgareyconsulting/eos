@@ -17,6 +17,11 @@ import {
 } from "@/lib/headlines";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "@/app/(app)/teams/[teamId]/headlines/headline-body";
+import {
+  HeadlineDetailProvider,
+  HeadlineDetailTrigger,
+} from "../../headlines/headline-detail-modal";
+import { headlineDetailFrom } from "../../headlines/headline-detail";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
@@ -48,15 +53,16 @@ function tsMs(t: MaybeTimestamp): number | null {
   return typeof t.toMillis === "function" ? t.toMillis() : null;
 }
 
-// created_at / archived_at diverge from the stored doc here on purpose: a
-// live Timestamp can't cross the RSC boundary, so the server's prefetched
+// created_at / archived_at / discussed_at diverge from the stored doc here on
+// purpose: a live Timestamp can't cross the RSC boundary, so the server's prefetched
 // props send millis numbers instead — this segment merges both sources, so
 // its HeadlineDoc has to accept either.
 export type HeadlineDoc = WithId<
-  Omit<HeadlineDocRecord, "created_at" | "archived_at">
+  Omit<HeadlineDocRecord, "created_at" | "archived_at" | "discussed_at">
 > & {
   created_at: MaybeTimestamp;
   archived_at?: MaybeTimestamp;
+  discussed_at?: MaybeTimestamp;
 };
 
 type Member = { user_id: string; full_name: string };
@@ -114,6 +120,16 @@ export function SegmentHeadlines({
   const sortedCascading = [...cascading].sort(byDiscussedThenRecency);
   const ownerGroups = groupByOwner(sortedTeam, creatorName);
 
+  // Plain data for the detail modal, from the live list — so an open modal
+  // follows edits, discussed toggles and deletes as they land. Every
+  // headline, not just the shown tab's, so it stays open if one moves.
+  const details = headlines.map((h) =>
+    headlineDetailFrom(h, {
+      body: normalizeDescription(h.body) || null,
+      ownerLabel: creatorName(h),
+    }),
+  );
+
   function renderRow(h: HeadlineDoc) {
     const kind = headlineKind(h.kind);
     const remove = deleteHeadline.bind(null, teamId, h.id);
@@ -134,22 +150,26 @@ export function SegmentHeadlines({
           headlineId={h.id}
           discussed={discussed}
         />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div
+        {/* Title, pills, preview and meta open the detail modal. The
+            checkbox and the hover actions stay outside the button; the
+            modal itself is rendered by HeadlineDetailProvider, outside the
+            row, so the row's group-hover fade can't hide it. */}
+        <HeadlineDetailTrigger headlineId={h.id} className="flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span
               className={`font-medium ${discussed ? "text-zinc-500 dark:text-zinc-400" : ""}`}
             >
               {h.title}
-            </div>
+            </span>
             {discussed && <Pill>Discussed · closes Monday</Pill>}
             {readOnly && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
                 Org-wide · text is read-only
               </span>
             )}
-          </div>
+          </span>
           {body && <HeadlineBody body={body} />}
-          <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
+          <span className="mt-1 block text-xs text-zinc-600 dark:text-zinc-500">
             <span className="inline-flex items-center gap-1.5">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${kind.dotClassName}`}
@@ -168,8 +188,8 @@ export function SegmentHeadlines({
                 minute: "2-digit",
               }}
             />
-          </div>
-        </div>
+          </span>
+        </HeadlineDetailTrigger>
         {!readOnly && (
           <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100">
             <HeadlineFormModal
@@ -201,63 +221,71 @@ export function SegmentHeadlines({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <EntityViewToggle
-          showArchived={showArchived}
-          onChange={setShowArchived}
-          activeCount={active.length}
-          archivedCount={archived.length}
-        />
-        <HeadlineFormModal mode="create" teamId={teamId} compact />
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="From headline: "
-          meetingId={meetingId}
-        />
-      </div>
-
-      {shown.length === 0 ? (
-        <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-          <EmptyState
-            icon={Megaphone}
-            title={showArchived ? "No archived headlines" : "No headlines yet"}
-            hint={
-              showArchived
-                ? "Headlines marked discussed are archived when an L10 ends."
-                : "Share customer wins, employee news, and cascading messages."
-            }
+    <HeadlineDetailProvider
+      teamId={teamId}
+      userId={userId}
+      members={members}
+      headlines={details}
+      surface="meeting"
+    >
+      <div className="space-y-3">
+        <div className="flex items-center justify-end gap-2">
+          <EntityViewToggle
+            showArchived={showArchived}
+            onChange={setShowArchived}
+            activeCount={active.length}
+            archivedCount={archived.length}
+          />
+          <HeadlineFormModal mode="create" teamId={teamId} compact />
+          <QuickAddIssue
+            teamId={teamId}
+            prefill="From headline: "
+            meetingId={meetingId}
           />
         </div>
-      ) : (
-        <div className="space-y-3">
-          {ownerGroups.length > 0 && (
-            // overflow-hidden: the owner header below has its own background
-            // and paints square over the rounded top corners without it.
-            <div className="overflow-hidden rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
-              {ownerGroups.map((group) => (
-                <div key={group.name}>
-                  <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                    {group.name}
-                  </div>
-                  <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                    {group.headlines.map(renderRow)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
 
-          {sortedCascading.length > 0 && (
-            <div>
-              <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Cascading
-              </h2>
-              <Card divided>{sortedCascading.map(renderRow)}</Card>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        {shown.length === 0 ? (
+          <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+            <EmptyState
+              icon={Megaphone}
+              title={showArchived ? "No archived headlines" : "No headlines yet"}
+              hint={
+                showArchived
+                  ? "Headlines marked discussed are archived when an L10 ends."
+                  : "Share customer wins, employee news, and cascading messages."
+              }
+            />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {ownerGroups.length > 0 && (
+              // overflow-hidden: the owner header below has its own background
+              // and paints square over the rounded top corners without it.
+              <div className="overflow-hidden rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-800">
+                {ownerGroups.map((group) => (
+                  <div key={group.name}>
+                    <div className="bg-zinc-50 px-4 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
+                      {group.name}
+                    </div>
+                    <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {group.headlines.map(renderRow)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {sortedCascading.length > 0 && (
+              <div>
+                <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Cascading
+                </h2>
+                <Card divided>{sortedCascading.map(renderRow)}</Card>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </HeadlineDetailProvider>
   );
 }

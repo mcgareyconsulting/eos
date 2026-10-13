@@ -846,6 +846,7 @@ async function SegmentContent({
       const x = d.data();
       const t = x.created_at as Timestamp | null;
       const archived = x.archived_at as Timestamp | null | undefined;
+      const discussedAt = x.discussed_at as Timestamp | null | undefined;
       return {
         id: d.id,
         team_id: x.team_id,
@@ -855,6 +856,7 @@ async function SegmentContent({
         created_by: x.created_by ?? null,
         created_at: t?.toMillis?.() ?? null,
         discussed: x.discussed === true,
+        discussed_at: discussedAt?.toMillis?.() ?? null,
         archived_at: archived?.toMillis?.() ?? null,
         broadcast: !!x.broadcast,
         from_label: x.from_label ?? null,

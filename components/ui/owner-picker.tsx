@@ -47,6 +47,9 @@ export type { OrgPerson, OwnerPickerTeam } from "@/lib/owner-picker";
 //                     a form's main Owner field. The popover is the same
 //                     size in both variants.
 //   name            — a hidden input carrying the value, for FormData forms.
+//   teamOnly        — no "Whole org" tab: only the team tab's people can be
+//                     picked. For an owner the server checks against the
+//                     team roster (the rock owner, requireRosterOwner).
 //
 // The list rules (scopes, search, the Unassigned row) live in
 // lib/owner-picker.ts, with tests.
@@ -70,6 +73,7 @@ export function OwnerPicker({
   allowUnassigned = false,
   unassignedLabel = "Unassigned",
   variant = "compact",
+  teamOnly = false,
   name,
   id,
   className,
@@ -100,6 +104,9 @@ export function OwnerPicker({
   /** "compact" — the milestone-row trigger (size it with className);
    *  "field" — full-width, matching the form `Select`. */
   variant?: "compact" | "field";
+  /** Hide the "Whole org" tab and list only `team.people` — for an owner the
+   *  server requires on the team's roster. `onNeedOrg` is then never called. */
+  teamOnly?: boolean;
   /** Renders `<input type="hidden" name={name} value={value}>` for FormData. */
   name?: string;
   /** Put on the trigger button, for a `<label htmlFor>`. */
@@ -120,7 +127,7 @@ export function OwnerPicker({
 
   function openPicker() {
     // An owner not on the parent team is only findable org-wide.
-    const s = initialOwnerScope(team, value);
+    const s = teamOnly ? "team" : initialOwnerScope(team, value);
     setScope(s);
     if (s === "org") onNeedOrg();
     setQuery("");
@@ -272,35 +279,37 @@ export function OwnerPicker({
             className="fixed z-[60] w-[416px] max-w-[calc(100vw-16px)] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
           >
             <div className="space-y-2 border-b border-zinc-200 p-2 dark:border-zinc-700">
-              <div
-                role="radiogroup"
-                aria-label="Who to choose from"
-                className="flex rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800"
-              >
-                {(
-                  [
-                    ["team", team.name],
-                    ["org", "Whole org"],
-                  ] as const
-                ).map(([s, tabLabel]) => (
-                  <button
-                    key={s}
-                    type="button"
-                    role="radio"
-                    aria-checked={scope === s}
-                    onClick={() => pickScope(s)}
-                    title={tabLabel}
-                    className={cn(
-                      "min-w-0 flex-1 truncate rounded px-2 py-1 text-[12px] font-semibold transition-colors",
-                      scope === s
-                        ? "bg-white text-hpb-blue shadow-sm dark:bg-zinc-900 dark:text-hpb-gold"
-                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
-                    )}
-                  >
-                    {tabLabel}
-                  </button>
-                ))}
-              </div>
+              {!teamOnly && (
+                <div
+                  role="radiogroup"
+                  aria-label="Who to choose from"
+                  className="flex rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-800"
+                >
+                  {(
+                    [
+                      ["team", team.name],
+                      ["org", "Whole org"],
+                    ] as const
+                  ).map(([s, tabLabel]) => (
+                    <button
+                      key={s}
+                      type="button"
+                      role="radio"
+                      aria-checked={scope === s}
+                      onClick={() => pickScope(s)}
+                      title={tabLabel}
+                      className={cn(
+                        "min-w-0 flex-1 truncate rounded px-2 py-1 text-[12px] font-semibold transition-colors",
+                        scope === s
+                          ? "bg-white text-hpb-blue shadow-sm dark:bg-zinc-900 dark:text-hpb-gold"
+                          : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+                      )}
+                    >
+                      {tabLabel}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-1.5">
                 <div className="relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />

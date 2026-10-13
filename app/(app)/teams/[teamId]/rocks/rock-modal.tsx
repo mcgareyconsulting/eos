@@ -15,6 +15,7 @@ import {
   OwnerPicker,
   type OrgPerson,
 } from "@/components/ui/owner-picker";
+import { initialRockOwner, rockOwnerChoices } from "./rock-owner";
 import {
   AudiencePane,
   AudienceSummary,
@@ -110,14 +111,6 @@ function serializeRows(rows: DraftMilestone[]): string {
       .filter((r) => r.title.trim())
       .map((r) => [r.id ?? "", r.title, r.owner_id, r.due_date]),
   );
-}
-
-function personOwnerId(
-  ownerId: string | null | undefined,
-  fallback: string,
-): string {
-  if (!ownerId || ownerId === "team") return fallback;
-  return ownerId;
 }
 
 /** Header button on the Rocks page. Replaces AddRockDrawer. */
@@ -294,7 +287,11 @@ export function RockModal({
       .filter((m) => m.owner_id && m.owner_label)
       .map((m) => [m.owner_id as string, m.owner_label as string]),
   );
-  const initialOwner = personOwnerId(rock?.owner_id, currentUserId);
+  const initialOwner = initialRockOwner(
+    rock?.owner_id,
+    currentUserId,
+    new Set(members.map((m) => m.user_id)),
+  );
   // The kind radio is two-way; a legacy "company" rock_type opens as Team
   // here and its Company half is carried by the checkbox below instead.
   const initialType = kindForForm(rock?.rock_type);
@@ -410,6 +407,11 @@ export function RockModal({
   const ownerNameOf = (id: string) =>
     nameById.get(id) ?? labelById.get(id) ?? "Current owner";
   const parentIds = new Set(members.map((m) => m.user_id));
+  const ownerChoices = rockOwnerChoices(
+    members,
+    rock?.owner_id,
+    rock?.owner_id ? ownerNameOf(rock.owner_id) : "",
+  );
   // An owner's teams, from the org list (prefetched on open). Before it
   // arrives, only "on this team" is known.
   const teamIdsOf = (id: string): string[] =>
@@ -712,22 +714,29 @@ export function RockModal({
 
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               <Field label="Owner" required>
-                <select
+                {/* Team tab only: the server takes a rock owner from the
+                    parent roster, or keeps the one it has (rock-owner.ts). */}
+                <OwnerPicker
+                  variant="field"
+                  label="Owner"
+                  teamOnly
                   value={ownerId}
-                  onChange={(e) => setOwnerId(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-[13.5px] dark:border-zinc-700 dark:bg-zinc-900"
-                >
-                  {members.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.full_name}
-                    </option>
-                  ))}
-                  {rock?.owner_id && !parentIds.has(rock.owner_id) && (
-                    <option value={rock.owner_id}>
-                      {ownerNameOf(rock.owner_id)} (no longer on this team)
-                    </option>
-                  )}
-                </select>
+                  valueName={
+                    ownerChoices.find((p) => p.user_id === ownerId)
+                      ?.full_name ??
+                    (ownerId ? ownerNameOf(ownerId) : "Choose owner")
+                  }
+                  onChange={setOwnerId}
+                  team={{
+                    id: teamId,
+                    name: teamName ?? "This team",
+                    people: ownerChoices,
+                  }}
+                  orgPeople={orgPeople}
+                  onNeedOrg={needOrg}
+                  teamNameById={teamNameById}
+                  className="h-auto text-[13.5px] dark:bg-zinc-900"
+                />
                 <p className="mt-1 text-[11px] text-zinc-500">
                   Accountable person on this team — even for team rocks.
                 </p>

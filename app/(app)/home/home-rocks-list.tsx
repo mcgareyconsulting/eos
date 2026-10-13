@@ -14,7 +14,6 @@ import {
 } from "@/app/(app)/teams/[teamId]/rocks/status";
 import { TodoCheckbox } from "@/app/(app)/teams/[teamId]/todos/todo-row";
 import {
-  ExpandChevron,
   MilestoneExpansion,
   useExpandedMilestones,
 } from "@/app/(app)/teams/[teamId]/rocks/milestone-expansion";
@@ -281,7 +280,6 @@ export function HomeRocksList({
                             className="flex min-w-0 items-center gap-1 text-left text-[12.5px] font-semibold text-zinc-600 hover:text-hpb-blue dark:text-zinc-300 dark:hover:text-hpb-gold"
                           >
                             <span className="min-w-0 truncate">{m.title}</span>
-                            <ExpandChevron open={expandMs.isOpen(m.id)} />
                           </button>
                           <div
                             className={cn(

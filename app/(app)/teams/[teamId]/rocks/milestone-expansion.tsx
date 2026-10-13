@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { doc } from "firebase/firestore";
-import { ChevronRight } from "lucide-react";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RichText } from "@/components/rich-text";
 import { getClientDb } from "@/lib/firebase/client";
@@ -38,19 +37,6 @@ export function useMilestoneDrafts() {
     [],
   );
   return { hasDraft: keys.size > 0, report };
-}
-
-/** The chevron that sits beside a milestone name it expands. */
-export function ExpandChevron({ open }: { open: boolean }) {
-  return (
-    <ChevronRight
-      className={cn(
-        "h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform",
-        open && "rotate-90",
-      )}
-      aria-hidden
-    />
-  );
 }
 
 /**

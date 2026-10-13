@@ -9,7 +9,6 @@ import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
 import { ownerLabel } from "@/lib/user-name";
 import {
-  ExpandChevron,
   MilestoneExpansion,
   useExpandedMilestones,
 } from "./milestone-expansion";
@@ -194,7 +193,6 @@ function MilestoneName({
       )}
     >
       <span className="min-w-0 truncate">{m.title}</span>
-      <ExpandChevron open={open} />
     </button>
   );
 }

@@ -37,7 +37,6 @@ import {
 } from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import {
-  ExpandChevron,
   MilestoneExpansion,
   useExpandedMilestones,
   useMilestoneDrafts,
@@ -833,7 +832,7 @@ export function RockModal({
                   <div key={r.key}>
                     <div className="flex items-center gap-1.5">
                       {/* The title is an input (click = type), so the number
-                          beside it, with a chevron, is the expand toggle. */}
+                          beside it is the expand toggle. */}
                       <button
                         type="button"
                         onClick={() => expand.toggle(r.key)}
@@ -842,7 +841,6 @@ export function RockModal({
                         title="Description and activity"
                         className="flex shrink-0 items-center gap-0.5 rounded px-0.5 py-1 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:hover:bg-zinc-800"
                       >
-                        <ExpandChevron open={expand.isOpen(r.key)} />
                         <span
                           className={cn(
                             "w-4 text-right text-[11px] font-semibold tabular-nums",

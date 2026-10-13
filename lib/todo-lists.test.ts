@@ -2,23 +2,69 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   assignedPillText,
+  homeShowsTodo,
   isAssignedFromOtherTeam,
+  l10ShowsTodo,
   listShowsTodo,
   outsideOwnerIds,
+  surfaceShowsTodo,
 } from "./todo-lists";
 
-describe("listShowsTodo — private never on the team's lists (spec §3.2)", () => {
+describe("listShowsTodo — private: creator, assignee, admins (spec §3.2)", () => {
   const priv = { visibility: "private", owner_id: "asg", created_by: "cre" };
   test("team to-dos show to everyone on the page", () => {
     assert.equal(listShowsTodo({ visibility: "team", owner_id: "x" }, "anyone"), true);
     assert.equal(listShowsTodo({ owner_id: "x" }, "anyone"), true);
   });
-  test("private: creator and assignee only — not leaders, not admins", () => {
+  test("private: creator and assignee — not leaders, not other members", () => {
     assert.equal(listShowsTodo(priv, "asg"), true);
     assert.equal(listShowsTodo(priv, "cre"), true);
     assert.equal(listShowsTodo(priv, "leader"), false);
-    assert.equal(listShowsTodo(priv, "admin"), false);
+    assert.equal(listShowsTodo(priv, "leader", false), false);
     assert.equal(listShowsTodo({ visibility: "private", owner_id: null }, ""), false);
+  });
+  test("private: an admin sees every one", () => {
+    assert.equal(listShowsTodo(priv, "admin", true), true);
+    assert.equal(listShowsTodo({ visibility: "private", owner_id: null }, "admin", true), true);
+  });
+});
+
+describe("surfaceShowsTodo — lists, Home and the L10 share one predicate", () => {
+  const priv = { visibility: "private", owner_id: "asg", created_by: "cre" };
+  const team = { visibility: "team", owner_id: "asg" };
+  const viewers = {
+    assignee: { uid: "asg" },
+    creator: { uid: "cre" },
+    admin: { uid: "adm", isAdmin: true },
+    leader: { uid: "lead" },
+    member: { uid: "mem" },
+  };
+  test("lists and Home: private to creator, assignee, admin only", () => {
+    for (const surface of ["list", "home"] as const) {
+      assert.equal(surfaceShowsTodo(priv, viewers.assignee, surface), true);
+      assert.equal(surfaceShowsTodo(priv, viewers.creator, surface), true);
+      assert.equal(surfaceShowsTodo(priv, viewers.admin, surface), true);
+      assert.equal(surfaceShowsTodo(priv, viewers.leader, surface), false);
+      assert.equal(surfaceShowsTodo(priv, viewers.member, surface), false);
+    }
+  });
+  test("L10: private to no one, admins and parties included", () => {
+    for (const v of Object.values(viewers)) {
+      assert.equal(surfaceShowsTodo(priv, v, "l10"), false);
+    }
+    assert.equal(l10ShowsTodo(priv), false);
+  });
+  test("team to-dos show on every surface to everyone", () => {
+    for (const surface of ["list", "home", "l10"] as const) {
+      for (const v of Object.values(viewers)) {
+        assert.equal(surfaceShowsTodo(team, v, surface), true);
+      }
+    }
+    assert.equal(l10ShowsTodo({ owner_id: "x" }), true);
+  });
+  test("wrappers agree with the predicate", () => {
+    assert.equal(homeShowsTodo(priv, "adm", true), true);
+    assert.equal(homeShowsTodo(priv, "lead"), false);
   });
 });
 

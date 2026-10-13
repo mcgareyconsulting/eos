@@ -5,9 +5,9 @@
 // it, change it, tick it, delete it, read and write its thread and follow
 // it — from any team; no team gate. Leaders have no special power over it.
 // Only the creator or the assignee may turn it into a team to-do (an admin
-// may not). It never shows in the team's lists or L10 to anyone else (spec
-// §3.2): the pages show it to the creator and the assignee only; an admin
-// reaches it by link or notification.
+// may not). It never shows on the team's L10, to anyone (spec §3.2, §4). In
+// the lists (To-Dos page, Home) it shows to the creator, the assignee and
+// admins — never to leaders or other members (lib/todo-lists.ts).
 
 import { canChangeTodoVisibility } from "@/lib/todo-access";
 import type { TeamTodoSubject } from "./team-item";

@@ -256,14 +256,15 @@ export default async function MeetingDetailPage({
       }));
 
     // Exclude milestone-style todos (those tied to a rock); recap should show
-    // standalone to-dos created during the meeting. Other people's private
-    // to-dos are dropped (Admin SDK bypasses firestore.rules).
+    // standalone to-dos created during the meeting. Private to-dos are
+    // dropped for everyone (the L10 is the team's view; Admin SDK bypasses
+    // firestore.rules).
     newTodos = todosSnap.docs
       .map((d) => ({ id: d.id, x: d.data() }))
       .filter(
         ({ x }) =>
           inWindow(x.created_at as Timestamp | null) &&
-          isRecapTodoVisible(x, uid),
+          isRecapTodoVisible(x),
       )
       .map(({ id, x }) => ({
         id,

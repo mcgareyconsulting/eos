@@ -86,10 +86,10 @@ export default async function TodosPage({
         (!!f.source_rock_id && f.owner_id === uid);
       if (onPage) {
         focusTodoId = item.ref.id;
-        // Seen, but in no list here: an admin opening someone's private
-        // to-do (spec §3.2 keeps it off the team's lists). It renders in
-        // its own box on the Active view.
-        if (item.teamId === tid && !listShowsTodo(f, uid)) {
+        // Seen, but in no list here (an admin's private to-dos are in the
+        // list now, so this is the rare leftover). It renders in its own
+        // box on the Active view.
+        if (item.teamId === tid && !listShowsTodo(f, uid, viewer.isAdmin)) {
           focusExtra = toBoardDoc(item.ref.id, f);
         } else if (f.archived_at != null) {
           showArchived = true;
@@ -127,12 +127,12 @@ export default async function TodosPage({
   // own subscription is already scoped that way by the todos rule; matching it
   // on the server keeps private titles out of the serialized page payload,
   // where view-source would reach them even though the UI hid them.
-  // Private rows: the creator's and the assignee's only (spec §3.2) — not
-  // leaders', not admins' (lib/todo-lists.ts listShowsTodo).
+  // Private rows: the creator's, the assignee's and admins' (spec §3.2) —
+  // not leaders' or other members' (lib/todo-lists.ts listShowsTodo).
   const initialTodos: TodoBoardDoc[] = [];
   for (const d of snap.docs) {
     const t = d.data() as TodoDoc;
-    if (!listShowsTodo(t, uid)) continue;
+    if (!listShowsTodo(t, uid, viewer.isAdmin)) continue;
     initialTodos.push(toBoardDoc(d.id, t));
   }
 
@@ -222,6 +222,7 @@ export default async function TodosPage({
       extraRocks={extraRocks}
       focusTodoId={focusTodoId}
       focusExtra={focusExtra}
+      isAdmin={viewer.isAdmin}
       myTeamIds={[...viewer.teamIds]}
       personNames={personNames}
       teamNames={teamNames}

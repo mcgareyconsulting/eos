@@ -204,9 +204,12 @@ export function DirectoryTable({
                   {p.teams.length === 0 ? (
                     <span className="text-xs text-zinc-400">No team</span>
                   ) : (
-                    <div className="flex flex-wrap gap-1">
+                    // One team per line, its role in a second column so the
+                    // roles line up — a person can lead one team and be a
+                    // plain member of the next.
+                    <div className="inline-grid max-w-full grid-cols-[minmax(0,auto)_auto] items-center gap-x-1.5 gap-y-1">
                       {p.teams.map((t) => (
-                        <TeamChip
+                        <TeamRow
                           key={t.id}
                           name={t.name}
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
@@ -271,7 +274,9 @@ function Blank() {
   return <span className="text-zinc-400">—</span>;
 }
 
-function TeamChip({
+/** One grid row of the Team cell: the team chip, then its role (and the
+ *  leader's remove control) in the second column. Renders two grid items. */
+function TeamRow({
   name,
   href,
   role,
@@ -283,40 +288,33 @@ function TeamChip({
   remove: React.ReactNode;
 }) {
   const cls =
-    "inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
-  // Role is per team, so every chip names it — a person can lead one team
-  // and be a plain member of the next.
+    "block max-w-full truncate rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
   const leader = role === "leader";
-  const label = (
+  return (
     <>
-      {name}
-      <span
-        className={
-          leader
-            ? "ml-1 font-semibold text-hpb-blue dark:text-hpb-gold"
-            : "ml-1 text-zinc-400 dark:text-zinc-500"
-        }
-      >
-        {leader ? "leader" : "member"}
+      <span className="min-w-0">
+        {href ? (
+          <Link
+            href={href}
+            title={name}
+            className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}
+          >
+            {name}
+          </Link>
+        ) : (
+          <span
+            className={cls}
+            title={`${name} — you can see who is on this team, but not its data, until a leader adds you.`}
+          >
+            {name}
+          </span>
+        )}
+      </span>
+      <span className="inline-flex items-center">
+        <Chip tone={leader ? "blue" : "zinc"}>{leader ? "Leader" : "Member"}</Chip>
+        {remove}
       </span>
     </>
-  );
-  return (
-    <span className="inline-flex items-center">
-      {href ? (
-        <Link href={href} className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}>
-          {label}
-        </Link>
-      ) : (
-        <span
-          className={cls}
-          title="You can see who is on this team, but not its data, until a leader adds you."
-        >
-          {label}
-        </span>
-      )}
-      {remove}
-    </span>
   );
 }
 

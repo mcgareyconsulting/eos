@@ -8,13 +8,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/input";
 import {
   ModalBody,
   ModalFooter,
   ModalHeader,
   ModalShell,
 } from "@/components/ui/modal";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { addTeamMember, removeTeamMember } from "./roster-actions";
 
@@ -66,11 +66,17 @@ function AddToTeamModal({
   const [teamId, setTeamId] = useState(ledTeams[0].id);
   const [uid, setUid] = useState("");
 
-  const candidates = people
+  const teamOptions: SelectOption[] = ledTeams.map((t) => ({ value: t.id, label: t.name }));
+  const personOptions: SelectOption[] = people
     .filter((p) => !p.teams.some((t) => t.id === teamId))
     .sort((a, b) =>
       `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`),
-    );
+    )
+    .map((p) => ({
+      value: p.uid,
+      label: `${p.firstName} ${p.lastName}`.trim() || p.email || p.uid,
+      description: p.email ?? undefined,
+    }));
 
   function submit() {
     if (!uid) {
@@ -102,20 +108,15 @@ function AddToTeamModal({
             >
               Team
             </label>
-            <Select
+            <SelectMenu
               id="leader-add-team"
+              options={teamOptions}
               value={teamId}
-              onChange={(e) => {
-                setTeamId(e.target.value);
+              onChange={(v) => {
+                setTeamId(v);
                 setUid("");
               }}
-            >
-              {ledTeams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </Select>
+            />
           </div>
         )}
         <div>
@@ -125,19 +126,13 @@ function AddToTeamModal({
           >
             Person in the directory
           </label>
-          <Select
+          <SelectMenu
             id="leader-add-person"
+            options={personOptions}
             value={uid}
-            onChange={(e) => setUid(e.target.value)}
-          >
-            <option value="">Choose a person</option>
-            {candidates.map((p) => (
-              <option key={p.uid} value={p.uid}>
-                {`${p.firstName} ${p.lastName}`.trim() || p.email || p.uid}
-                {p.email ? ` (${p.email})` : ""}
-              </option>
-            ))}
-          </Select>
+            onChange={setUid}
+            placeholder="Choose a person"
+          />
           <p className="mt-1 text-xs text-zinc-500">
             Only people already in the directory can be added. An admin
             creates new accounts and changes leaders.

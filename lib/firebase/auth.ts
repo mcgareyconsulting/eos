@@ -27,7 +27,7 @@ export const requireFirebaseUser = cache(async () => {
 
 // How long until the current session crosses its half-life — the moment the
 // app shell's <SessionKeeper> starts renewing it on the user's next
-// interaction (sliding 12-hour session; see lib/firebase/session.ts). Reuses
+// interaction (sliding 25-hour session; see lib/firebase/session.ts). Reuses
 // the request's verification, so it adds no Auth round trip.
 export const getSessionRenewInMs = cache(async (): Promise<number> => {
   const decoded = await verifiedSession();

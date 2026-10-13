@@ -33,7 +33,7 @@ function harness(opts: {
   const session = {
     uid: "u1",
     iat: T0,
-    exp: T0 + 12 * 3600,
+    exp: T0 + 25 * 3600,
     ...(opts.session === "invalid" ? {} : opts.session),
   } as DecodedIdToken;
   const idToken = {
@@ -91,16 +91,16 @@ function withAllowlist(value: string | undefined, run: () => Promise<void>) {
 }
 
 describe("createSession", () => {
-  test("mints a 12-hour HttpOnly, SameSite=Lax cookie", async () => {
+  test("mints a 25-hour HttpOnly, SameSite=Lax cookie", async () => {
     const h = harness({});
     await withAllowlist("@highplainsbank.com", () => createSession("tok", h.deps));
     assert.deepEqual(
       h.calls.find((c) => c[0] === "createSessionCookie"),
-      ["createSessionCookie", "tok", 12 * HOUR],
+      ["createSessionCookie", "tok", 25 * HOUR],
     );
     const set = h.calls.find((c) => c[0] === "cookies.set");
     assert.deepEqual(set?.[3], {
-      maxAge: 12 * 3600,
+      maxAge: 25 * 3600,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       path: "/",
@@ -147,11 +147,11 @@ describe("verifySession", () => {
     );
   });
 
-  test("a pre-policy 5-day cookie stops working 12 hours after issue", async () => {
+  test("a pre-policy 5-day cookie stops working 25 hours after issue", async () => {
     const legacy = { exp: T0 + 5 * 24 * 3600 };
-    const early = harness({ cookie: "c", session: legacy, nowHours: 11 });
+    const early = harness({ cookie: "c", session: legacy, nowHours: 24 });
     assert.equal((await verifySession(early.deps))?.uid, "u1");
-    const late = harness({ cookie: "c", session: legacy, nowHours: 13 });
+    const late = harness({ cookie: "c", session: legacy, nowHours: 26 });
     assert.equal(await verifySession(late.deps), null);
   });
 });
@@ -164,8 +164,8 @@ describe("renewSession", () => {
     assert.equal(h.jar.get("__firebase_session"), "c");
   });
 
-  test("re-mints a 12-hour cookie past the half-life", async () => {
-    const h = harness({ cookie: "c", nowHours: 7 });
+  test("re-mints a 25-hour cookie past the half-life", async () => {
+    const h = harness({ cookie: "c", nowHours: 13 });
     await withAllowlist("@highplainsbank.com", async () => {
       assert.equal(await renewSession("tok", h.deps), true);
     });
@@ -178,14 +178,14 @@ describe("renewSession", () => {
   });
 
   test("an expired or missing session is not renewable", async () => {
-    assert.equal(await renewSession("tok", harness({ nowHours: 7 }).deps), false);
-    const expired = harness({ cookie: "c", nowHours: 13 });
+    assert.equal(await renewSession("tok", harness({ nowHours: 13 }).deps), false);
+    const expired = harness({ cookie: "c", nowHours: 26 });
     assert.equal(await renewSession("tok", expired.deps), false);
     assert.equal(expired.jar.get("__firebase_session"), "c");
   });
 
   test("refuses an ID token for a different user", async () => {
-    const h = harness({ cookie: "c", nowHours: 7, idToken: { uid: "u2" } });
+    const h = harness({ cookie: "c", nowHours: 13, idToken: { uid: "u2" } });
     await withAllowlist(undefined, () =>
       assert.rejects(renewSession("tok", h.deps), /different account/),
     );
@@ -193,7 +193,7 @@ describe("renewSession", () => {
   });
 
   test("someone taken off the allowlist is not renewed", async () => {
-    const h = harness({ cookie: "c", nowHours: 7 });
+    const h = harness({ cookie: "c", nowHours: 13 });
     await withAllowlist("@elsewhere.com", () =>
       assert.rejects(renewSession("tok", h.deps), new Error(NOT_AUTHORIZED_MESSAGE)),
     );

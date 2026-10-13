@@ -221,4 +221,4 @@ wait for any of them.
 3. **Where the perimeter boundary sits**: EOS project alone, or EOS + warehouse project together.
 4. **Who owns the KMS keys** and the Terraform state bucket (bank cloud team vs. app team).
 5. **Consultant access model** post-cutover: HPB-issued Workspace account vs. IAP group + time-boxed IAM.
-6. **Session length** the bank's policy requires (drives the 8 h vs 12 h choice).
+6. ~~**Session length**~~ — decided 2026-10-13: **25 h** sliding (HPB request). Match IAP's session length to it when IAP lands.

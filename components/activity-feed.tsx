@@ -105,6 +105,9 @@ export type ActivityFeedProps = {
    * discard guard in front of closing (`useDiscardGuard`).
    */
   onDraftChange?: (hasDraft: boolean) => void;
+  /** What events call the item, when the entity type's own word is wrong
+   *  ("milestone" for a to-do on a rock: "created this milestone"). */
+  noun?: string;
   className?: string;
 };
 
@@ -137,6 +140,7 @@ export function ActivityFeed({
   statusDotClass,
   canComment = true,
   onDraftChange,
+  noun,
   className,
 }: ActivityFeedProps) {
   const comments = useEntityComments(teamId, entityType, entityId);
@@ -304,6 +308,7 @@ export function ActivityFeed({
                 key={item.key}
                 event={item.event}
                 entityType={entityType}
+                noun={noun}
                 userId={userId}
                 statusDotClass={statusDotClass}
               />
@@ -345,15 +350,17 @@ function Dot({
 function EventRow({
   event,
   entityType,
+  noun,
   userId,
   statusDotClass,
 }: {
   event: FeedEvent;
   entityType: CommentEntityType;
+  noun?: string;
   userId: string;
   statusDotClass?: (status: string) => string | undefined;
 }) {
-  const { actor, text } = feedEventSentence(event, entityType, userId);
+  const { actor, text } = feedEventSentence(event, entityType, userId, noun);
   const statusTone =
     event.kind === "status_changed" && event.status
       ? statusDotClass?.(event.status.value)

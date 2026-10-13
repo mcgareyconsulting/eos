@@ -249,12 +249,17 @@ function quoted(s: string | null | undefined): string {
   return t ? ` “${t}”` : "";
 }
 
-/** What follows the actor's name. */
-export function feedEventVerb(e: FeedEvent, entity: FeedEntityType): string {
+/** What follows the actor's name. `noun` overrides the entity's ("milestone"
+ *  for a to-do that hangs off a rock). */
+export function feedEventVerb(
+  e: FeedEvent,
+  entity: FeedEntityType,
+  noun: string = feedEntityNoun(entity),
+): string {
   if (e.verb) return e.verb;
   switch (e.kind) {
     case "created":
-      return `created this ${feedEntityNoun(entity)}`;
+      return `created this ${noun}`;
     case "status_changed":
       return e.status ? `set the status to ${e.status.label}` : "changed the status";
     case "milestone_completed":
@@ -283,18 +288,19 @@ export function feedEventSentence(
   e: FeedEvent,
   entity: FeedEntityType,
   viewerId: string,
+  noun?: string,
 ): EventSentence {
   if (e.actorId === SYSTEM_ACTOR_ID) {
     if (e.kind === "archived" && !e.verb) {
       return { actor: null, text: "Archived automatically" };
     }
-    return { actor: null, text: capitalize(feedEventVerb(e, entity)) };
+    return { actor: null, text: capitalize(feedEventVerb(e, entity, noun)) };
   }
   const actor =
     e.actorId != null && e.actorId === viewerId
       ? "You"
       : e.actorName.trim() || "Someone";
-  return { actor, text: feedEventVerb(e, entity) };
+  return { actor, text: feedEventVerb(e, entity, noun) };
 }
 
 function capitalize(s: string): string {

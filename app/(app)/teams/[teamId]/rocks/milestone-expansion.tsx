@@ -131,6 +131,7 @@ export function MilestoneExpansion({
         <ActivityFeed
           teamId={teamId}
           entityType="todo"
+          noun="milestone"
           entityId={milestoneId}
           userId={userId}
           members={members}

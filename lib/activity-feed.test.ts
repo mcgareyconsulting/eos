@@ -271,3 +271,15 @@ describe("feedCountLabel", () => {
     assert.equal(feedCountLabel(mergeTimeline([comment("c", 1), comment("d", 1)], [])), "2 comments");
   });
 });
+
+describe("feed noun override", () => {
+  test("a milestone's created row names the milestone, not the to-do", () => {
+    const e = { id: "c", kind: "created", actorId: "u1", actorName: "Ann", ms: 1 } as const;
+    assert.equal(feedEventVerb(e, "todo"), "created this to-do");
+    assert.equal(feedEventVerb(e, "todo", "milestone"), "created this milestone");
+    assert.deepEqual(feedEventSentence(e, "todo", "u1", "milestone"), {
+      actor: "You",
+      text: "created this milestone",
+    });
+  });
+});

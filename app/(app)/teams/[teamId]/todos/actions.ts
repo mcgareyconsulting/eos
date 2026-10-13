@@ -26,6 +26,7 @@ import {
 } from "@/lib/google/tasks";
 import { selectTodosClosedByMeetingEnd } from "@/lib/todos-archive";
 import { canChangeTodoVisibility } from "@/lib/todo-access";
+import { visibilityForNewTodo } from "./todo-visibility";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { purgeItem } from "@/lib/firebase/purge";
 import { recordActivity } from "@/lib/firebase/activity";
@@ -112,17 +113,17 @@ export async function addTodo(teamId: string, formData: FormData) {
   const due_date = String(formData.get("due_date") ?? "").trim() || null;
   const description =
     normalizeDescription(String(formData.get("description") ?? "")) || null;
-  const visibilityRaw = String(formData.get("visibility") ?? "team");
-  const visibility: Visibility = VISIBILITIES.includes(
-    visibilityRaw as Visibility,
-  )
-    ? (visibilityRaw as Visibility)
-    : "team";
 
   // Durable link to the L10 the to-do was captured in (set by the in-meeting
   // To-Dos form); null for to-dos created outside a meeting.
   const source_meeting_id =
     String(formData.get("source_meeting_id") ?? "").trim() || null;
+  // Captured in an L10 → always team, whatever the form sent: a private
+  // to-do never shows on the L10, so it would vanish from its own meeting.
+  const visibility: Visibility = visibilityForNewTodo(
+    formData.get("visibility"),
+    source_meeting_id,
+  );
   // Weekly focus. A free flag — see lib/weekly-focus.ts for why it is not
   // one-per-person, and for the L10-to-L10 week it belongs to.
   const weekly_focus = formData.get("weekly_focus") === "on";

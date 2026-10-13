@@ -103,3 +103,20 @@ export function stepChoice(
   }
   return current;
 }
+
+/**
+ * The visibility a new to-do is stored with. One captured in an L10 (it
+ * carries `source_meeting_id`) is always a team to-do, whatever the form
+ * sent: a private to-do never shows on the L10, so one made there would
+ * vanish from the meeting it was made in (spec §3.2). The Add form already
+ * hides the control and submits "team" from a meeting; this is the server's
+ * copy of that rule, so a stale or hand-rolled form can't get round it.
+ * Anything unrecognised is "team".
+ */
+export function visibilityForNewTodo(
+  requested: unknown,
+  sourceMeetingId: string | null,
+): TodoVisibility {
+  if (sourceMeetingId) return "team";
+  return requested === "private" ? "private" : "team";
+}

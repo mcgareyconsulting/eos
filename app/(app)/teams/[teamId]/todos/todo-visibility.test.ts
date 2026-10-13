@@ -4,6 +4,7 @@ import {
   privateAudience,
   stepChoice,
   todoVisibilityChoices,
+  visibilityForNewTodo,
 } from "./todo-visibility";
 
 describe("privateAudience", () => {
@@ -94,5 +95,21 @@ describe("stepChoice", () => {
     );
     assert.equal(stepChoice(locked, "private", 1), "private");
     assert.equal(stepChoice(locked, "private", -1), "private");
+  });
+});
+
+describe("visibilityForNewTodo", () => {
+  test("outside a meeting: what the form asked for", () => {
+    assert.equal(visibilityForNewTodo("private", null), "private");
+    assert.equal(visibilityForNewTodo("team", null), "team");
+  });
+  test("captured in an L10: always team, even if the form sent private", () => {
+    assert.equal(visibilityForNewTodo("private", "m1"), "team");
+    assert.equal(visibilityForNewTodo("team", "m1"), "team");
+  });
+  test("anything unrecognised or missing is team", () => {
+    assert.equal(visibilityForNewTodo("public", null), "team");
+    assert.equal(visibilityForNewTodo(null, null), "team");
+    assert.equal(visibilityForNewTodo(undefined, null), "team");
   });
 });

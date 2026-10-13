@@ -1,23 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Archive, Lock, Star, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Archive, Lock, Pencil, Star, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
-import { formatDateOnly, formatDateShort } from "@/lib/dates";
+import { formatDateShort } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
-import { normalizeDescription } from "@/lib/csv-import";
-import { RichText } from "@/components/rich-text";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
-import { EntityComments } from "@/components/entity-comments";
-import { EntityActivity } from "@/components/entity-activity";
 import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
 import { EditTodoModal } from "./edit-todo-modal";
-import { FollowButton } from "./follow-button";
-import { effectiveFollowers, isLockedFollower } from "@/lib/follow";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
-import { Eyebrow } from "@/components/ui/text";
 
 export type TodoListItem = {
   id: string;
@@ -41,8 +34,12 @@ export type TodoListItem = {
 
 type Member = { user_id: string; full_name: string };
 
-// View-first row: click the title to expand description, follow control,
-// comments and the activity trace. Checkbox / pencil / delete stay separate.
+// Click the title (or the pencil) to open the to-do: the two-column detail
+// dialog (edit-todo-modal.tsx) with the form on the left and the
+// ActivityFeed (comments + the activity trace) on the right (T4). This
+// replaced an inline expansion that held the description, Follow, comments
+// and the trace; the dialog covers all of it. Checkbox / star / archive /
+// delete stay on the row.
 export function TodoListRow({
   teamId,
   todo,
@@ -51,18 +48,20 @@ export function TodoListRow({
   userId,
   /** Owner cards already name the owner — don't repeat it on every row. */
   hideOwner = false,
-  /** Deep-linked from a notification: open expanded and scroll into view. */
+  /** Deep-linked from a notification: scroll into view and open the to-do. */
   focused = false,
-  /** Start expanded without the deep-link ring or scroll (the peek modal). */
-  defaultExpanded = false,
-  /** "collapsed" hides the comment editor behind a + Comment button. */
-  commentComposer = "collapsed",
-  /** The peek modal renders the trace in its own side panel instead. */
-  showActivity = true,
+  /**
+   * False where the row already sits inside the to-do's own detail (the
+   * notification peek): the title is plain text. The pencil still edits.
+   */
+  opensDetail = true,
   /**
    * Where the row is rendered. In the L10 the list already has a "Done"
    * divider, so the per-row archiving line is noise, and the timing it would
    * name is wrong anyway: everything closed by Finish goes then, not Monday.
+   * The L10 also hides Visibility in the dialog: everything on it is a team
+   * to-do, and flipping one to Private mid-meeting would pull it off the
+   * screen (same rule as Add to-do from a meeting).
    */
   surface = "page",
   /**
@@ -81,16 +80,29 @@ export function TodoListRow({
   userId: string;
   hideOwner?: boolean;
   focused?: boolean;
-  defaultExpanded?: boolean;
-  commentComposer?: "inline" | "collapsed";
-  showActivity?: boolean;
+  opensDetail?: boolean;
   surface?: "page" | "meeting";
   access?: "full" | "assignee";
   assignedPill?: string | null;
 }) {
   const manage = access === "full";
-  const [expanded, setExpanded] = useState(focused || defaultExpanded);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // The detail dialog. A deep link opens it on arrival, once: closing it
+  // must not reopen it on the next live re-render. Not before hydration:
+  // the dialog portals to <body>, which the server render doesn't have.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [focusSeen, setFocusSeen] = useState(false);
+  const hydrated = useSyncExternalStore(noopSubscribe, isClient, isServer);
+  const showDetail =
+    detailOpen || (opensDetail && focused && hydrated && !focusSeen);
+  function openDetail() {
+    setDetailOpen(true);
+  }
+  function closeDetail() {
+    setDetailOpen(false);
+    setFocusSeen(true);
+  }
 
   // One scroll, on arrival. `focused` only ever flips from the URL, and a
   // live re-render of the list must not yank the page back here.
@@ -99,10 +111,6 @@ export function TodoListRow({
     rootRef.current?.scrollIntoView({ block: "center" });
   }, [focused]);
 
-  // Owner + assigner always follow and cannot unfollow (lib/follow.ts).
-  const followerIds = effectiveFollowers("todo", todo);
-  const lockedFollow = isLockedFollower("todo", todo, userId);
-  const following = followerIds.includes(userId);
   const remove = deleteTodo.bind(null, teamId, todo.id);
   const toggleArchive = setTodoArchived.bind(
     null,
@@ -116,21 +124,18 @@ export function TodoListRow({
     todo.id,
     !todo.weekly_focus,
   );
-  // Restore label/body breaks lost in ninety xlsx exports (e.g. "Analytical"
-  // glued onto the paragraph) so whitespace-pre-wrap can render them.
-  const description = normalizeDescription(todo.description);
-  const hasDescription = description.length > 0;
-
-  function toggleExpanded() {
-    setExpanded((e) => !e);
-  }
-
   // Active/L10: completed = checked box only (no strikethrough — stays readable).
   // Archived: no checkbox; "Closed On" date instead of heavy grayout.
   const archived = !!todo.archived;
 
   // Mid-week complete (not yet archived): gray row until Monday / Finish.
   const closedPending = !archived && todo.completed;
+
+  // Who gets the form: the team's members on a live to-do. An off-team
+  // assignee, and anyone opening an archived one, get the read-only view;
+  // the feed still takes their comments, as the expansion did.
+  const canEdit = manage && !archived;
+  const TitleTag = opensDetail ? "button" : "div";
 
   return (
     <div
@@ -156,11 +161,18 @@ export function TodoListRow({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={toggleExpanded}
-          aria-expanded={expanded}
-          className="-mx-1 min-w-0 flex-1 rounded-sm px-1 py-0.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        <TitleTag
+          {...(opensDetail
+            ? {
+                type: "button" as const,
+                onClick: openDetail,
+                "aria-haspopup": "dialog" as const,
+              }
+            : {})}
+          className={cn(
+            "-mx-1 min-w-0 flex-1 rounded-sm px-1 py-0.5 text-left",
+            opensDetail && "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+          )}
         >
           <span
             className={cn(
@@ -195,7 +207,7 @@ export function TodoListRow({
               {pendingArchiveLabel(todo.visibility)}
             </span>
           )}
-        </button>
+        </TitleTag>
 
         {!hideOwner && (
           <div className="w-28 shrink-0 pt-1 text-right text-xs text-zinc-600 dark:text-zinc-400">
@@ -251,13 +263,17 @@ export function TodoListRow({
               </button>
             </form>
           )}
-          {manage && !archived && (
-            <EditTodoModal
-              teamId={teamId}
-              todo={todo}
-              members={members}
-              currentUserId={userId}
-            />
+          {canEdit && (
+            <button
+              type="button"
+              onClick={openDetail}
+              aria-haspopup="dialog"
+              title="Edit to-do"
+              aria-label="Edit to-do"
+              className="rounded p-1 text-zinc-400 opacity-0 hover:bg-zinc-100 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
           )}
           {manage && (
           <form action={toggleArchive}>
@@ -302,83 +318,23 @@ export function TodoListRow({
         </div>
       </div>
 
-      {expanded && (
-        <div
-          className={cn(
-            "mt-3 space-y-2 border-l border-zinc-200 pl-4 dark:border-zinc-800",
-            archived ? "ml-1" : "ml-7",
-          )}
-        >
-          <div>
-            <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-              Description
-            </h4>
-            {hasDescription ? (
-              <RichText
-                value={description}
-                className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
-              />
-            ) : (
-              <p className="text-xs italic text-zinc-400">No description.</p>
-            )}
-          </div>
-          <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-            {hideOwner ? null : (
-              <div>
-                <Eyebrow as="dt">Owner</Eyebrow>
-                <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
-                  {ownerName}
-                </dd>
-              </div>
-            )}
-            <div>
-              <Eyebrow as="dt">Due</Eyebrow>
-              <dd className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
-                {todo.due_date ? formatDateOnly(todo.due_date) : "—"}
-              </dd>
-            </div>
-            {todo.visibility === "private" && (
-              <div>
-                <Eyebrow as="dt">Visibility</Eyebrow>
-                <dd className="mt-0.5 text-zinc-700 dark:text-zinc-300">
-                  Private
-                </dd>
-              </div>
-            )}
-          </dl>
-
-          {/* Follow + comments: the surface the notifications feed off.
-              A private to-do is its creator's and owner's alone, and both
-              are locked followers, so no follow control. */}
-          {todo.visibility !== "private" && (
-            <FollowButton
-              teamId={teamId}
-              todoId={todo.id}
-              following={following}
-              locked={lockedFollow}
-              followerCount={followerIds.length}
-              className="pt-1"
-            />
-          )}
-          <EntityComments
-            teamId={teamId}
-            entityType="todo"
-            entityId={todo.id}
-            userId={userId}
-            members={members}
-            composer={commentComposer}
-            className="pt-2"
-          />
-          {showActivity && (
-            <EntityActivity
-              entityType="todo"
-              entityId={todo.id}
-              userId={userId}
-              className="border-t border-zinc-200 pt-3 dark:border-zinc-800"
-            />
-          )}
-        </div>
-      )}
+      <EditTodoModal
+        teamId={teamId}
+        todo={todo}
+        members={members}
+        currentUserId={userId}
+        ownerName={ownerName}
+        open={showDetail}
+        onClose={closeDetail}
+        readOnly={!canEdit}
+        showVisibility={surface !== "meeting"}
+      />
     </div>
   );
 }
+
+// useSyncExternalStore as a hydration flag: false on the server and during
+// hydration, true after. No effect, no extra state.
+const noopSubscribe = () => () => {};
+const isClient = () => true;
+const isServer = () => false;

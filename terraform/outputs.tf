@@ -35,3 +35,13 @@ output "tokens_kms_key_id" {
   value       = google_kms_crypto_key.eos_tokens.id
 }
 
+
+output "lb_ip_address" {
+  description = "Static IP of the external HTTPS load balancer: the value for the custom domain's DNS A record. Null unless enable_load_balancer."
+  value       = var.enable_load_balancer ? google_compute_global_address.lb[0].address : null
+}
+
+output "lb_certificate_name" {
+  description = "Managed SSL certificate on the load balancer. Check provisioning with: gcloud compute ssl-certificates describe <name> --global --format='value(managed.status,managed.domainStatus)'"
+  value       = var.enable_load_balancer ? google_compute_managed_ssl_certificate.app[0].name : null
+}

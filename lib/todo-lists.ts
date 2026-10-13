@@ -1,6 +1,6 @@
-// Which to-dos a list shows to whom (docs/PERMISSIONS_SPEC.md §3.2, §4, D1;
-// P8a). Pure; the To-Dos page, the board, Home and the L10 segment share
-// these so the surfaces cannot disagree.
+// Which to-dos a surface shows to whom (docs/PERMISSIONS_SPEC.md §3.2, §4,
+// D1; P8a). Pure; the To-Dos page, the board, Home, the L10 segment and the
+// recap share these so the surfaces cannot disagree.
 
 type Id = string | null | undefined;
 
@@ -18,14 +18,53 @@ function is(id: Id, uid: string): boolean {
   return typeof id === "string" && id !== "" && id === uid;
 }
 
+export type TodoViewer = { uid: string; isAdmin?: boolean };
+
+/** Where a to-do is shown: a team's To-Dos list, Home, or the L10. */
+export type TodoSurface = "list" | "home" | "l10";
+
 /**
- * Does a team list show this to-do to `uid`? A team to-do: yes. A private
- * one: only to its creator and its assignee (spec §3.2 — never to the
- * team, leaders or admins in a list; an admin opens it by link).
+ * The one visibility predicate behind every to-do surface (spec §3.2, §4).
+ * A team to-do shows everywhere. A private one shows:
+ *  - on lists and Home: to its creator, its assignee and org admins — never
+ *    to leaders or other members;
+ *  - on the L10: to no one. The L10 is the team's view, not the reader's.
  */
-export function listShowsTodo(todo: ListTodo, uid: string): boolean {
+export function surfaceShowsTodo(
+  todo: ListTodo,
+  viewer: TodoViewer,
+  surface: TodoSurface,
+): boolean {
   if (todo.visibility !== "private") return true;
-  return is(todo.owner_id, uid) || is(todo.created_by, uid);
+  if (surface === "l10") return false;
+  return (
+    viewer.isAdmin === true ||
+    is(todo.owner_id, viewer.uid) ||
+    is(todo.created_by, viewer.uid)
+  );
+}
+
+/** A team's To-Dos list (see `surfaceShowsTodo`). */
+export function listShowsTodo(
+  todo: ListTodo,
+  uid: string,
+  isAdmin = false,
+): boolean {
+  return surfaceShowsTodo(todo, { uid, isAdmin }, "list");
+}
+
+/** Home (same rule as the lists). */
+export function homeShowsTodo(
+  todo: ListTodo,
+  uid: string,
+  isAdmin = false,
+): boolean {
+  return surfaceShowsTodo(todo, { uid, isAdmin }, "home");
+}
+
+/** The L10 segment and recap: never a private to-do, for anyone. */
+export function l10ShowsTodo(todo: ListTodo): boolean {
+  return surfaceShowsTodo(todo, { uid: "" }, "l10");
 }
 
 /**

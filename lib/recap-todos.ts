@@ -1,9 +1,10 @@
 // Meeting-recap to-do filter (permissions P0, P8a). The recap lists standalone
-// to-dos created during the meeting; a *private* to-do is for its creator and
-// its assignee only (spec §3.2, lib/todo-lists.ts), and the recap page reads
-// with the Admin SDK, so it must drop other people's private rows itself.
+// to-dos created during the meeting. It is the team's L10 view, so a *private*
+// to-do never appears — for anyone, admins included (spec §3.2,
+// lib/todo-lists.ts l10ShowsTodo). The recap page reads with the Admin SDK, so
+// it must drop private rows itself.
 
-import { listShowsTodo } from "./todo-lists";
+import { l10ShowsTodo } from "./todo-lists";
 
 export type RecapTodoSubject = {
   visibility?: unknown;
@@ -12,21 +13,7 @@ export type RecapTodoSubject = {
   source_rock_id?: unknown;
 };
 
-function id(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
-}
-
-export function isRecapTodoVisible(
-  todo: RecapTodoSubject,
-  viewerUid: string,
-): boolean {
+export function isRecapTodoVisible(todo: RecapTodoSubject): boolean {
   if (todo.source_rock_id) return false;
-  return listShowsTodo(
-    {
-      visibility: todo.visibility,
-      owner_id: id(todo.owner_id),
-      created_by: id(todo.created_by),
-    },
-    viewerUid,
-  );
+  return l10ShowsTodo({ visibility: todo.visibility });
 }

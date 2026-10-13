@@ -14,6 +14,7 @@ import { initials, ownerLabel } from "@/lib/user-name";
 import {
   OUTSIDE_GROUP_KEY,
   OUTSIDE_GROUP_TITLE,
+  l10ShowsTodo,
   outsideOwnerIds,
 } from "@/lib/todo-lists";
 import { usePersonNames } from "../../todos/use-person-names";
@@ -284,9 +285,10 @@ export function SegmentTodos({
 }) {
   const db = getClientDb();
 
-  // The Firestore rule for todos rejects a list query unless the rule can
-  // prove every result is readable: that means we must constrain visibility
-  // or owner_id. Run two subscriptions and merge.
+  // The L10 is the team's view: team-visible to-dos only. A private to-do
+  // never shows here, for anyone (spec §3.2; lib/todo-lists.ts l10ShowsTodo)
+  // — the viewer's own private to-dos live on the To-Dos page and Home. The
+  // todos rule rejects a list query unless it pins visibility.
   const teamQuery = useMemo(
     () =>
       fsQuery(
@@ -296,23 +298,9 @@ export function SegmentTodos({
       ),
     [db, teamId],
   );
-  const mineQuery = useMemo(
-    () =>
-      fsQuery(
-        collection(db, "todos"),
-        where("team_id", "==", teamId),
-        where("visibility", "==", "private"),
-        where("owner_id", "==", userId),
-      ),
-    [db, teamId, userId],
-  );
 
-  const initialTeam = initialTodos.filter((t) => t.visibility === "team");
-  const initialMine = initialTodos.filter(
-    (t) => t.visibility === "private" && t.owner_id === userId,
-  );
+  const initialTeam = initialTodos.filter(l10ShowsTodo);
   const teamTodos = useCollection<TodoDoc>(teamQuery, initialTeam);
-  const myTodos = useCollection<TodoDoc>(mineQuery, initialMine);
 
   // Rock title + status/archived_at for milestone rows and the
   // isMilestoneHiddenByRock check (same pattern as standalone To-Dos).
@@ -364,7 +352,7 @@ export function SegmentTodos({
   );
 
   const [showArchived, setShowArchived] = useArchivedToggle();
-  const allRawTodos = [...teamTodos, ...myTodos];
+  const allRawTodos = teamTodos.filter(l10ShowsTodo);
   const allTodos = allRawTodos.filter((t) => !t.archived_at);
   // Archived pure to-dos, kept as their own list so nothing derived (counts,
   // the milestone window, speaking-order grouping) can read the wrong one.

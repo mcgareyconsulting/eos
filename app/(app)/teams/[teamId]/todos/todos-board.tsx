@@ -211,7 +211,11 @@ export function TodosBoard({
   personNames = {},
   teamNames = {},
   focusExtra = null,
+  isAdmin = false,
 }: {
+  /** An org admin sees every private to-do of this team (spec §3.2): one
+   *  team-wide private listener replaces the owner/creator pair. */
+  isAdmin?: boolean;
   /** Every team the viewer is rostered on — "other teams" is the rest. */
   myTeamIds?: string[];
   /** Server-resolved names for people off this roster (outside assignees,
@@ -249,15 +253,31 @@ export function TodosBoard({
       ),
     [db, teamId],
   );
+  // Non-admins: their own (assignee / creator) private to-dos. Admins: all
+  // of the team's private to-dos in one listener — the todos rule's
+  // admin() clause proves it (tests/rules). Each side is null for the other.
+  const adminPrivateQuery = useMemo(
+    () =>
+      isAdmin
+        ? fsQuery(
+            collection(db, "todos"),
+            where("team_id", "==", teamId),
+            where("visibility", "==", "private"),
+          )
+        : null,
+    [db, teamId, isAdmin],
+  );
   const mineQuery = useMemo(
     () =>
-      fsQuery(
-        collection(db, "todos"),
-        where("team_id", "==", teamId),
-        where("visibility", "==", "private"),
-        where("owner_id", "==", userId),
-      ),
-    [db, teamId, userId],
+      isAdmin
+        ? null
+        : fsQuery(
+            collection(db, "todos"),
+            where("team_id", "==", teamId),
+            where("visibility", "==", "private"),
+            where("owner_id", "==", userId),
+          ),
+    [db, teamId, userId, isAdmin],
   );
   // Private to-dos the viewer created for someone else (spec §3.2: the
   // creator keeps access). Needs the creator clause in the todos read rule
@@ -265,13 +285,15 @@ export function TodosBoard({
   // the server's first paint stands.
   const createdQuery = useMemo(
     () =>
-      fsQuery(
-        collection(db, "todos"),
-        where("team_id", "==", teamId),
-        where("visibility", "==", "private"),
-        where("created_by", "==", userId),
-      ),
-    [db, teamId, userId],
+      isAdmin
+        ? null
+        : fsQuery(
+            collection(db, "todos"),
+            where("team_id", "==", teamId),
+            where("visibility", "==", "private"),
+            where("created_by", "==", userId),
+          ),
+    [db, teamId, userId, isAdmin],
   );
   const rocksQuery = useMemo(
     () => fsQuery(collection(db, "rocks"), where("team_id", "==", teamId)),
@@ -321,6 +343,17 @@ export function TodosBoard({
       ),
     [initialTodos, userId, teamId],
   );
+  // Admin: every private to-do of this team.
+  const initialAdminPrivate = useMemo(
+    () =>
+      isAdmin
+        ? initialTodos.filter(
+            (t) =>
+              t.visibility === "private" && (!t.team_id || t.team_id === teamId),
+          )
+        : [],
+    [initialTodos, teamId, isAdmin],
+  );
   const initialElsewhere = useMemo(
     () => initialTodos.filter((t) => t.team_id && t.team_id !== teamId),
     [initialTodos, teamId],
@@ -328,6 +361,11 @@ export function TodosBoard({
 
   const teamTodos = useCollection<TodoBoardDoc>(teamQuery, initialTeam, "todos-team");
   const myTodos = useCollection<TodoBoardDoc>(mineQuery, initialMine, "todos-mine");
+  const adminPrivate = useCollection<TodoBoardDoc>(
+    adminPrivateQuery,
+    initialAdminPrivate,
+    "todos-private-all",
+  );
   const createdRaw = useCollection<TodoBoardDoc>(
     createdQuery,
     initialCreated,
@@ -399,9 +437,14 @@ export function TodosBoard({
     [rocks],
   );
 
+  // An admin's private rows come from the one team-wide listener; the
+  // owner/creator pair is for everyone else (they would double up).
   const allRaw = useMemo(
-    () => [...teamTodos, ...myTodos, ...createdTodos, ...elsewhere],
-    [teamTodos, myTodos, createdTodos, elsewhere],
+    () =>
+      isAdmin
+        ? [...teamTodos, ...adminPrivate, ...elsewhere]
+        : [...teamTodos, ...myTodos, ...createdTodos, ...elsewhere],
+    [isAdmin, teamTodos, adminPrivate, myTodos, createdTodos, elsewhere],
   );
 
   // Split the subscription into the two lists the page renders. Milestones

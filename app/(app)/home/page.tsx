@@ -52,8 +52,8 @@ import { BoardColumn } from "@/components/board-column";
 import {
   assignedPillText,
   assignerIdOf,
+  homeShowsTodo,
   isAssignedFromOtherTeam,
-  listShowsTodo,
 } from "@/lib/todo-lists";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { cn } from "@/lib/utils";
@@ -234,9 +234,10 @@ export default async function HomePage() {
     .filter((t) => {
       // Active Home board: skip archived (can be incomplete if manual-archived).
       if (t.archived_at != null) return false;
-      // Privacy: a private to-do for its creator and its assignee only
-      // (spec §3.2); missing/legacy visibility = team.
-      return listShowsTodo(t, user.id);
+      // Privacy: a private to-do for its creator, its assignee and admins
+      // (spec §3.2); missing/legacy visibility = team. Admins see every
+      // private to-do of the teams in view, like the To-Dos page.
+      return homeShowsTodo(t, user.id, isAdmin);
     }) as TodoRow[];
 
   const rockById = new Map<string, RockRow>();

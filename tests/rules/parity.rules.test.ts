@@ -607,6 +607,15 @@ describe("hand-rolled client queries the UI never makes are refused", () => {
     await refused(W.parentLeader, query(collection(db, "todos"), where("team_id", "==", P), where("visibility", "==", "private")));
   });
 
+  test("an admin-claim token lists a team's private to-dos by visibility alone (the To-Dos board's admin listener)", async () => {
+    const db = dbFor(W.admin);
+    const snap = await getDocs(
+      query(collection(db, "todos"), where("team_id", "==", P), where("visibility", "==", "private")),
+    );
+    const ids = snap.docs.map((d) => d.id);
+    for (const id of ["t-priv-mem", "t-priv-crt", "t-priv-lead"]) assert.ok(ids.includes(id), id);
+  });
+
   test("whole collections", async () => {
     for (const col of ["rocks", "todos", "entity_comments", "entity_activity", "rock_status_updates", "scorecard_metrics", "notifications", "users", "teams", "team_members"]) {
       await refused(W.parentMember, query(collection(dbFor(W.parentMember), col)));

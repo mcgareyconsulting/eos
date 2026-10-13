@@ -20,7 +20,7 @@ import {
   isMilestoneDueSoon,
   isMilestoneHiddenByRock,
 } from "@/lib/milestone-visibility";
-import { initials, ownerLabel } from "@/lib/user-name";
+import { ownerLabel } from "@/lib/user-name";
 import { AddTodoModal } from "./add-todo-modal";
 import { MilestoneTodoRow, type MilestoneTodoItem } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
@@ -651,7 +651,7 @@ export function TodosBoard({
           </BoardColumn>
         )}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
-          <BoardColumn
+          <TodoColumn
             title="To-Dos"
             count={todos.length}
             meta={
@@ -661,31 +661,32 @@ export function TodosBoard({
             }
           >
             {groups.length === 0 && (
-              <EmptyState
-                icon={CheckSquare}
-                title="No to-dos yet"
-                hint="Add a to-do, or capture one during the Level 10."
-              />
+              <SectionCard>
+                <EmptyState
+                  icon={CheckSquare}
+                  title="No to-dos yet"
+                  hint="Add a to-do, or capture one during the Level 10."
+                />
+              </SectionCard>
             )}
             {openCount === 0 && groups.some((g) => g.done.length > 0) && (
-              <p className="px-4 py-2 text-center text-sm text-hpb-green">
+              <p className="text-center text-sm text-hpb-green">
                 All to-dos done — they archive when the L10 ends.
               </p>
             )}
             {groups.map((g) => (
-              <div key={g.key}>
-                <GroupHeader
-                  chip={initials(g.title) || "?"}
-                  title={g.title}
-                  count={
-                    [
-                      g.open.length > 0 ? `${g.open.length} open` : null,
-                      g.done.length > 0 ? `${g.done.length} done` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "none"
-                  }
-                />
+              <OwnerSection
+                key={g.key}
+                title={g.title}
+                count={
+                  [
+                    g.open.length > 0 ? `${g.open.length} open` : null,
+                    g.done.length > 0 ? `${g.done.length} done` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "none"
+                }
+              >
                 {/* One list, open then done — not two. Keys only match within
                     a single array, so checking a to-do off would move it to a
                     sibling list and remount the row, closing its detail
@@ -706,32 +707,29 @@ export function TodosBoard({
                     hideOwner={g.key !== OUTSIDE_GROUP_KEY}
                   />
                 ))}
-              </div>
+              </OwnerSection>
             ))}
-          </BoardColumn>
+          </TodoColumn>
 
-          <BoardColumn
+          <TodoColumn
             title={milestoneScopeIsSelf ? "Your milestones" : "Milestones"}
             count={visibleMilestones.length}
           >
             {visibleMilestones.length === 0 ? (
-              <EmptyState
-                icon={Flag}
-                title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
-                hint={
-                  milestoneScopeIsSelf
-                    ? "Your rock milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
-                    : "Milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
-                }
-              />
+              <SectionCard>
+                <EmptyState
+                  icon={Flag}
+                  title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
+                  hint={
+                    milestoneScopeIsSelf
+                      ? "Your rock milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
+                      : "Milestones appear here as they come due. Everything else stays under its rock on the Rocks tab."
+                  }
+                />
+              </SectionCard>
             ) : (
               milestoneGroups.map((g) => (
-                <div key={g.key}>
-                  <GroupHeader
-                    chip={initials(g.title) || "?"}
-                    title={g.title}
-                    count={`${g.items.length}`}
-                  />
+                <OwnerSection key={g.key} title={g.title} count={`${g.items.length}`}>
                   {g.items.map((m) => (
                     <MilestoneTodoRow
                       key={m.id}
@@ -741,10 +739,10 @@ export function TodosBoard({
                       hideOwner
                     />
                   ))}
-                </div>
+                </OwnerSection>
               ))
             )}
-          </BoardColumn>
+          </TodoColumn>
         </div>
         </>
       )}
@@ -772,30 +770,57 @@ function boardToListItem(t: TodoBoardDoc): TodoListItem {
 }
 
 /**
- * Section header shared by both board columns: a square chip, the group name,
- * and a muted count. Owner cards pass initials, rock sections pass a glyph.
+ * One board column: a heading over a stack of owner sections. The sections
+ * are styled exactly like the Rocks tab's (`RockSection` in rocks/page.tsx):
+ * a small uppercase heading with its count, then a card of its own.
  */
-function GroupHeader({
-  chip,
+function TodoColumn({
   title,
   count,
+  meta,
+  children,
 }: {
-  chip: React.ReactNode;
   title: string;
-  count: string;
+  count: number;
+  /** Optional breakdown (e.g. "5 open") when `count` alone under-explains. */
+  meta?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-        {chip}
-      </span>
-      <h3
-        className="min-w-0 truncate text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200"
-        title={title}
-      >
-        {title}
+    <section className="min-w-0 space-y-4">
+      <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
+        {title} <span className="font-medium text-zinc-400">({count})</span>
+        {meta && <span className="ml-1.5 font-medium text-zinc-400">· {meta}</span>}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** An owner's rows — the Rocks tab's section: heading, then its own card. */
+function OwnerSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h3 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+        {title} <span className="font-bold text-zinc-400">({count})</span>
       </h3>
-      <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+      <SectionCard>{children}</SectionCard>
+    </section>
+  );
+}
+
+function SectionCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      {children}
     </div>
   );
 }

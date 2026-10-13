@@ -73,10 +73,10 @@ export function AgendasPanel({
     <section className="space-y-3">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
             <ClipboardList className="h-4 w-4 text-hpb-blue" />
             Agendas
-          </h2>
+          </h3>
           <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
             Stage order and time budgets. Pick one when starting a meeting.
           </p>

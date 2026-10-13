@@ -239,7 +239,7 @@ export function TodosBoard({
   /** Parent rocks of the viewer's milestones on other teams — static; the
    *  rocks subscription is this team's only. */
   extraRocks?: RockBoardDoc[];
-  /** `?todo=` — the row a notification linked to; opens expanded and scrolled to. */
+  /** `?todo=` — the row a notification linked to; opens its detail dialog, scrolled to. */
   focusTodoId?: string | null;
 }) {
   const db = getClientDb();
@@ -688,8 +688,8 @@ export function TodosBoard({
                 />
                 {/* One list, open then done — not two. Keys only match within
                     a single array, so checking a to-do off would move it to a
-                    sibling list and remount the row, resetting whether it's
-                    expanded. No "Done" divider: the row's green check already
+                    sibling list and remount the row, closing its detail
+                    dialog. No "Done" divider: the row's green check already
                     reads as done, and the owner header above counts them. */}
                 {[...g.open, ...g.done].map((t) => (
                   <TodoListRow

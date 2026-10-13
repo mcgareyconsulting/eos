@@ -12,7 +12,7 @@ const SESSION_COOKIE_NAME = "__firebase_session";
 
 // Session lifecycle (C-05, docs/SECURITY_AUDIT_2026-09-08.md).
 //
-// - A cookie lives at most 12 hours (lib/session-policy.ts), and verifySession
+// - A cookie lives at most 25 hours (lib/session-policy.ts), and verifySession
 //   holds every cookie to that from its own `iat` — including the 5-day
 //   cookies minted before this policy.
 // - Sliding renewal. A Firebase session cookie can't be extended; the only
@@ -25,7 +25,7 @@ const SESSION_COOKIE_NAME = "__firebase_session";
 //   and posts a fresh ID token to renewSession(), which re-checks everything
 //   createSession() checks and re-mints the cookie. No per-request Firestore
 //   or Auth writes: renewal costs one verify + one mint per active user per
-//   ~6 hours. An idle user's cookie simply expires.
+//   ~12.5 hours. An idle user's cookie simply expires.
 // - Sign-out revokes the user's Firebase refresh tokens before clearing the
 //   cookie, so a copied cookie (or another device's session) stops working
 //   too — verifySession checks revocation on every request.
@@ -101,7 +101,7 @@ async function writeSessionCookie(deps: SessionDeps, idToken: string) {
 }
 
 // Exchange a Firebase ID token (from signInWithPopup on the client) for an
-// HttpOnly session cookie (12 hours; see the lifecycle note above).
+// HttpOnly session cookie (25 hours; see the lifecycle note above).
 //
 // This is the sign-in perimeter. When SIGN_IN_ALLOWLIST is set (e.g.
 // "@highplainsbank.com,consultant@example.com"), only matching accounts
@@ -168,7 +168,7 @@ export async function clearSession(deps: SessionDeps = {}): Promise<void> {
 
 // Returns the decoded token (uid, email, name, etc.) or null if no valid session.
 // checkRevoked=true adds a Firebase Auth roundtrip — correct but slower.
-// A cookie older than the 12-hour policy is refused whatever its own `exp`.
+// A cookie older than the 25-hour policy is refused whatever its own `exp`.
 export async function verifySession(
   deps: SessionDeps = {},
 ): Promise<DecodedIdToken | null> {

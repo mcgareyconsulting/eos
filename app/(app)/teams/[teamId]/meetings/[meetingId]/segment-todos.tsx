@@ -517,7 +517,7 @@ export function SegmentTodos({
               )}
               {/* One keyed array with the divider spliced in — separate
                   open/done lists would remount a row as it's checked off and
-                  close its detail dialog. */}
+                  collapse it. */}
               {[...g.open, ...g.done].flatMap((t, i) => [
                 ...(i === g.open.length
                   ? [

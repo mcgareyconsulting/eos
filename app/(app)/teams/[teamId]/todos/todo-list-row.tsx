@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Archive, Lock, Pencil, Star, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,9 @@ import { dueToneClass } from "@/lib/due";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
+import { ActivityFeed } from "@/components/activity-feed";
 import { EditTodoModal } from "./edit-todo-modal";
+import { TodoDetails } from "./todo-details";
 import { deleteTodo, setTodoArchived, toggleWeeklyFocus } from "./actions";
 
 export type TodoListItem = {
@@ -80,6 +82,8 @@ export function TodoListRow({
   userId: string;
   hideOwner?: boolean;
   focused?: boolean;
+  /** The title expands the row (details + comments/activity). False where
+   *  the row already sits inside a detail view (the notification peek). */
   opensDetail?: boolean;
   surface?: "page" | "meeting";
   access?: "full" | "assignee";
@@ -88,20 +92,27 @@ export function TodoListRow({
   const manage = access === "full";
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // The detail dialog. A deep link opens it on arrival, once: closing it
-  // must not reopen it on the next live re-render. Not before hydration:
-  // the dialog portals to <body>, which the server render doesn't have.
+  // Clicking the title expands the row inline: the to-do's details, then
+  // its comments and activity (one feed). A deep link arrives expanded.
+  // The pencil opens the two-column edit dialog.
+  const [expanded, setExpanded] = useState(opensDetail && focused);
+  const [hasDraft, setHasDraft] = useState(false);
+  function toggleExpanded() {
+    if (
+      expanded &&
+      hasDraft &&
+      !window.confirm("Discard your comment? It hasn't been posted.")
+    )
+      return;
+    if (expanded) setHasDraft(false);
+    setExpanded(!expanded);
+  }
   const [detailOpen, setDetailOpen] = useState(false);
-  const [focusSeen, setFocusSeen] = useState(false);
-  const hydrated = useSyncExternalStore(noopSubscribe, isClient, isServer);
-  const showDetail =
-    detailOpen || (opensDetail && focused && hydrated && !focusSeen);
   function openDetail() {
     setDetailOpen(true);
   }
   function closeDetail() {
     setDetailOpen(false);
-    setFocusSeen(true);
   }
 
   // One scroll, on arrival. `focused` only ever flips from the URL, and a
@@ -131,9 +142,9 @@ export function TodoListRow({
   // Mid-week complete (not yet archived): gray row until Monday / Finish.
   const closedPending = !archived && todo.completed;
 
-  // Who gets the form: the team's members on a live to-do. An off-team
-  // assignee, and anyone opening an archived one, get the read-only view;
-  // the feed still takes their comments, as the expansion did.
+  // Who gets the edit pencil: the team's members on a live to-do. An
+  // off-team assignee, and anyone on an archived one, read and comment
+  // through the expansion instead.
   const canEdit = manage && !archived;
   const TitleTag = opensDetail ? "button" : "div";
 
@@ -165,8 +176,8 @@ export function TodoListRow({
           {...(opensDetail
             ? {
                 type: "button" as const,
-                onClick: openDetail,
-                "aria-haspopup": "dialog" as const,
+                onClick: toggleExpanded,
+                "aria-expanded": expanded,
               }
             : {})}
           className={cn(
@@ -318,13 +329,37 @@ export function TodoListRow({
         </div>
       </div>
 
+      {expanded && (
+        <div
+          className={cn(
+            "mt-3 space-y-4 border-l border-zinc-200 pl-4 dark:border-zinc-800",
+            archived ? "ml-1" : "ml-7",
+          )}
+        >
+          <TodoDetails
+            teamId={teamId}
+            todo={todo}
+            ownerName={ownerName}
+            userId={userId}
+          />
+          <ActivityFeed
+            teamId={teamId}
+            entityType="todo"
+            entityId={todo.id}
+            userId={userId}
+            members={members}
+            onDraftChange={setHasDraft}
+          />
+        </div>
+      )}
+
       <EditTodoModal
         teamId={teamId}
         todo={todo}
         members={members}
         currentUserId={userId}
         ownerName={ownerName}
-        open={showDetail}
+        open={detailOpen}
         onClose={closeDetail}
         readOnly={!canEdit}
         showVisibility={surface !== "meeting"}
@@ -332,9 +367,3 @@ export function TodoListRow({
     </div>
   );
 }
-
-// useSyncExternalStore as a hydration flag: false on the server and during
-// hydration, true after. No effect, no extra state.
-const noopSubscribe = () => () => {};
-const isClient = () => true;
-const isServer = () => false;

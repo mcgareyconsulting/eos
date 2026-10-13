@@ -51,9 +51,10 @@ function draftFrom(todo: TodoListItem): TodoDraft {
  * Two columns on the shared `DetailShell`: the form on the left, the
  * to-do's `ActivityFeed` on the right — its comments and its own activity
  * trace in one newest-first timeline, with + Comment folded at the top.
- * This replaced the row's inline expansion (comments + trace) and the
- * form-only Edit dialog; Add to-do stays a one-column form, since a to-do
- * that doesn't exist yet has no history.
+ * It replaced the form-only Edit dialog and opens from the row's pencil;
+ * the row's title still expands it inline (details + the same feed). Add
+ * to-do stays a one-column form, since a to-do that doesn't exist yet has
+ * no history.
  *
  * `readOnly` is for a viewer who may not edit (an off-team assignee, an
  * archived to-do): the left column shows the to-do instead of the form,

@@ -20,6 +20,9 @@ locals {
     # Gate 2 (kms.tf): application-level encryption key. Also what the
     # enable_cmek lever (levers.tf) always needed but never enabled itself.
     "cloudkms.googleapis.com",
+    # Load balancer (load_balancer.tf). Already on in any project with the
+    # Compute Engine default SA; listed so the module does not rely on that.
+    "compute.googleapis.com",
   ]
 }
 

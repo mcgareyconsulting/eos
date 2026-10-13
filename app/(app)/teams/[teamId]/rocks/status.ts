@@ -65,3 +65,23 @@ export const STATUS_BAR: Record<RockStatus, string> = {
   done: "bg-hpb-blue",
   cancelled: "bg-zinc-300 dark:bg-zinc-700",
 };
+
+/**
+ * A status value as words, for the activity feed's "set the status to …".
+ * A value outside STATUSES (a legacy or hand-edited doc) still reads as
+ * something rather than the raw key or an empty sentence.
+ */
+export function rockStatusLabel(value: string): string {
+  if (isRockStatus(value)) return STATUS_LABELS[value];
+  const words = value.replace(/_/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : "Unknown";
+}
+
+/**
+ * Solid dot colour for a status-change row in the activity feed — the same
+ * STATUS_BAR fill the row rail and the old Status history used. Undefined
+ * for an unknown value, so the feed falls back to its neutral event dot.
+ */
+export function rockStatusDotClass(value: string): string | undefined {
+  return isRockStatus(value) ? STATUS_BAR[value] : undefined;
+}

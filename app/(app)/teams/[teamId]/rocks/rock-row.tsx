@@ -369,7 +369,7 @@ export function RockRow({
                   sourceTeamName={fromTeamName}
                   className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
-                  Full detail &amp; status history →
+                  Full detail &amp; activity →
                 </RockDetailTrigger>
               </div>
             </div>

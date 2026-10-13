@@ -29,7 +29,8 @@ import type { DirectoryPerson } from "@/lib/firebase/directory";
 import {
   addOrgPerson,
   createOrgTeam,
-  deleteOrgPerson,
+  deactivateOrgPerson,
+  reactivateOrgPerson,
   updateOrgPerson,
 } from "../admin/actions";
 
@@ -218,6 +219,7 @@ export function PersonRowMenu({
   }, [open]);
 
   const name = `${person.firstName} ${person.lastName}`.trim() || person.email || "this person";
+  const reactivate = useAdminAction(onDone);
   const itemClass =
     "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800";
 
@@ -238,6 +240,22 @@ export function PersonRowMenu({
           role="menu"
           className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
         >
+          {person.deactivated ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={reactivate.pending}
+              className={itemClass}
+              onClick={() => {
+                setOpen(false);
+                reactivate.run(() => reactivateOrgPerson(person.uid), () => {});
+              }}
+            >
+              <Pencil className="h-4 w-4 text-zinc-500" aria-hidden />
+              Reactivate
+            </button>
+          ) : (
+          <>
           <button
             type="button"
             role="menuitem"
@@ -254,7 +272,7 @@ export function PersonRowMenu({
             type="button"
             role="menuitem"
             disabled={isSelf}
-            title={isSelf ? "You can't revoke your own access" : undefined}
+            title={isSelf ? "You can't deactivate your own account" : undefined}
             className={`${itemClass} border-t border-zinc-200 text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-red-400`}
             onClick={() => {
               setOpen(false);
@@ -262,8 +280,10 @@ export function PersonRowMenu({
             }}
           >
             <UserX className="h-4 w-4" aria-hidden />
-            Revoke access
+            Deactivate
           </button>
+          </>
+          )}
         </div>
       )}
 
@@ -321,7 +341,7 @@ function EditPersonModal({
             // Nobody removes their own admin: the server refuses it too.
             disabled={isSelf}
           />
-          {!person.hasAuth && (
+          {person.hasAuth === false && (
             <p className="text-xs text-amber-700 dark:text-amber-400">
               No sign-in account yet, so org admin can&rsquo;t be granted until
               they are added with an email.
@@ -357,24 +377,24 @@ function RevokeAccessModal({
   const n = person.teams.length;
 
   return (
-    <ModalShell open onClose={onClose} ariaLabel="Revoke access" size="md" portal>
-      <ModalHeader title={`Revoke ${name}'s access?`} onClose={onClose} />
+    <ModalShell open onClose={onClose} ariaLabel="Deactivate" size="md" portal>
+      <ModalHeader title={`Deactivate ${name}?`} onClose={onClose} />
       <ModalBody>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">
           They are removed from{" "}
           <strong>
             {n} team{n === 1 ? "" : "s"}
           </strong>{" "}
-          and can no longer sign in.
+          and can no longer sign in. An admin can reactivate them later.
         </p>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-          Their <strong>rocks, to-dos, issues and headlines stay where they are</strong>,
-          still showing their name — nothing they owned is deleted or
-          unassigned. Reassign that work first if someone needs to pick it up.
+          Their <strong>rocks, milestones, to-dos, issues, metrics and headlines
+          become unassigned</strong>, and the leaders of each team are told.
+          Someone on the team must assign them to a new owner.
         </p>
         {person.access === "admin" && (
           <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900">
-            This person is an org admin. Revoking removes that access too.
+            This person is an org admin. Deactivating removes that access too.
           </p>
         )}
         <div className="mt-3">
@@ -392,7 +412,7 @@ function RevokeAccessModal({
           onClick={() =>
             run(
               () =>
-                deleteOrgPerson(person.uid).then((r) =>
+                deactivateOrgPerson(person.uid).then((r) =>
                   r.ok ? { ok: true, message: `${name}: ${r.message}` } : r,
                 ),
               onClose,
@@ -400,7 +420,7 @@ function RevokeAccessModal({
           }
         >
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Revoke access
+          Deactivate
         </Button>
       </ModalFooter>
     </ModalShell>

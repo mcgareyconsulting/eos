@@ -33,6 +33,7 @@ import {
   type DocumentSnapshot,
 } from "firebase-functions/v2/firestore";
 import { firestoreDatabaseId } from "./config";
+import { resolveAuditActor, type AuditAction } from "../../lib/audit-actor";
 
 // Re-export scheduled todo archive (Monday 3am America/Chicago).
 export { archiveStaleTodos } from "./archive-stale-todos";
@@ -67,8 +68,6 @@ function auditDb() {
   const id = firestoreDatabaseId.value();
   return id ? getFirestore(id) : getFirestore();
 }
-
-type AuditAction = "create" | "update" | "delete";
 
 /** A doc's field map with Firestore Timestamps possibly nested at the top level. */
 type FieldMap = Record<string, unknown>;
@@ -116,17 +115,32 @@ async function recordAuditEvent(
 
   const action: AuditAction = !beforeSnap.exists ? "create" : !afterSnap.exists ? "delete" : "update";
 
+  // event.authId is only populated when the write carries an end-user
+  // identity (client SDK writes, or Admin SDK calls made "on behalf of" a
+  // user). Plain Admin SDK writes — every server action — arrive as
+  // authType "service_account" with no authId, so for those the actor comes
+  // from the stamp the action wrote on the doc (lib/audit-stamp.ts):
+  // after.updated_by, or before.deleted_by for a delete. Stamps this write
+  // didn't make are ignored — see lib/audit-actor.ts (C-07).
+  const eventTimeMs = Date.parse(event.time);
+  const { actorUid, actorSource } = resolveAuditActor({
+    action,
+    authType: event.authType,
+    authId: event.authId,
+    before,
+    after,
+    eventTimeMs: Number.isFinite(eventTimeMs) ? eventTimeMs : Date.now(),
+  });
+
   await auditDb()
     .collection("audit_log")
     .add({
       entity_type: entityType,
       entity_id: afterSnap.exists ? afterSnap.id : beforeSnap.id,
       action,
-      // authId is only populated when the write carries an end-user identity
-      // (client SDK writes, or Admin SDK calls made "on behalf of" a user via
-      // impersonation). Plain Admin SDK writes — server actions, seed scripts —
-      // show up as authType "service_account"/"unknown" with no authId.
-      actor_uid: event.authId ?? null,
+      actor_uid: actorUid,
+      // "auth_context" | "stamp" | null — how actor_uid was established.
+      actor_source: actorSource,
       auth_type: event.authType,
       timestamp: FieldValue.serverTimestamp(),
       before,

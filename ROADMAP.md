@@ -2821,6 +2821,8 @@ otherwise it is a second entry point to one action.
 ### N64 · To-Dos page: expansion view instead of modal, comment collapsed behind "+ Comment", activity feed
 *W3 · not-started · due — · deps N61, N22 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
 
+> **Superseded by T4 (2026-10-13 walk):** a modal after all, not the expansion: the two-column to-do dialog (form left, `ActivityFeed` with + Comment right) replaces the row's inline expansion (Wave 2, P12).
+
 daniel: keep the **expansion view** on the actual To-Dos page instead of the
 edit modal (`todos/edit-todo-modal.tsx`); collapse the rich-text comment
 editor behind a **+ Comment** button; add the **activity feed**. Finding:

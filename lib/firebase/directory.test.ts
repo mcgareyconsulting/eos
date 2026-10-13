@@ -46,7 +46,7 @@ describe("getDirectoryPeople", () => {
     db.seed("team_members", "t2__bob", { team_id: "t2", user_id: "bob", role: "member" });
     db.seed("team_members", "t2__cy", { team_id: "t2", user_id: "cy", role: "member" });
 
-    const people = await getDirectoryPeople({
+    const people = await getDirectoryPeople(true, {
       user: fakeUser(db),
       auth: fakeAuth([
         record("ada", { admin: true, signedIn: true }),
@@ -74,7 +74,7 @@ describe("getDirectoryPeople", () => {
     assert.equal(bob.hasSignedIn, true);
   });
 
-  test("includes uninvited sign-ins, splits their display name, and hides deactivated profiles", async () => {
+  test("includes uninvited sign-ins, splits their display name, and lists deactivated profiles for admins only", async () => {
     const db = new FakeFirestore();
     db.seed("users", "gone", {
       first_name: "Gone",
@@ -82,7 +82,7 @@ describe("getDirectoryPeople", () => {
       deactivated_at: "2026-09-01T00:00:00Z",
     });
 
-    const people = await getDirectoryPeople({
+    const people = await getDirectoryPeople(true, {
       user: fakeUser(db),
       auth: fakeAuth([
         record("gone", { signedIn: true }),
@@ -91,8 +91,43 @@ describe("getDirectoryPeople", () => {
     });
 
     assert.deepEqual(
-      people.map((p) => [p.uid, p.firstName, p.lastName, p.email, p.hasSignedIn]),
-      [["walkin", "Walk", "In", "walkin@x.com", false]],
+      people.map((p) => [p.uid, p.firstName, p.lastName, p.email, p.hasSignedIn, p.deactivated]),
+      [
+        ["walkin", "Walk", "In", "walkin@x.com", false, undefined],
+        ["gone", "Gone", "Person", null, true, true],
+      ],
     );
+
+    const forMember = await getDirectoryPeople(false, {
+      user: fakeUser(db),
+      auth: fakeAuth([
+        record("gone", { signedIn: true }),
+        record("walkin", { name: "Walk In", email: "walkin@x.com" }),
+      ]),
+    });
+    assert.deepEqual(
+      forMember.map((p) => p.uid),
+      ["walkin"],
+    );
+  });
+
+  test("omits sign-in status for non-admins", async () => {
+    const db = new FakeFirestore();
+    db.seed("users", "bob", { first_name: "Bob", last_name: "Bell", email: "bob@x.com" });
+    db.seed("users", "cy", { first_name: "Cy", last_name: "Young" });
+
+    const people = await getDirectoryPeople(false, {
+      user: fakeUser(db),
+      auth: fakeAuth([
+        record("bob", { signedIn: true }),
+        record("walkin", { name: "Walk In", email: "walkin@x.com" }),
+      ]),
+    });
+
+    assert.equal(people.length, 3);
+    for (const p of people) {
+      assert.equal("hasAuth" in p, false);
+      assert.equal("hasSignedIn" in p, false);
+    }
   });
 });

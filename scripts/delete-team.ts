@@ -25,6 +25,7 @@ config({ path: ".env.local" });
 
 import type { DocumentReference, Firestore, Query } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebase/admin";
+import { syncUsersTeamIds } from "../lib/firebase/membership";
 
 // Collections carrying a team_id. Children keyed by a parent id instead
 // (scorecard_entries → metric_id, issue_votes → issue_id) are handled below,
@@ -176,6 +177,9 @@ async function main() {
     await batch.commit();
   }
   await teamRef.delete();
+  // Every former member loses this team from users/{uid}.team_ids. Runs
+  // before --prune-users, which then deletes the orphaned synthetic profiles.
+  await syncUsersTeamIds(db, members);
 
   console.log(`\n✓ Deleted "${teamName}" and ${refs.length} related document(s).`);
 

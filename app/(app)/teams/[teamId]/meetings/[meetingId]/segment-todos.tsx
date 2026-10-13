@@ -10,7 +10,14 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { initials } from "@/lib/user-name";
+import { initials, ownerLabel } from "@/lib/user-name";
+import {
+  OUTSIDE_GROUP_KEY,
+  OUTSIDE_GROUP_TITLE,
+  l10ShowsTodo,
+  outsideOwnerIds,
+} from "@/lib/todo-lists";
+import { usePersonNames } from "../../todos/use-person-names";
 import {
   currentSpeakerUid,
   ownersPresentThenAbsent,
@@ -57,6 +64,8 @@ type TodoDoc = WithId<
     | "weekly_focus"
     | "source_rock_id"
     | "follower_ids"
+    | "assigned_by"
+    | "created_by"
   >
 > & {
   completed_at: TodoDocRecord["completed_at"] | boolean;
@@ -93,6 +102,8 @@ function toListItem(t: TodoDoc): TodoListItem {
     visibility: t.visibility === "private" ? "private" : "team",
     weekly_focus: t.weekly_focus === true,
     follower_ids: t.follower_ids ?? null,
+    assigned_by: t.assigned_by ?? null,
+    created_by: t.created_by ?? null,
   };
 }
 
@@ -150,10 +161,18 @@ function groupTodosForMeeting(
 ): TodoGroup[] {
   const byOwner = new Map<string, TodoDoc[]>();
   const unassigned: TodoDoc[] = [];
+  const outside: TodoDoc[] = [];
+  const rosterIds = new Set(members.map((m) => m.user_id));
 
   for (const t of todos) {
     if (!t.owner_id) {
       unassigned.push(t);
+      continue;
+    }
+    // Assigned to someone on another team (spec §3.1): still this team's
+    // to-do, reviewed in its own block after the room's people.
+    if (!rosterIds.has(t.owner_id)) {
+      outside.push(t);
       continue;
     }
     const list = byOwner.get(t.owner_id) ?? [];
@@ -174,6 +193,17 @@ function groupTodosForMeeting(
       done: list.filter((t) => t.completed_at).sort(byDue),
       absent: absent.has(uid),
       isCurrentSpeaker: uid === currentSpeaker,
+    });
+  }
+
+  if (outside.length > 0) {
+    groups.push({
+      key: OUTSIDE_GROUP_KEY,
+      title: OUTSIDE_GROUP_TITLE,
+      open: outside.filter((t) => !t.completed_at).sort(byDue),
+      done: outside.filter((t) => t.completed_at).sort(byDue),
+      absent: false,
+      isCurrentSpeaker: false,
     });
   }
 
@@ -240,7 +270,10 @@ export function SegmentTodos({
   initialSpeakingOrder = [],
   initialAbsentUserIds = [],
   initialSpeakerIndex = 0,
+  outsideNames = {},
 }: {
+  /** Server-resolved names of this team's to-do owners off its roster. */
+  outsideNames?: Record<string, string>;
   teamId: string;
   meetingId: string;
   userId: string;
@@ -252,9 +285,10 @@ export function SegmentTodos({
 }) {
   const db = getClientDb();
 
-  // The Firestore rule for todos rejects a list query unless the rule can
-  // prove every result is readable: that means we must constrain visibility
-  // or owner_id. Run two subscriptions and merge.
+  // The L10 is the team's view: team-visible to-dos only. A private to-do
+  // never shows here, for anyone (spec §3.2; lib/todo-lists.ts l10ShowsTodo)
+  // — the viewer's own private to-dos live on the To-Dos page and Home. The
+  // todos rule rejects a list query unless it pins visibility.
   const teamQuery = useMemo(
     () =>
       fsQuery(
@@ -264,23 +298,9 @@ export function SegmentTodos({
       ),
     [db, teamId],
   );
-  const mineQuery = useMemo(
-    () =>
-      fsQuery(
-        collection(db, "todos"),
-        where("team_id", "==", teamId),
-        where("visibility", "==", "private"),
-        where("owner_id", "==", userId),
-      ),
-    [db, teamId, userId],
-  );
 
-  const initialTeam = initialTodos.filter((t) => t.visibility === "team");
-  const initialMine = initialTodos.filter(
-    (t) => t.visibility === "private" && t.owner_id === userId,
-  );
+  const initialTeam = initialTodos.filter(l10ShowsTodo);
   const teamTodos = useCollection<TodoDoc>(teamQuery, initialTeam);
-  const myTodos = useCollection<TodoDoc>(mineQuery, initialMine);
 
   // Rock title + status/archived_at for milestone rows and the
   // isMilestoneHiddenByRock check (same pattern as standalone To-Dos).
@@ -332,7 +352,7 @@ export function SegmentTodos({
   );
 
   const [showArchived, setShowArchived] = useArchivedToggle();
-  const allRawTodos = [...teamTodos, ...myTodos];
+  const allRawTodos = teamTodos.filter(l10ShowsTodo);
   const allTodos = allRawTodos.filter((t) => !t.archived_at);
   // Archived pure to-dos, kept as their own list so nothing derived (counts,
   // the milestone window, speaking-order grouping) can read the wrong one.
@@ -368,7 +388,14 @@ export function SegmentTodos({
       due_date: t.due_date,
       completed: false,
       rock_title: rockById.get(t.source_rock_id ?? "")?.title ?? "Rock",
+      description: t.description ?? null,
     }));
+
+  // Names for outside assignees: the server's, then fetched for live arrivals.
+  const nameOf = usePersonNames(
+    outsideOwnerIds(pureTodos, new Set(members.map((m) => m.user_id))),
+    outsideNames,
+  );
 
   const groups = groupTodosForMeeting(
     showArchived ? archivedTodos : pureTodos,
@@ -491,7 +518,7 @@ export function SegmentTodos({
               )}
               {/* One keyed array with the divider spliced in — separate
                   open/done lists would remount a row as it's checked off and
-                  reset whether it's expanded. */}
+                  collapse it. */}
               {[...g.open, ...g.done].flatMap((t, i) => [
                 ...(i === g.open.length
                   ? [
@@ -507,10 +534,15 @@ export function SegmentTodos({
                   key={t.id}
                   teamId={teamId}
                   todo={toListItem(t)}
-                  ownerName={g.title}
+                  ownerName={
+                    g.key === OUTSIDE_GROUP_KEY
+                      ? ownerLabel(t.owner_id, nameOf)
+                      : g.title
+                  }
                   members={members}
                   userId={userId}
-                  hideOwner
+                  // The outside block mixes owners: name each row's.
+                  hideOwner={g.key !== OUTSIDE_GROUP_KEY}
                   surface="meeting"
                 />,
               ])}
@@ -557,6 +589,8 @@ export function SegmentTodos({
                       milestone={m}
                       ownerName={g.title}
                       hideOwner
+                      userId={userId}
+                      members={members}
                     />
                   ))}
                 </div>

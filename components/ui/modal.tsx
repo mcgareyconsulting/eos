@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,16 +18,44 @@ import { Button, IconButton } from "@/components/ui/button";
  * Registers a single window "keydown" listener while `enabled`, calling
  * `onClose` on Escape. Shared by every dialog shell below and by the
  * popovers/inline editors that dismiss on Escape without a full dialog shell.
+ *
+ * With `topmost` (a ref to the dialog element), Escape only closes that
+ * dialog when it is the topmost open one (`isTopmostDialog`) and nothing
+ * inside it already claimed the key (`preventDefault`, e.g. a comment
+ * composer folding itself away). Without it — every existing caller — any
+ * Escape closes, as before.
  */
-export function useDismissOnEscape(onClose: () => void, enabled = true) {
+export function useDismissOnEscape(
+  onClose: () => void,
+  enabled = true,
+  topmost?: RefObject<HTMLElement | null>,
+) {
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (topmost) {
+        if (e.defaultPrevented) return;
+        if (!isTopmostDialog(topmost.current)) return;
+      }
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enabled, onClose]);
+  }, [enabled, onClose, topmost]);
+}
+
+/**
+ * Whether `el` is the open modal dialog painted on top. Dialogs stack in
+ * document order: a portalled one is appended to <body> after whatever it
+ * opened over, and one rendered in place sits inside (so after) the dialog
+ * that rendered it. So the last `[role=dialog][aria-modal=true]` in the
+ * document is the one the user is looking at.
+ */
+export function isTopmostDialog(el: Element | null): boolean {
+  if (!el || typeof document === "undefined") return false;
+  const open = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+  return open.length > 0 && open[open.length - 1] === el;
 }
 
 // Centered-panel base class per size. Each string is verbatim from the call
@@ -57,6 +93,13 @@ export type ModalShellProps = {
   portal?: boolean;
   /** Full-width strip above the padded body (e.g. a rock status banner). */
   banner?: ReactNode;
+  /**
+   * "topmost": Escape closes this dialog only while it is the topmost one
+   * and nothing inside claimed the key — for dialogs that open over other
+   * dialogs or over the live L10 (see `useDismissOnEscape`). Defaults to
+   * "any", the behaviour every existing dialog has.
+   */
+  escape?: "any" | "topmost";
   className?: string;
   children: ReactNode;
 };
@@ -71,10 +114,16 @@ export function ModalShell({
   dismissible = true,
   portal = false,
   banner,
+  escape = "any",
   className,
   children,
 }: ModalShellProps) {
-  useDismissOnEscape(onClose, open && dismissible);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDismissOnEscape(
+    onClose,
+    open && dismissible,
+    escape === "topmost" ? dialogRef : undefined,
+  );
 
   if (!open) return null;
 
@@ -86,6 +135,7 @@ export function ModalShell({
         aria-hidden
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}

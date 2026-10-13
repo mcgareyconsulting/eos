@@ -37,6 +37,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 import { clampSpeakerIndex } from "../lib/l10/speaking-order";
+import { syncUsersTeamIds } from "../lib/firebase/membership";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -339,6 +340,8 @@ async function main() {
     if (++n >= 400) await commit();
   }
   await commit();
+  // `from` lost this team (its profile may be gone now — then it is skipped).
+  await syncUsersTeamIds(db, [from, to]);
   console.log("\nApplied successfully.");
 }
 

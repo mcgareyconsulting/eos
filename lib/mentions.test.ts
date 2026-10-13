@@ -2,11 +2,13 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyMention,
+  candidatesFromPeople,
   filterMentionCandidates,
   findMentions,
   matchMentionAt,
   mentionQueryAt,
   mentionedIds,
+  resolveMentions,
 } from "./mentions";
 
 const roster = [
@@ -121,5 +123,30 @@ describe("filtering and applying a pick", () => {
     const r = applyMention(text, q, caret, "Steph Benes");
     assert.equal(r.text, "hi @Steph Benes  there");
     assert.equal(r.caret, "hi @Steph Benes ".length);
+  });
+});
+
+describe("people who cannot see the item", () => {
+  const people = [
+    { id: "a", name: "Ann Able", canSee: true },
+    { id: "b", name: "Bo Blocked", canSee: false },
+    { id: "c", name: "Cy Clear", canSee: true },
+  ];
+
+  test("resolveMentions splits allowed from blocked", () => {
+    const r = resolveMentions("@Ann Able @Bo Blocked @Cy Clear", people);
+    assert.deepEqual(r.ids, ["a", "c"]);
+    assert.deepEqual(r.blocked.map((p) => p.id), ["b"]);
+  });
+
+  test("the picker lists them greyed, after the people who can be picked", () => {
+    const out = filterMentionCandidates(candidatesFromPeople(people), "");
+    assert.deepEqual(out.map((c) => c.id), ["a", "c", "b"]);
+    assert.equal(out[2].disabled, true);
+  });
+
+  test("greyed people never push pickable ones out of the limit", () => {
+    const out = filterMentionCandidates(candidatesFromPeople(people), "", 2);
+    assert.deepEqual(out.map((c) => c.id), ["a", "c"]);
   });
 });

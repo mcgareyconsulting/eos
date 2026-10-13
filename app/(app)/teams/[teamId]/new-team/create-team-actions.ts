@@ -9,6 +9,8 @@ import {
   ensureAuthUser,
   writeMembership,
 } from "@/lib/team-invite";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { recordAccessChange } from "@/lib/access-audit";
 
 export type CreateTeamResult =
   | { ok: true; teamId: string; teamName: string }
@@ -23,7 +25,7 @@ export async function createTeamWithLeader(
   formData: FormData,
 ): Promise<CreateTeamResult> {
   // Outside try so Next notFound() from requireAdmin is not swallowed.
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const teamName = String(formData.get("team_name") ?? "").trim();
   const firstName = String(formData.get("first_name") ?? "").trim();
@@ -78,6 +80,7 @@ export async function createTeamWithLeader(
       meet_link: null,
       speaking_order: [userId],
       created_at: FieldValue.serverTimestamp(),
+      ...stamp(actorUid),
     });
 
     try {
@@ -88,11 +91,24 @@ export async function createTeamWithLeader(
         firstName,
         lastName,
         email,
+        actorUid,
       });
     } catch (err) {
+      // Best-effort stamp: the rollback must run even if it fails.
+      await stampBeforeDelete(teamRef, actorUid).catch(() => undefined);
       await teamRef.delete().catch(() => undefined);
       throw err;
     }
+
+    await recordAccessChange(db, {
+      kind: "roster",
+      actorUid,
+      entityId: `${teamRef.id}__${userId}`,
+      teamId: teamRef.id,
+      targetUid: userId,
+      before: { on_roster: false },
+      after: { on_roster: true, role: "leader" },
+    });
 
     revalidatePath("/home");
     revalidatePath("/directory");

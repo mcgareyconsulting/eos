@@ -13,6 +13,10 @@ import {
   type RockStatus,
 } from "@/app/(app)/teams/[teamId]/rocks/status";
 import { TodoCheckbox } from "@/app/(app)/teams/[teamId]/todos/todo-row";
+import {
+  MilestoneExpansion,
+  useExpandedMilestones,
+} from "@/app/(app)/teams/[teamId]/rocks/milestone-expansion";
 
 export type HomeRockListItem = {
   id: string;
@@ -21,7 +25,15 @@ export type HomeRockListItem = {
   due_date: string | null;
   quarter: string;
   team_id: string;
-  href: string;
+  /** The parent team's Rocks page, when the viewer can open it. */
+  href: string | null;
+  /**
+   * Headline view (spec §3.3): the viewer is assigned a milestone but is
+   * not on the parent team or in the audience. The server sends only the
+   * title, owner and team plus the viewer's own milestones — no status, due
+   * date or progress.
+   */
+  headline?: boolean;
   /**
    * All three feed the Company / My / Team split (lib/rock-bucket.ts)
    * — a legacy rock with no owner counts as departmental, so owner_id is not
@@ -44,12 +56,13 @@ export type HomeMilestoneListItem = {
   /** Resolved display name; "You" when viewer owns it */
   ownerLabel: string;
   isMine: boolean;
+  /** Rich text, shown read-only when the milestone is expanded. */
+  description?: string | null;
   /**
    * Set on the viewer's own milestones: the team the tick runs through
-   * (toggleTodo checks access to it; canTickMilestone lets an owner tick
-   * their own from any of their teams). Home is the one place every
-   * assignee reliably sees their milestone — a locked one from outside the
-   * rock's teams appears on no team page — so it is tickable here.
+   * (toggleTodo checks access to it; milestoneAccess.canComplete lets an
+   * assignee tick their own from any of their teams). Home is the one place
+   * every assignee sees their milestone, so it is tickable here.
    */
   tickTeamId?: string;
 };
@@ -60,9 +73,22 @@ const ROCK_COLS =
 /**
  * Rocks column: 6-column table (3a). Expand shows milestones in-column
  * with a status rail; viewer's milestones use blue "You" in the owner cell.
+ *
+ * A milestone's name opens it in place (MilestoneExpansion: description and
+ * activity feed). Every milestone listed here is one the viewer may comment
+ * on: a full rock's (seesFullRock) or, on a headline rock, only their own
+ * (the assignee) — milestoneAccess.canComment covers both.
  */
-export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
+export function HomeRocksList({
+  rocks,
+  userId,
+}: {
+  rocks: HomeRockListItem[];
+  /** The viewer, for the milestone feeds. */
+  userId: string;
+}) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const expandMs = useExpandedMilestones();
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -157,19 +183,29 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                   ) : null}
                 </div>
 
-                <Link
-                  href={r.href}
-                  className="min-w-0 truncate text-[13.5px] font-bold text-zinc-900 hover:underline dark:text-zinc-100"
-                >
-                  {r.title}
-                </Link>
+                {r.href ? (
+                  <Link
+                    href={r.href}
+                    className="min-w-0 truncate text-[13.5px] font-bold text-zinc-900 hover:underline dark:text-zinc-100"
+                  >
+                    {r.title}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate text-[13.5px] font-bold text-zinc-900 dark:text-zinc-100">
+                    {r.title}
+                  </span>
+                )}
 
                 <div className="truncate text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   {r.ownerLabel}
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  {total > 0 ? (
+                  {r.headline ? (
+                    <span className="text-[11px] font-semibold text-zinc-500">
+                      Your milestone
+                    </span>
+                  ) : total > 0 ? (
                     <>
                       <span className="relative block h-[4.5px] w-[58px] overflow-hidden rounded-full bg-[#ececee] dark:bg-zinc-700">
                         <span
@@ -185,7 +221,7 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                 </div>
 
                 <div className="min-w-0">
-                  {r.due_date ? (
+                  {r.headline ? null : r.due_date ? (
                     <>
                       <div className="text-[12.5px] tabular-nums text-zinc-700 dark:text-zinc-300">
                         {formatDateShort(r.due_date)}
@@ -205,7 +241,7 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                 </div>
 
                 <div className="justify-self-end">
-                  <StatusBadge status={status} compact />
+                  {r.headline ? null : <StatusBadge status={status} compact />}
                 </div>
               </div>
 
@@ -217,55 +253,71 @@ export function HomeRocksList({ rocks }: { rocks: HomeRockListItem[] }) {
                       <li
                         key={m.id}
                         className={cn(
-                          "grid grid-cols-[21px_minmax(0,1fr)_116px_110px_96px_88px] items-center gap-2.5 px-4 py-[7px]",
                           i > 0 &&
                             "border-t border-zinc-100 dark:border-zinc-800",
                         )}
                       >
-                        <div className="flex justify-center">
-                          {m.tickTeamId ? (
-                            <TodoCheckbox
-                              teamId={m.tickTeamId}
-                              todoId={m.id}
-                              completed={false}
-                              appearance="milestone"
-                            />
-                          ) : (
-                            <span
-                              className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
-                              aria-hidden
-                            />
-                          )}
+                        <div className="grid grid-cols-[21px_minmax(0,1fr)_116px_110px_96px_88px] items-center gap-2.5 px-4 py-[7px]">
+                          <div className="flex justify-center">
+                            {m.tickTeamId ? (
+                              <TodoCheckbox
+                                teamId={m.tickTeamId}
+                                todoId={m.id}
+                                completed={false}
+                                appearance="milestone"
+                                guardDraft
+                              />
+                            ) : (
+                              <span
+                                className="h-[13px] w-[13px] rounded-full border-[1.5px] border-zinc-300 dark:border-zinc-600"
+                                aria-hidden
+                              />
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => expandMs.toggle(m.id)}
+                            aria-expanded={expandMs.isOpen(m.id)}
+                            className="flex min-w-0 items-center gap-1 text-left text-[12.5px] font-semibold text-zinc-600 hover:text-hpb-blue dark:text-zinc-300 dark:hover:text-hpb-gold"
+                          >
+                            <span className="min-w-0 truncate">{m.title}</span>
+                          </button>
+                          <div
+                            className={cn(
+                              "truncate text-[11.5px]",
+                              m.isMine
+                                ? "font-extrabold text-hpb-blue"
+                                : "font-semibold text-zinc-500 dark:text-zinc-400",
+                            )}
+                          >
+                            {m.ownerLabel}
+                          </div>
+                          <div />
+                          <div
+                            className={cn(
+                              "text-[11.5px] font-semibold tabular-nums",
+                              dueToneClass(m.due_date),
+                            )}
+                          >
+                            {m.due_date ? formatDateShort(m.due_date) : "—"}
+                          </div>
+                          <div className="justify-self-end">
+                            {m.due_date ? (
+                              <span className={urgencyChipClass(m.due_date)}>
+                                {relativeDueLabel(m.due_date)}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="min-w-0 truncate text-[12.5px] font-semibold text-zinc-600 dark:text-zinc-300">
-                          {m.title}
-                        </div>
-                        <div
-                          className={cn(
-                            "truncate text-[11.5px]",
-                            m.isMine
-                              ? "font-extrabold text-hpb-blue"
-                              : "font-semibold text-zinc-500 dark:text-zinc-400",
-                          )}
-                        >
-                          {m.ownerLabel}
-                        </div>
-                        <div />
-                        <div
-                          className={cn(
-                            "text-[11.5px] font-semibold tabular-nums",
-                            dueToneClass(m.due_date),
-                          )}
-                        >
-                          {m.due_date ? formatDateShort(m.due_date) : "—"}
-                        </div>
-                        <div className="justify-self-end">
-                          {m.due_date ? (
-                            <span className={urgencyChipClass(m.due_date)}>
-                              {relativeDueLabel(m.due_date)}
-                            </span>
-                          ) : null}
-                        </div>
+                        <MilestoneExpansion
+                          open={expandMs.isOpen(m.id)}
+                          draftKey={m.id}
+                          teamId={m.tickTeamId ?? r.team_id}
+                          userId={userId}
+                          milestoneId={m.id}
+                          description={m.description}
+                          className="mb-2.5 ml-[47px] mr-4 rounded-[10px] border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+                        />
                       </li>
                     ))}
                   </ul>

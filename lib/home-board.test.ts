@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   byDueDateAsc,
+  homeMilestonesFor,
   homeRockPillKind,
   isHomeRockActive,
   rockHasMyOpenMilestone,
@@ -25,7 +26,7 @@ function rock(partial: Partial<HomeRockLike> & { id: string }): HomeRockLike {
     status: "on_track",
     archived_at: null,
     rock_type: "individual",
-    shared_team_ids: [],
+    audience_team_ids: [],
     ...partial,
   };
 }
@@ -84,7 +85,7 @@ describe("shouldShowHomeRock", () => {
     assert.equal(
       shouldShowHomeRock(
         rock({ id: "rc", owner_id: other, rock_type: "individual", is_company_rock: true }),
-        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
       ),
       true,
     );
@@ -95,7 +96,7 @@ describe("shouldShowHomeRock", () => {
       shouldShowHomeRock(rock({ id: "r1", owner_id: me }), {
         uid: me,
         myTeamIds: myTeams,
-        hasMyOpenMilestone: false,
+        hasMyOpenMilestone: false, fullAccess: true,
       }),
       true,
     );
@@ -105,7 +106,7 @@ describe("shouldShowHomeRock", () => {
     assert.equal(
       shouldShowHomeRock(
         rock({ id: "r2", owner_id: null, rock_type: "department" }),
-        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
       ),
       true,
     );
@@ -121,7 +122,7 @@ describe("shouldShowHomeRock", () => {
           owner_id: other,
           rock_type: "department",
         }),
-        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
       ),
       true,
     );
@@ -132,7 +133,7 @@ describe("shouldShowHomeRock", () => {
       shouldShowHomeRock(rock({ id: "r3", owner_id: other }), {
         uid: me,
         myTeamIds: myTeams,
-        hasMyOpenMilestone: false,
+        hasMyOpenMilestone: false, fullAccess: true,
       }),
       false,
     );
@@ -144,23 +145,73 @@ describe("shouldShowHomeRock", () => {
         uid: me,
         myTeamIds: myTeams,
         hasMyOpenMilestone: true,
+        fullAccess: false,
       }),
       true,
     );
   });
 
-  test("shows rock shared into my team", () => {
+  test("shows a rock with my team in its audience", () => {
     assert.equal(
       shouldShowHomeRock(
         rock({
           id: "r5",
           team_id: teamB,
           owner_id: other,
-          shared_team_ids: [teamA],
+          audience_team_ids: [teamA],
         }),
-        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false },
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
       ),
       true,
+    );
+  });
+
+  test("legacy shared_team_ids still reads as the audience", () => {
+    assert.equal(
+      shouldShowHomeRock(
+        rock({
+          id: "r5l",
+          team_id: teamB,
+          owner_id: other,
+          audience_team_ids: undefined,
+          shared_team_ids: [teamA],
+        }),
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
+      ),
+      true,
+    );
+  });
+
+  test("shows a rock with me in its audience", () => {
+    assert.equal(
+      shouldShowHomeRock(
+        rock({ id: "r5p", team_id: teamB, owner_id: other, audience_user_ids: [me] }),
+        { uid: me, myTeamIds: new Set(), hasMyOpenMilestone: false, fullAccess: true },
+      ),
+      true,
+    );
+  });
+
+  test("without full access only my open milestone brings a rock in", () => {
+    const r = rock({ id: "r7", team_id: teamB, owner_id: me, rock_type: "department" });
+    // Owning it (left the team) or a team rock grants nothing without access.
+    assert.equal(
+      shouldShowHomeRock(r, { uid: me, myTeamIds: new Set([teamB]), hasMyOpenMilestone: false, fullAccess: false }),
+      false,
+    );
+    assert.equal(
+      shouldShowHomeRock(r, { uid: me, myTeamIds: new Set(), hasMyOpenMilestone: true, fullAccess: false }),
+      true,
+    );
+  });
+
+  test("a private rock's audience never reaches Home", () => {
+    assert.equal(
+      shouldShowHomeRock(
+        rock({ id: "r8", team_id: teamB, owner_id: other, audience_team_ids: [teamA], private: true }),
+        { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true },
+      ),
+      false,
     );
   });
 
@@ -169,7 +220,7 @@ describe("shouldShowHomeRock", () => {
       shouldShowHomeRock(rock({ id: "r6", owner_id: me, status: "done" }), {
         uid: me,
         myTeamIds: myTeams,
-        hasMyOpenMilestone: false,
+        hasMyOpenMilestone: false, fullAccess: true,
       }),
       false,
     );
@@ -332,5 +383,22 @@ describe("splitHomeRocksByType (N34)", () => {
     assert.deepEqual(company, []);
     assert.deepEqual(mine, []);
     assert.deepEqual(departmental, []);
+  });
+});
+
+describe("homeMilestonesFor", () => {
+  const ms = [
+    { id: "a", owner_id: me },
+    { id: "b", owner_id: other },
+    { id: "c", owner_id: null },
+  ];
+  test("full rock: every milestone", () => {
+    assert.deepEqual(homeMilestonesFor("full", ms, me).map((m) => m.id), ["a", "b", "c"]);
+  });
+  test("headline: only mine", () => {
+    assert.deepEqual(homeMilestonesFor("headline", ms, me).map((m) => m.id), ["a"]);
+  });
+  test("none: nothing", () => {
+    assert.deepEqual(homeMilestonesFor("none", ms, me), []);
   });
 });

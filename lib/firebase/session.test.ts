@@ -90,7 +90,34 @@ function withAllowlist(value: string | undefined, run: () => Promise<void>) {
   });
 }
 
+function withNodeEnv(value: string, run: () => Promise<void>) {
+  const env = process.env as Record<string, string | undefined>;
+  const prev = env.NODE_ENV;
+  env.NODE_ENV = value;
+  return run().finally(() => {
+    env.NODE_ENV = prev;
+  });
+}
+
 describe("createSession", () => {
+  test("production with no allowlist fails closed", async () => {
+    const h = harness({});
+    await withNodeEnv("production", () =>
+      withAllowlist(undefined, () =>
+        assert.rejects(createSession("tok", h.deps), new Error(NOT_AUTHORIZED_MESSAGE)),
+      ),
+    );
+    assert.equal(h.calls.some((c) => c[0] === "createSessionCookie"), false);
+  });
+
+  test("non-production with no allowlist stays open", async () => {
+    const h = harness({});
+    await withNodeEnv("development", () =>
+      withAllowlist(undefined, () => createSession("tok", h.deps)),
+    );
+    assert.ok(h.calls.some((c) => c[0] === "createSessionCookie"));
+  });
+
   test("mints a 25-hour HttpOnly, SameSite=Lax cookie", async () => {
     const h = harness({});
     await withAllowlist("@highplainsbank.com", () => createSession("tok", h.deps));

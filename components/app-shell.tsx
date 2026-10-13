@@ -106,7 +106,7 @@ export function AppShell({
             )}
 
             {teams.length > 0 && (
-              <TeamNav teams={teams} importTeamIds={importTeamIds} />
+              <TeamNav teams={teams} importTeamIds={importTeamIds} searchable={isAdmin} />
             )}
           </div>
 

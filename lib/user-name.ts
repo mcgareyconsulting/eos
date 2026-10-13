@@ -42,7 +42,7 @@ export function initials(fullName: string): string {
 }
 
 /** Shown where a row is deliberately unassigned rather than mis-resolved. */
-export const NO_OWNER_LABEL = "No Owner";
+export const NO_OWNER_LABEL = "Unassigned";
 
 /**
  * Label for an entity's owner.

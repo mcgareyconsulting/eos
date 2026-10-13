@@ -6,6 +6,8 @@ import { dueToneClass } from "@/lib/due";
 import { cn } from "@/lib/utils";
 import { TodoCheckbox } from "./todo-row";
 import { Eyebrow } from "@/components/ui/text";
+import { useAuthUid } from "@/lib/firebase/use-collection";
+import { MilestoneExpansion } from "../rocks/milestone-expansion";
 
 export type MilestoneTodoItem = {
   id: string;
@@ -14,25 +16,48 @@ export type MilestoneTodoItem = {
   due_date: string | null;
   completed: boolean;
   rock_title: string;
+  /** Rich text, shown read-only when the row is expanded. Left out, the
+   *  expansion reads it live from the milestone's doc. */
+  description?: string | null;
 };
+
+type Member = { user_id: string; full_name: string };
 
 // Shares TodoListRow's row chrome (padding, checkbox gutter, title type, date
 // column, click-to-expand) so the two board columns read as one table split in
 // half. The parent rock is the expansion's payload: it repeats across every
 // milestone of the same rock, so it earns a detail line, not a row subtitle.
+//
+// The expansion also carries the milestone itself — its description and
+// activity feed (MilestoneExpansion, the same panel the rock modals open).
+// It is self-contained: the viewer falls back to the signed-in uid and the
+// description to a live read, so a list need not pass either. Every row here
+// is a milestone the viewer can see (the board's listeners and the L10's
+// query are gated by the to-do read rule, which mirrors
+// milestoneAccess.canSee), and seeing a milestone is what lets a person
+// comment on it, so the feed's + Comment is always on.
 export function MilestoneTodoRow({
   teamId,
   milestone,
   ownerName,
   /** Owner cards already name the owner — don't repeat it in the detail. */
   hideOwner = false,
+  userId,
+  members,
 }: {
   teamId: string;
   milestone: MilestoneTodoItem;
   ownerName: string;
   hideOwner?: boolean;
+  /** The viewer; defaults to the signed-in user. */
+  userId?: string;
+  /** Roster for naming comment authors. */
+  members?: Member[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const authUid = useAuthUid();
+  // The feed names the viewer "You"; it waits for client auth either way.
+  const viewerId = userId ?? authUid ?? null;
 
   return (
     <div className="group px-4 py-2.5 text-sm">
@@ -43,6 +68,7 @@ export function MilestoneTodoRow({
             todoId={milestone.id}
             completed={milestone.completed}
             appearance="milestone"
+            guardDraft
           />
         </div>
 
@@ -95,6 +121,18 @@ export function MilestoneTodoRow({
           </dl>
         </div>
       )}
+      {viewerId ? (
+        <MilestoneExpansion
+          open={expanded}
+          draftKey={milestone.id}
+          teamId={teamId}
+          userId={viewerId}
+          members={members}
+          milestoneId={milestone.id}
+          description={milestone.description}
+          className="ml-7 border-l border-zinc-200 pb-1 pl-4 pt-3 dark:border-zinc-800"
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import {
   SORT_OPTIONS,
   STATUS_FILTER_OPTIONS,
@@ -18,77 +18,46 @@ import {
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
 
-function FilterSelect({
+/**
+ * One filter chip: the shared pill `SelectMenu`, so the menu that opens is
+ * ours rather than the browser's. The pill styles in select-menu.tsx are this
+ * chip's old classes verbatim, and `active` is the blue "filter applied" look.
+ * No `<label>` — the chip has no visible one — so `label` is its aria-label
+ * (and the listbox's) plus the hover title.
+ */
+function FilterSelect<V extends string>({
   id,
   label,
   value,
   active,
   onChange,
-  children,
+  options,
+  placeholder,
   className,
 }: {
   id: string;
   label: string;
-  value: string;
+  value: V;
   active: boolean;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
+  onChange: (value: V) => void;
+  options: readonly SelectOption<V>[];
+  /** Trigger text when `value` matches no option. */
+  placeholder?: string;
   className?: string;
 }) {
-  // Chrome treats <select> as keyboard-input-capable, so :focus-visible matches
-  // even for a mouse click and the focus ring stayed lit on the chip you just
-  // used. Dropping focus after a pointer-driven pick clears it; a keyboard pick
-  // keeps focus, and its ring, because that is the only focus indicator here.
-  const pickedByPointer = useRef(false);
-
   return (
-    // The width class goes on the <select>, not this wrapper: the chevron is
-    // positioned against the wrapper, so a wrapper wider than the select left
-    // the chevron floating in the gap between them.
-    <div className="relative shrink-0">
-      <label className="sr-only" htmlFor={id}>
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onPointerDown={() => {
-          pickedByPointer.current = true;
-        }}
-        onKeyDown={() => {
-          pickedByPointer.current = false;
-        }}
-        onBlur={() => {
-          pickedByPointer.current = false;
-        }}
-        onChange={(e) => {
-          const el = e.currentTarget;
-          onChange(e.target.value);
-          if (pickedByPointer.current) el.blur();
-          pickedByPointer.current = false;
-        }}
-        title={label}
-        className={cn(
-          "h-8 appearance-none rounded-full border py-0 pl-2.5 pr-7 text-xs font-medium",
-          "border-zinc-300 bg-white text-zinc-800",
-          // No custom focus ring: a filter that is applied says so with the
-          // blue `active` treatment below, which is the state worth seeing. The
-          // browser's own outline still marks keyboard focus, and the blur
-          // above means it never lingers after a mouse pick.
-          "hover:border-zinc-400",
-          "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100",
-          active &&
-            "border-hpb-blue/40 bg-hpb-blue/5 text-hpb-blue dark:border-hpb-gold/40 dark:bg-hpb-gold/10 dark:text-hpb-gold",
-          className,
-        )}
-      >
-        {children}
-      </select>
-      <ChevronDown
-        className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400"
-        aria-hidden
-      />
-    </div>
+    <SelectMenu<V>
+      id={id}
+      variant="pill"
+      aria-label={label}
+      title={label}
+      value={value}
+      active={active}
+      onChange={onChange}
+      options={options}
+      placeholder={placeholder}
+      className={className}
+    />
   );
 }
 
@@ -282,13 +251,11 @@ export function ScorecardFilters({
             value={String(weekRange)}
             active={weekRange !== 13}
             onChange={(v) => setWeekRange(Number(v) as WeekRange)}
-          >
-            {WEEK_RANGE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                Last {n} weeks
-              </option>
-            ))}
-          </FilterSelect>
+            options={WEEK_RANGE_OPTIONS.map((n) => ({
+              value: String(n),
+              label: `Last ${n} weeks`,
+            }))}
+          />
         ) : (
           <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
             {rangeHint}
@@ -302,14 +269,12 @@ export function ScorecardFilters({
             value={group}
             active={group !== ""}
             onChange={onGroupChange}
-          >
-            <option value="">All groups</option>
-            {groupOptions.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </FilterSelect>
+            options={[
+              { value: "", label: "All groups" },
+              ...groupOptions.map((g) => ({ value: g, label: g })),
+            ]}
+            placeholder="All groups"
+          />
         )}
 
         <FilterSelect
@@ -317,14 +282,9 @@ export function ScorecardFilters({
           label="Status"
           value={status}
           active={status !== "all"}
-          onChange={(v) => onStatusChange(v as StatusFilter)}
-        >
-          {STATUS_FILTER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </FilterSelect>
+          onChange={onStatusChange}
+          options={STATUS_FILTER_OPTIONS}
+        />
 
         <FilterSelect
           id="sc-owner"
@@ -332,29 +292,25 @@ export function ScorecardFilters({
           value={ownerId}
           active={ownerId !== ""}
           onChange={onOwnerChange}
-        >
-          <option value="">All owners</option>
-          {members.map((m) => (
-            <option key={m.user_id} value={m.user_id}>
-              {m.full_name}
-            </option>
-          ))}
-        </FilterSelect>
+          options={[
+            { value: "", label: "All owners" },
+            ...members.map((m) => ({ value: m.user_id, label: m.full_name })),
+          ]}
+          placeholder="All owners"
+        />
 
         <FilterSelect
           id="sc-sort"
           label="Sort"
           value={sort}
           active={sort !== defaultSort}
-          onChange={(v) => onSortChange(v as SortOption)}
+          onChange={onSortChange}
           className="min-w-[10.5rem]"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.value === "order" ? orderLabel : o.label}
-            </option>
-          ))}
-        </FilterSelect>
+          options={SORT_OPTIONS.map((o) => ({
+            value: o.value,
+            label: o.value === "order" ? orderLabel : o.label,
+          }))}
+        />
 
         {!defaults && (
           <button

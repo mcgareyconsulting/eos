@@ -19,7 +19,7 @@ export async function disconnectGoogleTasks(): Promise<void> {
  */
 export async function syncGoogleTasksNow(): Promise<{ updated: number }> {
   const user = await requireFirebaseUser();
-  const result = await pullCompletionsForOwner(user.uid);
+  const result = await pullCompletionsForOwner(user.uid, user.db, user.uid);
   revalidatePath("/settings");
   revalidatePath("/home");
   // Team todo lists live under /teams/[id]/todos — revalidate broad path.

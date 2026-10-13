@@ -110,4 +110,29 @@ describe("signInRefusal", () => {
       EMAIL_UNVERIFIED_MESSAGE,
     );
   });
+
+  test("production with no allowlist fails closed", () => {
+    assert.equal(
+      signInRefusal({ email: "a@b.com", email_verified: true }, null, true),
+      NOT_AUTHORIZED_MESSAGE,
+    );
+  });
+
+  test("production with an allowlist behaves as before", () => {
+    assert.equal(
+      signInRefusal({ email: "jane@highplainsbank.com", email_verified: true }, list, true),
+      null,
+    );
+    assert.equal(
+      signInRefusal({ email: "someone@gmail.com", email_verified: true }, list, true),
+      NOT_AUTHORIZED_MESSAGE,
+    );
+  });
+
+  test("unverified email is reported before the production check", () => {
+    assert.equal(
+      signInRefusal({ email: "a@b.com", email_verified: false }, null, true),
+      EMAIL_UNVERIFIED_MESSAGE,
+    );
+  });
 });

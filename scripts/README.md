@@ -19,6 +19,7 @@ first where one exists.
 | `copy-db.ts` | `pnpm db:copy` | Copies every document from one Firestore database to another in the same project (prod → sandbox refresh). Destination id must contain `sandbox`. | **Destructive to the destination.** `--dry-run` available. |
 | `reassign-user.ts` | `pnpm user:reassign` | Moves all EOS data and memberships from one uid to another — e.g. someone switched Google accounts. | Writes. Dry-run unless `--apply`. |
 | `merge-import-user.ts` | `pnpm user:merge` | Merges a CSV-import placeholder uid (`import-*`) into the person's real Auth uid on one team. | Writes. Dry-run unless `--apply`. |
+| `backfill-team-ids.ts` | `pnpm users:backfill-team-ids` | Rebuilds `users/{uid}.team_ids` from `team_members` (the list the rules check with one `get()` + `hasAny()`). Safe to re-run. | Writes. Dry-run unless `--apply`; `--database <id>`. |
 | `deploy.sh` | `pnpm ship` | Builds the image, pushes it to Artifact Registry, and rolls Cloud Run. Reads `.env.prod` by default. | **Deploys to production.** `-- --dry-run` prints the plan. |
 | `restore-test.sh` | `pnpm backup:restore-test` | Restores the newest (or a named) Firestore backup into a throwaway database, counts documents against the live database, reports PASS/FAIL, then deletes the throwaway database. The quarterly backup-restore drill in `docs/BACKUP_RUNBOOK.md`. Uses `restore-test-count.ts` internally. | Read-only against the source database. Writes/deletes only the throwaway `--target` database. Dry-run unless `-- --apply`. |
 

@@ -11,8 +11,8 @@
 // Format (SIGN_IN_ALLOWLIST env var): comma-separated entries.
 //   "@highplainsbank.com, consultant@example.com"
 // Entries starting with "@" allow the whole domain; anything else is an
-// exact email. Matching is case-insensitive. Unset/empty = open sign-in
-// — restriction is opt-in per deployment.
+// exact email. Matching is case-insensitive. Unset/empty = open sign-in in
+// dev/test, but signInRefusal() refuses everyone in production (fail closed).
 
 export type Allowlist = {
   domains: string[]; // without the leading "@", lowercase
@@ -68,8 +68,13 @@ export const EMAIL_UNVERIFIED_MESSAGE =
 export function signInRefusal(
   claims: { email?: string | null; email_verified?: boolean | null },
   allowlist: Allowlist | null,
+  isProduction = false,
 ): string | null {
   if (claims.email_verified !== true) return EMAIL_UNVERIFIED_MESSAGE;
+  // Fail closed: an unset allowlist in production is a misconfiguration, not
+  // an invitation. Dev/test stay open. The caller passes the environment so
+  // this module stays pure.
+  if (isProduction && allowlist === null) return NOT_AUTHORIZED_MESSAGE;
   if (!isEmailAllowed(allowlist, claims.email)) return NOT_AUTHORIZED_MESSAGE;
   return null;
 }

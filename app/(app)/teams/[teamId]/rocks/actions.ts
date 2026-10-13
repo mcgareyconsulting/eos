@@ -6,65 +6,73 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { notFound } from "next/navigation";
 import {
   getTeamMembers,
+  requireRosterOwner,
   requireTeamAccess,
-  requireTeamDoc,
 } from "@/lib/firebase/teams";
-import { canSetRockStatus } from "@/lib/rocks-share";
-import { notify } from "@/lib/firebase/notifications";
+import { requireFirebaseUser } from "@/lib/firebase/auth";
+import { requireViewer } from "@/lib/firebase/viewer";
+import {
+  audienceTeamIdsOf,
+  audienceUserIdsOf,
+  isPrivateRock,
+  rockAccess,
+  rockSubjectOf,
+  type RockSubject,
+} from "@/lib/access/rock";
+import type { Viewer } from "@/lib/access/types";
+import { chunkForInQuery } from "@/lib/firestore-in";
+import { emitEvent } from "@/lib/firebase/notifications";
+import { purgeItem } from "@/lib/firebase/purge";
+import { emitAudienceAdded } from "@/lib/firebase/rock-events";
+import { deleteTaskForTodo } from "@/lib/google/tasks";
+import { assignmentPatch } from "@/lib/follow";
+import type { RockEvent } from "@/lib/item-registry";
+import {
+  audienceAdded,
+  reassignmentRecipients,
+  rockEditEvents,
+} from "@/lib/rock-notify";
 import { isCompanyRock } from "@/lib/rock-bucket";
 import { loadUsersById } from "@/lib/firebase/queries";
 import { userDisplayName } from "@/lib/user-name";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { recordAccessChanges, rockAccessEvents } from "@/lib/access-audit";
+import { normalizeDescription } from "@/lib/csv-import";
+import { recordActivity } from "@/lib/firebase/activity";
+import { loadUserNames } from "@/lib/firebase/user-names";
+import { formatDateOnly } from "@/lib/dates";
+import {
+  milestoneEditEvent,
+  milestoneTraceRows,
+  type MilestoneTraceFields,
+} from "@/lib/milestone-activity";
 import { isRockStatus } from "./status";
 import { isRockType } from "./rock-type";
 
-function pathFor(teamId: string) {
-  return `/teams/${teamId}/rocks`;
-}
-
-function sharedTeamIdsOf(data: Record<string, unknown> | undefined): string[] {
-  return Array.isArray(data?.shared_team_ids)
-    ? (data!.shared_team_ids as string[]).filter((x) => typeof x === "string")
-    : [];
-}
+// Every rock action names the rock's PARENT team as `teamId` (rows render
+// rock actions against the rock's own team wherever it shows) and is gated
+// by lib/access/rock.ts with the caller's full memberships — not by the
+// caller being on `teamId`, because the audience edits from its own team's
+// page. The Admin SDK bypasses firestore.rules, so these gates are the real
+// ones.
 
 /**
- * Fetch a rock for a status write made from `teamId`.
- *
- * Normally the rock must live on that team. The one exception is a rock shared
- * into the team: its **person owner** can move its status from the guest
- * team's list or L10 without switching teams. Everyone else on the guest team
- * sees it read-only, and every structural edit (title, archive, delete,
- * milestones, re-share) still belongs to the parent team.
- *
- * firestore.rules keeps the client-side contract in step — guests may read a
- * shared rock but not write it. This runs on the Admin SDK, which bypasses
- * rules, so this function is the actual gate.
+ * Load the rock `rockId` on parent team `teamId` and require `can` for the
+ * signed-in viewer. 404 otherwise, so rock ids are not enumerable.
  */
-async function requireStatusWritableRock(
-  db: Firestore,
-  rockId: string,
+async function requireRock(
   teamId: string,
-  uid: string,
+  rockId: string,
+  can: (rock: RockSubject, viewer: Viewer) => boolean,
 ) {
+  const { uid, isAdmin, db, viewer } = await requireViewer();
   const snap = await db.collection("rocks").doc(rockId).get();
   if (!snap.exists) notFound();
   const data = snap.data() ?? {};
-  if (data.team_id === teamId) return snap;
-
-  const writable = canSetRockStatus(
-    {
-      team_id: String(data.team_id ?? ""),
-      owner_id: (data.owner_id as string | null) ?? null,
-      shared_team_ids: Array.isArray(data.shared_team_ids)
-        ? (data.shared_team_ids as string[])
-        : [],
-    },
-    teamId,
-    uid,
-  );
-  if (writable) return snap;
-
-  notFound();
+  const rock = rockSubjectOf(data);
+  if (rock.team_id !== teamId) notFound();
+  if (!can(rock, viewer)) notFound();
+  return { uid, isAdmin, db, viewer, snap, data, rock };
 }
 
 export async function setRockType(
@@ -75,17 +83,18 @@ export async function setRockType(
   if (!isRockType(rockType) || rockType === "company") {
     throw new Error("Bad rock type");
   }
-
-  const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
-  await db.collection("rocks").doc(rockId).update({ rock_type: rockType });
-
-  revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
+  const { uid, db, rock } = await requireRock(teamId, rockId, rockAccess.canEdit);
+  await db
+    .collection("rocks")
+    .doc(rockId)
+    .update({ rock_type: rockType, ...stamp(uid) });
+  revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
 
 // Atomic: writes the new status onto the rock AND appends an immutable history
 // entry to rock_status_updates. Off-track always requires a "why" comment.
 // Done stamps completed_at (Monday archive sweep clock); leaving Done clears it.
+// The parent team, the audience and admins may move it (rockAccess).
 export async function setRockStatus(
   teamId: string,
   rockId: string,
@@ -98,11 +107,12 @@ export async function setRockStatus(
     throw new Error("Comment required when moving a rock off track.");
   }
 
-  const { uid, db } = await requireTeamAccess(teamId);
-  const rockSnap = await requireStatusWritableRock(db, rockId, teamId, uid);
-  const prevStatus = String(rockSnap.data()?.status ?? "");
-  // A shared-in rock's history stays on its parent team, not the guest team.
-  const rockTeamId = String(rockSnap.data()?.team_id ?? teamId);
+  const { uid, db, data, rock } = await requireRock(
+    teamId,
+    rockId,
+    rockAccess.canSetStatus,
+  );
+  const prevStatus = String(data.status ?? "");
 
   // Monday worker archives status=done with completed_at before this week's
   // Monday 00:00. Stamp completed_at only on the transition into Done (don't
@@ -117,27 +127,26 @@ export async function setRockStatus(
   }
 
   const batch = db.batch();
-  batch.update(db.collection("rocks").doc(rockId), rockPatch);
+  batch.update(db.collection("rocks").doc(rockId), { ...rockPatch, ...stamp(uid) });
   batch.set(db.collection("rock_status_updates").doc(), {
     rock_id: rockId,
-    // Parent team, not the viewing team — the Rocks tab and L10 both read
-    // history with `where team_id == <this team>`, so a note filed under the
-    // guest team would vanish from the rock's own history.
-    team_id: rockTeamId,
+    // Always the parent team: the Rocks tab and L10 read history with
+    // `where team_id == <this team>`, and the audience reads it by rock id.
+    team_id: teamId,
     status,
     comment: trimmed,
     user_id: uid,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(uid),
   });
   await batch.commit();
 
-  // Parent team + every guest team the rock is shared into (the L10 rocks
-  // segment shows StatusPopover too; keep RSC payloads fresh for anyone who
-  // lands mid-meeting without a client subscription yet). `teamId` may be a
-  // guest team when the owner moved a shared-in rock from there — it is in
-  // the shared list, so it is covered.
-  revalidateRockSurfaces(rockTeamId, sharedTeamIdsOf(rockSnap.data()));
-  if (rockTeamId !== teamId) revalidatePath(pathFor(teamId));
+  if (prevStatus !== status) {
+    await emitEvent(db, { type: "rock", id: rockId }, "status_changed", uid, {
+      teamId,
+    });
+  }
+  revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
 
 // Manual archive control (Gmail-style icon on the row) — mirrors
@@ -146,30 +155,50 @@ export async function setRockStatus(
 // completed_at from before archiving, and the Monday sweep
 // (isActiveDoneRock in lib/todos-archive.ts) would otherwise re-archive it
 // the moment archived_at goes null again. Re-saving Done re-stamps it.
+// Takes the rock off every list, so it stays with the parent team and
+// admins, like delete.
 export async function setRockArchived(
   teamId: string,
   rockId: string,
   archived: boolean,
 ) {
-  const { db } = await requireTeamAccess(teamId);
-  const snap = await requireTeamDoc(db, "rocks", rockId, teamId);
+  const { uid, db, rock } = await requireRock(teamId, rockId, rockAccess.canDelete);
   await db
     .collection("rocks")
     .doc(rockId)
-    .update(
-      archived
+    .update({
+      ...(archived
         ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, completed_at: null },
-    );
+        : { archived_at: null, completed_at: null }),
+      ...stamp(uid),
+    });
 
-  revalidateRockSurfaces(teamId, sharedTeamIdsOf(snap.data()));
+  revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
 
 // Removes the rock, linked milestones (todos), and entity_comments.
-// Single batch so a partial failure can't orphan children.
+// Single batch so a partial failure can't orphan children. Parent team and
+// admins only — the audience may edit, not delete.
+/** Purge + unmirror milestone docs that were just deleted. Never throws. */
+async function purgeRemovedMilestones(
+  db: Firestore,
+  docs: readonly FirebaseFirestore.QueryDocumentSnapshot[],
+  actorUid: string,
+) {
+  for (const d of docs) {
+    const x = d.data();
+    try {
+      await purgeItem(db, { type: "milestone", id: d.id }, actorUid);
+    } catch (e) {
+      console.error(`[rocks] purge of milestone ${d.id} failed:`, e);
+    }
+    const owner = typeof x.owner_id === "string" ? x.owner_id : "";
+    await deleteTaskForTodo(owner, x.google_task_id as string | null | undefined);
+  }
+}
+
 export async function deleteRock(teamId: string, rockId: string) {
-  const { db } = await requireTeamAccess(teamId);
-  const rockSnap = await requireTeamDoc(db, "rocks", rockId, teamId);
+  const { uid, db, rock } = await requireRock(teamId, rockId, rockAccess.canDelete);
 
   const [milestonesSnap, commentsSnap] = await Promise.all([
     db
@@ -185,30 +214,46 @@ export async function deleteRock(teamId: string, rockId: string) {
       .get(),
   ]);
 
+  await stampBeforeDelete(
+    [
+      ...milestonesSnap.docs.map((d) => d.ref),
+      ...commentsSnap.docs.map((d) => d.ref),
+      db.collection("rocks").doc(rockId),
+    ],
+    uid,
+  );
   const batch = db.batch();
   milestonesSnap.docs.forEach((d) => batch.delete(d.ref));
   commentsSnap.docs.forEach((d) => batch.delete(d.ref));
   batch.delete(db.collection("rocks").doc(rockId));
   await batch.commit();
 
-  revalidateRockSurfaces(teamId, sharedTeamIdsOf(rockSnap.data()));
+  // Spec §5.1: threads, notifications and activity go with each item, and a
+  // mirrored Google Task must not keep the milestone's title around.
+  await purgeItem(db, { type: "rock", id: rockId }, uid);
+  await purgeRemovedMilestones(db, milestonesSnap.docs, uid);
+
+  revalidateRockSurfaces(teamId, audienceTeamIdsOf(rock));
 }
 
-// The redesigned modal (rock-modal.tsx) saves a rock and its milestones in one
-// step, so both of these take a `milestones` field: a JSON array of
-// { id?, title, owner_id, due_date, locked }. `id` present = existing todo
-// doc to update; absent = create. On an edit, a milestone the modal was
-// *shown* (`known_milestone_ids`) and that is missing from the array is
-// deleted. One batch, so the list can never show a rock whose milestones
-// silently failed to write.
+// The modal (rock-modal.tsx) saves a rock and its milestones in one step,
+// so both of these take a `milestones` field: a JSON array of
+// { id?, title, owner_id, due_date, description? }. `id` present = existing
+// todo doc to update; absent = create. On an edit, a milestone the modal was *shown*
+// (`known_milestone_ids`) and that is missing from the array is deleted.
+// One batch, so the list can never show a rock whose milestones silently
+// failed to write.
 
 type MilestoneInput = {
   id?: string;
   title: string;
+  /** "" = no pick: the rock owner, unless the stored doc is unassigned
+   *  and this save leaves it untouched (spec §2.6). */
   owner_id: string;
   due_date: string | null;
-  /** Locked: not passed on to the assignee's teams (lib/rocks-share.ts). */
-  locked: boolean;
+  /** Rich text, normalized like a to-do's; null = none. `undefined` = the
+   *  client sent no description (an older modal): the stored one is kept. */
+  description?: string | null;
 };
 
 function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
@@ -228,36 +273,164 @@ function parseMilestones(raw: FormDataEntryValue | null): MilestoneInput[] {
       const owner_id = String(x.owner_id ?? "").trim();
       const dueRaw = String(x.due_date ?? "").trim();
       const id = typeof x.id === "string" && x.id ? x.id : undefined;
-      return {
-        id,
-        title,
-        owner_id,
-        due_date: dueRaw || null,
-        locked: x.locked === true,
-      };
+      // Same normalizing and limit as a to-do's description (addTodo).
+      let description: string | null | undefined;
+      if ("description" in x) {
+        description =
+          normalizeDescription(String(x.description ?? "")) || null;
+        requireMaxLength(description, LONG_TEXT_MAX, "Milestone description");
+      }
+      return { id, title, owner_id, due_date: dueRaw || null, description };
     })
     .filter((m) => m.title.length > 0);
+}
+
+/**
+ * The assignee a milestone is saved with. Every milestone has one, the rock
+ * owner by default (spec §3.3). The only unassigned milestone is one an
+ * admin's deactivation left without an owner (§2.6), and only while this
+ * save does not touch it — a new or changed milestone always gets one.
+ */
+function milestoneOwnerFor(
+  m: MilestoneInput,
+  rockOwner: string,
+  stored: {
+    owner_id?: unknown;
+    title?: unknown;
+    due_date?: unknown;
+    description?: unknown;
+  } | null,
+): string | null {
+  if (m.owner_id) return m.owner_id;
+  if (
+    stored &&
+    (stored.owner_id == null || stored.owner_id === "") &&
+    stored.title === m.title &&
+    (stored.due_date ?? null) === m.due_date &&
+    (m.description === undefined ||
+      storedDescription(stored) === m.description)
+  ) {
+    return null;
+  }
+  return rockOwner;
+}
+
+/** A stored milestone's description, normalized as a save would write it. */
+function storedDescription(stored: { description?: unknown }): string | null {
+  return normalizeDescription(String(stored.description ?? "")) || null;
+}
+
+/** A milestone's fields as its activity trace compares them. */
+function traceFields(x: {
+  title?: unknown;
+  owner_id?: unknown;
+  due_date?: unknown;
+  description?: unknown;
+}): MilestoneTraceFields {
+  return {
+    title: String(x.title ?? ""),
+    owner_id: (x.owner_id as string | null | undefined) || null,
+    due_date: (x.due_date as string | null | undefined) ?? null,
+    description: storedDescription(x),
+  };
+}
+
+type MilestoneTrace = {
+  id: string;
+  before: MilestoneTraceFields | null;
+  after: MilestoneTraceFields;
+};
+
+/**
+ * The milestones' own activity traces for a rock save — the rows a to-do's
+ * create / edit would write (lib/milestone-activity.ts), so a milestone's
+ * feed shows its edits like a to-do's. Best-effort, after the commit, like
+ * recordActivity everywhere; only the existing to-do trace type.
+ */
+async function recordMilestoneTraces(
+  db: Firestore,
+  teamId: string,
+  actorUid: string,
+  saved: readonly MilestoneTrace[],
+) {
+  const names = await loadUserNames(
+    db,
+    saved.map((s) => s.after.owner_id ?? ""),
+  );
+  const writes: Promise<void>[] = [];
+  for (const s of saved) {
+    const rows = milestoneTraceRows(
+      s.before,
+      s.after,
+      actorUid,
+      (id) => names.get(id),
+      formatDateOnly,
+    );
+    for (const row of rows) {
+      writes.push(
+        recordActivity({
+          db,
+          teamId,
+          entity: {
+            type: "todo",
+            id: s.id,
+            // Always team: a milestone's reach is its rock's (milestoneDoc).
+            visibility: "team",
+            ownerId: s.after.owner_id,
+          },
+          kind: row.kind,
+          actor: { id: actorUid },
+          detail: row.detail,
+        }),
+      );
+    }
+  }
+  await Promise.all(writes);
+}
+
+/**
+ * Followers of an edited milestone hear about it as they would a to-do edit
+ * (title / due date / description — lib/milestone-activity.ts
+ * milestoneEditEvent). Owner changes go out through notifyMilestoneOwners.
+ * Best-effort, after the commit; emitEvent logs and swallows its own errors.
+ */
+async function notifyMilestoneFollowers(
+  db: Firestore,
+  teamId: string,
+  actorUid: string,
+  saved: readonly MilestoneTrace[],
+) {
+  await Promise.all(
+    saved.map((s) => {
+      const event = milestoneEditEvent(s.before, s.after);
+      return event
+        ? emitEvent(db, { type: "todo", id: s.id }, event, actorUid, { teamId })
+        : null;
+    }),
+  );
 }
 
 function milestoneDoc(
   teamId: string,
   rockId: string,
   m: MilestoneInput,
-  fallbackOwner: string,
+  ownerId: string,
+  assignedBy: { assigned_by: string | null; follower_ids: string[] },
+  actorUid: string,
 ) {
   return {
+    ...assignedBy,
+    ...stamp(actorUid),
     team_id: teamId,
     title: m.title,
-    owner_id: m.owner_id || fallbackOwner,
+    owner_id: ownerId,
     due_date: m.due_date,
-    description: null,
+    description: m.description ?? null,
     completed_at: null,
     archived_at: null,
-    // A milestone is always team-visible as a to-do. Its sharing lock is a
-    // separate flag: "private" on a to-do means owner-only everywhere (Home,
-    // notifications, rules), which is not what the lock means.
+    // A milestone is always team-visible as a to-do; its reach is the
+    // rock's (lib/access/rock.ts), never the to-do "private" setting.
     visibility: "team" as const,
-    team_hidden: m.locked,
     source_issue_id: null,
     source_meeting_id: null,
     source_rock_id: rockId,
@@ -265,17 +438,18 @@ function milestoneDoc(
   };
 }
 
-// Cap guest shares so Firestore rules can check a fixed prefix of
-// shared_team_ids (see firestore.rules sharedRockAccess when deployed).
-const MAX_SHARED_TEAMS = 8;
-
 /**
- * Rock fields from the modal. Owner is always a person; kind is separate
- * (individual / department); optional shared_team_ids. The Company flag is
- * NOT parsed here — it is admin-gated and handled by the caller, because the
- * right default differs between create and update (see companyFlagPatch).
+ * Rock fields from the modal. Owner is always a person on the parent team
+ * (spec §3.3) — `keepOwner` is the stored owner, who survives an edit even
+ * after leaving the team. Kind is separate (individual / department). The
+ * Company flag and the audience are NOT parsed here — both are gated by role
+ * and preserved for everyone else (companyFlagPatch, audiencePatch).
  */
-function parseRockFields(formData: FormData, uid: string) {
+async function parseRockFields(
+  formData: FormData,
+  teamId: string,
+  keepOwner: string | null,
+) {
   const title = String(formData.get("title") ?? "").trim();
   // Free-text quarter (e.g. "2026-Q3" or "H2 2026") — not locked to calendar Q.
   const quarter = String(formData.get("quarter") ?? "").trim();
@@ -292,6 +466,7 @@ function parseRockFields(formData: FormData, uid: string) {
       "Owner is required — pick a person accountable for this rock.",
     );
   }
+  await requireRosterOwner(teamId, ownerRaw, { keep: keepOwner });
 
   const rockTypeRaw = String(formData.get("rock_type") ?? "").trim();
   // The form only offers individual / department. "company" is legacy-only
@@ -308,7 +483,7 @@ function parseRockFields(formData: FormData, uid: string) {
     // end-of-quarter as a suggestion; it must never be re-forced here.
     due_date: String(formData.get("due_date") ?? "").trim() || null,
     description,
-    owner_id: ownerRaw || uid,
+    owner_id: ownerRaw,
     rock_type,
   };
 }
@@ -334,76 +509,121 @@ function companyFlagPatch(
   return existing ? isCompanyRock(existing as { rock_type?: string | null; is_company_rock?: boolean | null }) : false;
 }
 
-/**
- * "Keep on this team" (lib/rocks-share.ts): every milestone treated as
- * locked. Excludes team shares — a rock can't be kept on its team and shared
- * with others; the modal disables one while the other is on, and this
- * refuses a hand-rolled form that sends both.
- */
-function parseTeamOnly(formData: FormData, sharedTeamIds: string[]): boolean {
-  const on = formData.get("team_only") === "true";
-  if (on && sharedTeamIds.length > 0) {
-    throw new Error(
-      "A rock kept on its team can't also be shared — remove the shared teams or turn off “Keep on this team”.",
-    );
-  }
-  return on;
-}
-
-function parseSharedTeamIds(
-  formData: FormData,
-  homeTeamId: string,
-  allowedTeamIds: Set<string>,
-): string[] {
-  const raw = formData.get("shared_team_ids");
+function jsonIds(formData: FormData, key: string): string[] {
+  const raw = formData.get(key);
   if (typeof raw !== "string" || !raw.trim()) return [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error("Malformed shared teams payload");
+    throw new Error("Malformed audience payload");
   }
   if (!Array.isArray(parsed)) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const item of parsed) {
-    const id = String(item ?? "").trim();
-    if (!id || id === homeTeamId || seen.has(id)) continue;
-    if (!allowedTeamIds.has(id)) {
-      throw new Error("Unknown team — pick from the directory list.");
-    }
-    seen.add(id);
-    out.push(id);
-    if (out.length >= MAX_SHARED_TEAMS) break;
-  }
-  return out;
+  return [...new Set(parsed.map((x) => String(x ?? "").trim()).filter(Boolean))];
 }
 
 /**
- * A milestone owner must be a person on some team in the org (N66 — the
- * picker's "Whole org" scope). Anyone on the rock's own teams passes without
- * a read; anyone else is checked for at least one roster row, so a stale or
+ * The audience and Private values to write.
+ *
+ * Only a leader of the parent team or an admin may change them
+ * (rockAccess.canChangeAudience / canSetPrivate). Everyone else's save
+ * **preserves** the stored values — like companyFlagPatch, so a member's
+ * title edit can never wipe a leader's audience. `stored` is the doc being
+ * updated (null on create: no audience, not private). Stored legacy fields
+ * come back under the new names, which is how a save migrates a rock.
+ *
+ * Private clears the audience rather than refusing the save (spec §3.3).
+ * No cap: the rules read the lists with hasAny (docs/rules-notes/P6a.md).
+ */
+async function audiencePatch(
+  db: Firestore,
+  formData: FormData,
+  teamId: string,
+  viewer: Viewer,
+  stored: RockSubject | null,
+): Promise<{
+  audience_team_ids: string[];
+  audience_user_ids: string[];
+  private: boolean;
+}> {
+  const subject: RockSubject = stored ?? { team_id: teamId, owner_id: null };
+  if (!rockAccess.canChangeAudience(subject, viewer)) {
+    return {
+      audience_team_ids: stored ? audienceTeamIdsOf(stored) : [],
+      audience_user_ids: stored ? audienceUserIdsOf(stored) : [],
+      private: stored ? isPrivateRock(stored) : false,
+    };
+  }
+  if (formData.get("private") === "true") {
+    return { audience_team_ids: [], audience_user_ids: [], private: true };
+  }
+
+  const teamIds = jsonIds(formData, "audience_team_ids").filter(
+    (id) => id !== teamId,
+  );
+  if (teamIds.length > 0) {
+    const snaps = await db.getAll(
+      ...teamIds.map((id) => db.collection("teams").doc(id)),
+    );
+    if (snaps.some((s) => !s.exists)) {
+      throw new Error("Unknown team — pick from the directory list.");
+    }
+  }
+
+  // A person in the audience must be on some team (the directory).
+  const userIds = jsonIds(formData, "audience_user_ids");
+  const rostered = new Set<string>();
+  for (const ids of chunkForInQuery(userIds)) {
+    const snap = await db
+      .collection("team_members")
+      .where("user_id", "in", ids)
+      .get();
+    for (const d of snap.docs) rostered.add(d.data().user_id as string);
+  }
+  if (userIds.some((id) => !rostered.has(id))) {
+    throw new Error("Unknown person — pick from the directory list.");
+  }
+
+  return { audience_team_ids: teamIds, audience_user_ids: userIds, private: false };
+}
+
+/**
+ * A milestone assignee must be a person on some team in the org (the
+ * picker's "Whole org" scope). Anyone on the parent team passes without a
+ * read; anyone else is checked for at least one roster row, so a stale or
  * hand-rolled id cannot own work. `keepOwners` are owners already on the
  * rock's milestones: someone who has since left every team must survive an
  * unrelated edit rather than block the save.
  *
- * An owner outside the rock's teams sees the rock's headline and their own
- * milestone only (canSeeMilestone), on Home.
+ * On a private rock every assignee must be on the parent team (spec §3.3).
  */
 async function assertMilestoneOwners(
   db: Firestore,
-  milestones: MilestoneInput[],
-  fallbackOwner: string,
-  teamIds: string[],
+  owners: { title: string; ownerId: string | null }[],
+  parentIds: ReadonlySet<string>,
   keepOwners: ReadonlySet<string>,
+  isPrivate: boolean,
 ) {
-  const rosters = await Promise.all(teamIds.map((id) => getTeamMembers(id)));
-  const onRockTeams = new Set(rosters.flat().map((m) => m.user_id));
+  if (isPrivate) {
+    const outside = owners.find(
+      (o) => o.ownerId && !parentIds.has(o.ownerId),
+    );
+    if (outside?.ownerId) {
+      const names = await loadUsersById(db, [outside.ownerId]);
+      const name = userDisplayName(names.get(outside.ownerId)) || "An assignee";
+      throw new Error(
+        `${name} is not on this team; private rocks can't have outside assignees. Reassign “${outside.title}” first.`,
+      );
+    }
+    return;
+  }
   const outside = [
     ...new Set(
-      milestones
-        .map((m) => m.owner_id || fallbackOwner)
-        .filter((id) => !onRockTeams.has(id) && !keepOwners.has(id)),
+      owners
+        .map((o) => o.ownerId)
+        .filter(
+          (id): id is string => !!id && !parentIds.has(id) && !keepOwners.has(id),
+        ),
     ),
   ];
   const rostered = await Promise.all(
@@ -418,7 +638,7 @@ async function assertMilestoneOwners(
   );
   for (const [uid, ok] of rostered) {
     if (ok) continue;
-    const m = milestones.find((x) => (x.owner_id || fallbackOwner) === uid);
+    const m = owners.find((x) => x.ownerId === uid);
     throw new Error(
       `“${m?.title ?? "A milestone"}” is assigned to someone who is not on any team.`,
     );
@@ -427,14 +647,15 @@ async function assertMilestoneOwners(
 
 /**
  * Everyone on a team roster, for the milestone owner picker's "Whole org"
- * scope. Fetched only when that scope is opened. Lighter than the Directory's
- * loader on purpose — no Identity Platform listing — since an owner has to
- * be rostered somewhere anyway (assertMilestoneOwners).
+ * scope and the audience person picker. The directory is visible to every
+ * signed-in person (spec §2.5), so any of them may load it — the audience
+ * opens the modal from its own team, not the parent. Lighter than the
+ * Directory's loader on purpose — no Identity Platform listing.
  */
-export async function loadOrgPeople(
-  teamId: string,
-): Promise<{ user_id: string; full_name: string; team_ids: string[] }[]> {
-  const { db } = await requireTeamAccess(teamId);
+export async function loadOrgPeople(): Promise<
+  { user_id: string; full_name: string; team_ids: string[] }[]
+> {
+  const { db } = await requireFirebaseUser();
   const members = await db.collection("team_members").get();
   const teamsByUid = new Map<string, string[]>();
   for (const d of members.docs) {
@@ -456,88 +677,111 @@ export async function loadOrgPeople(
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
-async function allowedShareTeamIds(db: Firestore): Promise<Set<string>> {
-  // Share-down: a parent-team member may share into any org team, not only
-  // teams they sit on. Leadership → ESD is the case that failed when the
-  // picker was membership-only.
-  const snap = await db.collection("teams").get();
-  return new Set(snap.docs.map((d) => d.id));
-}
-
 /**
- * Tell people they were handed a milestone (review item 5, 2026-09-22).
- * One "assigned" row per milestone whose owner is new and isn't the actor —
- * for someone outside the rock's teams it is the only way they'd learn of
- * it. Best-effort, after the write, like every other notification.
+ * Tell people about milestone hand-offs (spec §5.3): the new owner gets
+ * `assigned`, the previous owner `unassigned`, the milestone's followers a
+ * `reassigned` event. Best-effort, after the write; `emitEvent` also drops
+ * anyone who cannot see the milestone (the unassigned are exempt).
  */
-async function notifyAssignments(
+async function notifyMilestoneOwners(
   db: Firestore,
-  team: { id: string; name: string },
+  teamId: string,
   actorId: string,
-  assigned: { id: string; title: string; ownerId: string }[],
+  changes: { id: string; prevOwnerId: string | null; ownerId: string | null }[],
 ) {
-  for (const m of assigned) {
-    if (m.ownerId === actorId) continue;
-    await notify({
+  for (const c of changes) {
+    const { assigned, unassigned } = reassignmentRecipients(
+      c.prevOwnerId,
+      c.ownerId,
+      actorId,
+    );
+    if (assigned.length === 0 && unassigned.length === 0) continue;
+    await emitEvent(
       db,
-      recipientIds: [m.ownerId],
-      kind: "assigned",
-      team,
-      entity: { type: "todo", id: m.id, title: m.title },
-      actor: { id: actorId },
-    });
+      { type: "milestone", id: c.id },
+      c.prevOwnerId ? "reassigned" : null,
+      actorId,
+      { teamId, direct: { assigned, unassigned } },
+    );
   }
 }
 
-/** Owners of every milestone on the rock after this save — denormalised
- *  onto the rock so firestore.rules can grant assignees the rock's comments
- *  and status history (lib/rocks-share.ts hasFullRockView, client half). */
-function ownerIdsOf(ids: Iterable<string | null | undefined>): string[] {
-  return [...new Set([...ids].filter((x): x is string => !!x))];
-}
-
-function revalidateRockSurfaces(teamId: string, sharedTeamIds: string[]) {
+function revalidateRockSurfaces(teamId: string, audienceTeamIds: string[]) {
   revalidatePath(pathFor(teamId));
   revalidatePath(`/teams/${teamId}/todos`);
   revalidatePath(`/teams/${teamId}/meetings`);
-  for (const id of sharedTeamIds) {
+  for (const id of audienceTeamIds) {
     revalidatePath(pathFor(id));
     revalidatePath(`/teams/${id}/meetings`);
   }
+  // Blocks: a milestone shows on every team its assignee is on.
+  revalidatePath("/teams/[teamId]/rocks", "page");
   revalidatePath("/home");
+}
+
+function pathFor(teamId: string) {
+  return `/teams/${teamId}/rocks`;
+}
+
+function pickAssignment(p: ReturnType<typeof assignmentPatch>) {
+  return { assigned_by: p.assigned_by, follower_ids: p.follower_ids };
+}
+
+/**
+ * Rock-level notification: the new owner is told `assigned`, the previous
+ * one `unassigned`, and the followers hear `event` (null = direct only).
+ */
+async function notifyRockOwner(
+  db: Firestore,
+  teamId: string,
+  rockId: string,
+  actorId: string,
+  prevOwnerId: string | null,
+  ownerId: string | null,
+  event: RockEvent | null = null,
+) {
+  const direct = reassignmentRecipients(prevOwnerId, ownerId, actorId);
+  if (direct.assigned.length === 0 && direct.unassigned.length === 0 && !event) {
+    return;
+  }
+  await emitEvent(db, { type: "rock", id: rockId }, event, actorId, {
+    teamId,
+    direct,
+  });
 }
 
 export async function createRockWithMilestones(
   teamId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin, team } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { viewer } = await requireViewer();
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
-    parseRockFields(formData, uid);
+    await parseRockFields(formData, teamId, null);
   const is_company_rock = companyFlagPatch(formData, isAdmin, null);
-
-  const allowed = await allowedShareTeamIds(db);
-  const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
-  const team_only = parseTeamOnly(formData, shared_team_ids);
+  const audience = await audiencePatch(db, formData, teamId, viewer, null);
 
   const milestones = parseMilestones(formData.get("milestones"));
+  const parentIds = new Set((await getTeamMembers(teamId)).map((m) => m.user_id));
+  const created = milestones.map((m) => ({
+    ref: db.collection("todos").doc(),
+    title: m.title,
+    // A new milestone is never unassigned.
+    ownerId: milestoneOwnerFor(m, owner_id, null) ?? owner_id,
+    m,
+  }));
+  const rockAssign = assignmentPatch("rock", {}, owner_id, uid);
   await assertMilestoneOwners(
     db,
-    milestones,
-    owner_id,
-    [teamId, ...shared_team_ids],
+    created.map((c) => ({ title: c.title, ownerId: c.ownerId })),
+    parentIds,
     new Set(),
+    audience.private,
   );
 
   const rockRef = db.collection("rocks").doc();
   const batch = db.batch();
-  const created = milestones.map((m) => ({
-    ref: db.collection("todos").doc(),
-    title: m.title,
-    ownerId: m.owner_id || owner_id,
-    m,
-  }));
   batch.set(rockRef, {
     team_id: teamId,
     title,
@@ -547,9 +791,9 @@ export async function createRockWithMilestones(
     description,
     rock_type,
     is_company_rock,
-    shared_team_ids,
-    team_only,
-    milestone_owner_ids: ownerIdsOf(created.map((c) => c.ownerId)),
+    ...audience,
+    ...pickAssignment(rockAssign),
+    ...stamp(uid),
     status: "on_track",
     completed_at: null,
     // Explicit null so the Monday sweep's `archived_at == null` equality
@@ -558,17 +802,63 @@ export async function createRockWithMilestones(
     created_at: FieldValue.serverTimestamp(),
   });
   for (const c of created) {
-    batch.set(c.ref, milestoneDoc(teamId, rockRef.id, c.m, owner_id));
+    batch.set(
+      c.ref,
+      milestoneDoc(
+        teamId,
+        rockRef.id,
+        c.m,
+        c.ownerId,
+        pickAssignment(assignmentPatch("milestone", {}, c.ownerId, uid)),
+        uid,
+      ),
+    );
   }
   await batch.commit();
 
-  await notifyAssignments(
+  await recordMilestoneTraces(
     db,
-    { id: teamId, name: team.name },
+    teamId,
     uid,
-    created.map((c) => ({ id: c.ref.id, title: c.title, ownerId: c.ownerId })),
+    created.map((c) => ({
+      id: c.ref.id,
+      before: null,
+      after: traceFields({ ...c.m, owner_id: c.ownerId }),
+    })),
   );
-  revalidateRockSurfaces(teamId, shared_team_ids);
+
+  await recordAccessChanges(
+    db,
+    rockAccessEvents(
+      uid,
+      rockRef.id,
+      teamId,
+      { audience_team_ids: [], audience_user_ids: [], private: false },
+      audience,
+    ),
+  );
+
+  await notifyMilestoneOwners(
+    db,
+    teamId,
+    uid,
+    created.map((c) => ({ id: c.ref.id, prevOwnerId: null, ownerId: c.ownerId })),
+  );
+  // A new rock: the owner is told they were assigned it, the audience that
+  // they were added to it.
+  await notifyRockOwner(db, teamId, rockRef.id, uid, null, owner_id);
+  await emitAudienceAdded(
+    db,
+    rockRef.id,
+    uid,
+    teamId,
+    audienceAdded(
+      { teamIds: [], userIds: [] },
+      { teamIds: audience.audience_team_ids, userIds: audience.audience_user_ids },
+      uid,
+    ),
+  );
+  revalidateRockSurfaces(teamId, audience.audience_team_ids);
 }
 
 export async function updateRockWithMilestones(
@@ -576,52 +866,37 @@ export async function updateRockWithMilestones(
   rockId: string,
   formData: FormData,
 ) {
-  const { uid, db, isAdmin, team } = await requireTeamAccess(teamId);
+  // The parent team, the audience and admins may edit (rockAccess.canEdit).
+  const { uid, db, isAdmin, viewer, data, rock } = await requireRock(
+    teamId,
+    rockId,
+    rockAccess.canEdit,
+  );
 
   const { title, quarter, due_date, description, owner_id, rock_type } =
-    parseRockFields(formData, uid);
-
-  const allowed = await allowedShareTeamIds(db);
-  const shared_team_ids = parseSharedTeamIds(formData, teamId, allowed);
-  const team_only = parseTeamOnly(formData, shared_team_ids);
+    await parseRockFields(formData, teamId, rock.owner_id);
+  const is_company_rock = companyFlagPatch(formData, isAdmin, data);
+  const audience = await audiencePatch(db, formData, teamId, viewer, rock);
 
   const milestones = parseMilestones(formData.get("milestones"));
   const keptIds = new Set(
     milestones.map((m) => m.id).filter((id): id is string => !!id),
   );
 
-  // The ownership check and the milestone read are independent — one round
-  // trip, not two.
-  const [rockSnap, existingSnap] = await Promise.all([
-    requireTeamDoc(db, "rocks", rockId, teamId),
+  const [existingSnap, members] = await Promise.all([
     db
       .collection("todos")
       .where("team_id", "==", teamId)
       .where("source_rock_id", "==", rockId)
       .get(),
+    getTeamMembers(teamId),
   ]);
-  const is_company_rock = companyFlagPatch(
-    formData,
-    isAdmin,
-    rockSnap.data() ?? null,
-  );
-  await assertMilestoneOwners(
-    db,
-    milestones,
-    owner_id,
-    [teamId, ...shared_team_ids],
-    new Set(
-      existingSnap.docs
-        .map((d) => d.data().owner_id as string | null)
-        .filter((x): x is string => !!x),
-    ),
-  );
+  const parentIds = new Set(members.map((m) => m.user_id));
+  const existingById = new Map(existingSnap.docs.map((d) => [d.id, d]));
 
   // Only milestones the modal was shown may be deleted by leaving them out.
-  // Surfaces filter what they load (an assignment row carries only its
-  // carrier's milestones), so "absent from the array" alone
-  // would silently delete whatever the editor's surface never loaded. An
-  // older client that sends no list keeps the previous all-known behaviour.
+  // An older client that sends no list keeps the previous all-known
+  // behaviour.
   const knownRaw = formData.get("known_milestone_ids");
   let known: Set<string> | null = null;
   if (typeof knownRaw === "string" && knownRaw.trim()) {
@@ -633,6 +908,39 @@ export async function updateRockWithMilestones(
     }
   }
 
+  const planned = milestones.map((m) => {
+    const existing = m.id ? existingById.get(m.id) : undefined;
+    const ownerId = milestoneOwnerFor(
+      m,
+      owner_id,
+      existing ? existing.data() : null,
+    );
+    return { m, existing, ownerId };
+  });
+  // Milestones the modal never saw survive untouched — and still count
+  // toward the private-rock assignee rule.
+  const untouched = existingSnap.docs.filter(
+    (d) => !keptIds.has(d.id) && known && !known.has(d.id),
+  );
+  await assertMilestoneOwners(
+    db,
+    [
+      ...planned.map((p) => ({ title: p.m.title, ownerId: p.ownerId })),
+      ...untouched.map((d) => ({
+        title: String(d.data().title ?? ""),
+        ownerId: (d.data().owner_id as string | null) ?? null,
+      })),
+    ],
+    parentIds,
+    new Set(
+      existingSnap.docs
+        .map((d) => d.data().owner_id as string | null)
+        .filter((x): x is string => !!x),
+    ),
+    audience.private,
+  );
+
+  const rockAssign = assignmentPatch("rock", data, owner_id, uid);
   const batch = db.batch();
   batch.update(db.collection("rocks").doc(rockId), {
     title,
@@ -642,56 +950,144 @@ export async function updateRockWithMilestones(
     owner_id,
     rock_type,
     is_company_rock,
-    shared_team_ids,
-    team_only,
-    // Retired: per-team share levels. Every team share is full now.
+    ...audience,
+    ...stamp(uid),
+    // New owner + new assigner lock; the old ones stay as plain followers.
+    // Only on a real hand-off, so a plain edit never races a Follow click.
+    ...(rockAssign.reassigned ? pickAssignment(rockAssign) : {}),
+    // Legacy names, replaced by the fields above (P13 migrates the rest).
+    shared_team_ids: FieldValue.delete(),
+    team_only: FieldValue.delete(),
+    // No longer a read grant (spec §3.3): assignees read their milestone
+    // through todos.owner_id, never the rock.
+    milestone_owner_ids: FieldValue.delete(),
+    // Retired: per-team share levels.
     share_levels: FieldValue.delete(),
   });
 
   // Rows the user removed in the modal.
+  const removed: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   for (const d of existingSnap.docs) {
     if (keptIds.has(d.id)) continue;
     if (known && !known.has(d.id)) continue;
-    batch.delete(d.ref);
+    removed.push(d);
   }
+  await stampBeforeDelete(
+    removed.map((d) => d.ref),
+    uid,
+  );
+  for (const d of removed) batch.delete(d.ref);
 
-  const existingById = new Map(existingSnap.docs.map((d) => [d.id, d]));
-  const fallbackOwner = owner_id;
-  const assigned: { id: string; title: string; ownerId: string }[] = [];
-  const ownersAfter: (string | null)[] = [];
-  for (const m of milestones) {
-    const ownerId = m.owner_id || fallbackOwner;
-    ownersAfter.push(ownerId);
-    const existing = m.id ? existingById.get(m.id) : undefined;
+  const handoffs: {
+    id: string;
+    prevOwnerId: string | null;
+    ownerId: string | null;
+  }[] = [];
+  const traces: MilestoneTrace[] = [];
+  for (const { m, existing, ownerId } of planned) {
     if (existing) {
-      if (String(existing.data().owner_id ?? "") !== ownerId) {
-        assigned.push({ id: existing.id, title: m.title, ownerId });
-      }
+      const stored = existing.data();
+      traces.push({
+        id: existing.id,
+        before: traceFields(stored),
+        after: traceFields({
+          ...m,
+          owner_id: ownerId,
+          description:
+            m.description === undefined ? stored.description : m.description,
+        }),
+      });
+      const prevOwnerId = (existing.data().owner_id as string | null) || null;
+      const handoff = !!ownerId && prevOwnerId !== ownerId;
+      if (handoff) handoffs.push({ id: existing.id, prevOwnerId, ownerId });
       batch.update(db.collection("todos").doc(existing.id), {
+        ...(handoff
+          ? pickAssignment(
+              assignmentPatch("milestone", existing.data(), ownerId, uid),
+            )
+          : {}),
         title: m.title,
         owner_id: ownerId,
         due_date: m.due_date,
+        ...(m.description !== undefined ? { description: m.description } : {}),
         visibility: "team",
-        team_hidden: m.locked,
+        ...stamp(uid),
+        // Retired: the milestone lock (spec §3.3).
+        team_hidden: FieldValue.delete(),
       });
     } else {
       const ref = db.collection("todos").doc();
-      assigned.push({ id: ref.id, title: m.title, ownerId });
-      batch.set(ref, milestoneDoc(teamId, rockId, m, fallbackOwner));
+      const owner = ownerId ?? owner_id;
+      handoffs.push({ id: ref.id, prevOwnerId: null, ownerId: owner });
+      traces.push({
+        id: ref.id,
+        before: null,
+        after: traceFields({ ...m, owner_id: owner }),
+      });
+      batch.set(
+        ref,
+        milestoneDoc(
+          teamId,
+          rockId,
+          m,
+          owner,
+          pickAssignment(assignmentPatch("milestone", {}, owner, uid)),
+          uid,
+        ),
+      );
     }
   }
-  // Milestones the modal never saw survive untouched — and keep their owner
-  // on the rock's list.
-  for (const d of existingSnap.docs) {
-    if (!keptIds.has(d.id) && known && !known.has(d.id)) {
-      ownersAfter.push((d.data().owner_id as string | null) ?? null);
-    }
-  }
-  batch.update(db.collection("rocks").doc(rockId), {
-    milestone_owner_ids: ownerIdsOf(ownersAfter),
-  });
   await batch.commit();
 
-  await notifyAssignments(db, { id: teamId, name: team.name }, uid, assigned);
-  revalidateRockSurfaces(teamId, shared_team_ids);
+  await recordAccessChanges(
+    db,
+    rockAccessEvents(
+      uid,
+      rockId,
+      teamId,
+      {
+        audience_team_ids: audienceTeamIdsOf(rock),
+        audience_user_ids: audienceUserIdsOf(rock),
+        private: isPrivateRock(rock),
+      },
+      audience,
+    ),
+  );
+
+  await recordMilestoneTraces(db, teamId, uid, traces);
+  await notifyMilestoneFollowers(db, teamId, uid, traces);
+  await purgeRemovedMilestones(db, removed, uid);
+  await notifyMilestoneOwners(db, teamId, uid, handoffs);
+  // Rock-level events: owner / due date to the followers, `assigned` and
+  // `unassigned` to the two owners, `audience_added` to the new audience.
+  const edits = rockEditEvents(
+    { owner_id: rock.owner_id, due_date: (data.due_date as string | null) ?? null },
+    { owner_id, due_date },
+  );
+  for (const ev of edits) {
+    const ownerEv = ev === "owner_changed";
+    await notifyRockOwner(
+      db,
+      teamId,
+      rockId,
+      uid,
+      ownerEv ? rock.owner_id : null,
+      ownerEv ? owner_id : null,
+      ev,
+    );
+  }
+  await emitAudienceAdded(
+    db,
+    rockId,
+    uid,
+    teamId,
+    audienceAdded(
+      { teamIds: audienceTeamIdsOf(rock), userIds: audienceUserIdsOf(rock) },
+      { teamIds: audience.audience_team_ids, userIds: audience.audience_user_ids },
+      uid,
+    ),
+  );
+  revalidateRockSurfaces(teamId, [
+    ...new Set([...audienceTeamIdsOf(rock), ...audience.audience_team_ids]),
+  ]);
 }

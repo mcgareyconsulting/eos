@@ -62,6 +62,56 @@ resource "google_monitoring_alert_policy" "firestore_export_failed" {
   depends_on = [google_project_service.required]
 }
 
+# Alert 1b: the weekly Firebase Auth user export (`exportAuthUsers`,
+# functions/src/export-auth-users.ts) failed. Unlike the Firestore export
+# there is no admin-API audit entry to match, so this watches the two places
+# a failure surfaces: the function throwing (firebase-functions logs the
+# error at ERROR on its Cloud Run service) and the Scheduler job's attempt
+# failing (logged at ERROR on the job — e.g. the invoke was rejected by
+# ingress/IAM, so the function never ran).
+resource "google_monitoring_alert_policy" "auth_export_failed" {
+  project      = var.project_id
+  severity     = "ERROR"
+  display_name = "Auth user export (backup) failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "exportAuthUsers error"
+
+    condition_matched_log {
+      filter = <<-EOT
+        severity>=ERROR
+        AND (
+          (resource.type="cloud_run_revision" AND resource.labels.service_name="exportauthusers")
+          OR (resource.type="cloud_scheduler_job" AND resource.labels.job_id="firebase-schedule-exportAuthUsers-us-east1")
+        )
+      EOT
+    }
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = <<-EOT
+      **What happened:** the weekly Firebase Auth user export to the archive bucket (`gs://<archive>/auth/`) failed, or Cloud Scheduler could not invoke it.
+
+      **Impact:** the archive is missing this week's copy of the user directory (uids, emails, providers, `role: "admin"` claims). Live sign-in is unaffected; Firebase Auth has no other bulk-restore path, so recovery from a user-directory loss falls back to the previous week's export.
+
+      **What to do:** open Cloud Run functions → `exportAuthUsers` → Logs for the error (permissions on the bucket, `ARCHIVE_BUCKET` unset, Auth API error). If the function never ran, check Cloud Scheduler → `firebase-schedule-exportAuthUsers-us-east1` → Last run status (a 403 means ingress or `run.invoker` is wrong). Fix the cause, then Force run that job. Runbook: docs/BACKUP_RUNBOOK.md, alert table.
+    EOT
+  }
+
+  notification_channels = local.notification_channels
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "3600s"
+    }
+    auto_close = "604800s"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
 # Alert 2: someone created, updated, or deleted a Firestore backup schedule
 # outside of (or in addition to) this Terraform module — a signal that the
 # managed backup cadence in firestore.tf may no longer match reality.

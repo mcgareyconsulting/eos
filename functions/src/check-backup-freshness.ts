@@ -50,6 +50,7 @@
  * Deploy: firebase deploy --only functions:checkBackupFreshness
  * Run now: Cloud Scheduler → firebase-schedule-checkBackupFreshness-us-east1 → Force run
  */
+import "./global-options"; // first: global region/ingress/SA (I-10)
 import type { Bucket } from "@google-cloud/storage";
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getStorage } from "firebase-admin/storage";

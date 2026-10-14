@@ -229,9 +229,16 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
       filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backup_freshness_heartbeat.name}\" AND resource.type=\"cloud_run_revision\""
       duration = "84600s"
 
+      # Fold every revision into one series per service. Without the reducer
+      # each Cloud Run revision is its own time series, so a redeploy (new
+      # revision) leaves the old revision's series silent and the absence
+      # condition fires 23.5h later although the new revision logged on
+      # time — the false alarm of 2026-10-14 after the 2026-10-13 deploy.
       aggregations {
-        alignment_period   = "3600s"
-        per_series_aligner = "ALIGN_SUM"
+        alignment_period     = "3600s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["resource.labels.service_name"]
       }
     }
   }
@@ -239,7 +246,7 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
   documentation {
     mime_type = "text/markdown"
     content   = <<-EOT
-      **What happened:** the daily `checkBackupFreshness` function has not logged its heartbeat in 23.5 hours. Either Cloud Scheduler did not fire it (this happened silently on 2026-09-28 for the Sunday export jobs) or the function is failing before it logs.
+      **What happened:** the daily `checkBackupFreshness` function has not logged its heartbeat in 23.5 hours. Either Cloud Scheduler did not fire it (this happened silently on 2026-09-28 for the Sunday export jobs) or the function is failing before it logs. First check whether the function logged on time under a newer revision: the alert is a false alarm if so (see the reducer note in terraform/monitoring.tf).
 
       **What to do:** Cloud Scheduler → `firebase-schedule-checkBackupFreshness-us-east1`: check Last run and State, then Force run. Cloud Run functions → `checkBackupFreshness` → Logs for errors. If Scheduler is skipping runs, that is the incident to chase, since the export jobs share the same mechanism.
     EOT

@@ -32,7 +32,17 @@ export type MentionPerson = { id: string; name: string; canSee: boolean };
 export function candidatesFromPeople(
   people: readonly MentionPerson[],
 ): MentionCandidate[] {
-  return people.map((p) => ({ id: p.id, name: p.name, disabled: !p.canSee }));
+  // One row per name: the server resolves a shared name to whoever can see
+  // the item (resolveMentions), so the picker shows it once, greyed only
+  // when nobody behind it can.
+  const byName = new Map<string, MentionCandidate>();
+  for (const p of people) {
+    const key = p.name.trim().toLowerCase();
+    const prev = byName.get(key);
+    if (!prev) byName.set(key, { id: p.id, name: p.name, disabled: !p.canSee });
+    else if (prev.disabled && p.canSee) byName.set(key, { id: p.id, name: p.name, disabled: false });
+  }
+  return [...byName.values()];
 }
 
 /**
@@ -44,14 +54,27 @@ export function resolveMentions(
   body: string,
   people: readonly MentionPerson[],
 ): { ids: string[]; blocked: MentionPerson[] } {
-  const all = mentionedIds(body, people);
-  const byId = new Map(people.map((p) => [p.id, p]));
+  const all = new Set(mentionedIds(body, people));
+  // A name can belong to more than one directory entry: a seed-import
+  // placeholder beside the real account, or an account that signed in
+  // before it was invited beside its profile. The text names a person, not
+  // a uid, so a name resolves to the entries that can see the item and is
+  // refused only when none of them can (2026-10-14: "@Joe Creighton" on his
+  // own to-do was refused because a second, teamless Joe matched too).
+  const byName = new Map<string, MentionPerson[]>();
+  for (const p of people) {
+    if (!all.has(p.id)) continue;
+    const key = p.name.trim().toLowerCase();
+    const list = byName.get(key) ?? [];
+    list.push(p);
+    byName.set(key, list);
+  }
   const ids: string[] = [];
   const blocked: MentionPerson[] = [];
-  for (const id of all) {
-    const p = byId.get(id)!;
-    if (p.canSee) ids.push(id);
-    else blocked.push(p);
+  for (const group of byName.values()) {
+    const seeing = group.filter((p) => p.canSee);
+    if (seeing.length > 0) ids.push(...seeing.map((p) => p.id));
+    else blocked.push(group[0]);
   }
   return { ids, blocked };
 }

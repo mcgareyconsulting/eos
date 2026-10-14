@@ -139,6 +139,36 @@ describe("people who cannot see the item", () => {
     assert.deepEqual(r.blocked.map((p) => p.id), ["b"]);
   });
 
+  test("a name shared by two entries resolves to the one who can see", () => {
+    // Seed-import placeholder (no teams) beside the real account.
+    const twice = [
+      { id: "joe-import", name: "Joe Creighton", canSee: false },
+      { id: "joe", name: "Joe Creighton", canSee: true },
+    ];
+    const r = resolveMentions("@Joe Creighton get to work", twice);
+    assert.deepEqual(r.ids, ["joe"]);
+    assert.deepEqual(r.blocked, []);
+  });
+
+  test("the picker shows a shared name once, pickable if anyone behind it can see", () => {
+    const twice = [
+      { id: "joe-import", name: "Joe Creighton", canSee: false },
+      { id: "joe", name: "Joe Creighton", canSee: true },
+    ];
+    const out = candidatesFromPeople(twice);
+    assert.deepEqual(out, [{ id: "joe", name: "Joe Creighton", disabled: false }]);
+  });
+
+  test("a shared name is blocked only when no entry can see", () => {
+    const twice = [
+      { id: "x1", name: "Pat Twice", canSee: false },
+      { id: "x2", name: "Pat Twice", canSee: false },
+    ];
+    const r = resolveMentions("@Pat Twice", twice);
+    assert.deepEqual(r.ids, []);
+    assert.deepEqual(r.blocked.map((p) => p.name), ["Pat Twice"]);
+  });
+
   test("the picker lists them greyed, after the people who can be picked", () => {
     const out = filterMentionCandidates(candidatesFromPeople(people), "");
     assert.deepEqual(out.map((c) => c.id), ["a", "c", "b"]);

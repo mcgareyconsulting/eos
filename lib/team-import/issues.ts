@@ -6,6 +6,7 @@ import {
   parseDateOnly,
   type CsvTable,
 } from "../csv-import";
+import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
   archivedAtFrom,
@@ -15,6 +16,7 @@ import {
   normalizeIssuePriority,
   normalizeIssueStatus,
   normalizeIssueType,
+  rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
@@ -38,6 +40,7 @@ export async function importIssues(
   let skipped = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let tooLong = 0;
   let archived = 0;
   let stale = 0;
   let shortCount = 0;
@@ -49,6 +52,18 @@ export async function importIssues(
     const title = cell(row, table.headers, "Title", "Name", "Issue");
     if (!title) {
       skipped++;
+      continue;
+    }
+
+    if (
+      rejectOverLength(ctx.preview, "issues", title, [
+        ["Title", title, TITLE_MAX],
+        ["Description", normalizeDescription(cell(row, table.headers, "Description", "Notes")), LONG_TEXT_MAX],
+        ["Owner name", cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"), TITLE_MAX],
+      ])
+    ) {
+      skipped++;
+      tooLong++;
       continue;
     }
 
@@ -127,6 +142,17 @@ export async function importIssues(
       normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
     if (ownerId === null && unmatchedName) {
       description = withUnmatchedOwnerNote(description, unmatchedName);
+      // The owner note can push an in-limit description over the cap; check
+      // what is actually stored, or the first edit of this row would fail.
+      if (
+        rejectOverLength(ctx.preview, "issues", title, [
+          ["Description (with the imported owner note)", description, LONG_TEXT_MAX],
+        ])
+      ) {
+        skipped++;
+        tooLong++;
+        continue;
+      }
       noOwner++;
     }
 
@@ -174,6 +200,7 @@ export async function importIssues(
   }
 
   details.push(`${shortCount} short-term, ${longCount} long-term`);
+  if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);

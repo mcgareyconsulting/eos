@@ -26,6 +26,8 @@ import {
   type Firestore,
 } from "firebase-admin/firestore";
 
+import { assertNoServiceAccountKey } from "../lib/firebase/admin";
+
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : null;
@@ -76,7 +78,10 @@ async function main() {
   }
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  if (!getApps().length) initializeApp({ projectId });
+  if (!getApps().length) {
+    assertNoServiceAccountKey();
+    initializeApp({ projectId });
+  }
   const srcDb = getFirestore(from);
   const dstDb = getFirestore(to);
 

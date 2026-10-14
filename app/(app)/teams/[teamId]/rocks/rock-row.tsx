@@ -113,12 +113,11 @@ export function RockRow({
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   // Kind pills are a set, not one-of: a rock can be Company and Team at once
-  // (lib/rock-bucket.ts). Individual is the absence of both and gets its own
-  // quiet pill so every row still carries exactly one-or-more kind marks.
+  // (lib/rock-bucket.ts). Individual is the absence of both and carries no
+  // pill — the owner's name already says it (Daniel, 2026-10-14).
   const pills: RockType[] = [];
   if (isCompanyRock(rock)) pills.push("company");
   if (isTeamRock(rock)) pills.push("department");
-  if (pills.length === 0) pills.push("individual");
   // Always prefer person name; a null owner (deactivated person) reads Unassigned.
   const displayOwner = ownerName || "Unassigned";
   const doneCount = milestones.filter((m) => m.completed).length;
@@ -393,9 +392,14 @@ function FromTeamChip({ name }: { name: string }) {
 /**
  * One entry in a member's block (spec §4): a milestone they own on another
  * team's rock. Shows ONLY the rock's headline (title, owner, team) and the
- * milestone(s) — no status, due date, progress, description or thread, and
- * no way in to the rock. Read-only; the milestone's own assignee may tick it.
- * The server sends nothing more than this (lib/access/rock.ts RockHeadline).
+ * milestone(s) — no status, due date, description or thread, and no way in
+ * to the rock. Read-only; the milestone's own assignee may tick it.
+ *
+ * Same shell as RockRow (rail, chevron, title line, owner line, fixed-width
+ * columns) so a block sits in a section without looking like a different
+ * kind of thing; what differs is behaviour, not style. The rail is neutral
+ * and the due/status/actions slots stay empty because the headline carries
+ * none of that. Collapsed by default, like every other row.
  */
 export function RockBlockRow({
   viewTeamId,
@@ -413,74 +417,116 @@ export function RockBlockRow({
   milestones: MilestoneSerialized[];
   currentUserId: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const displayOwner = ownerName || "Unassigned";
+
   return (
-    <div className="flex items-stretch">
+    <div className="group flex items-stretch">
       <div className="w-[3px] shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
+
       <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
-        <div className="flex items-center gap-2 pl-[25px]">
-          <span className="min-w-0 truncate text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-            {headline.title}
-          </span>
-          <FromTeamChip name={fromTeamName} />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse milestones" : "Expand milestones"}
+            className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <ChevronRight
+              className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")}
+            />
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold">
+                {headline.title}
+              </span>
+              <FromTeamChip name={fromTeamName} />
+            </div>
+
+            <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+              <span className="truncate">{displayOwner}</span>
+              {milestones.length > 0 ? (
+                <>
+                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                  <MilestoneProgress
+                    milestones={milestones}
+                    barClass="bg-zinc-400 dark:bg-zinc-500"
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Empty twins of RockRow's due, status and action slots: the
+              headline has none of these, but the title and owner columns
+              must line up with the full rocks around it. */}
+          <div className="w-24 shrink-0" aria-hidden />
+          <div className="w-28 shrink-0" aria-hidden />
+          <div className="w-[73px] shrink-0" aria-hidden />
         </div>
-        <div className="mt-0.5 pl-[25px] text-[11.5px] text-zinc-500 dark:text-zinc-400">
-          Rock owner: {ownerName || "Unassigned"}
-        </div>
-        <ul className="ml-[25px] mt-1.5">
-          {milestones.map((m) => {
-            const mine = m.owner_id === currentUserId;
-            return (
-              <li key={m.id}>
-                <label
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
-                    mine && "cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-800",
-                  )}
-                >
-                  {mine ? (
-                    <TodoCheckbox
-                      teamId={viewTeamId}
-                      todoId={m.id}
-                      completed={m.completed}
-                      appearance="milestone"
-                    />
-                  ) : (
-                    <span
+
+        {expanded && (
+          <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
+            <ul className="px-1.5 py-1.5">
+              {milestones.map((m) => {
+                const mine = m.owner_id === currentUserId;
+                return (
+                  <li key={m.id}>
+                    <label
                       className={cn(
-                        "inline-block h-4 w-4 shrink-0 rounded-sm border",
-                        m.completed
-                          ? "border-hpb-green bg-hpb-green"
-                          : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+                        "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
+                        mine && "cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-800",
                       )}
-                      aria-hidden
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[13px]",
-                      m.completed
-                        ? "text-zinc-400 dark:text-zinc-500"
-                        : "font-medium text-zinc-800 dark:text-zinc-200",
-                    )}
-                  >
-                    {m.title}
-                  </span>
-                  <span className="shrink-0 text-[11.5px] text-zinc-400">
-                    {m.owner_label ?? (m.owner_id ? "—" : "Unassigned")}
-                  </span>
-                  <span
-                    className={cn(
-                      "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
-                      dueToneClass(m.due_date, m.completed),
-                    )}
-                  >
-                    {formatDateShort(m.due_date)}
-                  </span>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
+                    >
+                      {mine ? (
+                        <TodoCheckbox
+                          teamId={viewTeamId}
+                          todoId={m.id}
+                          completed={m.completed}
+                          appearance="milestone"
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 shrink-0 rounded-sm border",
+                            m.completed
+                              ? "border-hpb-green bg-hpb-green"
+                              : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+                          )}
+                          aria-hidden
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[13px]",
+                          m.completed
+                            ? "text-zinc-400 dark:text-zinc-500"
+                            : "font-medium text-zinc-800 dark:text-zinc-200",
+                        )}
+                      >
+                        {m.title}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-zinc-400">
+                        {m.owner_label ?? (m.owner_id ? "—" : "Unassigned")}
+                      </span>
+                      <span
+                        className={cn(
+                          "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
+                          dueToneClass(m.due_date, m.completed),
+                        )}
+                      >
+                        {formatDateShort(m.due_date)}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

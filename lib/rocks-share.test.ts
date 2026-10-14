@@ -157,12 +157,15 @@ describe("blockMilestones (spec §4)", () => {
     assert.equal(blockMilestones({ ...rock, team_only: true }, "ops", roster, ms).size, 0);
   });
 
-  test("an audience team still sees blocks (duplicate accepted), except the owner's", () => {
+  test("an audience team gets no blocks: the full rock is already on the page", () => {
     const shared = { ...rock, audience_team_ids: ["ops"] };
-    const got = blockMilestones(shared, "ops", roster, ms);
-    assert.deepEqual(got.get("joe")?.map((m) => m.id), ["m1", "m2"]);
-    // The full rock already sits in jordan's own section on Ops.
-    assert.equal(got.has("jordan"), false);
+    assert.equal(blockMilestones(shared, "ops", roster, ms).size, 0);
+    // Legacy field, same answer until migration.
+    const legacy = { ...rock, shared_team_ids: ["ops"] };
+    assert.equal(blockMilestones(legacy, "ops", roster, ms).size, 0);
+    // A different audience team changes nothing for Ops.
+    const other = { ...rock, audience_team_ids: ["hr"] };
+    assert.deepEqual(blockMilestones(other, "ops", roster, ms).get("joe")?.map((m) => m.id), ["m1", "m2"]);
   });
 });
 

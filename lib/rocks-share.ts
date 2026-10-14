@@ -97,9 +97,10 @@ export type BlockMilestoneLike = { owner_id: string | null };
  *   - Nothing from the team's own rocks (they render in full).
  *   - Nothing from a private rock.
  *   - Unassigned milestones show in no block.
- *   - A rock in the team's audience may ALSO appear in a block — the spec
- *     accepts that duplicate — except in the rock owner's own block, where
- *     the full rock already sits in the same section.
+ *   - Nothing from a rock in the team's audience: the full rock, with every
+ *     milestone, is already on the page, so a block would only repeat it
+ *     (Daniel, 2026-10-14 — the spec's "duplicate is permitted" clause is
+ *     withdrawn for the team's own pages).
  */
 export function blockMilestones<M extends BlockMilestoneLike>(
   rock: RockSubject,
@@ -109,10 +110,9 @@ export function blockMilestones<M extends BlockMilestoneLike>(
 ): Map<string, M[]> {
   const out = new Map<string, M[]>();
   if (rock.team_id === teamId || isPrivateRock(rock)) return out;
-  const inAudience = isAudienceTeam(rock, teamId);
+  if (isAudienceTeam(rock, teamId)) return out;
   for (const m of milestones) {
     if (!m.owner_id || !rosterIds.has(m.owner_id)) continue;
-    if (inAudience && m.owner_id === rock.owner_id) continue;
     const list = out.get(m.owner_id) ?? [];
     list.push(m);
     out.set(m.owner_id, list);

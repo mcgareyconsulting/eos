@@ -289,8 +289,12 @@ the view of the person who reads the page.
   than one team, their rocks show in their block on each of their teams. To
   stop this, a leader sets the rock to private. The private setting shows
   this text: "Private rocks do not show on the L10 of your other teams."
-- A rock can show in the "Shared by" section and in a block. This duplicate
-  is permitted.
+- A rock that is shared with the team shows only as the full rock. It does
+  not also show in a block on that team, because the full rock already
+  shows each milestone. (Changed 2026-10-14. Before, the duplicate was
+  permitted.)
+- A block row has the same style as a rock row. It is collapsed by
+  default. Open it to see the milestones.
 - The Home page shows the view of one person. It shows all full rocks that
   the person can see, and all items that the person owns.
 

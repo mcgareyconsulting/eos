@@ -201,7 +201,11 @@ export function useCommentActions(
     start(async () => {
       try {
         setError(null);
-        await addEntityComment(teamId, entityType, entityId, fd);
+        const result = await addEntityComment(teamId, entityType, entityId, fd);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
         onPosted?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

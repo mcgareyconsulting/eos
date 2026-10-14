@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
@@ -42,27 +43,64 @@ export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
  * `teamId` is only the page the comment was posted from; the thread is filed
  * under the item's own team.
  */
+/**
+ * What the composer gets back. A production build masks any error thrown
+ * from a server action ("Minified React error #441", no message), so a
+ * refusal the person must read — too long, mentions someone who cannot see
+ * the item — comes back as a value, never a throw. Unexpected failures are
+ * logged on the server with their stack and reported as a generic line.
+ */
+export type AddCommentResult = { ok: true } | { ok: false; error: string };
+
+const GENERIC_POST_ERROR =
+  "The comment could not be posted. Try again; if it keeps failing, tell an admin and mention the time.";
+
 export async function addEntityComment(
   teamId: string,
   entityType: CommentEntityType,
   entityId: string,
   formData: FormData,
-) {
-  if (!isThreadEntityType(entityType)) throw new Error("Bad entity type");
+): Promise<AddCommentResult> {
+  if (!isThreadEntityType(entityType)) return { ok: false, error: "Bad entity type" };
+  try {
+    return await postComment(teamId, entityType, entityId, formData);
+  } catch (e) {
+    // notFound() / redirect() are control flow, not failures.
+    unstable_rethrow(e);
+    console.error(
+      JSON.stringify({
+        event: "comment_post_failed",
+        entityType,
+        entityId,
+        teamId,
+        message: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      }),
+    );
+    return { ok: false, error: GENERIC_POST_ERROR };
+  }
+}
+
+async function postComment(
+  teamId: string,
+  entityType: CommentEntityType,
+  entityId: string,
+  formData: FormData,
+): Promise<AddCommentResult> {
   const gate = await requireThreadAccess(entityType, entityId);
   const { uid, db, item } = gate;
   const threadTeamId = gate.teamId || teamId;
 
   const body = String(formData.get("body") ?? "").trim();
-  if (!body) throw new Error("Comment required");
-  if (body.length > 4000) throw new Error("Comment too long (max 4000 chars)");
+  if (!body) return { ok: false, error: "Comment required" };
+  if (body.length > 4000) return { ok: false, error: "Comment too long (max 4000 chars)" };
 
   // The directory is only read when the body can carry a mention.
   let mention_ids: string[] = [];
   if (body.includes("@")) {
     const people = mentionPeopleOf(item, await getDirectoryPeople(gate.isAdmin));
     const { ids, blocked } = resolveMentions(body, people);
-    if (blocked.length > 0) throw new Error(blockedMentionMessage(blocked));
+    if (blocked.length > 0) return { ok: false, error: blockedMentionMessage(blocked) };
     mention_ids = ids;
   }
 
@@ -107,6 +145,7 @@ export async function addEntityComment(
   }
 
   revalidateThreadPages(teamId, threadTeamId);
+  return { ok: true };
 }
 
 function revalidateThreadPages(teamId: string, threadTeamId: string) {

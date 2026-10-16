@@ -463,7 +463,9 @@ export function CaptureButton() {
       onClick={open}
       title="Capture an issue or a to-do from this stage"
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition focus:outline-none focus-visible:ring-2",
+        // Same height, padding and type as the Active | Archived toggle and the
+        // stage's own add button beside it (h-8, px-3, text-sm); outlined, not filled.
+        "inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium transition focus:outline-none focus-visible:ring-2",
         added
           ? "border-hpb-green/40 bg-hpb-green/10 text-hpb-green focus-visible:ring-hpb-green/40"
           : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800",
@@ -471,12 +473,12 @@ export function CaptureButton() {
     >
       {added ? (
         <>
-          <Check className="h-3 w-3" />
+          <Check className="h-3.5 w-3.5" />
           {CAPTURE_ADDED_LABEL[added]}
         </>
       ) : (
         <>
-          <Plus className="h-3 w-3" />
+          <Plus className="h-3.5 w-3.5" />
           Issue / To-do
         </>
       )}

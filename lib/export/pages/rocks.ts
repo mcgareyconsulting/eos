@@ -39,6 +39,7 @@ import {
   type ExportRefusal,
   type LoadedView,
 } from "../types";
+import { checkRowCap } from "../cap";
 import {
   archivedParam,
   loadRoster,
@@ -425,6 +426,13 @@ export const rocksExport: ExportDefinition<RockExportRow, RocksExportParams> = {
       nameOf: (id) => names.get(id),
       teamNameOf: (id) => teamNames.get(id),
     });
+    // Row cap (lib/export/cap.ts). The rows are only known once built: a row
+    // is a rock or a block, filtered and sectioned in memory, so no query can
+    // carry the limit. The sub-reads above are batched (`in` chunks of 30 and
+    // getAll), never one read per row, so an oversize view still costs a
+    // bounded handful of queries before it is refused here.
+    const overCap = checkRowCap(rows.length);
+    if (overCap) return overCap;
 
     return {
       ok: true,

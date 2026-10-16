@@ -62,6 +62,7 @@ import {
   type ExportRefusal,
   type LoadedView,
 } from "../types";
+import { checkRowCap } from "../cap";
 import { loadRoster, loadTeamOr404, parseTeamParam, type Member } from "./shared";
 
 export type ScorecardExportParams = {
@@ -295,6 +296,21 @@ export const scorecardExport: ExportDefinition<ScorecardExportRow, ScorecardExpo
       .map((x) => mapScorecardMetric(x, p.teamId, (id) => teamNames.get(id)))
       .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 
+    // Row cap (lib/export/cap.ts), early where it can be exact. The view is
+    // these measurables filtered in memory, so the query can't carry a limit.
+    // Without a status filter the toolbar's other filters need no entries,
+    // so the row count is known now — refuse before reading any entries.
+    // A status filter needs the entries; that view is checked once built.
+    if (p.toolbar.status === "all") {
+      const viewCount = filterAndSortScorecard(metricsForPeriod(metrics, p.period), p.toolbar, {
+        valuesFor: () => [],
+        members,
+        viewerId: uid,
+      }).length;
+      const overCap = checkRowCap(viewCount);
+      if (overCap) return overCap;
+    }
+
     const columns = buildScorecardColumns(p.period, undefined, p.weeks);
     const entries = entriesToRecord(
       await loadScorecardEntries(
@@ -321,6 +337,8 @@ export const scorecardExport: ExportDefinition<ScorecardExportRow, ScorecardExpo
       members,
       viewerId: uid,
     });
+    const overCap = checkRowCap(rows.length);
+    if (overCap) return overCap;
 
     return {
       ok: true,

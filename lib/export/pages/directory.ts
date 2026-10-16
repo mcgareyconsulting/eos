@@ -7,7 +7,12 @@
 // loader for an admin (lib/firebase/directory getDirectoryPeople — the same
 // people, order and admin-only account fields the page gets) and filters
 // with the table's own rule (lib/directory-filter.ts). Org-wide: no team.
+//
+// The account fields come from Identity Platform (getDirectoryPeople lists
+// every account). `directoryExportWith({ auth })` swaps that one read for a
+// test double; production uses `directoryExport`, the real Admin SDK.
 
+import type { getAdminAuth } from "@/lib/firebase/admin";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { NO_TEAM, filterDirectory, type DirectoryFilter } from "@/lib/directory-filter";
 import type {
@@ -16,7 +21,13 @@ import type {
   ExportRefusal,
   LoadedView,
 } from "../types";
+import { checkRowCap } from "../cap";
 import { ID_RE, refuse } from "./shared";
+
+/** Test-only seam: production never passes `auth` (getDirectoryPeople's default). */
+export type DirectoryExportDeps = {
+  auth?: typeof getAdminAuth;
+};
 
 export type DirectoryExportParams = {
   query: string;
@@ -94,50 +105,64 @@ export const DIRECTORY_COLUMNS: readonly ExportColumn<DirectoryPerson>[] = [
   { key: "uid", header: "User ID", kind: "text", value: (p) => p.uid, width: 30 },
 ];
 
-export const directoryExport: ExportDefinition<DirectoryPerson, DirectoryExportParams> = {
-  id: "directory",
-  title: "Directory",
-  parseParams: parseDirectoryParams,
-  columns: DIRECTORY_COLUMNS,
-  async load({ db, uid, viewer }, p): Promise<LoadedView<DirectoryPerson> | ExportRefusal> {
-    // The core admits admins only, and the account fields are admin-only, so
-    // the loader runs as the page does for an admin. Imported lazily: it
-    // pulls the session helpers, which the pure parts of this module (and
-    // their tests) don't need.
-    const { getDirectoryPeople } = await import("@/lib/firebase/directory");
-    const [people, teamsSnap] = await Promise.all([
-      getDirectoryPeople(viewer.isAdmin, {
-        user: async () =>
-          ({ uid, db, isAdmin: viewer.isAdmin }) as unknown as Awaited<
-            ReturnType<typeof import("@/lib/firebase/auth").requireFirebaseUser>
-          >,
-      }),
-      db.collection("teams").get(),
-    ]);
-    const teamName = new Map(
-      teamsSnap.docs.map((d) => [d.id, (d.data()?.name as string) ?? "Team"]),
-    );
-    const names = (set: ReadonlySet<string>, all: string, label: (v: string) => string) =>
-      set.size === 0 ? all : [...set].map(label).sort().join(", ");
+export function directoryExportWith(
+  deps: DirectoryExportDeps = {},
+): ExportDefinition<DirectoryPerson, DirectoryExportParams> {
+  return {
+    id: "directory",
+    title: "Directory",
+    parseParams: parseDirectoryParams,
+    columns: DIRECTORY_COLUMNS,
+    async load({ db, uid, viewer }, p): Promise<LoadedView<DirectoryPerson> | ExportRefusal> {
+      // The core admits admins only, and the account fields are admin-only, so
+      // the loader runs as the page does for an admin. Imported lazily: it
+      // pulls the session helpers, which the pure parts of this module (and
+      // their tests) don't need.
+      const { getDirectoryPeople } = await import("@/lib/firebase/directory");
+      const [people, teamsSnap] = await Promise.all([
+        getDirectoryPeople(viewer.isAdmin, {
+          user: async () =>
+            ({ uid, db, isAdmin: viewer.isAdmin }) as unknown as Awaited<
+              ReturnType<typeof import("@/lib/firebase/auth").requireFirebaseUser>
+            >,
+          // Undefined in production: getDirectoryPeople reads the real
+          // Identity Platform accounts.
+          auth: deps.auth,
+        }),
+        db.collection("teams").get(),
+      ]);
+      const rows = directoryViewRows(people, p);
+      // Row cap (lib/export/cap.ts): the view is the loader's people filtered
+      // in memory by the table's rule; nothing below reads per row.
+      const overCap = checkRowCap(rows.length);
+      if (overCap) return overCap;
+      const teamName = new Map(
+        teamsSnap.docs.map((d) => [d.id, (d.data()?.name as string) ?? "Team"]),
+      );
+      const names = (set: ReadonlySet<string>, all: string, label: (v: string) => string) =>
+        set.size === 0 ? all : [...set].map(label).sort().join(", ");
 
-    return {
-      ok: true,
-      rows: directoryViewRows(people, p),
-      teamId: null,
-      filters: [
-        { label: "Search", value: p.query.trim() || "(none)" },
-        {
-          label: "Role",
-          value: names(p.access, "All roles", (a) => ACCESS_LABEL[a as DirectoryPerson["access"]]),
-        },
-        {
-          label: "Team",
-          value: names(p.teams, "All teams", (t) =>
-            t === NO_TEAM ? "No team" : (teamName.get(t) ?? "—"),
-          ),
-        },
-      ],
-      fileNameParts: ["people"],
-    };
-  },
-};
+      return {
+        ok: true,
+        rows,
+        teamId: null,
+        filters: [
+          { label: "Search", value: p.query.trim() || "(none)" },
+          {
+            label: "Role",
+            value: names(p.access, "All roles", (a) => ACCESS_LABEL[a as DirectoryPerson["access"]]),
+          },
+          {
+            label: "Team",
+            value: names(p.teams, "All teams", (t) =>
+              t === NO_TEAM ? "No team" : (teamName.get(t) ?? "—"),
+            ),
+          },
+        ],
+        fileNameParts: ["people"],
+      };
+    },
+  };
+}
+
+export const directoryExport = directoryExportWith();

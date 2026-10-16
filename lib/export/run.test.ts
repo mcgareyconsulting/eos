@@ -174,7 +174,7 @@ describe("runExport — admin gate", () => {
 });
 
 describe("runExport — every registered page", () => {
-  test("each page is refused to a non-admin, with nothing loaded or recorded", async () => {
+  test("each page is refused to a non-admin, with nothing loaded; each attempt is audited", async () => {
     const db = seed();
     const ids = Object.keys(EXPORT_DEFINITIONS);
     assert.deepEqual(ids.sort(), [
@@ -201,10 +201,14 @@ describe("runExport — every registered page", () => {
         user: async () => ({ ...(await admin(db)()), uid: "u1", isAdmin: false }),
         definitions: { [id]: spy },
       });
-      assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN }, id);
+      assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN, reason: "not_admin" }, id);
       assert.equal(loaded, 0, id);
     }
-    assert.equal(db.docsIn("audit_log").length, 0);
+    // One refused row per attempt, never an "ok" export row.
+    assert.deepEqual(
+      auditRows(db).map((r) => [r.outcome, r.reason, r.entity_id]),
+      ids.map((id) => ["refused", "not_admin", id]),
+    );
   });
 
   test("a view may carry its own columns (the Scorecard's periods)", async () => {

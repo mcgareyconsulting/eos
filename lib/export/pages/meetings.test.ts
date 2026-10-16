@@ -2,6 +2,8 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
 import { adminExportDeps, ts } from "@/lib/test-support/export-deps";
+import { EXPORT_ROW_CAP } from "../cap";
+import { excelSerial } from "../normalize";
 import { runExport } from "../run";
 import { isRefusal } from "../types";
 import { exportUrls, meetingsExportParams } from "../urls";
@@ -84,8 +86,45 @@ describe("meetings export — the page's view", () => {
   });
 });
 
+/** `target` with `name` answered by `replace`; everything else passes through. */
+function override<T extends object>(target: T, name: string, replace: unknown): T {
+  return new Proxy(target, {
+    get(t, k) {
+      if (k === name) return replace;
+      const v = Reflect.get(t, k, t);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+}
+
+/**
+ * The fake as a Firestore that records each read of
+ * `meetings/{id}/effectiveness_scores` — this page's one per-row sub-read.
+ */
+function countingScores(fake: FakeFirestore) {
+  const reads: string[] = [];
+  const fs = fake.asFirestore();
+  const counted = override(fs, "collection", (name: string) => {
+    const col = fs.collection(name);
+    if (name !== "meetings") return col;
+    return override(col, "doc", (id: string) => {
+      const ref = col.doc(id);
+      return override(ref, "collection", (sub: string) => {
+        if (sub === "effectiveness_scores") reads.push(id);
+        return ref.collection(sub);
+      });
+    });
+  });
+  const deps = adminExportDeps(fake);
+  const user = deps.user!;
+  return {
+    reads,
+    deps: { ...deps, user: async () => ({ ...(await user())!, db: counted }) },
+  };
+}
+
 describe("meetings export — through the core", () => {
-  test("the team's meetings with average ratings", async () => {
+  test("the team's meetings with average ratings, as Mountain-time date cells", async () => {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
     db.seed("meetings", "m1", {
@@ -107,8 +146,9 @@ describe("meetings export — through the core", () => {
     assert.ok(res.ok);
     assert.deepEqual(res.table.rows, [
       [
-        "2026-10-01 09:00 CDT",
-        "2026-10-01 10:00 CDT",
+        // 14:00Z is 08:00 Mountain (MDT): the bank's clock, not the server's.
+        { kind: "datetime", serial: excelSerial(2026, 10, 1, 8, 0), text: "2026-10-01 08:00 MDT" },
+        { kind: "datetime", serial: excelSerial(2026, 10, 1, 9, 0), text: "2026-10-01 09:00 MDT" },
         "Completed",
         60,
         "Level 10",
@@ -117,5 +157,49 @@ describe("meetings export — through the core", () => {
         "m1",
       ],
     ]);
+  });
+
+  test("a live meeting's scores are not read (its rating cell is blank)", async () => {
+    const db = new FakeFirestore();
+    db.seed("teams", "t1", { name: "Leadership" });
+    db.seed("meetings", "done", {
+      team_id: "t1",
+      started_at: ts("2026-10-01T14:00:00Z"),
+      ended_at: ts("2026-10-01T15:00:00Z"),
+      current_segment: "done",
+    });
+    db.seed("meetings", "live", {
+      team_id: "t1",
+      started_at: ts("2026-10-08T14:00:00Z"),
+      ended_at: null,
+      current_segment: "scorecard",
+    });
+    db.seed("meetings/live/effectiveness_scores", "u1", { rating: 3 });
+    const spy = countingScores(db);
+    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "xlsx", spy.deps);
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.rows.map((r) => [r[7], r[6]]), [
+      ["live", ""],
+      ["done", ""],
+    ]);
+    assert.deepEqual(spy.reads, ["done"]);
+  });
+
+  test("an oversize history is refused after one capped query, before any ratings read", async () => {
+    const db = new FakeFirestore();
+    db.seed("teams", "t1", { name: "Leadership" });
+    for (let i = 0; i <= EXPORT_ROW_CAP; i++) {
+      db.seed("meetings", `m${i}`, {
+        team_id: "t1",
+        started_at: ts("2026-10-01T14:00:00Z"),
+        ended_at: ts("2026-10-01T15:00:00Z"),
+        current_segment: "done",
+      });
+    }
+    const spy = countingScores(db);
+    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "xlsx", spy.deps);
+    assert.equal(res.ok === false && res.status, 413);
+    assert.equal(res.ok === false && res.reason, "over_cap");
+    assert.equal(spy.reads.length, 0);
   });
 });

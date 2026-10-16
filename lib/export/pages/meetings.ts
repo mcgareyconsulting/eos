@@ -4,7 +4,9 @@
 // The page has no filters, so the view is `team` alone. Loads with the page's
 // own query (`meetings where team_id ==`) and the team gate, and each
 // meeting's average effectiveness rating from `effectiveness_scores`, as the
-// page does. Rows are newest first and read as the list reads them
+// page does. The query is the whole view, so it is read capped
+// (lib/export/cap.ts readCapped): an oversize history is refused after that
+// one query, before any per-meeting rating read. Rows are newest first and read as the list reads them
 // (lib/l10/meeting-summary.ts). The page shows a live meeting's rating only
 // once it ends; the file does the same.
 //
@@ -26,6 +28,7 @@ import {
   type ExportRefusal,
   type LoadedView,
 } from "../types";
+import { readCapped } from "../cap";
 import { loadTeamOr404, parseTeamParam } from "./shared";
 
 export type MeetingsExportParams = { teamId: string };
@@ -104,8 +107,9 @@ export const meetingsExport: ExportDefinition<MeetingExportRow, MeetingsExportPa
     if (isRefusal(teamDoc)) return teamDoc;
     const teamName = teamDoc.name;
 
-    const snap = await db.collection("meetings").where("team_id", "==", p.teamId).get();
-    const meetings: MeetingExportInput[] = snap.docs.map((d) => {
+    const capped = await readCapped(db.collection("meetings").where("team_id", "==", p.teamId));
+    if (isRefusal(capped)) return capped;
+    const meetings: MeetingExportInput[] = capped.docs.map((d) => {
       const x = d.data();
       return {
         id: d.id,
@@ -117,12 +121,21 @@ export const meetingsExport: ExportDefinition<MeetingExportRow, MeetingsExportPa
       };
     });
 
+    // One ratings read per meeting, as the page does — but only for the
+    // meetings whose rating the file shows: a live meeting's cell is blank
+    // (meetingsViewRows), so its scores are not read.
     const ratings = new Map<string, number | null>();
     await Promise.all(
-      meetings.map(async (m) => {
-        const r = await db.collection("meetings").doc(m.id).collection("effectiveness_scores").get();
-        ratings.set(m.id, averageRating(r.docs.map((d) => d.data().rating)));
-      }),
+      meetings
+        .filter((m) => !meetingSummary(m).live)
+        .map(async (m) => {
+          const r = await db
+            .collection("meetings")
+            .doc(m.id)
+            .collection("effectiveness_scores")
+            .get();
+          ratings.set(m.id, averageRating(r.docs.map((d) => d.data().rating)));
+        }),
     );
 
     return {

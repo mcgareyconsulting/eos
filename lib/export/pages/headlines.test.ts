@@ -115,7 +115,7 @@ describe("headlines export — the page's view", () => {
 
   test("params round-trip", () => {
     const params = teamListExportParams({ teamId: "t1", showArchived: true, ownerFilter: "u2" });
-    const qs = new URL(exportUrls("headlines", params).print, "https://x").searchParams;
+    const qs = new URL(exportUrls("headlines", params).xlsx, "https://x").searchParams;
     assert.deepEqual(parseHeadlinesParams(qs), { teamId: "t1", archived: true, owner: "u2" });
     assert.ok(isRefusal(parseHeadlinesParams(new URLSearchParams())));
   });

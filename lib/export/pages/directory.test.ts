@@ -1,11 +1,16 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import type { Auth, UserRecord } from "firebase-admin/auth";
 import { NO_TEAM } from "@/lib/directory-filter";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
-import { isRefusal } from "../types";
+import { FakeFirestore } from "@/lib/test-support/fake-firestore";
+import { adminExportDeps } from "@/lib/test-support/export-deps";
+import { NOT_ADMIN, runExport } from "../run";
+import { isRefusal, type ExportDefinition } from "../types";
 import { directoryExportParams, exportUrls } from "../urls";
 import {
   DIRECTORY_COLUMNS,
+  directoryExportWith,
   directoryViewRows,
   parseDirectoryParams,
   type DirectoryExportParams,
@@ -119,5 +124,105 @@ describe("directory export — the table's view", () => {
     });
     assert.ok(isRefusal(parseDirectoryParams(new URLSearchParams("access=owner"))));
     assert.ok(isRefusal(parseDirectoryParams(new URLSearchParams("teams=../x"))));
+  });
+});
+
+describe("directory export — through the core", () => {
+  function account(
+    uid: string,
+    opts: { name?: string; email?: string; admin?: boolean; signedIn?: boolean } = {},
+  ): UserRecord {
+    return {
+      uid,
+      displayName: opts.name,
+      email: opts.email,
+      customClaims: opts.admin ? { role: "admin" } : {},
+      metadata: { lastSignInTime: opts.signedIn ? "2026-09-01T00:00:00Z" : null },
+    } as unknown as UserRecord;
+  }
+
+  /** Identity Platform, faked: the accounts, and how often they were listed. */
+  function fakeAuth(users: UserRecord[]) {
+    const calls = { listUsers: 0 };
+    const auth = () =>
+      ({
+        listUsers: async () => {
+          calls.listUsers += 1;
+          return { users, pageToken: undefined };
+        },
+      }) as unknown as Auth;
+    return { auth, calls };
+  }
+
+  function seed() {
+    const db = new FakeFirestore();
+    db.seed("teams", "t1", { name: "Leadership" });
+    db.seed("teams", "t2", { name: "Finance" });
+    db.seed("users", "ada", { first_name: "Ada", last_name: "Lovelace", email: "ada@highplainsbank.com" });
+    db.seed("users", "bob", { first_name: "Bob", last_name: "Bell", email: "bob@highplainsbank.com" });
+    // An import placeholder: a profile, no account yet.
+    db.seed("users", "cy", { first_name: "Cy", last_name: "Young", email: "cy@highplainsbank.com" });
+    db.seed("team_members", "t1__bob", { team_id: "t1", user_id: "bob", role: "leader" });
+    db.seed("team_members", "t2__bob", { team_id: "t2", user_id: "bob", role: "member" });
+    db.seed("team_members", "t2__cy", { team_id: "t2", user_id: "cy", role: "member" });
+    const ip = fakeAuth([
+      account("ada", { admin: true, signedIn: true }),
+      account("bob", { signedIn: false }),
+    ]);
+    const definitions = { directory: directoryExportWith({ auth: ip.auth }) } as unknown as Record<
+      string,
+      ExportDefinition<never, never>
+    >;
+    return { db, ip, definitions };
+  }
+
+  test("a non-admin is refused before Identity Platform is read; the attempt is audited", async () => {
+    const { db, ip, definitions } = seed();
+    const deps = adminExportDeps(db, { definitions });
+    const admin = deps.user!;
+    const res = await runExport("directory", new URLSearchParams(), "xlsx", {
+      ...deps,
+      user: async () => ({ ...(await admin())!, uid: "bob", isAdmin: false }),
+    });
+    assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN, reason: "not_admin" });
+    assert.equal(ip.calls.listUsers, 0);
+    const rows = db.docsIn("audit_log").map((d) => d.data as Record<string, unknown>);
+    assert.deepEqual(
+      rows.map((r) => [r.outcome, r.reason, r.entity_id, r.actor_uid]),
+      [["refused", "not_admin", "directory", "bob"]],
+    );
+  });
+
+  test("an admin gets the table's columns, the account fields and the filters", async () => {
+    const { db, ip, definitions } = seed();
+    const res = await runExport(
+      "directory",
+      new URLSearchParams({ teams: "t2" }),
+      "xlsx",
+      adminExportDeps(db, { definitions }),
+    );
+    assert.ok(res.ok);
+    assert.equal(ip.calls.listUsers, 1);
+    assert.deepEqual(res.table.headers, DIRECTORY_COLUMNS.map((c) => c.header));
+    // Finance only, last name first: Bell, Young.
+    assert.deepEqual(res.table.rows, [
+      [
+        "Bob",
+        "Bell",
+        "Finance\nLeadership",
+        "Finance: Member\nLeadership: Leader",
+        "bob@highplainsbank.com",
+        "Never signed in",
+        "bob",
+      ],
+      ["Cy", "Young", "Finance", "Finance: Member", "cy@highplainsbank.com", "No account", "cy"],
+    ]);
+    const filters = res.table.provenance.find((l) => l.label === "Filters applied")?.value;
+    assert.equal(filters, "Search: (none) · Role: All roles · Team: Finance");
+    const audit = db.docsIn("audit_log").map((d) => d.data as Record<string, unknown>);
+    assert.deepEqual(
+      audit.map((r) => [r.outcome, r.entity_id, r.team_id]),
+      [["ok", "directory", null]],
+    );
   });
 });

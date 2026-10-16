@@ -28,6 +28,7 @@ import {
   type ExportRefusal,
   type LoadedView,
 } from "../types";
+import { checkRowCap } from "../cap";
 import {
   archivedParam,
   loadRoster,
@@ -167,6 +168,12 @@ export const headlinesExport: ExportDefinition<HeadlineExportRow, HeadlinesExpor
       ownerFilter,
       nameOf: (id) => names.get(id),
     });
+    // Row cap (lib/export/cap.ts): the view is the query's docs filtered in
+    // memory (archive, owner, visibility), as on the page, so the query
+    // can't carry a limit. Check the filtered count before the core resolves
+    // any names.
+    const overCap = checkRowCap(rows.length);
+    if (overCap) return overCap;
 
     return {
       ok: true,

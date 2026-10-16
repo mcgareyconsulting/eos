@@ -238,6 +238,23 @@ they lived in a component.
 - **Directory**: the admin's view of the table, so it includes deactivated
   people and the admin-only account state (No account / Never signed in).
 
+### How each page honors the row cap early
+
+- **Meetings**: its query is the view, so it is read with `readCapped`.
+  An oversize history is refused after that one query, before any
+  per-meeting `effectiveness_scores` read. Ratings are read only for
+  completed meetings, since a live meeting's cell is blank.
+- **To-Dos, Issues, Headlines, Directory**: the view is the query's docs
+  filtered in memory, as on the page, so `checkRowCap` runs on the filtered
+  rows before the core resolves names. None of them reads per row.
+- **Scorecard**: when no status filter is set, the count is known before
+  the entries are read, so it is checked then. A status filter needs the
+  entries, so that view is checked once built. Entries are read in `in`
+  chunks, not per row.
+- **Rocks**: rows (rocks and blocks) exist only once built, so the check
+  runs on the built rows. Its sub-reads (milestones, blocks, names) are
+  chunked `in` queries and `getAll` batches, not one read per row.
+
 ### Pages with no export
 
 - **Home**: a per-viewer dashboard of the viewer's own rocks, to-dos and

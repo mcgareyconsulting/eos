@@ -17,6 +17,7 @@ import {
 } from "@/lib/follow";
 import { RockFollowButton } from "./rock-follow-button";
 import { dueToneClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { Fact } from "./fact";
 import {
   STATUS_BANNER,
@@ -206,6 +207,7 @@ function RockDetailModal({
   // — puts "Discard?" in front of every way out — backdrop, Escape, the × —
   // like the app's other forms.
   const [hasDraft, setHasDraft] = useState(false);
+  const timeZone = useTimeZone();
   const milestoneDrafts = useMilestoneDrafts();
   const guard = useDiscardGuard(
     hasDraft || milestoneDrafts.hasDraft,
@@ -316,10 +318,21 @@ function RockDetailModal({
                       "font-normal",
                       isDone
                         ? "text-zinc-400"
-                        : dueToneClass(rock.due_date, false),
+                        : dueToneClass(
+                            rock.due_date,
+                            false,
+                            new Date(),
+                            undefined,
+                            timeZone,
+                          ),
                     )}
                   >
-                    {relativeDueLabel(rock.due_date, new Date(), isDone)}
+                    {relativeDueLabel(
+                      rock.due_date,
+                      new Date(),
+                      isDone,
+                      timeZone,
+                    )}
                   </span>
                 </>
               ) : null}

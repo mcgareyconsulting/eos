@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/app-shell";
+import { TimeZoneProvider } from "@/components/time-zone-provider";
 import { getSessionRenewInMs, getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { getViewerTimeZone } from "@/lib/viewer-time-zone";
 
 export default async function AppLayout({
   children,
@@ -16,6 +18,9 @@ export default async function AppLayout({
     db,
   } = await getUserTeamsFirebase();
   const sessionRenewInMs = await getSessionRenewInMs();
+  // Seeds client components' due-date "today" with the zone the server
+  // renders in, so the two agree at hydration (components/time-zone-provider).
+  const timeZone = await getViewerTimeZone();
 
   // Unread badge for first paint; the sidebar's listener takes over after
   // client auth. One aggregation read per page render — cheap, and it means
@@ -44,17 +49,19 @@ export default async function AppLayout({
   // Teamless users stay in the shell so they can use Directory (org-wide
   // roster). Team *data* routes still 404 via requireTeamAccess until invited.
   return (
-    <AppShell
-      user={user}
-      profile={profile}
-      teams={teams}
-      isAdmin={isAdmin}
-      membershipCount={membershipTeamIds.length}
-      importTeamIds={importTeamIds}
-      unreadNotifications={unreadNotifications}
-      sessionRenewInMs={sessionRenewInMs}
-    >
-      {children}
-    </AppShell>
+    <TimeZoneProvider initialZone={timeZone}>
+      <AppShell
+        user={user}
+        profile={profile}
+        teams={teams}
+        isAdmin={isAdmin}
+        membershipCount={membershipTeamIds.length}
+        importTeamIds={importTeamIds}
+        unreadNotifications={unreadNotifications}
+        sessionRenewInMs={sessionRenewInMs}
+      >
+        {children}
+      </AppShell>
+    </TimeZoneProvider>
   );
 }

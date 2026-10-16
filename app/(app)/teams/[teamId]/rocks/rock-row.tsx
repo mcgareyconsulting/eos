@@ -6,13 +6,18 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { RichText } from "@/components/rich-text";
 import { hasRichMarkup } from "@/lib/rich-text";
-import { formatDateOnly, formatDateShort, relativeDueLabel } from "@/lib/dates";
+import {
+  dueDateShort,
+  formatDateOnly,
+  relativeDueLabel,
+} from "@/lib/dates";
 import type { RockHeadline } from "@/lib/access/rock";
 import { StatusPill, StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { Fact } from "./fact";
 import {
   isCompanyRock,
@@ -109,6 +114,8 @@ export function RockRow({
   fromTeamName?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
   const actTeamId = viewTeamId ?? teamId;
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
@@ -228,13 +235,17 @@ export function RockRow({
                 dueToneClass(
                   rock.due_date,
                   status === "done" || status === "cancelled",
+                  now,
+                  undefined,
+                  timeZone,
                 ),
               )}
             >
               {relativeDueLabel(
                 rock.due_date,
-                new Date(),
+                now,
                 status === "done" || status === "cancelled",
+                timeZone,
               )}
             </div>
           </div>
@@ -301,13 +312,20 @@ export function RockRow({
                 <span
                   className={cn(
                     "font-normal",
-                    dueToneClass(rock.due_date, status === "done"),
+                    dueToneClass(
+                      rock.due_date,
+                      status === "done",
+                      now,
+                      undefined,
+                      timeZone,
+                    ),
                   )}
                 >
                   {relativeDueLabel(
                     rock.due_date,
-                    new Date(),
+                    now,
                     status === "done",
+                    timeZone,
                   )}
                 </span>
               </Fact>
@@ -418,6 +436,8 @@ export function RockBlockRow({
   currentUserId: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
   const displayOwner = ownerName || "Unassigned";
 
   return (
@@ -515,10 +535,16 @@ export function RockBlockRow({
                       <span
                         className={cn(
                           "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
-                          dueToneClass(m.due_date, m.completed),
+                          dueToneClass(
+                            m.due_date,
+                            m.completed,
+                            now,
+                            undefined,
+                            timeZone,
+                          ),
                         )}
                       >
-                        {formatDateShort(m.due_date)}
+                        {dueDateShort(m.due_date, m.completed, now, timeZone)}
                       </span>
                     </label>
                   </li>

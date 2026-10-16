@@ -13,7 +13,6 @@ import {
   canStepSpeaker,
   stepSpeakerIndex,
 } from "@/lib/l10/speaking-order";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import {
   setAttendeeAbsence,
   setSpeakingIndex,
@@ -134,14 +133,6 @@ export function SegmentSegue({
     <div className="space-y-3">
       {/* The stage's own coaching line lives in the page heading now — this
           row would have repeated it verbatim right underneath. */}
-      <div className="flex justify-end">
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="From segue: "
-          meetingId={meetingId}
-        />
-      </div>
-
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <div className="text-sm font-medium">

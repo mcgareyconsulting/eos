@@ -73,3 +73,34 @@ export function normalizeSegment(
   if (isSegment(s)) return s;
   return null;
 }
+
+/**
+ * Whether the live meeting keeps its one capture modal mounted on a stage.
+ * True on EVERY live stage — Segue through Conclude; only a finished meeting
+ * has none.
+ *
+ * The answer must not vary across the live stages: the page keeps one
+ * MeetingCaptureProvider (and its modal) mounted for the whole meeting, and
+ * a follower's stage change is a same-URL refresh, so an element that stays
+ * at the same spot in the tree keeps its state. Turn this off for any one
+ * live stage and the modal unmounts as the room moves through it, taking an
+ * open draft with it — even on a stage with no button of its own (Segue).
+ */
+export function captureModalMounted(s: Segment): boolean {
+  return s !== "done";
+}
+
+/**
+ * Whether a stage's toolbar shows the "Issue / To-do" capture button
+ * (feedback row 58). Each stage carries it in its own toolbar, right after
+ * the Active | Archived toggle where the old "Drop to Issues" sat; Conclude
+ * in its top row. Segue has none (Daniel: no add on Segue), and a finished
+ * meeting has none.
+ *
+ * Only the button varies by stage; the modal it opens does not (see
+ * captureModalMounted), so an open draft still survives the room moving
+ * onto Segue and back.
+ */
+export function stageOffersCapture(s: Segment): boolean {
+  return s !== "segue" && s !== "done";
+}

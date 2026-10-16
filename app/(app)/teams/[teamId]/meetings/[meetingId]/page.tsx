@@ -49,6 +49,7 @@ import {
   metricGroupForTeam,
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import {
   oldestPeriodStart,
@@ -67,6 +68,7 @@ import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIssues } from "./segment-issues";
 import { ConcludeReview, type MeetingRating } from "./conclude-review";
+import { MeetingCaptureProvider } from "./meeting-capture-modal";
 import {
   RecapModal,
   type RecapItem,
@@ -385,132 +387,150 @@ export default async function MeetingDetailPage({
           bottom-6 and floats over this column, so the last row of a segment
           needs room to scroll clear of it instead of sitting underneath. */}
       <div className={cn("min-w-0 flex-1 space-y-6", live && "pb-24")}>
-        {/* Live: one compact header line — the stage is the headline, the
-            team L10 is context. Everything static (start time, back link)
-            lives in the rail, so content starts ~150px higher than when this
-            page stacked breadcrumb + h1 + started-at + stage + hint. */}
-        {live && (
-          <header className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {SEGMENT_LABELS[viewSegment]}
-                </h1>
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {team.name}
-                  {agenda.agenda_name ? ` · ${agenda.agenda_name}` : " · L10"}
-                </span>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              {/* Join the team's Google Meet room. DEMO: opens the standing
-                team Meet link a leader set in Members → Meeting settings. In
-                the real integration this href would be a per-meeting URL
-                minted by the Meet REST API (spaces.create) at meeting start. */}
-              {team.meetLink && (
-                <a
-                  href={team.meetLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
-                >
-                  <Video className="h-4 w-4" />
-                  Join Google Meet
-                </a>
-              )}
-            </div>
-          </header>
-        )}
-
-        {/* Completed: an ordinary page with the ordinary chrome. */}
-        {!live && (
-          <>
-            <div className="text-xs">
-              <Link
-                href={`/teams/${tid}/meetings`}
-                className="text-hpb-blue hover:underline"
-              >
-                ← Meetings
-              </Link>
-            </div>
-            <header className="flex items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {team.name}
-                  {agenda.agenda_name
-                    ? ` · ${agenda.agenda_name}`
-                    : " · Level 10"}
-                </h1>
-              </div>
-              <Link
-                href={`/teams/${tid}/meetings/${mid}?recap=1`}
-                className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-              >
-                <FileText className="h-4 w-4" />
-                View recap
-              </Link>
-            </header>
-          </>
-        )}
-
-        {/* Segment content follows the locally-viewed stage (peek-aware). */}
-        {live && (
-          <section>
-            <SegmentContent
-              teamId={tid}
-              userId={uid}
-              meetingId={mid}
-              segment={viewSegment}
-              currentIssueId={m.current_issue_id ?? null}
-              votingOpen={votingOpen}
-              members={members}
-              absentUserIds={absentUserIds}
-              speakingOrder={speakingOrder}
-              speakerIndex={speakerIndex}
-              driverId={initialDriverId}
-              scorecardWeekRange={scorecardWeekRange}
-              scorecardPeriod={scorecardPeriod}
-              canFlagCompany={isAdmin}
-            />
-          </section>
-        )}
-
-        {/* Meeting review — notes + end-of-meeting meeting rating.
-          Only surfaced in the Conclude segment (live) or on the completed
-          meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
-        {showConclude && (
-          <ConcludeReview
-            teamId={tid}
-            meetingId={mid}
-            currentUserId={uid}
-            members={members}
-            absentUserIds={absentUserIds}
-            ratings={ratings}
-            notes={m.notes ?? null}
-            readOnly={!live}
-          />
-        )}
-
-        <RecapModal
+        {/* The meeting's one "Issue / To-do" capture (feedback rows 58/40):
+            each stage's toolbar carries the button (Segue excepted —
+            stageOffersCapture), and every button opens the ONE modal this
+            provider owns. Kept around the whole column and never keyed or
+            wrapped by stage: a follower's stage change is a same-URL
+            refresh, so this element staying put is what keeps an open draft
+            alive while the driver moves the room on (captureModalMounted).
+            A finished meeting passes "done", which mounts nothing. Gated by
+            nothing new — addIssue and addTodo re-check team access
+            server-side, the same check that let this page render. */}
+        <MeetingCaptureProvider
           teamId={tid}
           meetingId={mid}
-          myRating={myRating}
-          meetingMinutes={meetingMinutes}
-          notes={m.notes ?? null}
-          newRocks={newRocks}
-          newTodos={newTodos}
-          newIssues={newIssues}
-          issuesSolved={issuesSolved}
-          newHeadlines={newHeadlines}
-          stats={recapStats}
-          attendeeRatings={attendeeRatings}
-          overallAverageRating={overallAverageRating}
-          agendaName={agenda.agenda_name}
-          // Never auto-open on a live meeting: the data above is only
-          // fetched once ended_at exists, so a shared/stale ?recap=1 link
-          // would open an all-empty recap over a still-running meeting.
-          autoOpen={recap === "1" && !live}
-        />
+          members={members}
+          currentUserId={uid}
+          segment={live ? viewSegment : "done"}
+        >
+          {/* Live: one compact header line — the stage is the headline, the
+              team L10 is context. Everything static (start time, back link)
+              lives in the rail, so content starts ~150px higher than when this
+              page stacked breadcrumb + h1 + started-at + stage + hint. */}
+          {live && (
+            <header className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    {SEGMENT_LABELS[viewSegment]}
+                  </h1>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {team.name}
+                    {agenda.agenda_name ? ` · ${agenda.agenda_name}` : " · L10"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                {/* Join the team's Google Meet room. DEMO: opens the standing
+                  team Meet link a leader set in Members → Meeting settings. In
+                  the real integration this href would be a per-meeting URL
+                  minted by the Meet REST API (spaces.create) at meeting start. */}
+                {team.meetLink && (
+                  <a
+                    href={team.meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+                  >
+                    <Video className="h-4 w-4" />
+                    Join Google Meet
+                  </a>
+                )}
+              </div>
+            </header>
+          )}
+
+          {/* Completed: an ordinary page with the ordinary chrome. */}
+          {!live && (
+            <>
+              <div className="text-xs">
+                <Link
+                  href={`/teams/${tid}/meetings`}
+                  className="text-hpb-blue hover:underline"
+                >
+                  ← Meetings
+                </Link>
+              </div>
+              <header className="flex items-end justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    {team.name}
+                    {agenda.agenda_name
+                      ? ` · ${agenda.agenda_name}`
+                      : " · Level 10"}
+                  </h1>
+                </div>
+                <Link
+                  href={`/teams/${tid}/meetings/${mid}?recap=1`}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+                >
+                  <FileText className="h-4 w-4" />
+                  View recap
+                </Link>
+              </header>
+            </>
+          )}
+
+          {/* Segment content follows the locally-viewed stage (peek-aware). */}
+          {live && (
+            <section>
+              <SegmentContent
+                teamId={tid}
+                userId={uid}
+                meetingId={mid}
+                segment={viewSegment}
+                currentIssueId={m.current_issue_id ?? null}
+                votingOpen={votingOpen}
+                members={members}
+                absentUserIds={absentUserIds}
+                speakingOrder={speakingOrder}
+                speakerIndex={speakerIndex}
+                driverId={initialDriverId}
+                scorecardWeekRange={scorecardWeekRange}
+                scorecardPeriod={scorecardPeriod}
+                canFlagCompany={isAdmin}
+              />
+            </section>
+          )}
+
+          {/* Meeting review — notes + end-of-meeting meeting rating.
+            Only surfaced in the Conclude segment (live) or on the completed
+            meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
+          {showConclude && (
+            <ConcludeReview
+              teamId={tid}
+              meetingId={mid}
+              currentUserId={uid}
+              members={members}
+              absentUserIds={absentUserIds}
+              ratings={ratings}
+              notes={m.notes ?? null}
+              readOnly={!live}
+            />
+          )}
+
+          <RecapModal
+            teamId={tid}
+            meetingId={mid}
+            myRating={myRating}
+            meetingMinutes={meetingMinutes}
+            notes={m.notes ?? null}
+            newRocks={newRocks}
+            newTodos={newTodos}
+            newIssues={newIssues}
+            issuesSolved={issuesSolved}
+            newHeadlines={newHeadlines}
+            stats={recapStats}
+            attendeeRatings={attendeeRatings}
+            overallAverageRating={overallAverageRating}
+            agendaName={agenda.agenda_name}
+            // Never auto-open on a live meeting: the data above is only
+            // fetched once ended_at exists, so a shared/stale ?recap=1 link
+            // would open an all-empty recap over a still-running meeting.
+            autoOpen={recap === "1" && !live}
+          />
+        </MeetingCaptureProvider>
       </div>
     </div>
   );
@@ -657,7 +677,6 @@ async function SegmentContent({
     return (
       <SegmentScorecard
         teamId={teamId}
-        meetingId={meetingId}
         initialGroups={scorecardGroups}
         weekRange={scorecardWeekRange}
         period={scorecardPeriod}
@@ -867,7 +886,6 @@ async function SegmentContent({
     return (
       <SegmentHeadlines
         teamId={teamId}
-        meetingId={meetingId}
         userId={userId}
         initialHeadlines={initialHeadlines}
         members={members}
@@ -948,6 +966,7 @@ async function SegmentContent({
         type: x.type ?? "short",
         status: x.status ?? "open",
         archived_at: x.archived_at ? true : null,
+        comment_count: commentCountOf(x),
       };
     });
     const initialVotes = votesSnap.docs.map((d) => {

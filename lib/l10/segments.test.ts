@@ -10,6 +10,8 @@ import {
   prevSegment,
   isSegment,
   normalizeSegment,
+  captureModalMounted,
+  stageOffersCapture,
 } from "./segments";
 // normalizeSegment imported below with other helpers if needed
 
@@ -126,5 +128,62 @@ describe("normalizeSegment", () => {
   });
   test("rejects unknown values", () => {
     assert.equal(normalizeSegment("not-a-segment"), null);
+  });
+});
+
+describe("captureModalMounted", () => {
+  const live = SEGMENTS.filter((s) => s !== "done");
+
+  test("mounted on every live stage, Segue included", () => {
+    for (const s of live) assert.equal(captureModalMounted(s), true, s);
+  });
+
+  // The draft-persistence guarantee: the page-level modal stays mounted only
+  // if no move between two live stages can turn it off. Walk every move the
+  // transport (next / prev) or a peek can make.
+  test("never flips between two live stages, so an open draft survives a stage change", () => {
+    for (const from of live) {
+      for (const to of [nextSegment(from), prevSegment(from), ...live]) {
+        if (to === "done") continue;
+        assert.equal(
+          captureModalMounted(to),
+          captureModalMounted(from),
+          `${from} -> ${to}`,
+        );
+      }
+    }
+  });
+
+  test("never on a finished meeting", () => {
+    assert.equal(captureModalMounted("done"), false);
+  });
+});
+
+describe("stageOffersCapture", () => {
+  test("Scorecard, Rocks, Headlines, To-Dos, Issues and Conclude show the button", () => {
+    for (const s of [
+      "scorecard",
+      "rocks",
+      "headlines",
+      "todos",
+      "issues",
+      "conclude",
+    ] as const) {
+      assert.equal(stageOffersCapture(s), true, s);
+    }
+  });
+
+  test("Segue has no capture button", () => {
+    assert.equal(stageOffersCapture("segue"), false);
+  });
+
+  test("never on a finished meeting", () => {
+    assert.equal(stageOffersCapture("done"), false);
+  });
+
+  test("a stage with a button always has the modal behind it", () => {
+    for (const s of SEGMENTS) {
+      if (stageOffersCapture(s)) assert.equal(captureModalMounted(s), true, s);
+    }
   });
 });

@@ -106,8 +106,8 @@ export type RankableIssue = {
 };
 
 // Short-term issues are the short-term list; long-term are parked below it. An issue
-// with no type recorded is treated as short-term, matching QuickAddIssue,
-// which stamps "short" on everything dropped from a meeting stage.
+// with no type recorded is treated as short-term, matching addIssue, which
+// defaults a missing type to "short" (the meeting capture modal's default too).
 export function splitIssuesByTerm<T extends RankableIssue>(
   issues: T[],
 ): { short: T[]; long: T[] } {

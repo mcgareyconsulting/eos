@@ -20,7 +20,6 @@ import {
   type ScorecardGroup,
   defaultGroupName,
 } from "@/lib/scorecard-groups";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { WeekRange } from "@/lib/scorecard";
 import {
   buildScorecardColumns,
@@ -50,7 +49,6 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentScorecard({
   teamId,
-  meetingId,
   weekRange,
   period = "weekly",
   initialMetrics,
@@ -66,7 +64,6 @@ export function SegmentScorecard({
   ownerNameById = {},
 }: {
   teamId: string;
-  meetingId: string;
   weekRange: WeekRange;
   /** Weekly / monthly / quarterly / annual — same as standalone scorecard. */
   period?: ScorecardPeriod;
@@ -280,18 +277,13 @@ export function SegmentScorecard({
       absentUserIds={absentUserIds}
       toolbarExtra={
         <>
-          {/* Same control and same slot order as the other segments: the
-              view toggle sits left of the segment's add action. */}
+          {/* Off-track metrics drop to Issues from the header's one
+              "+ Issue / To-do" (this stage opens it on Issue). */}
           <EntityViewToggle
             showArchived={showArchived}
             onChange={setShowArchived}
             activeCount={activeCount}
             archivedCount={archivedCount}
-          />
-          <QuickAddIssue
-            teamId={teamId}
-            prefill="Off-track metric: "
-            meetingId={meetingId}
           />
         </>
       }

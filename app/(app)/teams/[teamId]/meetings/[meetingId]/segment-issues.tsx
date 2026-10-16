@@ -52,9 +52,7 @@ import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import { Pill } from "@/components/ui/pill";
-import { AddTodoModal } from "../../todos/add-todo-modal";
 import { ownerLabel } from "@/lib/user-name";
 import {
   type IssueDoc as IssueDocRecord,
@@ -278,22 +276,10 @@ export function SegmentIssues({
             archivedCount={archivedIssues.length}
           />
           {/*
-            Creating a to-do from the Issues segment is a plain segment-level
-            control, not a per-issue one: issues already carry an owner, and
-            the real use is assigning someone a piece of the work while the
-            issue itself stays open — which is a to-do about the discussion,
-            not a child record of one issue.
+            No "Add to-do" or "Drop to Issues" here: the live meeting header
+            carries the one "+ Issue / To-do", on every stage (feedback rows
+            58/40) — on this stage it opens on To-do.
           */}
-          <AddTodoModal
-            teamId={teamId}
-            members={members}
-            defaultOwnerId={userId}
-            currentUserId={userId}
-            meetingId={meetingId}
-            buttonLabel="Add to-do"
-            compact
-          />
-          <QuickAddIssue teamId={teamId} meetingId={meetingId} />
         </div>
       </div>
 

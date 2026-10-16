@@ -10,6 +10,7 @@ import {
   prevSegment,
   isSegment,
   normalizeSegment,
+  headerOffersCapture,
 } from "./segments";
 // normalizeSegment imported below with other helpers if needed
 
@@ -126,5 +127,33 @@ describe("normalizeSegment", () => {
   });
   test("rejects unknown values", () => {
     assert.equal(normalizeSegment("not-a-segment"), null);
+  });
+});
+
+describe("headerOffersCapture", () => {
+  const live = SEGMENTS.filter((s) => s !== "done");
+
+  test("offered on every live stage, Issues and To-Dos included", () => {
+    for (const s of live) assert.equal(headerOffersCapture(s), true, s);
+  });
+
+  // The draft-persistence guarantee: the header modal stays mounted only if
+  // no move between two live stages can turn it off. Walk every move the
+  // transport (next / prev) or a peek can make.
+  test("never flips between two live stages, so an open draft survives a stage change", () => {
+    for (const from of live) {
+      for (const to of [nextSegment(from), prevSegment(from), ...live]) {
+        if (to === "done") continue;
+        assert.equal(
+          headerOffersCapture(to),
+          headerOffersCapture(from),
+          `${from} -> ${to}`,
+        );
+      }
+    }
+  });
+
+  test("never on a finished meeting", () => {
+    assert.equal(headerOffersCapture("done"), false);
   });
 });

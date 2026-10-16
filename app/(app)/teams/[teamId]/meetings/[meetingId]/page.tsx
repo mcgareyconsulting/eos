@@ -30,6 +30,7 @@ import {
 } from "@/lib/access/rock";
 import {
   type Segment,
+  headerOffersCapture,
   isSegment,
   normalizeSegment,
   SEGMENT_LABELS,
@@ -68,6 +69,7 @@ import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIssues } from "./segment-issues";
 import { ConcludeReview, type MeetingRating } from "./conclude-review";
+import { MeetingCaptureModal } from "./meeting-capture-modal";
 import {
   RecapModal,
   type RecapItem,
@@ -404,6 +406,25 @@ export default async function MeetingDetailPage({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
+              {/* The meeting's one "+ Issue / To-do" (feedback rows 58/40):
+                every stage, always here — no stage carries an "Add to-do" or
+                "Drop to Issues" of its own. Meeting-tagged writes, so the
+                recap attributes them to this L10. Kept first in this row and
+                never keyed or wrapped by stage: a follower's stage change is
+                a same-URL refresh, so this element staying put is what keeps
+                an open draft alive while the driver moves the room on (see
+                headerOffersCapture). Gated by nothing new — addIssue and
+                addTodo re-check team access server-side, the same check that
+                let this page render. */}
+              {headerOffersCapture(viewSegment) && (
+                <MeetingCaptureModal
+                  teamId={tid}
+                  meetingId={mid}
+                  members={members}
+                  currentUserId={uid}
+                  segment={viewSegment}
+                />
+              )}
               {/* Join the team's Google Meet room. DEMO: opens the standing
                 team Meet link a leader set in Members → Meeting settings. In
                 the real integration this href would be a per-meeting URL
@@ -658,7 +679,6 @@ async function SegmentContent({
     return (
       <SegmentScorecard
         teamId={teamId}
-        meetingId={meetingId}
         initialGroups={scorecardGroups}
         weekRange={scorecardWeekRange}
         period={scorecardPeriod}
@@ -868,7 +888,6 @@ async function SegmentContent({
     return (
       <SegmentHeadlines
         teamId={teamId}
-        meetingId={meetingId}
         userId={userId}
         initialHeadlines={initialHeadlines}
         members={members}

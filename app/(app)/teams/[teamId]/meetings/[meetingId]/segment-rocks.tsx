@@ -30,7 +30,6 @@ import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import { initials, ownerLabel } from "@/lib/user-name";
 import {
   type RockDoc as RockDocRecord,
@@ -426,11 +425,6 @@ export function SegmentRocks({
             onChange={setShowArchived}
             activeCount={rocks.filter((r) => r.status !== "cancelled").length}
             archivedCount={archivedRocks.length}
-          />
-          <QuickAddIssue
-            teamId={teamId}
-            prefill="Off-track rock: "
-            meetingId={meetingId}
           />
         </div>
       </div>

@@ -52,7 +52,6 @@ import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import { Pill } from "@/components/ui/pill";
 import { ownerLabel } from "@/lib/user-name";
 import {
@@ -277,12 +276,10 @@ export function SegmentIssues({
             archivedCount={archivedIssues.length}
           />
           {/*
-            No "Add to-do" here: the live meeting header carries the one
-            button, on every stage (feedback rows 58/40). The one that sat
-            here was a plain segment-level control — no issue prefill, no
-            link to the issue — so the header's is the same capability.
+            No "Add to-do" or "Drop to Issues" here: the live meeting header
+            carries the one "+ Issue / To-do", on every stage (feedback rows
+            58/40) — on this stage it opens on To-do.
           */}
-          <QuickAddIssue teamId={teamId} meetingId={meetingId} />
         </div>
       </div>
 

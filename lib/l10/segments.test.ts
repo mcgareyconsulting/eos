@@ -10,7 +10,7 @@ import {
   prevSegment,
   isSegment,
   normalizeSegment,
-  headerOffersAddTodo,
+  headerOffersCapture,
 } from "./segments";
 // normalizeSegment imported below with other helpers if needed
 
@@ -130,11 +130,11 @@ describe("normalizeSegment", () => {
   });
 });
 
-describe("headerOffersAddTodo", () => {
+describe("headerOffersCapture", () => {
   const live = SEGMENTS.filter((s) => s !== "done");
 
   test("offered on every live stage, Issues and To-Dos included", () => {
-    for (const s of live) assert.equal(headerOffersAddTodo(s), true, s);
+    for (const s of live) assert.equal(headerOffersCapture(s), true, s);
   });
 
   // The draft-persistence guarantee: the header modal stays mounted only if
@@ -145,8 +145,8 @@ describe("headerOffersAddTodo", () => {
       for (const to of [nextSegment(from), prevSegment(from), ...live]) {
         if (to === "done") continue;
         assert.equal(
-          headerOffersAddTodo(to),
-          headerOffersAddTodo(from),
+          headerOffersCapture(to),
+          headerOffersCapture(from),
           `${from} -> ${to}`,
         );
       }
@@ -154,6 +154,6 @@ describe("headerOffersAddTodo", () => {
   });
 
   test("never on a finished meeting", () => {
-    assert.equal(headerOffersAddTodo("done"), false);
+    assert.equal(headerOffersCapture("done"), false);
   });
 });

@@ -39,7 +39,6 @@ import {
 } from "../../todos/milestone-todo-row";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import {
   type RockDoc as RockDocRecord,
   type TodoDoc as TodoDocRecord,
@@ -423,11 +422,6 @@ export function SegmentTodos({
           onChange={setShowArchived}
           activeCount={activeTodoCount}
           archivedCount={archivedTodos.length}
-        />
-        <QuickAddIssue
-          teamId={teamId}
-          prefill="Stale to-do: "
-          meetingId={meetingId}
         />
       </div>
 

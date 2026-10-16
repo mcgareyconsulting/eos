@@ -75,17 +75,17 @@ export function normalizeSegment(
 }
 
 /**
- * Whether the live meeting header shows its "Add to-do" button for a stage.
- * One button, in one place, on EVERY stage — Segue through Conclude, Issues
- * and To-Dos included, which no longer carry toolbar copies of their own
+ * Whether the live meeting header shows its "+ Issue / To-do" button for a
+ * stage. One button, in one place, on EVERY stage — Segue through Conclude;
+ * no stage carries an "Add to-do" or "Drop to Issues" of its own any more
  * (feedback rows 58/40). Only a finished meeting has none.
  *
  * The answer must not vary across the live stages: the header keeps one
- * AddTodoModal mounted for the whole meeting, and a follower's stage change
+ * MeetingCaptureModal mounted for the whole meeting, and a follower's stage change
  * is a same-URL refresh, so an element that stays at the same spot in the
  * tree keeps its state. Turn this off for any one live stage and the modal
  * unmounts as the room moves through it, taking an open draft with it.
  */
-export function headerOffersAddTodo(s: Segment): boolean {
+export function headerOffersCapture(s: Segment): boolean {
   return s !== "done";
 }

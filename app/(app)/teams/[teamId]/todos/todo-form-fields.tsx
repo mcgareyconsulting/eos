@@ -16,8 +16,9 @@ export type Member = { user_id: string; full_name: string };
 
 const SELECT_FILL = "bg-white dark:bg-zinc-900";
 
-/** Field column shared by the add-to-do modal and the edit-to-do drawer. */
-function Field({
+/** Field column shared by the add-to-do modal, the edit-to-do drawer and
+ *  the L10 capture modal. */
+export function Field({
   label,
   required,
   children,
@@ -45,7 +46,7 @@ function Field({
  * Edit form the current followers seed the picks, so unchecking someone is
  * how they get removed.
  */
-function FollowerPicker({
+export function FollowerPicker({
   members,
   currentUserId,
   impliedIds,
@@ -146,6 +147,35 @@ function FollowerPicker({
         </ul>
       )}
     </div>
+  );
+}
+
+/** The Weekly focus checkbox (lib/weekly-focus.ts). */
+export function WeeklyFocusField({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
+      />
+      <span className="min-w-0">
+        <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+          Weekly focus
+        </span>
+        <span className="block text-[11px] text-zinc-500">
+          Shows a “Weekly” pill on the row. Replaces marking the title with{" "}
+          <code>**</code>.
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -416,23 +446,10 @@ export function TodoFormFields({
         </div>
       )}
 
-      <label className="flex items-start gap-2 rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-        <input
-          type="checkbox"
-          checked={weeklyFocus}
-          onChange={(e) => onWeeklyFocusChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-hpb-blue focus:ring-hpb-blue/40 dark:border-zinc-700"
-        />
-        <span className="min-w-0">
-          <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            Weekly focus
-          </span>
-          <span className="block text-[11px] text-zinc-500">
-            Shows a “Weekly” pill on the row. Replaces marking the title with{" "}
-            <code>**</code>.
-          </span>
-        </span>
-      </label>
+      <WeeklyFocusField
+        value={weeklyFocus}
+        onChange={onWeeklyFocusChange}
+      />
 
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>

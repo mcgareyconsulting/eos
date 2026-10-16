@@ -4,6 +4,7 @@ import type { DocumentSnapshot, Firestore } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "./auth";
 import { getAdminAuth } from "./admin";
 import { adminViewDocId, recordAdminView } from "@/lib/access-audit";
+import { checkTeamAccess } from "./team-access";
 
 // Test-only seam: every export below resolves its user/auth dependency
 // through this (defaulted) bag instead of calling requireFirebaseUser /
@@ -36,14 +37,9 @@ export const requireTeamAccess = cache(
   async (teamId: string, deps: TeamsDeps = {}) => {
     const { uid, isAdmin, db } = await (deps.user ?? requireFirebaseUser)();
 
-    const membership = await db
-      .collection("team_members")
-      .doc(`${teamId}__${uid}`)
-      .get();
-    if (!membership.exists && !isAdmin) notFound();
-
-    const teamSnap = await db.collection("teams").doc(teamId).get();
-    if (!teamSnap.exists) notFound();
+    const access = await checkTeamAccess(db, teamId, uid, isAdmin);
+    if (!access.ok) notFound();
+    const { membership, teamSnap } = access;
 
     // An admin opening a team they are not on leaves one audit row per admin
     // per team per day (spec section 6). Never blocks or fails the page.

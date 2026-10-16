@@ -65,25 +65,3 @@ body {
     transform: translateY(0.5px);
   }
 }
-
-/* Printing (the export print view, components/export/print-sheet.tsx, and a
-   browser print of any page). Paper is always light: drop the dark canvas,
-   keep zebra/borders as drawn, and leave a little margin for the binder. */
-@media print {
-  @page {
-    margin: 12mm;
-  }
-
-  :root,
-  .dark {
-    color-scheme: light;
-    --background: #ffffff;
-    --foreground: #171717;
-  }
-
-  body {
-    background: #ffffff !important;
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
-  }
-}

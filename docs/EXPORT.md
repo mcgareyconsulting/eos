@@ -1,19 +1,22 @@
-# Admin data export
+# Data export (CSV)
 
-Feedback row 55: admins need to export and print what a page shows, to hand
-to auditors. An admin gets an **Export** menu on a page that has opted in.
-It offers two formats:
+Feedback row 55: people need to export what a page shows, to hand to
+auditors or to work with in Excel. Every page that has opted in shows an
+**Export CSV** button.
 
-- **Spreadsheet (.xlsx).** The server builds it and streams it back as a
-  download.
-- **Print / Save as PDF.** A print view opens in a new tab, and the browser's
-  Print dialog saves it as a PDF. No headless browser runs on the server.
-  The tab opens on a single-use link the server mints for that click (see
-  [Print / PDF](#formats)).
+- **Available to everyone; scoped to the viewer's permissions** (Daniel
+  2026-10-16). Every signed-in user can export any wired page they can open,
+  and the file holds exactly what that page shows *them*: never more. Admins
+  get what admins see on the page.
+- **CSV only** (Daniel 2026-10-16). The export is one `.csv` download. Open it
+  in Excel; to print or make a PDF, print or save as PDF from Excel. There is
+  no in-app print view and no `.xlsx` export.
 
 Reference page: **To-Dos** (`/teams/{teamId}/todos`). Every page with a data
-list is wired up; see [Pages](#pages) for each one's view, its columns and
-what it leaves out, and for the pages that have no export and why.
+list is wired up (To-Dos, Rocks, Issues, Headlines, Scorecard, Meetings,
+Directory), and the Export CSV button shows for every viewer on each. See
+[Pages](#pages) for each one's view, its columns and what it leaves out,
+and for the pages that have no export and why.
 
 ## What every export guarantees
 
@@ -22,114 +25,98 @@ out of any of it.
 
 | # | Guardrail | Where |
 |---|-----------|-------|
-| 1 | Admin only, checked on the server for every request. The session must verify, the session claim must be admin, and a live Identity Platform read must still show `role: "admin"` on an account that is not disabled. Hiding the button is only a convenience. Non-admins get 403 from the API and 404 from the print view (the attempt is still audited, outcome `refused`). | `run.ts` `sessionUser` |
-| 2 | Exactly the current view. The definition reads the page's own query parameters and runs the page's own queries for the signed-in admin, with the page's visibility predicate (`lib/todo-lists`, `lib/access` `accessFor`). An export never contains more than the UI shows. | `lib/export/pages/*.ts` |
-| 3 | A provenance header goes at the top of the sheet and the top of the print view. It covers: export title, who exported it (name and email), when (Mountain time, `APP_TIME_ZONE` = America/Denver from `lib/time-zone.ts`, labeled MDT/MST), a note that every date and time in the file is Mountain time, the filters applied, the row count, and the app version (`DEPLOYMENT_ID` = git sha + Cloud Build id, plus the Cloud Run `K_REVISION`). | `provenance.ts` |
-| 4 | One `audit_log` row per export (outcome `ok`), written **before** the file leaves the server. If that write fails, the export is refused (fail closed). Every signed-in attempt the core refuses is audited too (outcome `refused`, with a `reason`); see [Audit row](#audit-row). | `audit.ts` |
-| 5 | Formula-injection protection (OWASP CSV injection). A cell starting with `=` `+` `-` `@`, tab, CR or LF (or their full-width forms) gets a leading `'`. This covers every string cell, headers and provenance included. Strings go out as inline strings, never as formulas. | `sanitize.ts`, `xlsx-writer.ts` |
-| 6 | Nothing is persisted. The workbook is built in memory and streamed as the response, with `Cache-Control: no-store`. No Cloud Storage and no temp files. (A print token stores only which view to print, for two minutes, never its rows.) | `response.ts` |
-| 7 | One shared module. A page supplies column definitions and a loader, nothing else. | `types.ts`, `registry.ts` |
-| 8 | Values are normalized by column kind: rich text becomes plain text, user ids become display names, and dates and times use one format. A **row cap** of 5,000 refuses a larger view with "narrow the filters". It never truncates, because a partial file handed to an auditor is worse than none. Loaders stop early: a query that is the view reads at most 5,001 docs (`readCapped`), and an in-memory-filtered view is checked (`checkRowCap`) before any per-row sub-read. The core re-checks after `load`, before resolving names. | `normalize.ts`, `cap.ts` |
+| 1 | **Who.** Checked on the server for every request, in this order, before any of the page's data is read: (a) the session verifies; (b) the account is live: a fresh Identity Platform read shows it still exists and is not disabled (deactivation disables it), and the admin claim is re-read from it rather than trusted from a cookie up to 25 hours old; (c) the page exists and its parameters parse; (d) the **page's own access rule** passes for this viewer (`definition.authorize`: every team page uses `authorizeTeamPage` in `lib/export/pages/shared.ts`, which is `checkTeamAccess`, the rule behind `requireTeamAccess`: on the roster or an org admin, and the team exists; the Directory, which every signed-in user can open, needs only (a) and (b)). Someone who can't open the page gets the page's own 404. The button being on the page is a convenience, not the gate. | `run.ts`, `lib/firebase/team-access.ts` |
+| 2 | **What.** Exactly the current view for this viewer. The definition reads the page's own query parameters and runs the page's own queries with the page's visibility predicate (`lib/todo-lists`, `lib/access` `accessFor`) for the signed-in viewer. There is no "admin sees everything" shortcut the page doesn't have: a member's file has no one else's private to-dos and no other team's items. | `lib/export/pages/*.ts` |
+| 3 | **Provenance**, without breaking the sheet. A CSV has no header block (extra rows above the table would break sorting and filtering), so provenance goes in the **file name**: `todos-leadership-active-2026-10-16-1305-MT.csv` (page, team, view, Mountain date and time; safe characters only). The **audit row** has the rest: who, the filters, the row count, the app version (`DEPLOYMENT_ID` = git sha + Cloud Build id, plus the Cloud Run `K_REVISION`) and the file name. | `provenance.ts`, `audit.ts` |
+| 4 | **Audit.** One `audit_log` row per successful export, for every user (outcome `ok`, never deduped), written **before** the file leaves the server. If that write fails, the export is refused (fail closed). Refused attempts are audited too (outcome `refused`), deduped; see [Audit row](#audit-row). | `audit.ts` |
+| 5 | **Formula-injection protection** (OWASP CSV injection), on every text cell, headers included. A cell gets a leading `'` when it starts with `=` `+` `-` `@`, tab, CR or LF (or their full-width forms), when it starts with one after leading spaces, or when any line of a multi-line value does. Number cells hold only finite numbers, which can't carry a formula, so they are written as plain numbers. | `sanitize.ts`, `csv.ts` |
+| 6 | **Nothing is persisted.** The CSV is built in memory and streamed as the response, with `Cache-Control: no-store`. No Cloud Storage, no temp files. | `response.ts` |
+| 7 | **One shared module.** A page supplies its params, its access rule, its loader and its columns, nothing else. | `types.ts`, `registry.ts` |
+| 8 | **Normalized values and a row cap.** Rich text becomes plain text, user ids become display names, dates and times use one format. A **row cap** of 5,000 refuses a larger view with "narrow the filters". It never truncates, because a partial file handed to an auditor is worse than none. Loaders stop early: a query that is the view reads at most 5,001 docs (`readCapped`), and an in-memory-filtered view is checked (`checkRowCap`) before any per-row sub-read. The core re-checks after `load`, before resolving names. | `normalize.ts`, `cap.ts` |
 
-### Formats
+### The request
 
-- **`.xlsx`**: `POST /api/export/{id}?<page params>`. It is a POST so that a
-  cross-site link or a prefetch cannot start an export, and its audit row,
-  in an admin's browser. A cross-site `Origin` is also refused. The writer is
-  in-house (`lib/export/xlsx-writer.ts`, about 300 lines, counterpart of the
-  reader in `lib/xlsx.ts`). An .xlsx is a ZIP of six small XML files and Node
-  ships DEFLATE. The SheetJS npm package is stale. exceljs would add a large
-  transitive tree to the runtime image for features exports never use. Tests
-  read every file the writer produces back through the in-house reader.
-- **Print / PDF**: two steps, so the print view is never a state-changing
-  GET. Rendering it reads the view and writes the audit row, and a
-  cross-site link opened by a signed-in admin would carry the session cookie
-  (it is `SameSite=Lax`, which top-level navigations send). So:
-  1. The Export control opens a blank tab (inside the click, so pop-up
-     blockers allow it), then calls
-     `POST /api/export/{id}/print-token?<page params>`. That route refuses a
-     cross-site `Origin`, re-checks the admin, the page and the parameters,
-     and mints a token: 32 random bytes, stored only as its SHA-256 in
-     `export_print_tokens`, bound to the admin's uid, the export id and the
-     exact query string, valid for **2 minutes**. It answers
-     `{ url: "/print/{id}?t=<token>" }`. Minting reads no rows and writes no
-     `ok` audit row (refusals are audited).
-  2. The tab goes to `GET /print/{id}?t=<token>`. The page spends the token
-     (`delete({ exists: true })`, so only one of two racing requests wins;
-     an expired or mismatched token is burned too) and renders the view the
-     token names. Its own URL carries no view parameters. A missing,
-     expired, reused or mismatched token gets "This print link has expired
-     or was already used", status 410, audited. A `Sec-Fetch-Site` of
-     `cross-site` or `same-site` is refused the same way, without spending
-     the token (defense in depth; the token is the gate). Non-admins and
-     unknown pages get a 404. Reloading the tab after it has printed shows
-     the expired message: choose Print again on the page.
+`POST /api/export/{id}?<page params>`. It is a POST so that a cross-site link
+or a prefetch can't start an export (and its audit row) in someone's
+browser; a cross-site `Origin` is refused too (403, before the session is
+read). The answer is either the file, or JSON `{ error }` with the
+refusal's status.
 
-  `export_print_tokens` is Admin SDK only (`firestore.rules`
-  `allow read, write: if false`) and skipped by the generic audit trigger
-  (`functions/src/index.ts`), like `oauth_csrf_states`. `expires_at` is a
-  Timestamp so a Firestore TTL policy can sweep tokens that were minted and
-  never opened.
+The file:
 
-  The view sits outside the
-  `(app)` group, so the print view has no sidebar. It always renders light.
-  The table header repeats on every printed page, rows don't split across
-  pages, and the toolbar is hidden on paper. The print rules are in
-  `components/export/print-sheet.tsx` and the `@media print` block in
-  `app/globals.css`. Rendering the view *is* the export, so it writes the
-  audit row with format `print`.
+- `Content-Type: text/csv; charset=utf-8`,
+  `Content-Disposition: attachment; filename="<name>.csv"`, streamed.
+- RFC 4180: comma separator, CRLF line endings, a field quoted when it
+  contains a comma, a double quote, CR or LF, with quotes doubled.
+- UTF-8 with a leading byte-order mark, so Excel reads accented names
+  correctly.
+- The first line is the column headers; one line per row after it.
 
 ### Value formats
+
+Every time is **Mountain time** (`APP_TIME_ZONE` = America/Denver, from
+`lib/time-zone.ts`), the bank's clock. No cell names the zone.
 
 | Kind | Output |
 |------|--------|
 | `text` | trimmed string |
 | `richtext` | `lib/rich-text.ts` `richTextToPlain`: bold dropped, links as `label (url)`, bullets as `• ` |
-| `date` | A real spreadsheet date cell (Excel serial, number format `yyyy-mm-dd`). A stored calendar day passes through. An instant becomes its Mountain-time day. Print shows `YYYY-MM-DD`. |
-| `datetime` | A real spreadsheet date-time cell (Excel serial of the Mountain wall-clock time, format `yyyy-mm-dd hh:mm`). Print shows `YYYY-MM-DD HH:mm MDT` (or `MST`). |
+| `date` | `YYYY-MM-DD`, as text. A stored calendar day passes through; an instant becomes its Mountain day. |
+| `datetime` | `YYYY-MM-DD HH:mm` Mountain time, as text. |
 | `boolean` | `Yes` / `No` |
 | `user` | display name. `Unassigned` for none, `—` for an id with no profile (same as the UI) |
-| `number` | a numeric cell |
+| `number` | a finite number; anything else is blank |
 
-Date cells are numbers, so they sort and filter as dates and can't carry a
-formula. A value a spreadsheet can't date reliably (not a real day, or before
-1900-03-01, where Excel's 1900 leap-year bug shifts serials) stays a text
-cell, which still goes through formula-injection protection.
+Excel recognizes both date formats as dates when it opens the file, and they
+sort correctly as text either way.
 
 ### Audit row
 
 ```
-entity_type  "data_export"
-action       "data_export"
-entity_id    export id, e.g. "todos" (as requested, truncated, on refusals)
-actor_uid    who exported, or tried to
-actor_source "app"
-team_id      team of the view, or null
-outcome      "ok" | "refused"
-reason       null when ok; otherwise one of the reasons below
-http_status  200, or the refusal's status
-export       { page, format: "xlsx" | "print", filters: {Label: value},
-               row_count (null when never counted), app_version,
-               query (refusals only: the requested query string, truncated) }
-timestamp    server time
+entity_type    "data_export"
+action         "data_export"
+entity_id      export id, e.g. "todos" (as requested, truncated, on refusals)
+actor_uid      who exported, or tried to; null with no session
+actor_source   "app"
+team_id        team of the view, or null
+outcome        "ok" | "refused"
+reason         null when ok; otherwise one of the reasons below
+http_status    200, or the refusal's status
+export         { page, format: "csv", filters: {Label: value},
+                 row_count (null when never counted), app_version,
+                 query (refusals only: the requested query string, truncated),
+                 file_name (ok rows) }
+dedupe_window  refused rows only: start of the 10-minute window (ISO, UTC)
+timestamp      server time
 ```
 
 | `reason` | Status | When |
 |----------|--------|------|
-| `not_admin` | 403 | signed in, not an admin (the print view shows a 404) |
+| `not_signed_in` | 401 | no valid session |
+| `account_inactive` | 403 | the account no longer exists or is disabled |
 | `unknown_export` | 404 | no page with that export id |
 | `bad_params` | 400 | the definition rejected the parameters |
-| `not_found` | 404 | the team doesn't exist or isn't visible |
+| `no_page_access` | 404 | the viewer can't open the page (a team page: not on the team and not an admin, or no such team), the same 404 the page gives |
+| `not_found` | 404 | the loader found nothing to show (e.g. the team vanished between the checks) |
 | `over_cap` | 413 | more than 5,000 rows |
-| `print_token_missing` / `print_token_invalid` / `print_token_expired` / `print_token_mismatch` | 410 | print view: no token; unknown or already used; past its 2 minutes; minted for another admin or export |
-| `cross_site` | 410 | print view reached by a navigation from another site |
 
-`ok` rows fail closed (no row, no file). `refused` rows are best effort: the
-request is refused either way, so a failed write is logged, not surfaced. No
-session (401) has no actor and writes nothing. A cross-site POST is refused
-by the route's `Origin` check before the session is read, so it isn't
-audited either (it arrives without the `SameSite=Lax` cookie anyway). The
-print token itself is never written to the audit trail.
+`ok` rows fail closed (no row, no file) and are never deduped: every file
+gets its own row.
+
+`refused` rows are best effort (the request is refused either way, so a
+failed write is logged, not surfaced) and **deduped**: at most one row per
+(uid, or `anonymous` with no session; export id; reason) per 10-minute
+window. The row's doc id is derived from a SHA-256 of that key plus the
+window start, and it is written with `create()`, so a second identical
+refusal in the window fails `ALREADY_EXISTS` and writes nothing. No read,
+no client-writable state. An export id that isn't a real export counts as
+one key (`(unknown)`), so made-up ids can't mint unlimited rows; the row
+still records the id as requested (truncated). A different reason, a
+different person or the next window gets its own row.
+
+A cross-site POST is refused by the route's `Origin` check before the
+session is read, so it isn't audited (it arrives without the `SameSite=Lax`
+cookie anyway).
 
 The row is written the same way as `lib/access-audit.ts` rows: an Admin SDK
 write straight into `audit_log`. The generic audit trigger skips that
@@ -137,35 +124,44 @@ collection. No rules change was needed: `audit_log` stays `allow write: if false
 
 ## Adding a page
 
-You add configuration only. The core, routes, writer and print view do not change.
+You add configuration only. The core, the route and the writer do not change.
 
 1. **Write a definition**: `lib/export/pages/{page}.ts`, exporting an
    `ExportDefinition<Row, Params>` (see `lib/export/types.ts`;
    `lib/export/pages/todos.ts` is the model).
    - `id`: the URL id, which is also the audit `entity_id`. `title`: the
-     heading and sheet name.
+     page's name.
    - `parseParams(searchParams)`: read the **same query parameter names the
      page's server component reads**, plus `team` for team pages (the path
      segment). Validate ids. Return `{ ok: false, status: 400, ... }` for junk.
+   - `authorize({ db, uid, viewer }, params)`: the **page's own access
+     rule**, using the helper the page relies on, never a parallel one (team
+     pages: `checkTeamAccess` from `lib/firebase/team-access.ts`). Return
+     `null` to allow, or the same 404 the page gives. It runs before `load`.
    - `load({ db, uid, viewer }, params)`: run the **page's own queries** and
-     apply the **page's own visibility predicate**, then `accessFor(type).canSee`.
-     Return the rows in the order the page renders them. A missing team is a
-     404 refusal. Honor the row cap early with `lib/export/cap.ts`: when a
-     query is exactly the view, read it with `readCapped(query)` (at most
-     5,001 docs; refuse on the extra one). When the page filters a query's
-     docs in memory (as To-Dos does), a limit would refuse views that fit, so
-     call `checkRowCap(rows.length)` on the filtered rows instead, and do it
-     **before** any per-row sub-read (milestones per rock, comments per item). Return `filters` (one `{label, value}` per filter shown on the
-     page, using names, not ids), `teamId`, `fileNameParts`, and `names` (the
-     roster map, so `user` columns don't re-read `/users`).
+     apply the **page's own visibility predicate**, then
+     `accessFor(type).canSee`, for this viewer. No admin-only shortcut and
+     no admin-only column the page doesn't show this viewer. Return the rows
+     in the order the page renders them. Honor the row cap early with
+     `lib/export/cap.ts`: when a query is exactly the view, read it with
+     `readCapped(query)` (at most 5,001 docs; refuse on the extra one). When
+     the page filters a query's docs in memory (as To-Dos does), a limit
+     would refuse views that fit, so call `checkRowCap(rows.length)` on the
+     filtered rows instead, and do it **before** any per-row sub-read
+     (milestones per rock, comments per item). Return `filters` (one
+     `{label, value}` per filter shown on the page, using names, not ids),
+     `teamId`, `fileNameParts`, and `names` (the roster map, so `user`
+     columns don't re-read `/users`).
    - `columns` can also come back on the loaded view when they depend on
      it (the Scorecard's period columns follow its Weekly/Monthly tab and
-     week range). The definition still declares its fixed columns, which the
-     snapshot test pins.
-   - Shared team-page pieces (the `team` param, the team gate, the roster,
-     `?owner=`) are in `lib/export/pages/shared.ts`.
-   - `columns`: `{ key, header, kind, value(row), width? }`. Choose a `kind`;
-     don't format values yourself. Align `key`s with stored field names and
+     week range; the Directory's Account column is there for admins only).
+     The definition still declares its fixed columns, which the snapshot
+     test pins.
+   - Shared team-page pieces (the `team` param, the team gate
+     `authorizeTeamPage`, the roster, `?owner=`) are in
+     `lib/export/pages/shared.ts`.
+   - `columns`: `{ key, header, kind, value(row) }`. Choose a `kind`; don't
+     format values yourself. Align `key`s with stored field names and
      `lib/item-registry.ts` vocabulary (owner, assigner, …).
    - If the page's ordering or filtering lives in a client component, move
      that pure function into `lib/` and import it from both, so the board and
@@ -173,25 +169,29 @@ You add configuration only. The core, routes, writer and print view do not chang
 2. **Register it** in `lib/export/registry.ts`.
 3. **Add the control**: render
    `<ExportControl exportId="{id}" params={...} />` (from
-   `components/export/export-control.tsx`) on the page, **only when
-   `isAdmin`**. Pass the page's current URL state with the same keys
-   `parseParams` reads. Put a small `xxxExportParams(view)` helper in
-   `lib/export/urls.ts` and test that it round-trips through `parseParams`.
-   Team entity pages put the control in `EntityPageHeader`'s `leading` slot.
-   When part of the view is client state (a toggle or a toolbar filter),
-   render the control in the client component that holds that state and pass
-   it as params too (Issues, Scorecard and Directory do this).
-4. **Tests** in `lib/export/pages/{page}.test.ts`:
-   - a column snapshot (`[key, header, kind]` for every column);
-   - the view: each filter, the ordering, and that rows the page hides from
-     a non-admin viewer are not returned;
-   - the params round-trip.
+   `components/export/export-control.tsx`) on the page, **for everyone**.
+   Pass the page's current URL state with the same keys `parseParams`
+   reads. Put a small `xxxExportParams(view)` helper in `lib/export/urls.ts`
+   and test that it round-trips through `parseParams`. Team entity pages put
+   the control in `EntityPageHeader`'s `leading` slot. When part of the
+   view is client state (a toggle or a toolbar filter), render the control
+   in the client component that holds that state and pass it as params too
+   (Issues, Scorecard and Directory do this).
+4. **Tests**:
+   - in `lib/export/pages/{page}.test.ts`: a column snapshot (`[key, header,
+     kind]` for every column), each filter, the ordering, and the params
+     round-trip;
+   - through the core (`lib/export/run.test.ts` is the model): a member's
+     file holds exactly the rows that member's page shows, with hidden items
+     seeded (someone else's private item, another team's item, any
+     admin-only data) and absent; an admin's file still holds admin-visible
+     data; someone without page access is refused before any load.
 
-   The admin gate, injection and audit tests live in `lib/export/run.test.ts`
-   and cover every page through the core (one test walks every registered
-   id and checks a non-admin is refused before its loader runs). Add a
-   page-specific case there only if the page adds behavior. Page tests that
-   go through the core use `lib/test-support/export-deps.ts`.
+   The account check, injection, CSV and audit tests live in
+   `lib/export/run.test.ts`, `csv.test.ts` and `sanitize.test.ts` and cover
+   every page through the core (one test walks every registered id and
+   checks someone without page access is refused before its loader runs).
+   Page tests that go through the core use `lib/test-support/export-deps.ts`.
 
 ## Pages
 
@@ -208,7 +208,7 @@ they lived in a component.
 | Headlines | `headlines` | `team`, `archived`, `owner` | owner groups then Cascading; Archived flat, newest first (`lib/headlines.ts`) | header |
 | Scorecard | `scorecard` | `team`, `period`, `weeks`, `archived`, and the toolbar's `status`, `owner`, `group`, `sort`, `q` | the toolbar's filter and sort (`lib/scorecard-view.ts`), then the grid's grouping (`bucketMetricsByGroup` + `orderGroupNames`) | toolbar |
 | Meetings | `meetings` | `team` (the page has no filters) | newest first (`lib/l10/meeting-summary.ts`) | header |
-| Directory | `directory` | `q`, `access`, `teams` (comma-joined sets) | the loader's last-name order, the table's filter (`lib/directory-filter.ts`) | admin toolbar |
+| Directory | `directory` | `q`, `access`, `teams` (comma-joined sets) | the loader's last-name order, the table's filter (`lib/directory-filter.ts`) | toolbar |
 
 ### What each file holds, and leaves out
 
@@ -223,7 +223,8 @@ they lived in a component.
   headline and that member's milestones, as the page shows it. Audience
   rocks and blocks are on the Active view only, as on the page. Status
   history (behind a click) is not in the file.
-- **Issues**: the selected term only, the list the toggle shows.
+- **Issues**: the selected term only, the list the toggle shows. The
+  comment-count badge on each row is not a column.
 - **Headlines**: the Owner column names the creator. The page says "You"
   on the viewer's own rows; a file handed to someone else names the person.
   Names come from the team roster, as on the page.
@@ -235,8 +236,11 @@ they lived in a component.
 - **Meetings**: the History list. Meeting settings (agendas, Meet link,
   speaking order) are configuration, not history, and each meeting's recap
   is its own page. A live meeting has no rating, as on the page.
-- **Directory**: the admin's view of the table, so it includes deactivated
-  people and the admin-only account state (No account / Never signed in).
+- **Directory**: the table as this viewer sees it. Everyone gets First
+  Name, Last Name, Team, Role access, Email and User ID. Only an admin's
+  file lists deactivated people and has the Account column (No account /
+  Never signed in / Signed in), because only admins see those on the page;
+  for anyone else the loader never returns them and the column is left out.
 
 ### How each page honors the row cap early
 

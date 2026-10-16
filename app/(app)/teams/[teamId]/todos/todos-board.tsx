@@ -24,6 +24,13 @@ import {
 } from "@/lib/milestone-visibility";
 import { ownerLabel } from "@/lib/user-name";
 import { AddTodoModal } from "./add-todo-modal";
+import {
+  BoardNotice,
+  OwnerSection,
+  SectionCard,
+  TodoColumn,
+  openDoneCount,
+} from "./board-layout";
 import { MilestoneTodoRow, type MilestoneTodoItem } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 import { usePersonNames } from "./use-person-names";
@@ -489,14 +496,12 @@ export function TodosBoard({
               revoked={tasksStatus.revoked}
               showHint={false}
             />
-            {/* Admin export of exactly this view (docs/EXPORT.md). The
-                server re-checks the role; hiding it is only convenience. */}
-            {isAdmin && (
-              <ExportControl
-                exportId="todos"
-                params={todosExportParams({ teamId, showArchived, ownerFilter })}
-              />
-            )}
+            {/* CSV of exactly this view, for everyone, holding what this
+                viewer can see (docs/EXPORT.md). The server re-checks. */}
+            <ExportControl
+              exportId="todos"
+              params={todosExportParams({ teamId, showArchived, ownerFilter })}
+            />
           </div>
         }
         filter={<OwnerFilter members={members} currentUserId={userId} />}
@@ -613,22 +618,15 @@ export function TodosBoard({
               </SectionCard>
             )}
             {openCount === 0 && groups.some((g) => g.done.length > 0) && (
-              <p className="text-center text-sm text-hpb-green">
+              <BoardNotice>
                 All to-dos done — they archive when the L10 ends.
-              </p>
+              </BoardNotice>
             )}
             {groups.map((g) => (
               <OwnerSection
                 key={g.key}
                 title={g.title}
-                count={
-                  [
-                    g.open.length > 0 ? `${g.open.length} open` : null,
-                    g.done.length > 0 ? `${g.done.length} done` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "none"
-                }
+                count={openDoneCount(g.open.length, g.done.length)}
               >
                 {/* One list, open then done — not two. Keys only match within
                     a single array, so checking a to-do off would move it to a
@@ -710,60 +708,4 @@ function boardToListItem(t: TodoBoardDoc): TodoListItem {
     assigned_by: t.assigned_by ?? null,
     created_by: t.created_by ?? null,
   };
-}
-
-/**
- * One board column: a heading over a stack of owner sections. The sections
- * are styled exactly like the Rocks tab's (`RockSection` in rocks/page.tsx):
- * a small uppercase heading with its count, then a card of its own.
- */
-function TodoColumn({
-  title,
-  count,
-  meta,
-  children,
-}: {
-  title: string;
-  count: number;
-  /** Optional breakdown (e.g. "5 open") when `count` alone under-explains. */
-  meta?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="min-w-0 space-y-4">
-      <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-200">
-        {title} <span className="font-medium text-zinc-400">({count})</span>
-        {meta && <span className="ml-1.5 font-medium text-zinc-400">· {meta}</span>}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** An owner's rows — the Rocks tab's section: heading, then its own card. */
-function OwnerSection({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
-        {title} <span className="font-bold text-zinc-400">({count})</span>
-      </h3>
-      <SectionCard>{children}</SectionCard>
-    </section>
-  );
-}
-
-function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-300 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-      {children}
-    </div>
-  );
 }

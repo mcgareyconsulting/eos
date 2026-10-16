@@ -29,6 +29,7 @@ import {
 } from "../types";
 import {
   archivedParam,
+  authorizeTeamPage,
   loadRoster,
   loadTeamOr404,
   ownerFilterLine,
@@ -103,50 +104,44 @@ export function todosViewRows(input: {
 }
 
 export const TODOS_COLUMNS: readonly ExportColumn<TodoExportRow>[] = [
-  { key: "owner", header: "Owner", kind: "user", value: (t) => t.owner_id, width: 22 },
-  { key: "title", header: "To-do", kind: "text", value: (t) => t.title, width: 48 },
+  { key: "owner", header: "Owner", kind: "user", value: (t) => t.owner_id },
+  { key: "title", header: "To-do", kind: "text", value: (t) => t.title },
   {
     key: "description",
     header: "Description",
     kind: "richtext",
     value: (t) => t.description,
-    width: 60,
   },
-  { key: "due_date", header: "Due", kind: "date", value: (t) => t.due_date, width: 12 },
+  { key: "due_date", header: "Due", kind: "date", value: (t) => t.due_date },
   {
     key: "status",
     header: "Status",
     kind: "text",
     value: (t) => (t.completed_at ? "Done" : "Open"),
-    width: 8,
   },
   {
     key: "completed_at",
     header: "Completed",
     kind: "datetime",
     value: (t) => t.completed_at,
-    width: 20,
   },
   {
     key: "archived_at",
     header: "Archived",
     kind: "datetime",
     value: (t) => t.archived_at,
-    width: 20,
   },
   {
     key: "visibility",
     header: "Visibility",
     kind: "text",
     value: (t) => (t.visibility === "private" ? "Private" : "Team"),
-    width: 10,
   },
   {
     key: "weekly_focus",
     header: "Weekly focus",
     kind: "boolean",
     value: (t) => t.weekly_focus === true,
-    width: 12,
   },
   {
     key: "assigned_by",
@@ -154,9 +149,8 @@ export const TODOS_COLUMNS: readonly ExportColumn<TodoExportRow>[] = [
     kind: "user",
     // lib/follow.ts assignerOf: legacy docs fall back to the creator.
     value: (t) => t.assigned_by ?? t.created_by ?? null,
-    width: 22,
   },
-  { key: "id", header: "To-do ID", kind: "text", value: (t) => t.id, width: 24 },
+  { key: "id", header: "To-do ID", kind: "text", value: (t) => t.id },
 ];
 
 export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
@@ -164,6 +158,10 @@ export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
   title: "To-Dos",
   parseParams: parseTodosParams,
   columns: TODOS_COLUMNS,
+  // The page's gate, requireTeamAccess: on the roster or an org admin, and
+  // the team exists. A non-member gets the same answer as a team that
+  // doesn't exist, before any to-do is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, uid, viewer }, p): Promise<LoadedView<TodoExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

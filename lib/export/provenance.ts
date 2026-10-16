@@ -1,16 +1,15 @@
-// The provenance header every export carries (docs/EXPORT.md): who, when
-// (Mountain time — APP_TIME_ZONE, the bank's clock), which view, how many
-// rows, which build. Pure — the caller passes the clock and the environment.
+// Provenance for an export (docs/EXPORT.md). A CSV has no header block —
+// extra rows above the table would break sorting and filtering in Excel —
+// so provenance lives in two places:
+//
+//   the file name   which page, which team / view, when (Mountain time):
+//                   `todos-leadership-active-2026-10-16-1305-MT.csv`
+//   the audit row   who, the filters, the row count, the build, the file
+//                   name (lib/export/audit.ts)
+//
+// Pure — the caller passes the clock and the environment.
 
-import {
-  EXPORT_TIME_ZONE,
-  EXPORT_TIME_ZONE_LABEL,
-  formatMountainDate,
-  formatMountainDateTime,
-} from "./normalize";
-import type { ExportFilterLine } from "./types";
-
-export const APP_NAME = "HPB Pulse";
+import { formatMountainDate, formatMountainDateTime } from "./normalize";
 
 /**
  * The build that produced the file. `DEPLOYMENT_ID` is `<git short sha>-<Cloud
@@ -25,50 +24,7 @@ export function appVersion(env: Record<string, string | undefined> = process.env
   return parts.length > 0 ? parts.join(" · ") : "local build";
 }
 
-/** "Name <email>", or whichever half exists, or the uid. */
-export function exporterLabel(user: {
-  uid: string;
-  name?: string | null;
-  email?: string | null;
-}): string {
-  const name = user.name?.trim();
-  const email = user.email?.trim();
-  if (name && email) return `${name} <${email}>`;
-  return name || email || user.uid;
-}
-
-export function filtersLabel(filters: readonly ExportFilterLine[]): string {
-  if (filters.length === 0) return "None";
-  return filters.map((f) => `${f.label}: ${f.value}`).join(" · ");
-}
-
-export function provenanceLines(input: {
-  title: string;
-  exportedBy: string;
-  now: Date;
-  filters: readonly ExportFilterLine[];
-  rowCount: number;
-  version: string;
-}): ExportFilterLine[] {
-  return [
-    { label: "Export", value: `${APP_NAME} — ${input.title}` },
-    { label: "Exported by", value: input.exportedBy },
-    {
-      label: "Exported at",
-      value: `${formatMountainDateTime(input.now)} (${EXPORT_TIME_ZONE_LABEL}, ${EXPORT_TIME_ZONE})`,
-    },
-    { label: "Filters applied", value: filtersLabel(input.filters) },
-    { label: "Rows", value: String(input.rowCount) },
-    { label: "App version", value: input.version },
-    // Spreadsheet date cells carry no zone of their own; say which one.
-    {
-      label: "Times",
-      value: `Dates and times are ${EXPORT_TIME_ZONE_LABEL} (${EXPORT_TIME_ZONE})`,
-    },
-  ];
-}
-
-/** Lowercase ASCII words joined by "-", for file names. */
+/** Lowercase ASCII words joined by "-": safe in any file name and header. */
 export function slug(s: string): string {
   return (
     s
@@ -77,12 +33,19 @@ export function slug(s: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "export"
+      .slice(0, 40)
+      .replace(/-+$/, "") || "export"
   );
 }
 
-/** `hpb-pulse_todos_leadership_active_2026-10-16` (no extension). */
+/**
+ * `todos-leadership-active-2026-10-16-1305-MT.csv`: page, the loader's
+ * words (team, view), the Mountain date and time. Only `[a-z0-9-]` plus the
+ * `MT` marker and the extension, so it needs no escaping in
+ * Content-Disposition.
+ */
 export function exportFileName(id: string, parts: readonly string[], now: Date): string {
-  const day = formatMountainDate(now);
-  return ["hpb-pulse", slug(id), ...parts.map(slug), day].join("_");
+  const [day, time] = formatMountainDateTime(now).split(" ");
+  const stamp = `${day ?? formatMountainDate(now)}-${(time ?? "").replace(":", "")}`;
+  return [slug(id), ...parts.map(slug), stamp, "MT"].join("-") + ".csv";
 }

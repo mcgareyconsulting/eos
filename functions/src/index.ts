@@ -6,8 +6,9 @@
  *    pointed at the named database (see OPERATIONS / CUTOVER).
  *
  * 2) Monday archive sweep — `archiveStaleTodos` (scheduler): pure to-dos,
- *    closed issues, discussed headlines, and done rocks. Safe to deploy
- *    independently; uses FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
+ *    closed issues and discussed headlines. Rocks are manual-archive only
+ *    and never swept. Safe to deploy independently; uses
+ *    FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
  *
  * 3) Weekly auth export — `exportAuthUsers` (scheduler, Sunday 4am
  *    America/Chicago, one hour after the Firestore export function):
@@ -35,7 +36,7 @@ import {
 import { firestoreDatabaseId } from "./config";
 import { resolveAuditActor, type AuditAction } from "../../lib/audit-actor";
 
-// Re-export scheduled todo archive (Monday 3am America/Chicago).
+// Re-export scheduled todo archive (Monday 3am Mountain — APP_TIME_ZONE).
 export { archiveStaleTodos } from "./archive-stale-todos";
 
 // Re-export scheduled Firebase Auth user export (Sunday 4am America/Chicago).
@@ -166,9 +167,7 @@ async function recordAuditEvent(
 // Copying their before/after snapshots would move those secrets into a log
 // that admins can read (firestore.rules) and that keeps them forever
 // (append-only, surviving disconnect). Neither collection is a business
-// record, so skip them entirely. export_print_tokens (single-use print-view
-// tokens, lib/export/print-token.ts) is the same kind of thing: the export
-// it gates writes its own data_export row.
+// record, so skip them entirely.
 //
 // DERIVED GUARD: notifications are per-user inbox rows fanned out *from*
 // writes this log already captures (a comment, a to-do completion, a
@@ -180,7 +179,6 @@ const AUDIT_EXCLUDED_COLLECTIONS = new Set([
   "audit_log",
   "google_tasks_connections",
   "oauth_csrf_states",
-  "export_print_tokens",
   "notifications",
 ]);
 

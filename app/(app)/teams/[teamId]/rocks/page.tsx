@@ -121,8 +121,8 @@ export default async function RocksPage({
   // Project plain fields only — spreading d.data() would pull created_at
   // (Firestore Timestamp) across the RSC boundary into RockDetailTrigger.
   const allRocksRaw = teamRocks.own.map((d) => mapFullRock(d.id, d.data()));
-  // Active/Archived tabs; Monday CF moves Done rocks (completed_at before
-  // this week's Monday) onto Archived.
+  // Active/Archived tabs; rocks only move to Archived by hand (the row's
+  // Archive control) — Done rocks stay on Active through the quarter.
   const activeRockCount = allRocksRaw.filter((r) => r.archived_at == null)
     .length;
   const archivedRockCount = allRocksRaw.filter((r) => r.archived_at != null)
@@ -406,7 +406,7 @@ export default async function RocksPage({
             <EmptyState
               icon={Archive}
               title="No archived rocks"
-              hint="Nothing archived yet. Rocks marked Done before this week’s Monday land here after the overnight sweep."
+              hint="Nothing archived yet. Rocks you archive from the Active list land here."
             />
           ) : (
             <Empty>{emptyMessage}</Empty>

@@ -5,14 +5,29 @@
 
 import type { Firestore } from "firebase-admin/firestore";
 import type { Viewer } from "@/lib/access";
+import { checkTeamAccess } from "@/lib/firebase/team-access";
 import { userDisplayName, type UserDocData } from "@/lib/user-name";
-import type { ExportRefusal } from "../types";
+import type { ExportContext, ExportRefusal } from "../types";
 
 /** A Firestore document id as the pages accept one in a URL. */
 export const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
-export function refuse(status: number, message: string): ExportRefusal {
-  return { ok: false, status, message };
+export function refuse(status: number, message: string, reason?: string): ExportRefusal {
+  return { ok: false, status, message, ...(reason ? { reason } : {}) };
+}
+
+/**
+ * The team pages' gate, requireTeamAccess (lib/firebase/teams.ts), as an
+ * export `authorize`: on the roster or an org admin, and the team exists —
+ * the same checkTeamAccess the page runs. A non-member gets the same 404 as
+ * a team that doesn't exist, before any of the team's data is read.
+ */
+export async function authorizeTeamPage(
+  { db, uid, viewer }: ExportContext,
+  teamId: string,
+): Promise<ExportRefusal | null> {
+  const access = await checkTeamAccess(db, teamId, uid, viewer.isAdmin);
+  return access.ok ? null : refuse(404, "Team not found.", "no_page_access");
 }
 
 /** `?archived=` as every entity page reads it: `1` or `true`. */

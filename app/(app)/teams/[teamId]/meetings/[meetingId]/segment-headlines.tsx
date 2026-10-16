@@ -26,12 +26,12 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { CaptureButton } from "./meeting-capture-modal";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { HeadlineFormModal } from "../../headlines/headline-form-modal";
 import { headlineKind } from "../../headlines/headline-kind";
 import { HeadlineDiscussedCheckbox } from "../../headlines/headline-checkbox";
 import { LocalTime } from "@/components/local-time";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import {
   type HeadlineDoc as HeadlineDocRecord,
   type WithId,
@@ -69,13 +69,11 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentHeadlines({
   teamId,
-  meetingId,
   userId,
   initialHeadlines,
   members,
 }: {
   teamId: string;
-  meetingId: string;
   userId: string;
   initialHeadlines: HeadlineDoc[];
   members: Member[];
@@ -237,11 +235,7 @@ export function SegmentHeadlines({
             archivedCount={archived.length}
           />
           <HeadlineFormModal mode="create" teamId={teamId} compact />
-          <QuickAddIssue
-            teamId={teamId}
-            prefill="From headline: "
-            meetingId={meetingId}
-          />
+          <CaptureButton />
         </div>
 
         {shown.length === 0 ? (

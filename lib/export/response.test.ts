@@ -1,35 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { readXlsx } from "@/lib/xlsx";
-import {
-  bytesStream,
-  isCrossSiteNavigation,
-  isSameOrigin,
-  printTokenResponse,
-  xlsxResponse,
-} from "./response";
-import { NOT_ADMIN } from "./run";
-
-describe("print door framing", () => {
-  test("cross-site navigations are spotted by Sec-Fetch-Site", () => {
-    const h = (v?: string) => new Headers(v === undefined ? {} : { "sec-fetch-site": v });
-    assert.equal(isCrossSiteNavigation(h("same-origin")), false);
-    assert.equal(isCrossSiteNavigation(h("none")), false);
-    assert.equal(isCrossSiteNavigation(h()), false);
-    assert.equal(isCrossSiteNavigation(h("cross-site")), true);
-    assert.equal(isCrossSiteNavigation(h("same-site")), true);
-  });
-
-  test("print-token answers with the print view's URL, or the refusal", async () => {
-    const ok = printTokenResponse("todos", { ok: true, token: "tok" });
-    assert.equal(ok.status, 200);
-    assert.equal(ok.headers.get("cache-control"), "no-store, private");
-    assert.deepEqual(await ok.json(), { url: "/print/todos?t=tok" });
-    const no = printTokenResponse("todos", { ok: false, status: 403, message: NOT_ADMIN });
-    assert.equal(no.status, 403);
-    assert.deepEqual(await no.json(), { error: NOT_ADMIN });
-  });
-});
+import { bytesStream, csvResponse, isSameOrigin } from "./response";
+import { UNKNOWN_EXPORT } from "./run";
 
 function req(headers: Record<string, string>) {
   return new Request("https://pulse.example/api/export/todos", { method: "POST", headers });
@@ -37,33 +9,34 @@ function req(headers: Record<string, string>) {
 
 describe("export response", () => {
   test("a refusal is JSON with its status, never a file", async () => {
-    const res = xlsxResponse({ ok: false, status: 403, message: NOT_ADMIN });
-    assert.equal(res.status, 403);
+    const res = csvResponse({ ok: false, status: 404, message: UNKNOWN_EXPORT });
+    assert.equal(res.status, 404);
     assert.equal(res.headers.get("cache-control"), "no-store, private");
-    assert.deepEqual(await res.json(), { error: NOT_ADMIN });
+    assert.match(res.headers.get("content-type") ?? "", /json/);
+    assert.equal(res.headers.get("content-disposition"), null);
+    assert.deepEqual(await res.json(), { error: UNKNOWN_EXPORT });
   });
 
-  test("a table streams as an attachment the reader can open", async () => {
-    const res = xlsxResponse({
+  test("a table streams as a CSV attachment", async () => {
+    const res = csvResponse({
       ok: true,
       table: {
         title: "To-Dos",
         headers: ["To-do"],
-        widths: [20],
         rows: [["=1+1"]],
-        provenance: [{ label: "Export", value: "HPB Pulse — To-Dos" }],
-        fileName: "hpb-pulse_todos_ops_active_2026-10-16",
+        fileName: "todos-ops-active-2026-10-16-1305-MT.csv",
       },
     });
     assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "text/csv; charset=utf-8");
+    assert.equal(res.headers.get("cache-control"), "no-store, private");
     assert.equal(
       res.headers.get("content-disposition"),
-      'attachment; filename="hpb-pulse_todos_ops_active_2026-10-16.xlsx"',
+      'attachment; filename="todos-ops-active-2026-10-16-1305-MT.csv"',
     );
     const buf = Buffer.from(await res.arrayBuffer());
     assert.equal(res.headers.get("content-length"), String(buf.length));
-    const [sheet] = readXlsx(buf);
-    assert.deepEqual(sheet.rows.at(-1), ["'=1+1"]);
+    assert.equal(buf.toString("utf8"), "﻿To-do\r\n'=1+1\r\n");
   });
 
   test("bytesStream chunks and ends", async () => {

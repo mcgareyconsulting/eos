@@ -1,8 +1,35 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readXlsx } from "@/lib/xlsx";
-import { bytesStream, isSameOrigin, xlsxResponse } from "./response";
+import {
+  bytesStream,
+  isCrossSiteNavigation,
+  isSameOrigin,
+  printTokenResponse,
+  xlsxResponse,
+} from "./response";
 import { NOT_ADMIN } from "./run";
+
+describe("print door framing", () => {
+  test("cross-site navigations are spotted by Sec-Fetch-Site", () => {
+    const h = (v?: string) => new Headers(v === undefined ? {} : { "sec-fetch-site": v });
+    assert.equal(isCrossSiteNavigation(h("same-origin")), false);
+    assert.equal(isCrossSiteNavigation(h("none")), false);
+    assert.equal(isCrossSiteNavigation(h()), false);
+    assert.equal(isCrossSiteNavigation(h("cross-site")), true);
+    assert.equal(isCrossSiteNavigation(h("same-site")), true);
+  });
+
+  test("print-token answers with the print view's URL, or the refusal", async () => {
+    const ok = printTokenResponse("todos", { ok: true, token: "tok" });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get("cache-control"), "no-store, private");
+    assert.deepEqual(await ok.json(), { url: "/print/todos?t=tok" });
+    const no = printTokenResponse("todos", { ok: false, status: 403, message: NOT_ADMIN });
+    assert.equal(no.status, 403);
+    assert.deepEqual(await no.json(), { error: NOT_ADMIN });
+  });
+});
 
 function req(headers: Record<string, string>) {
   return new Request("https://pulse.example/api/export/todos", { method: "POST", headers });

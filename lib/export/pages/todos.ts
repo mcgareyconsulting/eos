@@ -19,6 +19,7 @@ import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { byDue, groupByOwner } from "@/lib/todo-board-order";
 import { listShowsTodo } from "@/lib/todo-lists";
 import { ownerLabel } from "@/lib/user-name";
+import { checkRowCap } from "../cap";
 import {
   isRefusal,
   type ExportColumn,
@@ -191,6 +192,12 @@ export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
       // until the core resolves them, a negligible difference in order.
       nameOf: (id) => names.get(id),
     });
+    // Row cap (lib/export/cap.ts). The query can't carry a limit: the view
+    // is its docs filtered in memory (visibility, archived, owner), the
+    // same query the page itself runs, so a limit would refuse views that
+    // fit. Check the filtered count here instead, before anything per-row.
+    const overCap = checkRowCap(rows.length);
+    if (overCap) return overCap;
 
     return {
       ok: true,

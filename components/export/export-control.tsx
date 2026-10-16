@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
  * `params` are the page's own URL state (the same keys its server component
  * reads), so the export is exactly the view on screen. Both formats go
  * through the shared core: the spreadsheet is a POST that streams the file
- * back; the print view opens in a new tab for Print → Save as PDF.
+ * back; the print view is a POST that mints a single-use link, opened in a
+ * new tab for Print → Save as PDF (lib/export/print-token.ts).
  */
 export function ExportControl({
   exportId,
@@ -84,10 +85,36 @@ export function ExportControl({
     }
   }
 
-  function openPrint() {
+  async function openPrint() {
     setOpen(false);
     setError(null);
-    window.open(urls.print, "_blank", "noopener");
+    // Open the tab now, inside the click, so pop-up blockers allow it; it
+    // gets its address once the server has minted the single-use print link.
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      setError("Your browser blocked the print tab. Allow pop-ups for this site and try again.");
+      return;
+    }
+    tab.opener = null;
+    setBusy(true);
+    try {
+      const res = await fetch(urls.printToken, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      // Only ever navigate the tab to our own print view.
+      if (!res.ok || typeof body?.url !== "string" || !body.url.startsWith("/print/")) {
+        tab.close();
+        setError(body?.error ?? "The print view could not be opened. Try again.");
+        return;
+      }
+      tab.location.replace(new URL(body.url, window.location.origin).href);
+    } catch {
+      tab.close();
+      setError("The print view could not be opened. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

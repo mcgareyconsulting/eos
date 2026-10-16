@@ -1,8 +1,12 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { APP_TIME_ZONE } from "@/lib/time-zone";
 import {
-  formatChicagoDate,
-  formatChicagoDateTime,
+  EXPORT_TIME_ZONE,
+  cellText,
+  excelSerial,
+  formatMountainDate,
+  formatMountainDateTime,
   normalizeCell,
   toDate,
 } from "./normalize";
@@ -11,24 +15,50 @@ const names = new Map([["u1", "Ada Lovelace"]]);
 const nameOf = (id: string) => names.get(id);
 
 describe("normalizeCell", () => {
-  test("datetime is America/Chicago with its zone, CDT and CST", () => {
-    // 2026-07-01 17:30Z = 12:30 CDT; 2026-01-15 17:30Z = 11:30 CST.
-    assert.equal(
-      normalizeCell("datetime", new Date("2026-07-01T17:30:00Z"), nameOf),
-      "2026-07-01 12:30 CDT",
-    );
-    assert.equal(
-      normalizeCell("datetime", Date.parse("2026-01-15T17:30:00Z"), nameOf),
-      "2026-01-15 11:30 CST",
-    );
+  test("exports read time on the bank's clock", () => {
+    assert.equal(EXPORT_TIME_ZONE, APP_TIME_ZONE);
+    assert.equal(EXPORT_TIME_ZONE, "America/Denver");
   });
 
-  test("date: a stored day passes through; an instant is its Chicago day", () => {
-    assert.equal(normalizeCell("date", "2026-10-16", nameOf), "2026-10-16");
-    // 03:00Z on the 17th is still the 16th in Chicago.
-    const ts = { toMillis: () => Date.parse("2026-10-17T03:00:00Z") };
-    assert.equal(normalizeCell("date", ts, nameOf), "2026-10-16");
+  test("datetime is a native date cell in Mountain time; the text names MDT / MST", () => {
+    // 2026-07-01 17:30Z = 11:30 MDT; 2026-01-15 17:30Z = 10:30 MST.
+    assert.deepEqual(normalizeCell("datetime", new Date("2026-07-01T17:30:00Z"), nameOf), {
+      kind: "datetime",
+      serial: excelSerial(2026, 7, 1, 11, 30),
+      text: "2026-07-01 11:30 MDT",
+    });
+    assert.deepEqual(normalizeCell("datetime", Date.parse("2026-01-15T17:30:00Z"), nameOf), {
+      kind: "datetime",
+      serial: excelSerial(2026, 1, 15, 10, 30),
+      text: "2026-01-15 10:30 MST",
+    });
+    assert.equal(normalizeCell("datetime", null, nameOf), "");
+  });
+
+  test("date: a stored day passes through as a date cell; an instant is its Mountain day", () => {
+    assert.deepEqual(normalizeCell("date", "2026-10-16", nameOf), {
+      kind: "date",
+      serial: 46311,
+      text: "2026-10-16",
+    });
+    // 05:00Z on the 17th is still the 16th in Denver.
+    const ts = { toMillis: () => Date.parse("2026-10-17T05:00:00Z") };
+    assert.equal(cellText(normalizeCell("date", ts, nameOf)), "2026-10-16");
     assert.equal(normalizeCell("date", null, nameOf), "");
+  });
+
+  test("dates a spreadsheet can't hold stay text", () => {
+    // Not a real day: kept as typed, not rolled into March.
+    assert.equal(normalizeCell("date", "2026-02-30", nameOf), "2026-02-30");
+    // Before 1900-03-01 Excel's serials are off by one (its 1900 leap-year bug).
+    assert.equal(normalizeCell("date", "1899-12-31", nameOf), "1899-12-31");
+  });
+
+  test("Excel serials", () => {
+    // Known Excel values.
+    assert.equal(excelSerial(2025, 1, 1), 45658);
+    assert.equal(excelSerial(2026, 1, 1), 46023);
+    assert.equal(excelSerial(2026, 1, 1, 12, 0), 46023.5);
   });
 
   test("Timestamp-likes are read through toDate()", () => {
@@ -62,7 +92,9 @@ describe("normalizeCell", () => {
 
   test("format helpers", () => {
     const d = new Date("2026-12-31T23:59:00Z");
-    assert.equal(formatChicagoDate(d), "2026-12-31");
-    assert.equal(formatChicagoDateTime(d), "2026-12-31 17:59 CST");
+    assert.equal(formatMountainDate(d), "2026-12-31");
+    assert.equal(formatMountainDateTime(d), "2026-12-31 16:59 MST");
+    assert.equal(cellText(42), "42");
+    assert.equal(cellText("x"), "x");
   });
 });

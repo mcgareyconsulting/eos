@@ -21,14 +21,17 @@ export const TODO_DUE_SOON_DAYS = 7;
 // `soonDays` window, muted otherwise — the same tones rocks, milestones and
 // to-dos all read by. Due-today is never colour alone: pair it with
 // `dueDateShort` (lib/dates.ts) or `relativeDueLabel`, which read "Today".
+// `timeZone` is the viewer's zone (see daysUntil); pass the one the paired
+// label uses so colour and text agree on which day is today.
 export function dueToneClass(
   due: string | null | undefined,
   done = false,
   from: Date = new Date(),
   soonDays: number = DUE_SOON_DAYS,
+  timeZone?: string,
 ): string {
   if (!due || done) return "text-zinc-400 dark:text-zinc-500";
-  const n = daysUntil(due, from);
+  const n = daysUntil(due, from, timeZone);
   if (n < 0) return "text-[#d63024] dark:text-red-400";
   if (n === 0) return "text-hpb-blue dark:text-blue-300";
   if (n <= soonDays) return "text-[#8a5a10] dark:text-status-amber";
@@ -44,13 +47,14 @@ export function urgencyChipClass(
   done = false,
   from: Date = new Date(),
   soonDays: number = DUE_SOON_DAYS,
+  timeZone?: string,
 ): string {
   const base =
     "rounded-full px-[7px] py-px text-[10px] font-bold tabular-nums";
   if (!due || done) {
     return cn(base, "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400");
   }
-  const n = daysUntil(due, from);
+  const n = daysUntil(due, from, timeZone);
   if (n < 0) {
     return cn(
       base,

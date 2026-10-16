@@ -11,6 +11,7 @@ import {
 } from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { ownerLabel } from "@/lib/user-name";
 import {
   MilestoneExpansion,
@@ -73,7 +74,9 @@ export function MilestoneChecklist({
   onDraft?: (key: string, hasDraft: boolean) => void;
 }) {
   const expand = useExpandedMilestones();
+  const timeZone = useTimeZone();
   if (milestones.length === 0) return null;
+  const now = new Date();
 
   const lockedFor = (m: MilestoneSerialized) =>
     readOnly && !(currentUserId && m.owner_id === currentUserId);
@@ -145,10 +148,10 @@ export function MilestoneChecklist({
             <span
               className={cn(
                 "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
-                dueToneClass(m.due_date, m.completed),
+                dueToneClass(m.due_date, m.completed, now, undefined, timeZone),
               )}
             >
-              {dueDateShort(m.due_date, m.completed)}
+              {dueDateShort(m.due_date, m.completed, now, timeZone)}
             </span>
           </div>
           {panel(
@@ -256,6 +259,8 @@ function ModalMilestoneList({
   const open = milestones.filter((m) => !m.completed);
   const done = milestones.filter((m) => m.completed);
   const [showDone, setShowDone] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
 
   return (
     <div className="space-y-2">
@@ -281,8 +286,16 @@ function ModalMilestoneList({
               {nameFor(m)}
             </span>
             {m.due_date ? (
-              <span className={urgencyChipClass(m.due_date)}>
-                {relativeDueLabel(m.due_date)}
+              <span
+                className={urgencyChipClass(
+                  m.due_date,
+                  false,
+                  now,
+                  undefined,
+                  timeZone,
+                )}
+              >
+                {relativeDueLabel(m.due_date, now, false, timeZone)}
               </span>
             ) : null}
           </div>

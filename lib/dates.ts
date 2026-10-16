@@ -1,3 +1,5 @@
+import { daysUntilIn } from "@/lib/time-zone";
+
 // All scorecard weeks bucket to the Monday of the local week.
 // Keep this dumb — pick one anchor day and stick to it.
 
@@ -109,7 +111,17 @@ export function daysFromNow(days: number, from: Date = new Date()): string {
 
 // Whole days from `from` to `due`; negative when overdue. The shared basis for
 // every due-date urgency read (labels in this file, tones in lib/due.ts).
-export function daysUntil(due: string, from: Date = new Date()): number {
+//
+// With `timeZone`, "today" is `from`'s calendar date in that IANA zone — what
+// screen display passes (the viewer's zone, lib/time-zone.ts), so the server
+// (UTC on Cloud Run) and the browser agree on the day. Without it, the host's
+// local zone, as before.
+export function daysUntil(
+  due: string,
+  from: Date = new Date(),
+  timeZone?: string,
+): number {
+  if (timeZone) return daysUntilIn(due, from, timeZone);
   return Math.round(
     (toLocalDate(due).getTime() - toLocalDate(from).getTime()) / 86400000,
   );
@@ -122,9 +134,10 @@ export function relativeDueLabel(
   due: string | null | undefined,
   from: Date = new Date(),
   done = false,
+  timeZone?: string,
 ): string {
   if (!due) return "";
-  const n = daysUntil(due, from);
+  const n = daysUntil(due, from, timeZone);
   if (n === 0) return "today";
   if (n < 0) return done ? `${-n}d ago` : `${-n}d overdue`;
   if (n < 45) return `in ${n}d`;
@@ -134,13 +147,14 @@ export function relativeDueLabel(
 // The compact date for a due column that `dueToneClass` colours: "Today" when
 // it is due today (so the blue due-today tone is never the only signal),
 // otherwise `formatDateShort`. Done items keep their date — their tone is
-// muted, so there is no "today" urgency to call out.
+// muted, so there is no "today" urgency to call out. `timeZone` as daysUntil.
 export function dueDateShort(
   due: string | null | undefined,
   done = false,
   from: Date = new Date(),
+  timeZone?: string,
 ): string {
-  if (due && !done && daysUntil(due, from) === 0) return "Today";
+  if (due && !done && daysUntil(due, from, timeZone) === 0) return "Today";
   return formatDateShort(due);
 }
 

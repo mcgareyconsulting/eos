@@ -4,6 +4,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import { dueDateShort } from "@/lib/dates";
 import { TODO_DUE_SOON_DAYS, dueToneClass } from "@/lib/due";
 import { chunkForInQuery } from "@/lib/firestore-in";
+import { getViewerTimeZone } from "@/lib/viewer-time-zone";
 import {
   loadMilestonesForRocks,
   loadTeamsById,
@@ -126,6 +127,8 @@ async function hydrateNames(
 export default async function HomePage() {
   const { user, teams, membershipTeamIds, leaderTeamIds, isAdmin, db } =
     await getUserTeamsFirebase();
+  // "Today" on the to-do column is the viewer's today, not the server's (UTC).
+  const timeZone = await getViewerTimeZone();
   // Rock access (lib/access/rock.ts) follows the viewer's real memberships.
   const viewer = viewerOf(user.id, isAdmin, membershipTeamIds, leaderTeamIds);
 
@@ -614,7 +617,12 @@ export default async function HomePage() {
           <BoardColumn scroll title="To-Dos" count={myTodos.length}>
             {myTodos.length === 0 && <Empty>No open to-dos of yours.</Empty>}
             {myTodos.map((t) => (
-              <TodoRowLink key={t.id} todo={t} pill={pillById.get(t.id)} />
+              <TodoRowLink
+                key={t.id}
+                todo={t}
+                pill={pillById.get(t.id)}
+                timeZone={timeZone}
+              />
             ))}
           </BoardColumn>
 
@@ -667,7 +675,16 @@ export default async function HomePage() {
   );
 }
 
-function TodoRowLink({ todo, pill }: { todo: TodoRow; pill?: string }) {
+function TodoRowLink({
+  todo,
+  pill,
+  timeZone,
+}: {
+  todo: TodoRow;
+  pill?: string;
+  timeZone: string;
+}) {
+  const now = new Date();
   const isPrivate = todoVisibilityLabel(todo.visibility) === "Private";
   return (
     <Link
@@ -700,10 +717,16 @@ function TodoRowLink({ todo, pill }: { todo: TodoRow; pill?: string }) {
       <span
         className={cn(
           "text-[11.5px] font-bold tabular-nums whitespace-nowrap",
-          dueToneClass(todo.due_date, false, new Date(), TODO_DUE_SOON_DAYS),
+          dueToneClass(
+            todo.due_date,
+            false,
+            now,
+            TODO_DUE_SOON_DAYS,
+            timeZone,
+          ),
         )}
       >
-        {dueDateShort(todo.due_date)}
+        {dueDateShort(todo.due_date, false, now, timeZone)}
       </span>
     </Link>
   );

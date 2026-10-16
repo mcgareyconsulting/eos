@@ -6,6 +6,7 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { dueDateShort } from "@/lib/dates";
 import { TODO_DUE_SOON_DAYS, dueToneClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
@@ -108,6 +109,8 @@ export function TodoListRow({
     setExpanded(!expanded);
   }
   const [detailOpen, setDetailOpen] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
   function openDetail() {
     setDetailOpen(true);
   }
@@ -239,12 +242,18 @@ export function TodoListRow({
               : dueToneClass(
                   todo.due_date,
                   todo.completed,
-                  new Date(),
+                  now,
                   TODO_DUE_SOON_DAYS,
+                  timeZone,
                 ),
           )}
         >
-          {dueDateShort(todo.due_date, todo.completed || archived)}
+          {dueDateShort(
+            todo.due_date,
+            todo.completed || archived,
+            now,
+            timeZone,
+          )}
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"

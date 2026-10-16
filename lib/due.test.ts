@@ -81,3 +81,37 @@ describe("urgencyChipClass", () => {
     assert.ok(!urgencyChipClass(inDays(0), true, NOW).includes(BLUE));
   });
 });
+
+describe("viewer time zone", () => {
+  // 2026-10-16 23:30 in Denver is 2026-10-17 05:30 UTC.
+  const LATE_DENVER = new Date("2026-10-17T05:30:00Z");
+  const tone = (due: string, tz: string, soon?: number) =>
+    dueToneClass(due, false, LATE_DENVER, soon, tz);
+  const chip = (due: string, tz: string) =>
+    urgencyChipClass(due, false, LATE_DENVER, undefined, tz);
+
+  test("due today in Denver is already overdue in UTC", () => {
+    assert.ok(tone("2026-10-16", "America/Denver").includes(BLUE));
+    assert.ok(tone("2026-10-16", "UTC").includes(RED));
+  });
+
+  test("tomorrow in Denver is today in UTC", () => {
+    assert.ok(
+      tone("2026-10-17", "America/Denver", TODO_DUE_SOON_DAYS).includes(AMBER),
+    );
+    assert.ok(tone("2026-10-17", "UTC", TODO_DUE_SOON_DAYS).includes(BLUE));
+  });
+
+  test("the to-do window edge moves with the zone", () => {
+    // Day 7 in Denver (amber) is day 6 in UTC; day 8 in Denver is muted.
+    const t = (due: string, tz: string) => tone(due, tz, TODO_DUE_SOON_DAYS);
+    assert.ok(t("2026-10-23", "America/Denver").includes(AMBER));
+    assert.ok(t("2026-10-24", "America/Denver").includes(MUTED));
+    assert.ok(t("2026-10-24", "UTC").includes(AMBER));
+  });
+
+  test("urgencyChipClass honours the zone", () => {
+    assert.ok(chip("2026-10-16", "America/Denver").includes(BLUE));
+    assert.ok(chip("2026-10-16", "UTC").includes(RED));
+  });
+});

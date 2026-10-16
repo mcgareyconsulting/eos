@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { dueDateShort, formatDateOnly } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { cn } from "@/lib/utils";
 import { TodoCheckbox } from "./todo-row";
 import { Eyebrow } from "@/components/ui/text";
@@ -55,6 +56,8 @@ export function MilestoneTodoRow({
   members?: Member[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
   const authUid = useAuthUid();
   // The feed names the viewer "You"; it waits for client auth either way.
   const viewerId = userId ?? authUid ?? null;
@@ -87,10 +90,21 @@ export function MilestoneTodoRow({
           className={cn(
             // Matches TodoListRow's due column — see the note there.
             "w-14 shrink-0 pt-1 text-right text-xs font-semibold tabular-nums",
-            dueToneClass(milestone.due_date, milestone.completed),
+            dueToneClass(
+              milestone.due_date,
+              milestone.completed,
+              now,
+              undefined,
+              timeZone,
+            ),
           )}
         >
-          {dueDateShort(milestone.due_date, milestone.completed)}
+          {dueDateShort(
+            milestone.due_date,
+            milestone.completed,
+            now,
+            timeZone,
+          )}
         </div>
       </div>
 

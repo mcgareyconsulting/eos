@@ -7,9 +7,11 @@ import {
   crc32,
   safeSheetName,
   sheetXml,
+  stylesXmlForTesting,
   writeXlsx,
   xmlEscape,
 } from "./xlsx-writer";
+import { excelSerial, normalizeCell } from "./normalize";
 
 describe("writeXlsx", () => {
   test("round-trips through the in-house reader: provenance, header, rows", () => {
@@ -61,6 +63,40 @@ describe("writeXlsx", () => {
     const xml = sheetXml({ sheetName: "S", headers: ["n"], rows: [[42], ["42"]] });
     assert.match(xml, /<c r="A2" s="2"><v>42<\/v><\/c>/);
     assert.match(xml, /<c r="A3" t="inlineStr"/);
+  });
+
+  test("dates are native date cells: a serial under a date number format", () => {
+    const due = normalizeCell("date", "2026-10-16", () => undefined);
+    const done = normalizeCell("datetime", new Date("2026-07-01T17:30:00Z"), () => undefined);
+    const xml = sheetXml({ sheetName: "S", headers: ["Due", "Done"], rows: [[due, done]] });
+    // Numbers, not strings — so they sort and filter as dates.
+    assert.match(xml, /<c r="A2" s="3"><v>46311<\/v><\/c>/);
+    assert.match(xml, new RegExp(`<c r="B2" s="4"><v>${excelSerial(2026, 7, 1, 11, 30)}</v></c>`));
+    assert.doesNotMatch(xml, /2026-10-16/);
+
+    const buf = writeXlsx({ sheetName: "S", headers: ["Due", "Done"], rows: [[due, done]] });
+    // The styles carry the formats the cells point at.
+    const [sheet] = readXlsx(buf);
+    // The reader sees date-formatted serials as dates (it reads the day only).
+    assert.deepEqual(sheet.rows.at(-1), ["2026-10-16", "2026-07-01"]);
+  });
+
+  test("the styles define yyyy-mm-dd and yyyy-mm-dd hh:mm on styles 3 and 4", () => {
+    const styles = stylesXmlForTesting();
+    assert.match(styles, /<numFmt numFmtId="164" formatCode="yyyy-mm-dd"\/>/);
+    assert.match(styles, /<numFmt numFmtId="165" formatCode="yyyy-mm-dd hh:mm"\/>/);
+    const xfs = styles.match(/<cellXfs[\s\S]*?<\/cellXfs>/)![0].match(/<xf\b[^>]*>/g)!;
+    assert.match(xfs[3], /numFmtId="164"/);
+    assert.match(xfs[4], /numFmtId="165"/);
+  });
+
+  test("a date cell with no usable serial falls back to neutralized text", () => {
+    const xml = sheetXml({
+      sheetName: "S",
+      headers: ["d"],
+      rows: [[{ kind: "date", serial: Number.NaN, text: "=1+1" }]],
+    });
+    assert.match(xml, /t="inlineStr"[^>]*><is><t xml:space="preserve">'=1\+1<\/t>/);
   });
 
   test("header row is frozen below the provenance block", () => {

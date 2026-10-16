@@ -1,8 +1,13 @@
 // The provenance header every export carries (docs/EXPORT.md): who, when
-// (America/Chicago), which view, how many rows, which build. Pure — the
-// caller passes the clock and the environment.
+// (Mountain time — APP_TIME_ZONE, the bank's clock), which view, how many
+// rows, which build. Pure — the caller passes the clock and the environment.
 
-import { EXPORT_TIME_ZONE, formatChicagoDateTime } from "./normalize";
+import {
+  EXPORT_TIME_ZONE,
+  EXPORT_TIME_ZONE_LABEL,
+  formatMountainDate,
+  formatMountainDateTime,
+} from "./normalize";
 import type { ExportFilterLine } from "./types";
 
 export const APP_NAME = "HPB Pulse";
@@ -50,11 +55,16 @@ export function provenanceLines(input: {
     { label: "Exported by", value: input.exportedBy },
     {
       label: "Exported at",
-      value: `${formatChicagoDateTime(input.now)} (${EXPORT_TIME_ZONE})`,
+      value: `${formatMountainDateTime(input.now)} (${EXPORT_TIME_ZONE_LABEL}, ${EXPORT_TIME_ZONE})`,
     },
     { label: "Filters applied", value: filtersLabel(input.filters) },
     { label: "Rows", value: String(input.rowCount) },
     { label: "App version", value: input.version },
+    // Spreadsheet date cells carry no zone of their own; say which one.
+    {
+      label: "Times",
+      value: `Dates and times are ${EXPORT_TIME_ZONE_LABEL} (${EXPORT_TIME_ZONE})`,
+    },
   ];
 }
 
@@ -73,6 +83,6 @@ export function slug(s: string): string {
 
 /** `hpb-pulse_todos_leadership_active_2026-10-16` (no extension). */
 export function exportFileName(id: string, parts: readonly string[], now: Date): string {
-  const day = formatChicagoDateTime(now).slice(0, 10);
+  const day = formatMountainDate(now);
   return ["hpb-pulse", slug(id), ...parts.map(slug), day].join("_");
 }

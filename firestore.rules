@@ -279,5 +279,7 @@ service cloud.firestore {
     // ---------- server-only secrets (Admin SDK only) ----------
     match /google_tasks_connections/{uid} { allow read, write: if false; }
     match /oauth_csrf_states/{state}      { allow read, write: if false; }
+    // Single-use print-export tokens (lib/export/print-token.ts).
+    match /export_print_tokens/{tokenHash} { allow read, write: if false; }
   }
 }

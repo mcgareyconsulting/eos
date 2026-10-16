@@ -1,6 +1,13 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { appVersion, exportFileName, exporterLabel, filtersLabel, slug } from "./provenance";
+import {
+  appVersion,
+  exportFileName,
+  exporterLabel,
+  filtersLabel,
+  provenanceLines,
+  slug,
+} from "./provenance";
 
 describe("provenance", () => {
   test("app version: build id, Cloud Run revision, or a local marker", () => {
@@ -26,13 +33,28 @@ describe("provenance", () => {
     );
   });
 
-  test("file names are ASCII slugs with the Chicago day", () => {
+  test("file names are ASCII slugs with the Mountain day", () => {
     assert.equal(slug("Café & Loans / Ops"), "cafe-loans-ops");
     assert.equal(slug("★★"), "export");
-    // 02:00Z on the 17th is the 16th in Chicago.
+    // 05:30Z on the 17th is still the 16th in Denver (it would be the 17th
+    // in Chicago).
     assert.equal(
-      exportFileName("todos", ["Executive Team", "archived"], new Date("2026-10-17T02:00:00Z")),
+      exportFileName("todos", ["Executive Team", "archived"], new Date("2026-10-17T05:30:00Z")),
       "hpb-pulse_todos_executive-team_archived_2026-10-16",
     );
+  });
+
+  test("exported at: Mountain time, labeled MDT / MST", () => {
+    const at = (iso: string) =>
+      provenanceLines({
+        title: "To-Dos",
+        exportedBy: "Ada",
+        now: new Date(iso),
+        filters: [],
+        rowCount: 0,
+        version: "local build",
+      }).find((l) => l.label === "Exported at")?.value;
+    assert.equal(at("2026-10-16T19:05:00Z"), "2026-10-16 13:05 MDT (Mountain Time, America/Denver)");
+    assert.equal(at("2026-12-16T19:05:00Z"), "2026-12-16 12:05 MST (Mountain Time, America/Denver)");
   });
 });

@@ -1,18 +1,29 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { PrintSheet } from "@/components/export/print-sheet";
-import { runExport } from "@/lib/export/run";
+import { isCrossSiteNavigation, printPageAction } from "@/lib/export/response";
+import { runPrintExport } from "@/lib/export/run";
 
 export const metadata: Metadata = {
   title: "Export — HPB Pulse",
   robots: { index: false, follow: false },
+  // The URL carries a (spent) token; keep it out of any Referer.
+  referrer: "no-referrer",
 };
 
 /**
  * Admin export, print view (feedback row 55; docs/EXPORT.md). The PDF format:
  * this page, then the browser's Print → Save as PDF.
  *
- *   /print/{exportId}?<the page's own query parameters>
+ *   /print/{exportId}?t=<single-use token>
+ *
+ * The token comes from POST /api/export/{exportId}/print-token, which the
+ * Export control calls (same-origin only); it is bound to the admin, the
+ * export and the view, lives two minutes and works once
+ * (lib/export/print-token.ts). The view comes from the token, never from
+ * this URL — so a cross-site link, which can't mint one, can't make this
+ * page export or audit anything. A Sec-Fetch-Site check backs that up.
  *
  * Outside the (app) group on purpose — no sidebar or header on paper. Every
  * guardrail (admin re-check, exact view, provenance, audit row, row cap) is
@@ -27,28 +38,24 @@ export default async function PrintExportPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { exportId } = await params;
-  const raw = await searchParams;
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(raw)) {
-    // First value wins, as `searchParams.get` does on the .xlsx route.
-    const v = Array.isArray(value) ? value[0] : value;
-    if (typeof v === "string") query.set(key, v);
-  }
+  const raw = (await searchParams).t;
+  // First value wins, as `searchParams.get` does.
+  const token = (Array.isArray(raw) ? raw[0] : raw) ?? null;
+  const crossSite = isCrossSiteNavigation(await headers());
 
-  const result = await runExport(exportId, query, "print");
-  if (!result.ok) {
-    if (result.status === 401) redirect("/login");
-    // Non-admins and unknown pages: the 404 every admin-only surface gives
-    // (lib/firebase/teams.ts requireAdmin), so ids aren't enumerable.
-    if (result.status === 403 || result.status === 404) notFound();
+  const action = printPageAction(await runPrintExport(exportId, token, { crossSite }));
+  if (action.kind === "login") redirect("/login");
+  // Non-admins and unknown pages (lib/export/response.ts printPageAction).
+  if (action.kind === "not_found") notFound();
+  if (action.kind === "message") {
     return (
       <div className="mx-auto max-w-xl px-6 py-16 text-center">
         <h1 className="text-lg font-semibold">Export not produced</h1>
         <p role="alert" className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          {result.message}
+          {action.message}
         </p>
       </div>
     );
   }
-  return <PrintSheet table={result.table} />;
+  return <PrintSheet table={action.table} />;
 }

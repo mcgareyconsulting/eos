@@ -21,8 +21,10 @@ export type ExportFormat = "xlsx" | "print";
  *   text      any value → trimmed string
  *   richtext  stored description markup → plain text (lib/rich-text.ts)
  *   date      a calendar day — `YYYY-MM-DD` string, Timestamp, Date or millis
- *             → `YYYY-MM-DD` (instants are read in America/Chicago)
- *   datetime  an instant → `YYYY-MM-DD HH:mm CDT` in America/Chicago
+ *             → a date cell, `YYYY-MM-DD` (instants are read in
+ *             America/Denver, the bank's clock — lib/time-zone.ts)
+ *   datetime  an instant → a datetime cell, `YYYY-MM-DD HH:mm` Mountain
+ *             time (the print view adds MDT/MST)
  *   boolean   → Yes / No
  *   user      a uid → display name ("Unassigned" for none, "—" unresolved)
  *   number    a finite number (a numeric cell); anything else → blank
@@ -76,8 +78,17 @@ export type LoadedView<R> = {
   names?: ReadonlyMap<string, string>;
 };
 
-/** A request the core refuses, with the HTTP status and the user's message. */
-export type ExportRefusal = { ok: false; status: number; message: string };
+/**
+ * A request the core refuses, with the HTTP status and the user's message.
+ * `reason` is the audit row's machine-readable why; the core fills it in
+ * from the status when a definition leaves it out (lib/export/run.ts).
+ */
+export type ExportRefusal = {
+  ok: false;
+  status: number;
+  message: string;
+  reason?: string;
+};
 
 export type ExportDefinition<R = unknown, P = unknown> = {
   /** URL id: /api/export/{id}, /print/{id}. Also the audit row's `entity_id`. */
@@ -94,13 +105,28 @@ export type ExportDefinition<R = unknown, P = unknown> = {
    * Load exactly what the page shows this viewer for `params` — the same
    * queries and the same visibility predicate (lib/access, lib/todo-lists),
    * never more. Return a refusal for a team that doesn't exist.
+   *
+   * Honor the row cap early (lib/export/cap.ts): read a query that IS the
+   * view through `readCapped` (at most cap + 1 docs), and call
+   * `checkRowCap` on in-memory-filtered rows BEFORE any per-row sub-read.
    */
   load(ctx: ExportContext, params: P): Promise<LoadedView<R> | ExportRefusal>;
   columns: readonly ExportColumn<R>[];
 };
 
-/** A normalized cell: text, or a number for `number` columns. */
-export type ExportCell = string | number;
+/**
+ * A spreadsheet date: `serial` is the Excel serial of the Mountain
+ * wall-clock date (and time), written as a real date cell; `text` is what
+ * the print view shows.
+ */
+export type ExportDateCell = {
+  kind: "date" | "datetime";
+  serial: number;
+  text: string;
+};
+
+/** A normalized cell: text, a number for `number` columns, or a date. */
+export type ExportCell = string | number | ExportDateCell;
 
 /** Everything a writer needs, already normalized and admin-checked. */
 export type ExportTable = {

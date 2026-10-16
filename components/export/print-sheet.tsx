@@ -1,3 +1,4 @@
+import { cellText } from "@/lib/export/normalize";
 import type { ExportTable } from "@/lib/export/types";
 import { PrintButton } from "./print-button";
 
@@ -58,10 +59,14 @@ export function PrintSheet({ table }: { table: ExportTable }) {
                   <td
                     key={c}
                     className={`border-b border-zinc-200 px-1.5 py-1 align-top whitespace-pre-wrap ${
-                      typeof cell === "number" ? "text-right tabular-nums" : ""
+                      typeof cell === "number"
+                        ? "text-right tabular-nums"
+                        : typeof cell === "object"
+                          ? "tabular-nums"
+                          : ""
                     }`}
                   >
-                    {cell}
+                    {cellText(cell)}
                   </td>
                 ))}
               </tr>

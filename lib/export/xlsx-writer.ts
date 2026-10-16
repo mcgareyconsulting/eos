@@ -1,5 +1,5 @@
 // Minimal .xlsx WRITER — the counterpart of lib/xlsx.ts (the reader). One
-// sheet of text and number cells, a bold header, wrapped body text, frozen
+// sheet of text, number and date cells, a bold header, wrapped body text, frozen
 // header row, landscape fit-to-width printing. Nothing else.
 //
 // Why in-house rather than a dependency: an .xlsx is a ZIP of five small XML
@@ -15,7 +15,11 @@
 //   - every string cell goes through neutralizeFormula (OWASP CSV injection);
 //   - strings are written as inline strings (`t="inlineStr"`), never as
 //     formulas, and characters XML 1.0 forbids are dropped;
-//   - a cell is capped at Excel's 32,767-character limit.
+//   - a cell is capped at Excel's 32,767-character limit;
+//   - dates are real date cells — a numeric serial under a date number
+//     format (yyyy-mm-dd, or yyyy-mm-dd hh:mm for datetimes, Mountain
+//     wall-clock time; lib/export/normalize.ts) — so they sort and filter as
+//     dates. A number can't carry a formula, so these need no neutralizing.
 
 import { deflateRawSync } from "node:zlib";
 import { neutralizeFormula } from "./sanitize";
@@ -78,6 +82,12 @@ export function safeSheetName(name: string): string {
 // Style indexes into STYLES' cellXfs.
 const S_BOLD = 1;
 const S_WRAP = 2;
+const S_DATE = 3;
+const S_DATETIME = 4;
+
+// Custom number formats (ids from 164 up are the workbook's own).
+const FMT_DATE = 164;
+const FMT_DATETIME = 165;
 
 function textCell(ref: string, value: string, style: number): string {
   let v = neutralizeFormula(value);
@@ -88,6 +98,13 @@ function textCell(ref: string, value: string, style: number): string {
 function cell(ref: string, value: ExportCell, style: number): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     return `<c r="${ref}" s="${style}"><v>${value}</v></c>`;
+  }
+  if (typeof value === "object") {
+    if (Number.isFinite(value.serial)) {
+      const s = value.kind === "datetime" ? S_DATETIME : S_DATE;
+      return `<c r="${ref}" s="${s}"><v>${value.serial}</v></c>`;
+    }
+    return textCell(ref, value.text, style);
   }
   return textCell(ref, String(value), style);
 }
@@ -169,21 +186,33 @@ const WORKBOOK_RELS =
   `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
   `</Relationships>`;
 
-// 0 = default, 1 = bold (headers, provenance labels), 2 = wrapped, top-aligned.
+// 0 = default, 1 = bold (headers, provenance labels), 2 = wrapped, top-aligned,
+// 3 = date, 4 = datetime (both top-aligned to sit with wrapped neighbours).
 const STYLES =
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
   `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+  `<numFmts count="2">` +
+  `<numFmt numFmtId="${FMT_DATE}" formatCode="yyyy-mm-dd"/>` +
+  `<numFmt numFmtId="${FMT_DATETIME}" formatCode="yyyy-mm-dd hh:mm"/>` +
+  `</numFmts>` +
   `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
   `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
   `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  `<cellXfs count="3">` +
+  `<cellXfs count="5">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
   `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>` +
+  `<xf numFmtId="${FMT_DATE}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>` +
+  `<xf numFmtId="${FMT_DATETIME}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>` +
   `</cellXfs>` +
   `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
   `</styleSheet>`;
+
+/** Test hook: the workbook's styles part. */
+export function stylesXmlForTesting(): string {
+  return STYLES;
+}
 
 function workbookXml(sheetName: string): string {
   return (

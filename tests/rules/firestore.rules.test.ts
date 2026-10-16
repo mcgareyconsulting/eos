@@ -112,6 +112,7 @@ beforeEach(async () => {
     await put("audit_log/e1", { x: 1 });
     await put("google_tasks_connections/alice", { refresh_token: "secret" });
     await put("oauth_csrf_states/s", { uid: "alice" });
+    await put("export_print_tokens/h", { uid: "root", export_id: "todos" });
   });
 });
 
@@ -306,6 +307,7 @@ describe("no client writes, on any collection, for anyone", () => {
     "audit_log/e1",
     "google_tasks_connections/alice",
     "oauth_csrf_states/s",
+    "export_print_tokens/h",
   ];
   const actors: Array<() => Firestore> = [() => as("alice"), asAdmin, anon];
 

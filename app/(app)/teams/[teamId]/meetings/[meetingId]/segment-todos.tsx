@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Flag } from "lucide-react";
+import { Archive, CheckSquare, Flag } from "lucide-react";
 import {
   collection,
   doc,
@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
-import { initials, ownerLabel } from "@/lib/user-name";
+import { ownerLabel } from "@/lib/user-name";
 import {
   OUTSIDE_GROUP_KEY,
   OUTSIDE_GROUP_TITLE,
@@ -28,7 +28,15 @@ import {
   isMilestoneDueSoon,
   isMilestoneHiddenByRock,
 } from "@/lib/milestone-visibility";
+import { BoardColumn } from "@/components/board-column";
 import { EmptyState } from "@/components/empty-state";
+import {
+  BoardNotice,
+  OwnerSection,
+  SectionCard,
+  TodoColumn,
+  openDoneCount,
+} from "../../todos/board-layout";
 import {
   TodoListRow,
   type TodoListItem,
@@ -45,7 +53,6 @@ import {
   type TodoDoc as TodoDocRecord,
   type WithId,
 } from "@/lib/firestore-types";
-import { SectionTitle } from "@/components/ui/text";
 
 // completed_at: Timestamp (live) or boolean (server initial) — both truthy-checked.
 // description is included so L10 rows mirror the To-Dos tab expand/edit UX.
@@ -392,12 +399,28 @@ export function SegmentTodos({
 
   // Names for outside assignees: the server's, then fetched for live arrivals.
   const nameOf = usePersonNames(
-    outsideOwnerIds(pureTodos, new Set(members.map((m) => m.user_id))),
+    outsideOwnerIds([...pureTodos, ...archivedTodos], new Set(members.map((m) => m.user_id))),
     outsideNames,
   );
 
+  const ownerName = (id: string | null) =>
+    ownerLabel(
+      id,
+      (x) => members.find((m) => m.user_id === x)?.full_name ?? nameOf(x),
+    );
+  // Archived: flat, by owner name then due date (the To-Dos page's order).
+  const archivedFlat = showArchived
+    ? [...archivedTodos].sort((a, b) => {
+        const byOwnerName = ownerName(a.owner_id).localeCompare(
+          ownerName(b.owner_id),
+        );
+        if (byOwnerName !== 0) return byOwnerName;
+        return byDue(a, b);
+      })
+    : [];
+
   const groups = groupTodosForMeeting(
-    showArchived ? archivedTodos : pureTodos,
+    showArchived ? [] : pureTodos,
     members,
     speakingOrder,
     absent,
@@ -427,148 +450,119 @@ export function SegmentTodos({
         <CaptureButton />
       </div>
 
-      {/* Two columns, matching the standalone To-Dos page — and
-          to-dos FIRST. Stacked, the milestone block sat on top and
-          pushed the actual to-dos below the fold ("just vomit at the
-          top of the to-dos page, so you got to scroll to the bottom").
-          Stacks again under lg so a narrow meeting window still reads. */}
-      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
-        <div className="space-y-3">
-        {groups.length === 0 && (
-          <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-            {showArchived
-              ? "No archived to-dos."
-              : "No to-dos."}
-          </div>
-        )}
-
-        {openCount === 0 && doneCount > 0 && (
-          <div className="rounded-lg border border-hpb-green/30 bg-hpb-green/5 px-4 py-2 text-center text-sm text-hpb-green">
-            All to-dos done — nice week.
-          </div>
-        )}
-
-        {/* One card per owner — same chrome as L10 Rocks. */}
-        {groups.map((g) => (
-          <section
-            key={g.key}
-            className={
-              "overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 " +
-              (g.isCurrentSpeaker
-                ? "border-hpb-green/50"
-                : "border-zinc-300 dark:border-zinc-800") +
-              (g.absent ? " opacity-60" : "")
-            }
-          >
-            <header
-              className={
-                "flex items-center gap-2 border-b px-4 py-2 " +
-                (g.isCurrentSpeaker
-                  ? "border-hpb-green/30 bg-hpb-green/5 dark:bg-hpb-green/10"
-                  : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50")
-              }
-            >
-              <span
-                className={
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " +
-                  (g.isCurrentSpeaker
-                    ? "bg-hpb-green text-white"
-                    : "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold")
-                }
-              >
-                {initials(g.title) || "?"}
-              </span>
-              <SectionTitle as="h3">{g.title}</SectionTitle>
-              <span className="text-xs text-zinc-500">
-                {[
-                  g.open.length > 0 ? `${g.open.length} open` : null,
-                  g.done.length > 0 ? `${g.done.length} done` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "none"}
-              </span>
-              {g.isCurrentSpeaker && (
-                <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-hpb-green/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hpb-green ring-1 ring-inset ring-hpb-green/30">
-                  <span className="h-1.5 w-1.5 rounded-full bg-hpb-green" />
-                  Now speaking
-                </span>
-              )}
-              {g.absent && !g.isCurrentSpeaker && (
-                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  Absent
-                </span>
-              )}
-            </header>
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {g.open.length === 0 && g.done.length === 0 && (
-                <div className="px-4 py-3 text-sm text-zinc-500">No to-dos</div>
-              )}
-              {/* One keyed array with the divider spliced in — separate
-                  open/done lists would remount a row as it's checked off and
-                  collapse it. */}
-              {[...g.open, ...g.done].flatMap((t, i) => [
-                ...(i === g.open.length
-                  ? [
-                      <div
-                        key="done-divider"
-                        className="bg-zinc-50 px-4 py-1 text-[10px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500"
-                      >
-                        Done
-                      </div>,
-                    ]
-                  : []),
-                <TodoListRow
-                  key={t.id}
-                  teamId={teamId}
-                  todo={toListItem(t)}
-                  ownerName={
-                    g.key === OUTSIDE_GROUP_KEY
-                      ? ownerLabel(t.owner_id, nameOf)
-                      : g.title
-                  }
-                  members={members}
-                  userId={userId}
-                  // The outside block mixes owners: name each row's.
-                  hideOwner={g.key !== OUTSIDE_GROUP_KEY}
-                  surface="meeting"
-                />,
-              ])}
-            </div>
-          </section>
-        ))}
-        </div>
-
-        <div className="space-y-3">
-        <section className="overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <header className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-            <Flag className="h-3.5 w-3.5 text-zinc-500" aria-hidden />
-            <SectionTitle as="h3">Milestones</SectionTitle>
-            <span className="text-xs text-zinc-500">
-              {openMilestones.length}
-            </span>
-            <span className="ml-auto text-[11px] text-zinc-500 dark:text-zinc-400">
-              due in the next {MILESTONE_REMINDER_DAYS} days
-            </span>
-          </header>
-          {openMilestones.length === 0 ? (
+      {showArchived ? (
+        // Archived: one flat list, like the To-Dos page — owner cards of
+        // "N done" with nothing open are noise once everything is archived.
+        <BoardColumn title="To-Dos" count={archivedFlat.length}>
+          {archivedFlat.length === 0 ? (
             <EmptyState
-              icon={Flag}
-              title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
-              hint="Milestones further out stay under their rock on the Rocks segment."
+              icon={Archive}
+              title="No archived to-dos"
+              hint="Completed to-dos archive when an L10 ends, or archive them manually."
             />
           ) : (
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {milestoneGroups.map((g) => (
-                <div key={g.key}>
-                  <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-hpb-blue/10 text-[10px] font-semibold text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold">
-                      {initials(g.title) || "?"}
+            archivedFlat.map((t) => (
+              <TodoListRow
+                key={t.id}
+                teamId={teamId}
+                todo={toListItem(t)}
+                ownerName={ownerName(t.owner_id)}
+                members={members}
+                userId={userId}
+                surface="meeting"
+              />
+            ))
+          )}
+        </BoardColumn>
+      ) : (
+        // Two columns, the To-Dos page's layout and components
+        // (../../todos/board-layout.tsx) — to-dos FIRST, so milestones never
+        // push the actual to-dos below the fold. Stacks under lg.
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
+          <TodoColumn
+            title="To-Dos"
+            count={pureTodos.length}
+            meta={
+              openCount > 0 && openCount !== pureTodos.length
+                ? `${openCount} open`
+                : undefined
+            }
+          >
+            {groups.length === 0 && (
+              <SectionCard>
+                <EmptyState
+                  icon={CheckSquare}
+                  title="No to-dos yet"
+                  hint="Capture one with Issue / To-do above."
+                />
+              </SectionCard>
+            )}
+            {openCount === 0 && doneCount > 0 && (
+              <BoardNotice>
+                All to-dos done — they archive when this meeting ends.
+              </BoardNotice>
+            )}
+            {/* One section per owner, in speaking order (present, then
+                absent). */}
+            {groups.map((g) => (
+              <OwnerSection
+                key={g.key}
+                title={g.title}
+                count={openDoneCount(g.open.length, g.done.length)}
+                dimmed={g.absent}
+                badge={
+                  g.isCurrentSpeaker ? (
+                    <span className="ml-2 font-bold text-hpb-green">
+                      · Now speaking
                     </span>
-                    <SectionTitle as="h4">{g.title}</SectionTitle>
-                    <span className="text-xs text-zinc-500">
-                      {g.items.length}
-                    </span>
-                  </div>
+                  ) : g.absent ? (
+                    <span className="ml-2 font-bold text-zinc-400">· Absent</span>
+                  ) : undefined
+                }
+              >
+                {/* One keyed list, open then done — separate lists would
+                    remount a row as it's checked off and collapse it. No
+                    "Done" divider: the green check reads as done and the
+                    heading counts them (as on the To-Dos page). */}
+                {[...g.open, ...g.done].map((t) => (
+                  <TodoListRow
+                    key={t.id}
+                    teamId={teamId}
+                    todo={toListItem(t)}
+                    ownerName={
+                      g.key === OUTSIDE_GROUP_KEY
+                        ? ownerLabel(t.owner_id, nameOf)
+                        : g.title
+                    }
+                    members={members}
+                    userId={userId}
+                    // The outside block mixes owners: name each row's.
+                    hideOwner={g.key !== OUTSIDE_GROUP_KEY}
+                    surface="meeting"
+                  />
+                ))}
+              </OwnerSection>
+            ))}
+          </TodoColumn>
+
+          {/* Team-wide (not the viewer's own, unlike the To-Dos page): in the
+              meeting the room chases everyone's milestones. */}
+          <TodoColumn
+            title="Milestones"
+            count={openMilestones.length}
+            meta={`due in the next ${MILESTONE_REMINDER_DAYS} days`}
+          >
+            {openMilestones.length === 0 ? (
+              <SectionCard>
+                <EmptyState
+                  icon={Flag}
+                  title={`Nothing due in the next ${MILESTONE_REMINDER_DAYS} days`}
+                  hint="Milestones further out stay under their rock on the Rocks segment."
+                />
+              </SectionCard>
+            ) : (
+              milestoneGroups.map((g) => (
+                <OwnerSection key={g.key} title={g.title} count={`${g.items.length}`}>
                   {g.items.map((m) => (
                     <MilestoneTodoRow
                       key={m.id}
@@ -580,13 +574,12 @@ export function SegmentTodos({
                       members={members}
                     />
                   ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                </OwnerSection>
+              ))
+            )}
+          </TodoColumn>
         </div>
-      </div>
+      )}
     </div>
   );
 }

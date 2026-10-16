@@ -76,7 +76,7 @@ export function MeetingsList({
       )}
       {sorted.map((m) => {
         // Live / duration / agenda / progress: lib/l10/meeting-summary.ts,
-        // shared with the admin export.
+        // shared with the export.
         const { startedMs, live, progressLabel } = meetingSummary(m);
         const avg = ratingsByMeeting[m.id] ?? null;
 

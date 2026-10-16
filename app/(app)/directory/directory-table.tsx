@@ -71,7 +71,7 @@ export function DirectoryTable({
   // Admins use the row menu; the leader controls are for non-admin leaders.
   const showLeaderTools = !isAdmin && ledTeams.length > 0;
 
-  // lib/directory-filter.ts, shared with the admin export.
+  // lib/directory-filter.ts, shared with the export.
   const filtered = useMemo(
     () => filterDirectory(people, { query, access, team }),
     [people, query, access, team],
@@ -97,18 +97,20 @@ export function DirectoryTable({
           </Link>
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
-          {/* Export of exactly the filtered list (docs/EXPORT.md). The
-              server re-checks the role; this block is admin-only anyway. */}
-          <ExportControl
-            exportId="directory"
-            params={directoryExportParams({ query, access, teams: team })}
-          />
+          <DirectoryExport query={query} access={access} team={team} />
         </div>
       )}
 
       {showLeaderTools && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <LeaderAddButton ledTeams={ledTeams} people={people} onDone={setNotice} />
+          <DirectoryExport query={query} access={access} team={team} />
+        </div>
+      )}
+
+      {!isAdmin && !showLeaderTools && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <DirectoryExport query={query} access={access} team={team} />
         </div>
       )}
 
@@ -285,6 +287,28 @@ export function DirectoryTable({
         </table>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Export of exactly the filtered list, for everyone (docs/EXPORT.md). The
+ * server builds the file as this viewer sees the page: account state and
+ * deactivated people for admins only.
+ */
+function DirectoryExport({
+  query,
+  access,
+  team,
+}: {
+  query: string;
+  access: ReadonlySet<string>;
+  team: ReadonlySet<string>;
+}) {
+  return (
+    <ExportControl
+      exportId="directory"
+      params={directoryExportParams({ query, access, teams: team })}
+    />
   );
 }
 

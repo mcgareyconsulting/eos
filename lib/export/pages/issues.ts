@@ -30,6 +30,7 @@ import { checkRowCap } from "../cap";
 import {
   archivedParam,
   loadRoster,
+  authorizeTeamPage,
   loadTeamOr404,
   ownerFilterLine,
   ownerParam,
@@ -84,47 +85,42 @@ export function issuesViewRows(input: {
 }
 
 export const ISSUES_COLUMNS: readonly ExportColumn<IssueExportRow>[] = [
-  { key: "title", header: "Issue", kind: "text", value: (i) => i.title, width: 48 },
+  { key: "title", header: "Issue", kind: "text", value: (i) => i.title },
   {
     key: "description",
     header: "Description",
     kind: "richtext",
     value: (i) => i.description,
-    width: 60,
   },
-  { key: "owner", header: "Owner", kind: "user", value: (i) => i.owner_id, width: 22 },
+  { key: "owner", header: "Owner", kind: "user", value: (i) => i.owner_id },
   {
     key: "status",
     header: "Status",
     kind: "text",
     value: (i) => STATUS_LABEL[i.status] ?? i.status,
-    width: 10,
   },
   {
     key: "priority",
     header: "Priority",
     kind: "text",
     value: (i) => (i.priority ? PRIORITY_LABEL[i.priority] : ""),
-    width: 10,
   },
-  { key: "votes", header: "Votes", kind: "number", value: (i) => Number(i.votes ?? 0), width: 8 },
+  { key: "votes", header: "Votes", kind: "number", value: (i) => Number(i.votes ?? 0) },
   {
     key: "type",
     header: "Term",
     kind: "text",
     // splitIssuesByTerm: no type recorded counts as short-term.
     value: (i) => ISSUE_TERM_LABEL[i.type === "long" ? "long" : "short"],
-    width: 12,
   },
-  { key: "created_at", header: "Created", kind: "datetime", value: (i) => i.created_at, width: 20 },
+  { key: "created_at", header: "Created", kind: "datetime", value: (i) => i.created_at },
   {
     key: "archived_at",
     header: "Archived",
     kind: "datetime",
     value: (i) => i.archived_at,
-    width: 20,
   },
-  { key: "id", header: "Issue ID", kind: "text", value: (i) => i.id, width: 24 },
+  { key: "id", header: "Issue ID", kind: "text", value: (i) => i.id },
 ];
 
 export const issuesExport: ExportDefinition<IssueExportRow, IssuesExportParams> = {
@@ -132,6 +128,8 @@ export const issuesExport: ExportDefinition<IssueExportRow, IssuesExportParams> 
   title: "Issues",
   parseParams: parseIssuesParams,
   columns: ISSUES_COLUMNS,
+  // The page's gate (requireTeamAccess), before any of the team's data is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, uid, viewer }, p): Promise<LoadedView<IssueExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

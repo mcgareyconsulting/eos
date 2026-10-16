@@ -4,10 +4,15 @@ import type { Timestamp } from "firebase-admin/firestore";
 import { viewerOf } from "@/lib/access/types";
 import type { HeadlineDoc } from "@/lib/firestore-types";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps, ts } from "@/lib/test-support/export-deps";
+import {
+  adminExportDeps,
+  auditRowsOf,
+  exportDepsAs,
+  ts,
+} from "@/lib/test-support/export-deps";
 import { runExport } from "../run";
 import { isRefusal } from "../types";
-import { exportUrls, teamListExportParams } from "../urls";
+import { exportUrl, teamListExportParams } from "../urls";
 import { HEADLINES_COLUMNS, headlinesViewRows, parseHeadlinesParams } from "./headlines";
 
 type Doc = HeadlineDoc & { id: string };
@@ -115,34 +120,71 @@ describe("headlines export — the page's view", () => {
 
   test("params round-trip", () => {
     const params = teamListExportParams({ teamId: "t1", showArchived: true, ownerFilter: "u2" });
-    const qs = new URL(exportUrls("headlines", params).xlsx, "https://x").searchParams;
+    const qs = new URL(exportUrl("headlines", params), "https://x").searchParams;
     assert.deepEqual(parseHeadlinesParams(qs), { teamId: "t1", archived: true, owner: "u2" });
     assert.ok(isRefusal(parseHeadlinesParams(new URLSearchParams())));
   });
 });
 
 describe("headlines export — through the core", () => {
-  test("loads the team's headlines with plain-text bodies", async () => {
+  function seed() {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
-    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1" });
+    db.seed("teams", "t2", { name: "Ops" });
+    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
+    db.seed("team_members", "t2__u3", { team_id: "t2", user_id: "u3", role: "member" });
     db.seed("users", "u1", { display_name: "Ada Lovelace" });
     db.seed("headlines", "h1", { ...headline("h1"), body: "**Won** the account" });
-    db.seed("headlines", "h2", { ...headline("h2"), team_id: "t2" });
+    // Another team's employee headline: never in t1's file.
+    db.seed("headlines", "h2", {
+      ...headline("h2"),
+      team_id: "t2",
+      title: "Ops employee news",
+      created_by: "u3",
+    });
+    return db;
+  }
+
+  for (const who of [
+    { label: "a member", deps: (db: FakeFirestore) => exportDepsAs(db, { uid: "u1" }) },
+    { label: "an admin on no team", deps: (db: FakeFirestore) => adminExportDeps(db) },
+  ]) {
+    test(`${who.label} gets the team's headlines with plain-text bodies, no other team's`, async () => {
+      const db = seed();
+      const res = await runExport(
+        "headlines",
+        new URLSearchParams({ team: "t1" }),
+        "csv",
+        who.deps(db),
+      );
+      assert.ok(res.ok);
+      assert.deepEqual(res.table.headers, HEADLINES_COLUMNS.map((c) => c.header));
+      assert.equal(res.table.rows.length, 1);
+      assert.deepEqual(res.table.rows[0].slice(0, 5), [
+        "Ada Lovelace",
+        "h1",
+        "Won the account",
+        "Customer",
+        "Ada Lovelace",
+      ]);
+      assert.ok(!res.table.rows.flat().includes("Ops employee news"));
+      assert.deepEqual(auditRowsOf(db).map((r) => r.outcome), ["ok"]);
+    });
+  }
+
+  test("someone off the roster is refused before any headline is read", async () => {
+    const db = seed();
     const res = await runExport(
       "headlines",
       new URLSearchParams({ team: "t1" }),
-      "print",
-      adminExportDeps(db),
+      "csv",
+      exportDepsAs(db, { uid: "u3" }),
     );
-    assert.ok(res.ok);
-    assert.equal(res.table.rows.length, 1);
-    assert.deepEqual(res.table.rows[0].slice(0, 5), [
-      "Ada Lovelace",
-      "h1",
-      "Won the account",
-      "Customer",
-      "Ada Lovelace",
-    ]);
+    assert.equal(!res.ok && res.status, 404);
+    assert.equal(!res.ok && res.reason, "no_page_access");
+    assert.deepEqual(
+      auditRowsOf(db).map((r) => [r.outcome, r.reason]),
+      [["refused", "no_page_access"]],
+    );
   });
 });

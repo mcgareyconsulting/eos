@@ -1,7 +1,7 @@
 // How one row of a team's meeting history reads (the Meetings page,
 // app/(app)/teams/[teamId]/meetings/meetings-list.tsx): live or completed,
 // how long it ran, which agenda, and where a live one is. Pure, and shared
-// with the admin export (lib/export/pages/meetings.ts) so the list and the
+// with the export (lib/export/pages/meetings.ts) so the list and the
 // file can't drift.
 
 import { agendaSegmentList, defaultL10Items, type AgendaItem } from "./agenda";

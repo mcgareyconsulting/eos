@@ -4,10 +4,10 @@ import type { ScorecardGroup } from "@/lib/scorecard-groups";
 import { buildScorecardColumns, periodStartFor } from "@/lib/scorecard-periods";
 import { DEFAULT_SCORECARD_TOOLBAR, type ScorecardToolbar } from "@/lib/scorecard-view";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps } from "@/lib/test-support/export-deps";
+import { adminExportDeps, auditRowsOf, exportDepsAs } from "@/lib/test-support/export-deps";
 import { runExport } from "../run";
 import { isRefusal } from "../types";
-import { exportUrls, scorecardExportParams } from "../urls";
+import { exportUrl, scorecardExportParams } from "../urls";
 import {
   SCORECARD_COLUMNS,
   goalText,
@@ -178,7 +178,7 @@ describe("scorecard export — the page's view", () => {
       sort: "average-desc",
       search: " loans ",
     });
-    const qs = new URL(exportUrls("scorecard", params).xlsx, "https://x").searchParams;
+    const qs = new URL(exportUrl("scorecard", params), "https://x").searchParams;
     assert.deepEqual(parseScorecardParams(qs), {
       teamId: "t1",
       period: "monthly",
@@ -208,11 +208,12 @@ describe("scorecard export — the page's view", () => {
 });
 
 describe("scorecard export — through the core", () => {
-  test("own and tracked measurables, period columns and values", async () => {
+  function seed() {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
     db.seed("teams", "t2", { name: "Finance" });
-    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1" });
+    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
+    db.seed("team_members", "t2__u8", { team_id: "t2", user_id: "u8", role: "member" });
     db.seed("users", "u1", { display_name: "Ada Lovelace" });
     db.seed("users", "u8", { display_name: "Zed Outside" });
     db.seed("scorecard_metrics", "own", {
@@ -246,25 +247,70 @@ describe("scorecard export — through the core", () => {
     const thisWeek = periodStartFor("weekly");
     db.seed("scorecard_entries", "e1", { metric_id: "own", week_start_date: thisWeek, value: 7 });
     db.seed("scorecard_entries", "old", { metric_id: "own", week_start_date: "2020-01-06", value: 1 });
+    // Hidden: a Finance measurable not shared with Leadership.
+    db.seed("scorecard_metrics", "finance-only", {
+      team_id: "t2",
+      name: "Finance private KPI",
+      unit: "number",
+      goal: 1,
+      direction: "gte",
+      owner_id: "u8",
+      sort_order: 3,
+    });
+    return db;
+  }
 
+  for (const who of [
+    { label: "a member", deps: (db: FakeFirestore) => exportDepsAs(db, { uid: "u1" }) },
+    { label: "an admin on no team", deps: (db: FakeFirestore) => adminExportDeps(db) },
+  ]) {
+    test(`${who.label}: own and tracked measurables, period columns and values, nothing hidden`, async () => {
+      const db = seed();
+      const res = await runExport(
+        "scorecard",
+        new URLSearchParams({ team: "t1", weeks: "8" }),
+        "csv",
+        who.deps(db),
+      );
+      assert.ok(res.ok);
+      const t = res.table;
+      // The fixed columns, then one per week the grid shows.
+      assert.equal(t.headers.length, SCORECARD_COLUMNS.length + 8);
+      assert.deepEqual(
+        t.headers.slice(0, SCORECARD_COLUMNS.length),
+        SCORECARD_COLUMNS.map((c) => c.header),
+      );
+      assert.deepEqual(
+        t.headers.slice(SCORECARD_COLUMNS.length),
+        buildScorecardColumns("weekly", undefined, 8).map((c) => c.label),
+      );
+      assert.deepEqual(
+        t.rows.map((r) => r.slice(0, 8)),
+        [
+          ["Weekly", "Loans closed", "Ada Lovelace", "At least 5", "Number", "On-track", 7, ""],
+          ["Weekly", "@deposits", "Zed Outside", "No goal", "Currency", "No data", "", "Finance"],
+        ],
+      );
+      assert.equal(t.rows[0][SCORECARD_COLUMNS.length], 7, "this week's value in the newest column");
+      assert.ok(!t.rows.flat().includes("Finance private KPI"));
+      const audit = auditRowsOf(db);
+      assert.equal(audit.length, 1);
+      const filters = (audit[0].export as { filters: Record<string, string> }).filters;
+      assert.equal(filters.Period, "Weekly");
+      assert.equal(filters.Weeks, "8");
+      assert.equal(filters.Status, "All statuses");
+    });
+  }
+
+  test("someone off the roster is refused before any measurable is read", async () => {
+    const db = seed();
     const res = await runExport(
       "scorecard",
-      new URLSearchParams({ team: "t1", weeks: "8" }),
-      "xlsx",
-      adminExportDeps(db),
+      new URLSearchParams({ team: "t1" }),
+      "csv",
+      exportDepsAs(db, { uid: "u8" }),
     );
-    assert.ok(res.ok);
-    const t = res.table;
-    assert.equal(t.headers.length, SCORECARD_COLUMNS.length + 8);
-    assert.deepEqual(
-      t.rows.map((r) => r.slice(0, 8)),
-      [
-        ["Weekly", "Loans closed", "Ada Lovelace", "At least 5", "Number", "On-track", 7, ""],
-        ["Weekly", "@deposits", "Zed Outside", "No goal", "Currency", "No data", "", "Finance"],
-      ],
-    );
-    assert.equal(t.rows[0][SCORECARD_COLUMNS.length], 7, "this week's value in the newest column");
-    const filters = t.provenance.find((l) => l.label === "Filters applied")?.value ?? "";
-    assert.match(filters, /Period: Weekly · Weeks: 8 · Status: All statuses/);
+    assert.equal(!res.ok && res.status, 404);
+    assert.equal(!res.ok && res.reason, "no_page_access");
   });
 });

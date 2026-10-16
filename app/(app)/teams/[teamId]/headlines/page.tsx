@@ -43,7 +43,7 @@ export default async function HeadlinesPage({
   const { teamId } = await params;
   const { archived: archivedParam, owner: ownerParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
-  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
+  const { uid, db } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const snap = await db
@@ -249,14 +249,12 @@ export default async function HeadlinesPage({
         <EntityPageHeader
           title="Headlines"
           leading={
-            // Admin export of exactly this view (docs/EXPORT.md). The server
-            // re-checks the role; hiding it is only convenience.
-            isAdmin ? (
-              <ExportControl
-                exportId="headlines"
-                params={teamListExportParams({ teamId, showArchived, ownerFilter })}
-              />
-            ) : undefined
+            // Export of exactly this view for whoever is looking
+            // (docs/EXPORT.md). The server re-checks team access.
+            <ExportControl
+              exportId="headlines"
+              params={teamListExportParams({ teamId, showArchived, ownerFilter })}
+            />
           }
           filter={<OwnerFilter members={members} currentUserId={uid} />}
           tabs={

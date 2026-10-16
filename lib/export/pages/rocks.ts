@@ -43,6 +43,7 @@ import { checkRowCap } from "../cap";
 import {
   archivedParam,
   loadRoster,
+  authorizeTeamPage,
   loadTeamOr404,
   ownerFilterLine,
   ownerParam,
@@ -261,54 +262,49 @@ export function rocksViewRows(input: {
 }
 
 export const ROCKS_COLUMNS: readonly ExportColumn<RockExportRow>[] = [
-  { key: "section", header: "Section", kind: "text", value: (r) => r.section, width: 20 },
-  { key: "entry", header: "Entry", kind: "text", value: (r) => r.entry, width: 14 },
-  { key: "title", header: "Rock", kind: "text", value: (r) => r.title, width: 44 },
+  { key: "section", header: "Section", kind: "text", value: (r) => r.section },
+  { key: "entry", header: "Entry", kind: "text", value: (r) => r.entry },
+  { key: "title", header: "Rock", kind: "text", value: (r) => r.title },
   {
     key: "description",
     header: "Description",
     kind: "richtext",
     value: (r) => r.description,
-    width: 50,
   },
-  { key: "owner", header: "Owner", kind: "user", value: (r) => r.owner_id, width: 22 },
-  { key: "status", header: "Status", kind: "text", value: (r) => r.status, width: 11 },
-  { key: "rock_type", header: "Kind", kind: "text", value: (r) => r.kind, width: 11 },
+  { key: "owner", header: "Owner", kind: "user", value: (r) => r.owner_id },
+  { key: "status", header: "Status", kind: "text", value: (r) => r.status },
+  { key: "rock_type", header: "Kind", kind: "text", value: (r) => r.kind },
   {
     key: "is_company_rock",
     header: "Company",
     kind: "boolean",
     value: (r) => r.is_company_rock,
-    width: 9,
   },
-  { key: "quarter", header: "Quarter", kind: "text", value: (r) => r.quarter, width: 10 },
-  { key: "due_date", header: "Due", kind: "date", value: (r) => r.due_date, width: 12 },
-  { key: "milestones", header: "Milestones", kind: "text", value: (r) => r.milestones, width: 60 },
+  { key: "quarter", header: "Quarter", kind: "text", value: (r) => r.quarter },
+  { key: "due_date", header: "Due", kind: "date", value: (r) => r.due_date },
+  { key: "milestones", header: "Milestones", kind: "text", value: (r) => r.milestones },
   {
     key: "milestones_done",
     header: "Milestones done",
     kind: "text",
     value: (r) => r.milestones_done,
-    width: 10,
   },
-  { key: "from_team", header: "From team", kind: "text", value: (r) => r.from_team, width: 18 },
+  { key: "from_team", header: "From team", kind: "text", value: (r) => r.from_team },
   {
     key: "audience_team_ids",
     header: "Shared with",
     kind: "text",
     value: (r) => r.shared_with,
-    width: 24,
   },
-  { key: "private", header: "Private", kind: "boolean", value: (r) => r.private, width: 8 },
+  { key: "private", header: "Private", kind: "boolean", value: (r) => r.private },
   {
     key: "archived_at",
     header: "Archived",
     kind: "datetime",
     value: (r) => r.archived_at,
-    width: 20,
   },
-  { key: "assigned_by", header: "Assigned by", kind: "user", value: (r) => r.assigned_by, width: 22 },
-  { key: "id", header: "Rock ID", kind: "text", value: (r) => r.id, width: 24 },
+  { key: "assigned_by", header: "Assigned by", kind: "user", value: (r) => r.assigned_by },
+  { key: "id", header: "Rock ID", kind: "text", value: (r) => r.id },
 ];
 
 function milestoneOf(id: string, t: TodoDoc): RockMilestone {
@@ -390,6 +386,8 @@ export const rocksExport: ExportDefinition<RockExportRow, RocksExportParams> = {
   title: "Rocks",
   parseParams: parseRocksParams,
   columns: ROCKS_COLUMNS,
+  // The page's gate (requireTeamAccess), before any of the team's data is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, uid, viewer }, p): Promise<LoadedView<RockExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

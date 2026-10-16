@@ -1,6 +1,6 @@
 // The To-Dos tab's row order (owner cards, then due date). Pure; shared by
 // the live board (app/(app)/teams/[teamId]/todos/todos-board.tsx) and the
-// admin export of that page (lib/export/pages/todos.ts), so a printed or
+// export of that page (lib/export/pages/todos.ts), so a printed or
 // downloaded view lists rows in the order the screen did.
 
 import { OUTSIDE_GROUP_KEY, OUTSIDE_GROUP_TITLE } from "@/lib/todo-lists";

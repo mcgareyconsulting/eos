@@ -63,7 +63,13 @@ import {
   type LoadedView,
 } from "../types";
 import { checkRowCap } from "../cap";
-import { loadRoster, loadTeamOr404, parseTeamParam, type Member } from "./shared";
+import {
+  authorizeTeamPage,
+  loadRoster,
+  loadTeamOr404,
+  parseTeamParam,
+  type Member,
+} from "./shared";
 
 export type ScorecardExportParams = {
   teamId: string;
@@ -173,39 +179,35 @@ export function goalText(goal: number | null, direction: GoalDirection): string 
 }
 
 export const SCORECARD_COLUMNS: readonly ExportColumn<ScorecardExportRow>[] = [
-  { key: "section", header: "Group", kind: "text", value: (m) => m.section, width: 18 },
-  { key: "name", header: "Measurable", kind: "text", value: (m) => m.name, width: 40 },
-  { key: "owner", header: "Owner", kind: "user", value: (m) => m.owner_id, width: 22 },
+  { key: "section", header: "Group", kind: "text", value: (m) => m.section },
+  { key: "name", header: "Measurable", kind: "text", value: (m) => m.name },
+  { key: "owner", header: "Owner", kind: "user", value: (m) => m.owner_id },
   {
     key: "goal",
     header: "Goal",
     kind: "text",
     value: (m) => goalText(m.goal, m.direction),
-    width: 14,
   },
   {
     key: "unit",
     header: "Unit",
     kind: "text",
     value: (m) => `${UNIT_LABEL.get(m.unit) ?? m.unit}${UNIT_NOTE[m.unit] ?? ""}`,
-    width: 14,
   },
   {
     key: "status",
     header: "Status",
     kind: "text",
     value: (m) => TREND_STATUS_LABEL[trendStatus(m.values, m.goal, m.direction)],
-    width: 11,
   },
-  { key: "average", header: "Average", kind: "number", value: (m) => average(m.values), width: 10 },
+  { key: "average", header: "Average", kind: "number", value: (m) => average(m.values) },
   {
     key: "shared_from",
     header: "Tracked from",
     kind: "text",
     value: (m) => m.sharedFrom,
-    width: 18,
   },
-  { key: "id", header: "Measurable ID", kind: "text", value: (m) => m.id, width: 24 },
+  { key: "id", header: "Measurable ID", kind: "text", value: (m) => m.id },
 ];
 
 /** The fixed columns plus one per period the grid shows (newest first). */
@@ -220,7 +222,6 @@ export function scorecardColumnsFor(
         header: c.label,
         kind: "number",
         value: (m) => m.values[i],
-        width: 12,
       }),
     ),
   ];
@@ -267,6 +268,8 @@ export const scorecardExport: ExportDefinition<ScorecardExportRow, ScorecardExpo
   title: "Scorecard",
   parseParams: parseScorecardParams,
   columns: SCORECARD_COLUMNS,
+  // The page's gate (requireTeamAccess), before any of the team's data is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, uid, viewer }, p): Promise<LoadedView<ScorecardExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

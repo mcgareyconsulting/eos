@@ -1,5 +1,5 @@
 // The Directory's search and filters (app/(app)/directory/directory-table.tsx).
-// Pure, and shared with the admin export (lib/export/pages/directory.ts) so
+// Pure, and shared with the Directory export (lib/export/pages/directory.ts) so
 // the table and the file can't drift on who matches.
 
 /** Team-filter value for people on no roster. Not a real team id. */

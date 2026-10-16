@@ -87,9 +87,10 @@ export function ScorecardPanel({
    */
   viewerId?: string;
   /**
-   * Standalone scorecard, admin only: show the Export control for exactly
-   * this view — the URL state plus the toolbar filters (docs/EXPORT.md). The
-   * server re-checks the role; leaving it unset is only convenience.
+   * Standalone scorecard (every viewer): show the Export control for exactly
+   * this view — the URL state plus the toolbar filters (docs/EXPORT.md).
+   * Left unset where the page isn't the Scorecard (the L10 segment). The
+   * server re-checks team access.
    */
   exportView?: { showArchived: boolean };
 }) {

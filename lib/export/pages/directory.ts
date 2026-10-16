@@ -1,12 +1,16 @@
-// Export definition: the org Directory (app/(app)/directory), the admin
-// people list.
+// Export definition: the org Directory (app/(app)/directory), the org-wide
+// people list every signed-in user can open.
 //
 // The view is the table's search and its Role and Team filters, which are
 // client state in DirectoryTable, so the Export control there passes them
 // (`q`, `access`, `teams`, the sets comma-joined). Loads with the page's own
-// loader for an admin (lib/firebase/directory getDirectoryPeople — the same
-// people, order and admin-only account fields the page gets) and filters
-// with the table's own rule (lib/directory-filter.ts). Org-wide: no team.
+// loader for THIS viewer (lib/firebase/directory getDirectoryPeople(isAdmin)
+// — the same people, order and fields the page gets: deactivated people and
+// the account state only for an admin) and filters with the table's own
+// rule (lib/directory-filter.ts). Org-wide: no team.
+//
+// The Account column is admin-only, as the account chips are on the page:
+// a non-admin's file has no such column at all (DIRECTORY_MEMBER_COLUMNS).
 //
 // The account fields come from Identity Platform (getDirectoryPeople lists
 // every account). `directoryExportWith({ auth })` swaps that one read for a
@@ -89,21 +93,28 @@ function accountText(p: DirectoryPerson): string {
   return "Signed in";
 }
 
+/** Every column, as an admin's file has them. */
 export const DIRECTORY_COLUMNS: readonly ExportColumn<DirectoryPerson>[] = [
-  { key: "first_name", header: "First Name", kind: "text", value: (p) => p.firstName, width: 16 },
-  { key: "last_name", header: "Last Name", kind: "text", value: (p) => p.lastName, width: 18 },
+  { key: "first_name", header: "First Name", kind: "text", value: (p) => p.firstName },
+  { key: "last_name", header: "Last Name", kind: "text", value: (p) => p.lastName },
   {
     key: "teams",
     header: "Team",
     kind: "text",
     value: (p) => (p.teams.length === 0 ? "No team" : p.teams.map((t) => t.name).join("\n")),
-    width: 28,
   },
-  { key: "access", header: "Role access", kind: "text", value: roleText, width: 24 },
-  { key: "email", header: "Email", kind: "text", value: (p) => p.email, width: 32 },
-  { key: "account", header: "Account", kind: "text", value: accountText, width: 16 },
-  { key: "uid", header: "User ID", kind: "text", value: (p) => p.uid, width: 30 },
+  { key: "access", header: "Role access", kind: "text", value: roleText },
+  { key: "email", header: "Email", kind: "text", value: (p) => p.email },
+  { key: "account", header: "Account", kind: "text", value: accountText },
+  { key: "uid", header: "User ID", kind: "text", value: (p) => p.uid },
 ];
+
+/** Admin-only on the page (the No account / Never signed in chips). */
+const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["account"]);
+
+/** A non-admin's columns: everything but the admin-only account state. */
+export const DIRECTORY_MEMBER_COLUMNS: readonly ExportColumn<DirectoryPerson>[] =
+  DIRECTORY_COLUMNS.filter((c) => !ADMIN_ONLY_KEYS.has(c.key));
 
 export function directoryExportWith(
   deps: DirectoryExportDeps = {},
@@ -113,11 +124,17 @@ export function directoryExportWith(
     title: "Directory",
     parseParams: parseDirectoryParams,
     columns: DIRECTORY_COLUMNS,
+    // The page's gate is the signed-in session alone (page.tsx →
+    // getUserTeamsFirebase → requireFirebaseUser): everyone in the org can
+    // open the Directory. The core has already verified the session and the
+    // live account, so there is nothing further to check.
+    authorize: async () => null,
     async load({ db, uid, viewer }, p): Promise<LoadedView<DirectoryPerson> | ExportRefusal> {
-      // The core admits admins only, and the account fields are admin-only, so
-      // the loader runs as the page does for an admin. Imported lazily: it
-      // pulls the session helpers, which the pure parts of this module (and
-      // their tests) don't need.
+      // The loader runs as the page does for this viewer: getDirectoryPeople
+      // leaves deactivated people and the account fields out unless
+      // `isAdmin` (the claim as it stands on the account now). Imported
+      // lazily: it pulls the session helpers, which the pure parts of this
+      // module (and their tests) don't need.
       const { getDirectoryPeople } = await import("@/lib/firebase/directory");
       const [people, teamsSnap] = await Promise.all([
         getDirectoryPeople(viewer.isAdmin, {
@@ -146,6 +163,7 @@ export function directoryExportWith(
         ok: true,
         rows,
         teamId: null,
+        columns: viewer.isAdmin ? DIRECTORY_COLUMNS : DIRECTORY_MEMBER_COLUMNS,
         filters: [
           { label: "Search", value: p.query.trim() || "(none)" },
           {

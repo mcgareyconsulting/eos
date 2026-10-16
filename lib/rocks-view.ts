@@ -1,6 +1,6 @@
 // The Rocks page's list rules (app/(app)/teams/[teamId]/rocks/page.tsx):
 // how a stored rock is read, how a section sorts, and which section a rock
-// lands in. Pure, and shared with the admin export (lib/export/pages/rocks.ts)
+// lands in. Pure, and shared with the export (lib/export/pages/rocks.ts)
 // so the page and the file can't drift on order or placement.
 
 import {

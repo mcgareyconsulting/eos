@@ -2,12 +2,16 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { viewerOf } from "@/lib/access/types";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps, ts } from "@/lib/test-support/export-deps";
-import { readXlsx } from "@/lib/xlsx";
+import {
+  adminExportDeps,
+  auditRowsOf,
+  exportDepsAs,
+  ts,
+} from "@/lib/test-support/export-deps";
+import { writeCsv } from "../csv";
 import { runExport } from "../run";
-import { writeXlsx } from "../xlsx-writer";
 import { isRefusal } from "../types";
-import { exportUrls, issuesExportParams } from "../urls";
+import { exportUrl, issuesExportParams } from "../urls";
 import {
   ISSUES_COLUMNS,
   issuesViewRows,
@@ -106,7 +110,7 @@ describe("issues export — the page's view", () => {
       ownerFilter: "u2",
       term: "long",
     });
-    const qs = new URL(exportUrls("issues", params).xlsx, "https://x").searchParams;
+    const qs = new URL(exportUrl("issues", params), "https://x").searchParams;
     assert.deepEqual(parseIssuesParams(qs), {
       teamId: "t1",
       archived: true,
@@ -122,20 +126,31 @@ describe("issues export — the page's view", () => {
 });
 
 describe("issues export — through the core", () => {
-  test("loads the team's issues, names owners, records the term filter", async () => {
+  /** t1 (Leadership): u1. t2 (Ops): u3. Each team has one issue. */
+  function seed() {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
-    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1" });
+    db.seed("teams", "t2", { name: "Ops" });
+    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
+    db.seed("team_members", "t2__u3", { team_id: "t2", user_id: "u3", role: "member" });
     db.seed("users", "u1", { display_name: "Ada Lovelace" });
     db.seed("issues", "i1", { ...issue("i1"), title: "+1 vendor", votes: 2 });
-    db.seed("issues", "other", { ...issue("other"), team_id: "t2" });
+    // Another team's issue (an employee issue on Ops): never in t1's file.
+    db.seed("issues", "other", { ...issue("other"), team_id: "t2", title: "Ops employee issue", owner_id: "u3" });
+    return db;
+  }
+
+  test("a member gets their team's list: names, no other team's issue, the filters audited", async () => {
+    const db = seed();
     const res = await runExport(
       "issues",
       new URLSearchParams({ team: "t1" }),
-      "xlsx",
-      adminExportDeps(db),
+      "csv",
+      exportDepsAs(db, { uid: "u1" }),
     );
     assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, ISSUES_COLUMNS.map((c) => c.header));
+    assert.ok(!res.table.headers.some((h) => /comment/i.test(h)));
     assert.equal(res.table.rows.length, 1);
     assert.deepEqual(res.table.rows[0].slice(0, 7), [
       "+1 vendor",
@@ -146,18 +161,53 @@ describe("issues export — through the core", () => {
       2,
       "Short-term",
     ]);
-    const filters = res.table.provenance.find((l) => l.label === "Filters applied")?.value;
-    assert.equal(
-      filters,
-      "Team: Leadership · View: Active · Term: Short-term · Owner: All owners",
+    assert.ok(!res.table.rows.flat().includes("Ops employee issue"));
+    const audit = auditRowsOf(db);
+    assert.deepEqual(
+      audit.map((r) => [r.outcome, r.entity_id, r.actor_uid, r.team_id]),
+      [["ok", "issues", "u1", "t1"]],
     );
-    assert.equal(db.docsIn("audit_log").length, 1);
+    assert.deepEqual((audit[0].export as { filters: unknown }).filters, {
+      Team: "Leadership",
+      View: "Active",
+      Term: "Short-term",
+      Owner: "All owners",
+    });
 
-    // A title starting with "+" is neutralized in the spreadsheet.
-    const t = res.table;
-    const [sheet] = readXlsx(
-      writeXlsx({ sheetName: t.title, preamble: t.provenance, headers: t.headers, rows: t.rows }),
+    // A title starting with "+" is neutralized in the file.
+    const csv = writeCsv(res.table);
+    assert.ok(csv.includes("\r\n'+1 vendor,"));
+  });
+
+  test("an admin on no team gets the same list", async () => {
+    const db = seed();
+    const res = await runExport(
+      "issues",
+      new URLSearchParams({ team: "t1" }),
+      "csv",
+      adminExportDeps(db),
     );
-    assert.equal(sheet.rows.at(-1)![0], "'+1 vendor");
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.rows.map((r) => r[0]), ["+1 vendor"]);
+  });
+
+  test("someone off the roster is refused before any issue is read", async () => {
+    const db = seed();
+    const res = await runExport(
+      "issues",
+      new URLSearchParams({ team: "t1" }),
+      "csv",
+      exportDepsAs(db, { uid: "u3" }),
+    );
+    assert.deepEqual(res, {
+      ok: false,
+      status: 404,
+      message: "Team not found.",
+      reason: "no_page_access",
+    });
+    assert.deepEqual(
+      auditRowsOf(db).map((r) => [r.outcome, r.reason, r.actor_uid]),
+      [["refused", "no_page_access", "u3"]],
+    );
   });
 });

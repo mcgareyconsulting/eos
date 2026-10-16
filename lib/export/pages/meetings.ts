@@ -29,7 +29,7 @@ import {
   type LoadedView,
 } from "../types";
 import { readCapped } from "../cap";
-import { loadTeamOr404, parseTeamParam } from "./shared";
+import { authorizeTeamPage, loadTeamOr404, parseTeamParam } from "./shared";
 
 export type MeetingsExportParams = { teamId: string };
 
@@ -81,20 +81,19 @@ export function meetingsViewRows(
 }
 
 export const MEETINGS_COLUMNS: readonly ExportColumn<MeetingExportRow>[] = [
-  { key: "started_at", header: "Started", kind: "datetime", value: (m) => m.started_ms, width: 20 },
-  { key: "ended_at", header: "Ended", kind: "datetime", value: (m) => m.ended_ms, width: 20 },
-  { key: "status", header: "Status", kind: "text", value: (m) => m.status, width: 11 },
+  { key: "started_at", header: "Started", kind: "datetime", value: (m) => m.started_ms },
+  { key: "ended_at", header: "Ended", kind: "datetime", value: (m) => m.ended_ms },
+  { key: "status", header: "Status", kind: "text", value: (m) => m.status },
   {
     key: "duration_min",
     header: "Duration (min)",
     kind: "number",
     value: (m) => m.duration_min,
-    width: 12,
   },
-  { key: "agenda_name", header: "Agenda", kind: "text", value: (m) => m.agenda, width: 22 },
-  { key: "progress", header: "Summary", kind: "text", value: (m) => m.progress, width: 44 },
-  { key: "rating", header: "Average rating", kind: "number", value: (m) => m.rating, width: 12 },
-  { key: "id", header: "Meeting ID", kind: "text", value: (m) => m.id, width: 24 },
+  { key: "agenda_name", header: "Agenda", kind: "text", value: (m) => m.agenda },
+  { key: "progress", header: "Summary", kind: "text", value: (m) => m.progress },
+  { key: "rating", header: "Average rating", kind: "number", value: (m) => m.rating },
+  { key: "id", header: "Meeting ID", kind: "text", value: (m) => m.id },
 ];
 
 export const meetingsExport: ExportDefinition<MeetingExportRow, MeetingsExportParams> = {
@@ -102,6 +101,8 @@ export const meetingsExport: ExportDefinition<MeetingExportRow, MeetingsExportPa
   title: "Meetings",
   parseParams: parseMeetingsParams,
   columns: MEETINGS_COLUMNS,
+  // The page's gate (requireTeamAccess), before any of the team's data is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, viewer }, p): Promise<LoadedView<MeetingExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

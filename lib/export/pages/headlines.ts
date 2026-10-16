@@ -32,6 +32,7 @@ import { checkRowCap } from "../cap";
 import {
   archivedParam,
   loadRoster,
+  authorizeTeamPage,
   loadTeamOr404,
   ownerFilterLine,
   ownerParam,
@@ -107,41 +108,37 @@ export function headlinesViewRows(input: {
 }
 
 export const HEADLINES_COLUMNS: readonly ExportColumn<HeadlineExportRow>[] = [
-  { key: "section", header: "Section", kind: "text", value: (h) => h.section, width: 20 },
-  { key: "title", header: "Headline", kind: "text", value: (h) => h.title, width: 48 },
-  { key: "body", header: "Details", kind: "richtext", value: (h) => h.body, width: 60 },
+  { key: "section", header: "Section", kind: "text", value: (h) => h.section },
+  { key: "title", header: "Headline", kind: "text", value: (h) => h.title },
+  { key: "body", header: "Details", kind: "richtext", value: (h) => h.body },
   {
     key: "kind",
     header: "Category",
     kind: "text",
     value: (h) => headlineKind(h.kind).label,
-    width: 12,
   },
-  { key: "owner", header: "Owner", kind: "text", value: (h) => h.owner_label, width: 22 },
-  { key: "from_label", header: "From", kind: "text", value: (h) => h.from_label, width: 20 },
+  { key: "owner", header: "Owner", kind: "text", value: (h) => h.owner_label },
+  { key: "from_label", header: "From", kind: "text", value: (h) => h.from_label },
   {
     key: "broadcast",
     header: "Org-wide copy",
     kind: "boolean",
     value: (h) => h.broadcast === true,
-    width: 12,
   },
   {
     key: "discussed",
     header: "Discussed",
     kind: "boolean",
     value: (h) => h.discussed === true,
-    width: 10,
   },
-  { key: "created_at", header: "Created", kind: "datetime", value: (h) => h.created_at, width: 20 },
+  { key: "created_at", header: "Created", kind: "datetime", value: (h) => h.created_at },
   {
     key: "archived_at",
     header: "Archived",
     kind: "datetime",
     value: (h) => h.archived_at,
-    width: 20,
   },
-  { key: "id", header: "Headline ID", kind: "text", value: (h) => h.id, width: 24 },
+  { key: "id", header: "Headline ID", kind: "text", value: (h) => h.id },
 ];
 
 export const headlinesExport: ExportDefinition<HeadlineExportRow, HeadlinesExportParams> = {
@@ -149,6 +146,8 @@ export const headlinesExport: ExportDefinition<HeadlineExportRow, HeadlinesExpor
   title: "Headlines",
   parseParams: parseHeadlinesParams,
   columns: HEADLINES_COLUMNS,
+  // The page's gate (requireTeamAccess), before any of the team's data is read.
+  authorize: (ctx, p) => authorizeTeamPage(ctx, p.teamId),
   async load({ db, uid, viewer }, p): Promise<LoadedView<HeadlineExportRow> | ExportRefusal> {
     const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
     if (isRefusal(teamDoc)) return teamDoc;

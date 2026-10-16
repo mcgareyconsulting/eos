@@ -3,10 +3,15 @@ import assert from "node:assert/strict";
 import { viewerOf } from "@/lib/access/types";
 import { mapFullRock, type FullRock } from "@/lib/rocks-view";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps, ts } from "@/lib/test-support/export-deps";
+import {
+  adminExportDeps,
+  auditRowsOf,
+  exportDepsAs,
+  ts,
+} from "@/lib/test-support/export-deps";
 import { runExport } from "../run";
 import { isRefusal } from "../types";
-import { exportUrls, teamListExportParams } from "../urls";
+import { exportUrl, teamListExportParams } from "../urls";
 import {
   BLOCK_ENTRY,
   ROCKS_COLUMNS,
@@ -215,18 +220,19 @@ describe("rocks export — the page's view", () => {
 
   test("params round-trip", () => {
     const params = teamListExportParams({ teamId: "t1", showArchived: false, ownerFilter: "u1" });
-    const qs = new URL(exportUrls("rocks", params).xlsx, "https://x").searchParams;
+    const qs = new URL(exportUrl("rocks", params), "https://x").searchParams;
     assert.deepEqual(parseRocksParams(qs), { teamId: "t1", archived: false, owner: "u1" });
     assert.ok(isRefusal(parseRocksParams(new URLSearchParams("team="))));
   });
 });
 
 describe("rocks export — through the core", () => {
-  test("own rocks, an audience rock and a block, with milestones named", async () => {
+  function seed() {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
     db.seed("teams", "t2", { name: "Finance" });
-    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1" });
+    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
+    db.seed("team_members", "t2__u8", { team_id: "t2", user_id: "u8", role: "member" });
     db.seed("users", "u1", { display_name: "Ada Lovelace" });
     db.seed("users", "u8", { display_name: "Zed Outside" });
     db.seed("rocks", "r1", {
@@ -260,20 +266,57 @@ describe("rocks export — through the core", () => {
       completed_at: null,
       archived_at: null,
     });
+    // Hidden: a private Finance rock that still lists t1 as an audience
+    // (private clears the audience), and an ordinary Finance rock t1 has no
+    // share in.
+    db.seed("rocks", "r4", {
+      team_id: "t2",
+      title: "Secret plan",
+      owner_id: "u8",
+      quarter: "2026-Q4",
+      status: "on_track",
+      private: true,
+      audience_team_ids: ["t1"],
+    });
+    db.seed("rocks", "r5", { team_id: "t2", title: "Finance only", owner_id: "u8", status: "on_track" });
+    return db;
+  }
+
+  const EXPECTED = [
+    ["Ada Lovelace", "Open branch", "Ada Lovelace", "[open] Lease — Zed Outside"],
+    ["Ada Lovelace", "Ops", "Zed Outside", "[open] Train — Ada Lovelace"],
+    ["Shared by Zed Outside", "Audit prep", "Zed Outside", ""],
+  ];
+
+  for (const who of [
+    { label: "a member", deps: (db: FakeFirestore) => exportDepsAs(db, { uid: "u1" }) },
+    { label: "an admin on no team", deps: (db: FakeFirestore) => adminExportDeps(db) },
+  ]) {
+    test(`${who.label}: own rocks, an audience rock and a block, milestones named, nothing hidden`, async () => {
+      const db = seed();
+      const res = await runExport("rocks", new URLSearchParams({ team: "t1" }), "csv", who.deps(db));
+      assert.ok(res.ok);
+      assert.deepEqual(res.table.headers, ROCKS_COLUMNS.map((c) => c.header));
+      assert.deepEqual(
+        res.table.rows.map((r) => [r[0], r[2], r[4], r[10]]),
+        EXPECTED,
+      );
+      const flat = res.table.rows.flat();
+      assert.ok(!flat.includes("Secret plan"));
+      assert.ok(!flat.includes("Finance only"));
+      assert.deepEqual(auditRowsOf(db).map((r) => r.outcome), ["ok"]);
+    });
+  }
+
+  test("someone off the roster is refused before any rock is read", async () => {
+    const db = seed();
     const res = await runExport(
       "rocks",
       new URLSearchParams({ team: "t1" }),
-      "xlsx",
-      adminExportDeps(db),
+      "csv",
+      exportDepsAs(db, { uid: "u8" }),
     );
-    assert.ok(res.ok);
-    assert.deepEqual(
-      res.table.rows.map((r) => [r[0], r[2], r[4], r[10]]),
-      [
-        ["Ada Lovelace", "Open branch", "Ada Lovelace", "[open] Lease — Zed Outside"],
-        ["Ada Lovelace", "Ops", "Zed Outside", "[open] Train — Ada Lovelace"],
-        ["Shared by Zed Outside", "Audit prep", "Zed Outside", ""],
-      ],
-    );
+    assert.equal(!res.ok && res.status, 404);
+    assert.equal(!res.ok && res.reason, "no_page_access");
   });
 });

@@ -363,14 +363,12 @@ export default async function RocksPage({
       <EntityPageHeader
         title="Rocks"
         leading={
-          // Admin export of exactly this view, milestones included
-          // (docs/EXPORT.md). The server re-checks the role.
-          isAdmin ? (
-            <ExportControl
-              exportId="rocks"
-              params={teamListExportParams({ teamId, showArchived, ownerFilter: filter })}
-            />
-          ) : undefined
+          // Export of exactly this view for whoever is looking, milestones
+          // included (docs/EXPORT.md). The server re-checks team access.
+          <ExportControl
+            exportId="rocks"
+            params={teamListExportParams({ teamId, showArchived, ownerFilter: filter })}
+          />
         }
         filter={<OwnerFilter members={members} currentUserId={uid} />}
         tabs={

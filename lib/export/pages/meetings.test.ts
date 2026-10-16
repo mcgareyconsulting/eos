@@ -1,12 +1,16 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps, ts } from "@/lib/test-support/export-deps";
+import {
+  adminExportDeps,
+  auditRowsOf,
+  exportDepsAs,
+  ts,
+} from "@/lib/test-support/export-deps";
 import { EXPORT_ROW_CAP } from "../cap";
-import { excelSerial } from "../normalize";
 import { runExport } from "../run";
 import { isRefusal } from "../types";
-import { exportUrls, meetingsExportParams } from "../urls";
+import { exportUrl, meetingsExportParams } from "../urls";
 import {
   MEETINGS_COLUMNS,
   meetingsViewRows,
@@ -79,7 +83,7 @@ describe("meetings export — the page's view", () => {
   });
 
   test("params: the team only", () => {
-    const qs = new URL(exportUrls("meetings", meetingsExportParams({ teamId: "t1" })).xlsx, "https://x")
+    const qs = new URL(exportUrl("meetings", meetingsExportParams({ teamId: "t1" })), "https://x")
       .searchParams;
     assert.deepEqual(parseMeetingsParams(qs), { teamId: "t1" });
     assert.ok(isRefusal(parseMeetingsParams(new URLSearchParams())));
@@ -124,9 +128,11 @@ function countingScores(fake: FakeFirestore) {
 }
 
 describe("meetings export — through the core", () => {
-  test("the team's meetings with average ratings, as Mountain-time date cells", async () => {
+  test("a member gets the team's meetings with average ratings, as Mountain-time text", async () => {
     const db = new FakeFirestore();
     db.seed("teams", "t1", { name: "Leadership" });
+    db.seed("teams", "t2", { name: "Ops" });
+    db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
     db.seed("meetings", "m1", {
       team_id: "t1",
       started_at: ts("2026-10-01T14:00:00Z"),
@@ -140,15 +146,17 @@ describe("meetings export — through the core", () => {
     const res = await runExport(
       "meetings",
       new URLSearchParams({ team: "t1" }),
-      "xlsx",
-      adminExportDeps(db),
+      "csv",
+      exportDepsAs(db, { uid: "u1" }),
     );
     assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, MEETINGS_COLUMNS.map((c) => c.header));
     assert.deepEqual(res.table.rows, [
       [
         // 14:00Z is 08:00 Mountain (MDT): the bank's clock, not the server's.
-        { kind: "datetime", serial: excelSerial(2026, 10, 1, 8, 0), text: "2026-10-01 08:00 MDT" },
-        { kind: "datetime", serial: excelSerial(2026, 10, 1, 9, 0), text: "2026-10-01 09:00 MDT" },
+        // No zone text in the cell.
+        "2026-10-01 08:00",
+        "2026-10-01 09:00",
         "Completed",
         60,
         "Level 10",
@@ -157,6 +165,33 @@ describe("meetings export — through the core", () => {
         "m1",
       ],
     ]);
+
+    // An admin on no team gets the same history; someone off the roster
+    // (u1 asking for t2) is refused before any meeting is read.
+    const asAdmin = await runExport(
+      "meetings",
+      new URLSearchParams({ team: "t1" }),
+      "csv",
+      adminExportDeps(db),
+    );
+    assert.ok(asAdmin.ok);
+    assert.deepEqual(asAdmin.table.rows.map((r) => r.at(-1)), ["m1"]);
+    const spy = countingScores(db);
+    const denied = await runExport("meetings", new URLSearchParams({ team: "t2" }), "csv", {
+      ...spy.deps,
+      user: exportDepsAs(db, { uid: "u1" }).user,
+    });
+    assert.equal(!denied.ok && denied.status, 404);
+    assert.equal(!denied.ok && denied.reason, "no_page_access");
+    assert.deepEqual(spy.reads, []);
+    assert.deepEqual(
+      auditRowsOf(db).map((r) => [r.outcome, r.actor_uid]),
+      [
+        ["ok", "u1"],
+        ["ok", "admin"],
+        ["refused", "u1"],
+      ],
+    );
   });
 
   test("a live meeting's scores are not read (its rating cell is blank)", async () => {
@@ -176,7 +211,7 @@ describe("meetings export — through the core", () => {
     });
     db.seed("meetings/live/effectiveness_scores", "u1", { rating: 3 });
     const spy = countingScores(db);
-    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "xlsx", spy.deps);
+    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "csv", spy.deps);
     assert.ok(res.ok);
     assert.deepEqual(res.table.rows.map((r) => [r[7], r[6]]), [
       ["live", ""],
@@ -197,7 +232,7 @@ describe("meetings export — through the core", () => {
       });
     }
     const spy = countingScores(db);
-    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "xlsx", spy.deps);
+    const res = await runExport("meetings", new URLSearchParams({ team: "t1" }), "csv", spy.deps);
     assert.equal(res.ok === false && res.status, 413);
     assert.equal(res.ok === false && res.reason, "over_cap");
     assert.equal(spy.reads.length, 0);

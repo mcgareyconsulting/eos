@@ -4,12 +4,13 @@ import type { Auth, UserRecord } from "firebase-admin/auth";
 import { NO_TEAM } from "@/lib/directory-filter";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { adminExportDeps } from "@/lib/test-support/export-deps";
-import { NOT_ADMIN, runExport } from "../run";
+import { adminExportDeps, auditRowsOf, exportDepsAs } from "@/lib/test-support/export-deps";
+import { ACCOUNT_INACTIVE, runExport } from "../run";
 import { isRefusal, type ExportDefinition } from "../types";
-import { directoryExportParams, exportUrls } from "../urls";
+import { directoryExportParams, exportUrl } from "../urls";
 import {
   DIRECTORY_COLUMNS,
+  DIRECTORY_MEMBER_COLUMNS,
   directoryExportWith,
   directoryViewRows,
   parseDirectoryParams,
@@ -68,6 +69,13 @@ describe("directory export — columns", () => {
     );
   });
 
+  test("a non-admin's columns drop only the admin-only Account column", () => {
+    assert.deepEqual(
+      DIRECTORY_MEMBER_COLUMNS.map((c) => c.key),
+      ["first_name", "last_name", "teams", "access", "email", "uid"],
+    );
+  });
+
   test("cells read as the table: a role per team line, account state, deactivated", () => {
     assert.deepEqual(cells(people[1]).slice(2, 4), [
       "Leadership\nFinance",
@@ -111,7 +119,7 @@ describe("directory export — the table's view", () => {
       access: new Set(["member", "admin"]),
       teams: new Set(["t2", NO_TEAM]),
     });
-    const qs = new URL(exportUrls("directory", sent).xlsx, "https://x").searchParams;
+    const qs = new URL(exportUrl("directory", sent), "https://x").searchParams;
     const parsed = parseDirectoryParams(qs);
     assert.ok(!isRefusal(parsed));
     assert.equal(parsed.query, "smith");
@@ -162,6 +170,13 @@ describe("directory export — through the core", () => {
     db.seed("users", "bob", { first_name: "Bob", last_name: "Bell", email: "bob@highplainsbank.com" });
     // An import placeholder: a profile, no account yet.
     db.seed("users", "cy", { first_name: "Cy", last_name: "Young", email: "cy@highplainsbank.com" });
+    // Deactivated: on the Directory for admins only.
+    db.seed("users", "dee", {
+      first_name: "Dee",
+      last_name: "Parted",
+      email: "dee@highplainsbank.com",
+      deactivated_at: "2026-09-01T00:00:00Z",
+    });
     db.seed("team_members", "t1__bob", { team_id: "t1", user_id: "bob", role: "leader" });
     db.seed("team_members", "t2__bob", { team_id: "t2", user_id: "bob", role: "member" });
     db.seed("team_members", "t2__cy", { team_id: "t2", user_id: "cy", role: "member" });
@@ -176,29 +191,67 @@ describe("directory export — through the core", () => {
     return { db, ip, definitions };
   }
 
-  test("a non-admin is refused before Identity Platform is read; the attempt is audited", async () => {
+  test("an inactive account is refused before Identity Platform is read; the attempt is audited", async () => {
     const { db, ip, definitions } = seed();
-    const deps = adminExportDeps(db, { definitions });
-    const admin = deps.user!;
-    const res = await runExport("directory", new URLSearchParams(), "xlsx", {
-      ...deps,
-      user: async () => ({ ...(await admin())!, uid: "bob", isAdmin: false }),
+    const res = await runExport(
+      "directory",
+      new URLSearchParams(),
+      "csv",
+      exportDepsAs(db, { uid: "bob", active: false }, { definitions }),
+    );
+    assert.deepEqual(res, {
+      ok: false,
+      status: 403,
+      message: ACCOUNT_INACTIVE,
+      reason: "account_inactive",
     });
-    assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN, reason: "not_admin" });
     assert.equal(ip.calls.listUsers, 0);
-    const rows = db.docsIn("audit_log").map((d) => d.data as Record<string, unknown>);
     assert.deepEqual(
-      rows.map((r) => [r.outcome, r.reason, r.entity_id, r.actor_uid]),
-      [["refused", "not_admin", "directory", "bob"]],
+      auditRowsOf(db).map((r) => [r.outcome, r.reason, r.entity_id, r.actor_uid]),
+      [["refused", "account_inactive", "directory", "bob"]],
     );
   });
 
-  test("an admin gets the table's columns, the account fields and the filters", async () => {
+  test("a member gets the page as they see it: no Account column, no deactivated people", async () => {
+    const { db, definitions } = seed();
+    const res = await runExport(
+      "directory",
+      new URLSearchParams(),
+      "csv",
+      exportDepsAs(db, { uid: "bob" }, { definitions }),
+    );
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, DIRECTORY_MEMBER_COLUMNS.map((c) => c.header));
+    assert.ok(!res.table.headers.includes("Account"));
+    // Last name first: Bell, Lovelace, Young. Dee (deactivated) is absent.
+    assert.deepEqual(res.table.rows, [
+      [
+        "Bob",
+        "Bell",
+        "Finance\nLeadership",
+        "Finance: Member\nLeadership: Leader",
+        "bob@highplainsbank.com",
+        "bob",
+      ],
+      ["Ada", "Lovelace", "No team", "Admin", "ada@highplainsbank.com", "ada"],
+      ["Cy", "Young", "Finance", "Finance: Member", "cy@highplainsbank.com", "cy"],
+    ]);
+    const flat = res.table.rows.flat().join(" ");
+    for (const hidden of ["Dee", "Deactivated", "No account", "Never signed in", "Signed in"]) {
+      assert.ok(!flat.includes(hidden), hidden);
+    }
+    assert.deepEqual(
+      auditRowsOf(db).map((r) => [r.outcome, r.entity_id, r.actor_uid]),
+      [["ok", "directory", "bob"]],
+    );
+  });
+
+  test("an admin gets the table's columns, the account fields, deactivated people and the filters", async () => {
     const { db, ip, definitions } = seed();
     const res = await runExport(
       "directory",
       new URLSearchParams({ teams: "t2" }),
-      "xlsx",
+      "csv",
       adminExportDeps(db, { definitions }),
     );
     assert.ok(res.ok);
@@ -217,12 +270,27 @@ describe("directory export — through the core", () => {
       ],
       ["Cy", "Young", "Finance", "Finance: Member", "cy@highplainsbank.com", "No account", "cy"],
     ]);
-    const filters = res.table.provenance.find((l) => l.label === "Filters applied")?.value;
-    assert.equal(filters, "Search: (none) · Role: All roles · Team: Finance");
-    const audit = db.docsIn("audit_log").map((d) => d.data as Record<string, unknown>);
+    const audit = auditRowsOf(db);
     assert.deepEqual(
       audit.map((r) => [r.outcome, r.entity_id, r.team_id]),
       [["ok", "directory", null]],
     );
+    assert.deepEqual((audit[0].export as { filters: unknown }).filters, {
+      Search: "(none)",
+      Role: "All roles",
+      Team: "Finance",
+    });
+
+    // Unfiltered, the admin's file lists the deactivated person, as the page does.
+    const all = await runExport(
+      "directory",
+      new URLSearchParams(),
+      "csv",
+      adminExportDeps(db, { definitions }),
+    );
+    assert.ok(all.ok);
+    const dee = all.table.rows.find((r) => r[0] === "Dee");
+    assert.ok(dee);
+    assert.equal(dee[3], "Deactivated");
   });
 });

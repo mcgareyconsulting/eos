@@ -117,7 +117,7 @@ export default async function MeetingsPage({
         .doc(m.id)
         .collection("effectiveness_scores")
         .get();
-      // lib/l10/meeting-summary.ts, shared with the admin export.
+      // lib/l10/meeting-summary.ts, shared with the export.
       ratingsByMeeting[m.id] = averageRating(
         r.docs.map((d) => (d.data() as { rating: unknown }).rating),
       );
@@ -129,14 +129,12 @@ export default async function MeetingsPage({
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
         <div className="flex items-center gap-2">
-          {/* Admin export of the meeting history (docs/EXPORT.md). The
-              server re-checks the role; hiding it is only convenience. */}
-          {isAdmin && (
-            <ExportControl
-              exportId="meetings"
-              params={meetingsExportParams({ teamId: tid })}
-            />
-          )}
+          {/* Export of the meeting history, for everyone on the team
+              (docs/EXPORT.md). The server re-checks team access. */}
+          <ExportControl
+            exportId="meetings"
+            params={meetingsExportParams({ teamId: tid })}
+          />
           <HeaderAction
             teamId={tid}
             liveMeeting={liveMeeting}

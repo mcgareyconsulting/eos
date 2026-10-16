@@ -146,8 +146,8 @@ export async function importRocks(
       continue;
     }
 
-    // Done without a Completed On still needs a clock for the Monday archive
-    // sweep — use import time. Non-done rocks keep completed_at null.
+    // Done without a Completed On is stamped with import time so every Done
+    // rock carries a completion date. Non-done rocks keep completed_at null.
     const completedAt =
       status === "done"
         ? completedOn

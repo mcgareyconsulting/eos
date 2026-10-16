@@ -24,20 +24,29 @@ export const TIME_ZONE_COOKIE = "tz";
 // Intl constructor and means a valid zone is always a safe cookie value.
 const ZONE_SHAPE = /^[A-Za-z0-9_+\-/]{1,64}$/;
 
+// Keyed by the CANONICAL zone name only. Intl accepts any letter case
+// ("aMeRiCa/dEnVeR"), so caching raw cookie values would let one client grow
+// this module-level map without bound; a non-canonical spelling just builds a
+// throwaway formatter instead.
 const dayFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function dayFormatter(timeZone: string): Intl.DateTimeFormat {
-  let f = dayFormatters.get(timeZone);
-  if (!f) {
-    f = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    dayFormatters.set(timeZone, f);
-  }
+  const cached = dayFormatters.get(timeZone);
+  if (cached) return cached;
+  const f = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const canonical = f.resolvedOptions().timeZone;
+  if (canonical === timeZone) dayFormatters.set(canonical, f);
   return f;
+}
+
+/** Test hook: how many formatters are cached. */
+export function cachedFormatterCountForTesting(): number {
+  return dayFormatters.size;
 }
 
 /**

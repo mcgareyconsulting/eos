@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   APP_TIME_ZONE,
+  cachedFormatterCountForTesting,
   calendarDateIn,
   daysUntilIn,
   isValidTimeZone,
@@ -85,5 +86,16 @@ describe("cookie validation", () => {
     assert.equal(resolveTimeZone(undefined), APP_TIME_ZONE);
     assert.equal(resolveTimeZone("Not/AZone"), APP_TIME_ZONE);
     assert.equal(resolveTimeZone("America/New_York"), "America/New_York");
+  });
+});
+
+describe("formatter cache", () => {
+  test("odd-cased zone names never grow the cache", () => {
+    normalizeTimeZone("America/Denver");
+    const before = cachedFormatterCountForTesting();
+    for (const spelling of ["aMeRiCa/dEnVeR", "AMERICA/DENVER", "america/denver"]) {
+      assert.equal(normalizeTimeZone(spelling), "America/Denver");
+    }
+    assert.equal(cachedFormatterCountForTesting(), before);
   });
 });

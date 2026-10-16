@@ -233,6 +233,7 @@ export default async function ScorecardPage({
           members={members}
           showManage
           groups={groups}
+          exportView={isAdmin ? { showArchived } : undefined}
         />
       </Suspense>
     </div>

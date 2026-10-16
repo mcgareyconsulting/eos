@@ -4,6 +4,8 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
+import { ExportControl } from "@/components/export/export-control";
+import { teamListExportParams } from "@/lib/export/urls";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
@@ -41,7 +43,7 @@ export default async function HeadlinesPage({
   const { teamId } = await params;
   const { archived: archivedParam, owner: ownerParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
-  const { uid, db } = await requireTeamAccess(teamId);
+  const { uid, db, isAdmin } = await requireTeamAccess(teamId);
   const members = await getTeamMembers(teamId);
 
   const snap = await db
@@ -246,6 +248,16 @@ export default async function HeadlinesPage({
       <div className="space-y-6">
         <EntityPageHeader
           title="Headlines"
+          leading={
+            // Admin export of exactly this view (docs/EXPORT.md). The server
+            // re-checks the role; hiding it is only convenience.
+            isAdmin ? (
+              <ExportControl
+                exportId="headlines"
+                params={teamListExportParams({ teamId, showArchived, ownerFilter })}
+              />
+            ) : undefined
+          }
           filter={<OwnerFilter members={members} currentUserId={uid} />}
           tabs={
             <EntityViewTabs

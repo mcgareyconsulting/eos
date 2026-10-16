@@ -14,6 +14,7 @@ import {
   runExport,
   type RunExportDeps,
 } from "./run";
+import { EXPORT_DEFINITIONS } from "./registry";
 import { writeXlsx } from "./xlsx-writer";
 import type { ExportDefinition } from "./types";
 
@@ -110,6 +111,69 @@ describe("runExport — admin gate", () => {
     // Prototype keys are not export ids.
     const p = await runExport("constructor", todosParams(), "xlsx", deps(db));
     assert.equal(p.ok === false && p.status, 404);
+  });
+});
+
+describe("runExport — every registered page", () => {
+  test("each page is refused to a non-admin, with nothing loaded or recorded", async () => {
+    const db = seed();
+    const ids = Object.keys(EXPORT_DEFINITIONS);
+    assert.deepEqual(ids.sort(), [
+      "directory",
+      "headlines",
+      "issues",
+      "meetings",
+      "rocks",
+      "scorecard",
+      "todos",
+    ]);
+    for (const id of ids) {
+      let loaded = 0;
+      const real = EXPORT_DEFINITIONS[id] as unknown as ExportDefinition<unknown, unknown>;
+      const spy = {
+        ...real,
+        load: async () => {
+          loaded += 1;
+          return { ok: true as const, rows: [], filters: [], teamId: null, fileNameParts: [] };
+        },
+      } as unknown as ExportDefinition<never, never>;
+      const res = await runExport(id, new URLSearchParams({ team: "t1" }), "xlsx", {
+        ...deps(db),
+        user: async () => ({ ...(await admin(db)()), uid: "u1", isAdmin: false }),
+        definitions: { [id]: spy },
+      });
+      assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN }, id);
+      assert.equal(loaded, 0, id);
+    }
+    assert.equal(db.docsIn("audit_log").length, 0);
+  });
+
+  test("a view may carry its own columns (the Scorecard's periods)", async () => {
+    const def: ExportDefinition<{ v: number }, Record<string, never>> = {
+      id: "dyn",
+      title: "Dynamic",
+      parseParams: () => ({}),
+      columns: [{ key: "fixed", header: "Fixed", kind: "text", value: () => "x" }],
+      load: async () => ({
+        ok: true,
+        rows: [{ v: 3 }],
+        filters: [],
+        teamId: null,
+        fileNameParts: [],
+        columns: [
+          { key: "fixed", header: "Fixed", kind: "text", value: () => "x" },
+          { key: "p1", header: "Oct 2026", kind: "number", value: (r) => r.v, width: 9 },
+        ],
+      }),
+    };
+    const res = await runExport("dyn", new URLSearchParams(), "xlsx", {
+      ...deps(seed()),
+      definitions: { dyn: def as unknown as ExportDefinition<never, never> },
+    });
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, ["Fixed", "Oct 2026"]);
+    assert.deepEqual(res.table.widths, [16, 9]);
+    assert.deepEqual(res.table.rows, [["x", 3]]);
   });
 });
 

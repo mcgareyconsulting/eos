@@ -41,6 +41,8 @@ import {
 } from "@/lib/firestore-types";
 import { Card } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
+import { ExportControl } from "@/components/export/export-control";
+import { issuesExportParams } from "@/lib/export/urls";
 
 export type IssueDoc = WithId<IssueDocRecord> & {
   // Display-only date computed server-side when the issue is archived — not
@@ -63,6 +65,7 @@ export function IssuesList({
   initialIssues,
   showArchived = false,
   ownerFilter = "all",
+  isAdmin = false,
 }: {
   teamId: string;
   userId: string;
@@ -70,6 +73,8 @@ export function IssuesList({
   initialIssues: IssueDoc[];
   showArchived?: boolean;
   ownerFilter?: string;
+  /** Org admin: shows the Export control (docs/EXPORT.md). */
+  isAdmin?: boolean;
 }) {
   const db = getClientDb();
   const [tab, setTab] = useState<TermTab>("short");
@@ -121,6 +126,16 @@ export function IssuesList({
         >
           Long-term ({rankedLong.length})
         </button>
+        {/* Admin export of exactly this view, including the term toggle,
+            which lives here rather than in the URL (docs/EXPORT.md). The
+            server re-checks the role; hiding it is only convenience. */}
+        {isAdmin && (
+          <ExportControl
+            className="ml-auto"
+            exportId="issues"
+            params={issuesExportParams({ teamId, showArchived, ownerFilter, term: tab })}
+          />
+        )}
       </div>
 
       {issues.length === 0 ? (

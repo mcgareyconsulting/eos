@@ -29,7 +29,7 @@ export default async function IssuesPage({
   const { teamId: tid } = await params;
   const { archived: archivedParam, owner: ownerParam } = await searchParams;
   const showArchived = archivedParam === "1" || archivedParam === "true";
-  const { uid, db } = await requireTeamAccess(tid);
+  const { uid, db, isAdmin } = await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
   const issuesSnap = await db
@@ -101,6 +101,7 @@ export default async function IssuesPage({
         initialIssues={initialIssues}
         showArchived={showArchived}
         ownerFilter={ownerFilter}
+        isAdmin={isAdmin}
       />
     </div>
   );

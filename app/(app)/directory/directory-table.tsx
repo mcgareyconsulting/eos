@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { isLeaderOf, type Viewer } from "@/lib/access/types";
+import { ExportControl } from "@/components/export/export-control";
+import { NO_TEAM, filterDirectory } from "@/lib/directory-filter";
+import { directoryExportParams } from "@/lib/export/urls";
 import { AddPersonButton, NewTeamButton, PersonRowMenu } from "./directory-admin";
 import { LeaderAddButton, RemoveFromTeamButton } from "./directory-leader";
 
@@ -25,9 +28,6 @@ const ACCESS_OPTIONS = (Object.keys(ACCESS_LABEL) as DirectoryPerson["access"][]
  *  so each role pill sits level with its team. */
 const ROWS_CLASS = "flex flex-col gap-1";
 const ROW_CLASS = "flex h-5 min-w-0 items-center";
-
-/** Team-filter value for people on no roster. Not a real team id. */
-const NO_TEAM = "__none__";
 
 export function DirectoryTable({
   people,
@@ -71,22 +71,11 @@ export function DirectoryTable({
   // Admins use the row menu; the leader controls are for non-admin leaders.
   const showLeaderTools = !isAdmin && ledTeams.length > 0;
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return people.filter((p) => {
-      if (access.size > 0 && !access.has(p.access)) return false;
-      if (team.size > 0) {
-        const onOne = p.teams.some((t) => team.has(t.id));
-        const noneWanted = team.has(NO_TEAM) && p.teams.length === 0;
-        if (!onOne && !noneWanted) return false;
-      }
-      if (!q) return true;
-      return [p.firstName, p.lastName, p.email ?? "", ...p.teams.map((t) => t.name)]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [people, query, access, team]);
+  // lib/directory-filter.ts, shared with the admin export.
+  const filtered = useMemo(
+    () => filterDirectory(people, { query, access, team }),
+    [people, query, access, team],
+  );
 
   const filtering = query.trim() !== "" || access.size > 0 || team.size > 0;
 
@@ -108,6 +97,12 @@ export function DirectoryTable({
           </Link>
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
+          {/* Export of exactly the filtered list (docs/EXPORT.md). The
+              server re-checks the role; this block is admin-only anyway. */}
+          <ExportControl
+            exportId="directory"
+            params={directoryExportParams({ query, access, teams: team })}
+          />
         </div>
       )}
 

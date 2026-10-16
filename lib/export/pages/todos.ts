@@ -13,19 +13,32 @@
 // to me from other teams" box (other teams' to-dos, which belong to those
 // teams' exports). Both are per-viewer reminders, not this team's list.
 
-import type { Firestore } from "firebase-admin/firestore";
 import { accessFor, type Viewer } from "@/lib/access";
 import type { TodoDoc } from "@/lib/firestore-types";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { byDue, groupByOwner } from "@/lib/todo-board-order";
 import { listShowsTodo } from "@/lib/todo-lists";
-import { userDisplayName, ownerLabel, type UserDocData } from "@/lib/user-name";
-import type {
-  ExportColumn,
-  ExportDefinition,
-  ExportRefusal,
-  LoadedView,
+import { ownerLabel } from "@/lib/user-name";
+import {
+  isRefusal,
+  type ExportColumn,
+  type ExportDefinition,
+  type ExportRefusal,
+  type LoadedView,
 } from "../types";
+import {
+  archivedParam,
+  loadRoster,
+  loadTeamOr404,
+  ownerFilterLine,
+  ownerParam,
+  parseTeamParam,
+  resolveOwnerFilter,
+  type Member,
+} from "./shared";
+
+// The owner-filter rule every team page shares; re-exported for its tests.
+export { resolveOwnerFilter };
 
 export type TodosExportParams = {
   teamId: string;
@@ -36,42 +49,16 @@ export type TodosExportParams = {
 
 export type TodoExportRow = TodoDoc & { id: string };
 
-const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-
-function refuse(status: number, message: string): ExportRefusal {
-  return { ok: false, status, message };
-}
-
 export function parseTodosParams(sp: URLSearchParams): TodosExportParams | ExportRefusal {
-  const teamId = sp.get("team") ?? "";
-  if (!ID_RE.test(teamId)) return refuse(400, "Missing or invalid team.");
-  const archivedParam = sp.get("archived");
-  const owner = sp.get("owner");
+  const teamId = parseTeamParam(sp);
+  if (isRefusal(teamId)) return teamId;
   return {
     teamId,
     // page.tsx: `archived === "1" || archived === "true"`.
-    archived: archivedParam === "1" || archivedParam === "true",
-    owner: owner && owner.length <= 128 ? owner : null,
+    archived: archivedParam(sp.get("archived")),
+    owner: ownerParam(sp),
   };
 }
-
-/** The page's owner-filter resolution (page.tsx): legacy values, then roster. */
-export function resolveOwnerFilter(
-  raw: string | null,
-  uid: string,
-  rosterIds: ReadonlySet<string>,
-): string {
-  const filterRaw = raw || "all";
-  const legacyMapped =
-    filterRaw === "self" || filterRaw === "mine"
-      ? uid
-      : filterRaw === "team" || filterRaw === "others"
-        ? "all"
-        : filterRaw;
-  return rosterIds.has(legacyMapped) ? legacyMapped : "all";
-}
-
-type Member = { user_id: string; full_name: string };
 
 /**
  * The To-Dos list rows the page renders for this view, in its order. Pure:
@@ -171,34 +158,15 @@ export const TODOS_COLUMNS: readonly ExportColumn<TodoExportRow>[] = [
   { key: "id", header: "To-do ID", kind: "text", value: (t) => t.id, width: 24 },
 ];
 
-async function loadRoster(db: Firestore, teamId: string): Promise<Member[]> {
-  const snap = await db.collection("team_members").where("team_id", "==", teamId).get();
-  const ids = snap.docs
-    .map((d) => d.data().user_id as string | undefined)
-    .filter((id): id is string => typeof id === "string" && id !== "");
-  if (ids.length === 0) return [];
-  const users = await db.getAll(...ids.map((id) => db.collection("users").doc(id)));
-  const nameById = new Map(
-    users.map((u) => [u.id, userDisplayName(u.data() as UserDocData | undefined)]),
-  );
-  // getTeamMembers' fallback for a profile-less member.
-  return ids.map((id) => ({ user_id: id, full_name: nameById.get(id) || "—" }));
-}
-
 export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
   id: "todos",
   title: "To-Dos",
   parseParams: parseTodosParams,
   columns: TODOS_COLUMNS,
   async load({ db, uid, viewer }, p): Promise<LoadedView<TodoExportRow> | ExportRefusal> {
-    const teamSnap = await db.collection("teams").doc(p.teamId).get();
-    // requireTeamAccess: a non-member who is not an admin gets the same
-    // answer as a team that doesn't exist.
-    if (!teamSnap.exists || (!viewer.isAdmin && !viewer.teamIds.has(p.teamId))) {
-      return refuse(404, "Team not found.");
-    }
-    const team = teamSnap.data() ?? {};
-    const teamName = (team.name as string) ?? "Team";
+    const teamDoc = await loadTeamOr404(db, p.teamId, viewer);
+    if (isRefusal(teamDoc)) return teamDoc;
+    const { name: teamName, data: team } = teamDoc;
 
     const [members, snap] = await Promise.all([
       loadRoster(db, p.teamId),
@@ -232,10 +200,7 @@ export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
       filters: [
         { label: "Team", value: teamName },
         { label: "View", value: p.archived ? "Archived" : "Active" },
-        {
-          label: "Owner",
-          value: ownerFilter === "all" ? "All owners" : (names.get(ownerFilter) ?? "—"),
-        },
+        ownerFilterLine(ownerFilter, names),
       ],
       fileNameParts: [teamName, p.archived ? "archived" : "active"],
     };

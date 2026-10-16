@@ -26,6 +26,7 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { deleteHeadline } from "../../headlines/actions";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { CaptureButton } from "./meeting-capture-modal";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { HeadlineFormModal } from "../../headlines/headline-form-modal";
 import { headlineKind } from "../../headlines/headline-kind";
@@ -234,6 +235,7 @@ export function SegmentHeadlines({
             archivedCount={archived.length}
           />
           <HeadlineFormModal mode="create" teamId={teamId} compact />
+          <CaptureButton />
         </div>
 
         {shown.length === 0 ? (

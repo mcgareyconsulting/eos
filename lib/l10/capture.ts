@@ -1,4 +1,4 @@
-// The live meeting's one "+ Issue / To-do" capture (feedback row 58): which
+// The live meeting's one "Issue / To-do" capture (feedback row 58): which
 // kind a fresh capture opens on, the stage prefix an issue title starts
 // with, how switching kind treats the title, and which server action the
 // save goes to. Kept free of React so the rules can be tested; the modal is
@@ -116,7 +116,7 @@ export function captureSubmission(
   return { action: "addTodo", fields };
 }
 
-/** The header button's beat of confirmation after a save. */
+/** The capture button's beat of confirmation after a save. */
 export const CAPTURE_ADDED_LABEL: Record<CaptureKind, string> = {
   issue: "Added to Issues",
   todo: "Added to To-Dos",

@@ -52,6 +52,7 @@ import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
+import { CaptureButton } from "./meeting-capture-modal";
 import { Pill } from "@/components/ui/pill";
 import { ownerLabel } from "@/lib/user-name";
 import {
@@ -275,11 +276,9 @@ export function SegmentIssues({
             activeCount={issues.length}
             archivedCount={archivedIssues.length}
           />
-          {/*
-            No "Add to-do" or "Drop to Issues" here: the live meeting header
-            carries the one "+ Issue / To-do", on every stage (feedback rows
-            58/40) — on this stage it opens on To-do.
-          */}
+          {/* The meeting's one capture (feedback rows 58/40) — on this
+              stage it opens on To-do, for the next step of an issue. */}
+          <CaptureButton />
         </div>
       </div>
 

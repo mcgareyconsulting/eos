@@ -38,6 +38,7 @@ import {
   type MilestoneTodoItem,
 } from "../../todos/milestone-todo-row";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { CaptureButton } from "./meeting-capture-modal";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import {
   type RockDoc as RockDocRecord,
@@ -423,6 +424,7 @@ export function SegmentTodos({
           activeCount={activeTodoCount}
           archivedCount={archivedTodos.length}
         />
+        <CaptureButton />
       </div>
 
       {/* Two columns, matching the standalone To-Dos page — and

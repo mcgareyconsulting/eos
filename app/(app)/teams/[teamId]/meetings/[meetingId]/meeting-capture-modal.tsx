@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Check, Plus } from "lucide-react";
 import { daysFromNow } from "@/lib/dates";
 import type { IssueType } from "@/lib/issues";
-import type { Segment } from "@/lib/l10/segments";
+import {
+  captureModalMounted,
+  stageOffersCapture,
+  type Segment,
+} from "@/lib/l10/segments";
 import {
   CAPTURE_ADDED_LABEL,
   autoTitleFor,
@@ -79,24 +91,39 @@ const KINDS: { value: CaptureKind; label: string }[] = [
   { value: "todo", label: "To-do" },
 ];
 
+/** What a stage's CaptureButton needs from the page-level capture. */
+type CaptureController = {
+  /** The stage on screen — decides whether the button renders. */
+  segment: Segment;
+  /** Open the modal fresh for the current stage. */
+  open: () => void;
+  /** Set for a beat after a save — the button's green confirmation. */
+  added: CaptureKind | null;
+};
+
+const CaptureContext = createContext<CaptureController | null>(null);
+
 /**
- * The live meeting's one capture: "+ Issue / To-do" in the header, on every
- * stage (feedback row 58). Replaces both the header's Add to-do and the
- * per-stage "Drop to Issues" boxes. An Issue / To-do toggle at the top picks
- * the fields and where Save goes (addIssue or addTodo — lib/l10/capture.ts);
- * each action runs its own permission checks, unchanged.
+ * The live meeting's one capture (feedback row 58): the "Issue / To-do"
+ * button in each stage's toolbar opens it. Replaces both the header's Add
+ * to-do and the per-stage "Drop to Issues" boxes. An Issue / To-do toggle at
+ * the top picks the fields and where Save goes (addIssue or addTodo —
+ * lib/l10/capture.ts); each action runs its own permission checks, unchanged.
  *
- * The page keeps this mounted for the whole meeting (headerOffersCapture),
- * so a draft — kind and text — survives the room advancing. `segment` is
- * read when the modal opens (default kind, title prefix) and when the kind
- * is switched, never to rewrite an open draft.
+ * ONE modal, owned here and mounted by the page for the whole meeting
+ * (captureModalMounted) — never one per stage. The stage toolbars only hold
+ * a CaptureButton that calls open() through context, so a draft — kind and
+ * text — survives the room advancing even though the toolbar it was opened
+ * from unmounts. `segment` is read when the modal opens (default kind, title
+ * prefix) and when the kind is switched, never to rewrite an open draft.
  */
-export function MeetingCaptureModal({
+export function MeetingCaptureProvider({
   teamId,
   meetingId,
   members,
   currentUserId,
   segment,
+  children,
 }: {
   teamId: string;
   meetingId: string;
@@ -105,6 +132,7 @@ export function MeetingCaptureModal({
   currentUserId: string;
   /** The stage on screen. */
   segment: Segment;
+  children: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -228,208 +256,232 @@ export function MeetingCaptureModal({
 
   const noun = kind === "issue" ? "issue" : "to-do";
 
+  const controller: CaptureController = { segment, open: openModal, added };
+
   return (
-    <>
-      <button
-        type="button"
-        onClick={openModal}
-        title="Capture an issue or a to-do from this stage"
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2",
-          added
-            ? "bg-hpb-green text-white focus-visible:ring-hpb-green/40"
-            : "bg-hpb-blue text-white hover:brightness-110 focus-visible:ring-hpb-blue/40",
-        )}
-      >
-        {added ? (
-          <>
-            <Check className="h-3.5 w-3.5" />
-            {CAPTURE_ADDED_LABEL[added]}
-          </>
-        ) : (
-          <>
-            <Plus className="h-3.5 w-3.5" />
-            Issue / To-do
-          </>
-        )}
-      </button>
+    <CaptureContext.Provider value={controller}>
+      {children}
 
-      <ModalShell
-        open={open}
-        onClose={guard.requestClose}
-        // Escape belongs to the discard confirm while it is up.
-        dismissible={!guard.asking}
-        ariaLabel={`Add ${noun}`}
-        size="3xl"
-      >
-        <ModalHeader title={`Add ${noun}`} onClose={guard.requestClose} />
-
-        <ModalBody as="form" onSubmit={submit}>
-          {/* Issue / To-do as two pressed-state buttons. Switching keeps
-              title, owner and notes; an untouched stage prefix swaps with
-              the kind (lib/l10/capture.ts titleAfterKindSwitch). */}
-          <div
-            role="group"
-            aria-label="Add as"
-            className="flex h-8 w-fit rounded-md border border-zinc-300 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+      {captureModalMounted(segment) && (
+        <>
+          <ModalShell
+            open={open}
+            onClose={guard.requestClose}
+            // Escape belongs to the discard confirm while it is up.
+            dismissible={!guard.asking}
+            ariaLabel={`Add ${noun}`}
+            size="3xl"
           >
-            {KINDS.map((k) => {
-              const on = k.value === kind;
-              return (
-                <button
-                  key={k.value}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => switchKind(k.value)}
-                  className={cn(
-                    "inline-flex items-center justify-center rounded px-4 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40",
-                    on
-                      ? "bg-hpb-blue text-white"
-                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800",
-                  )}
-                >
-                  {k.label}
-                </button>
-              );
-            })}
-          </div>
+            <ModalHeader title={`Add ${noun}`} onClose={guard.requestClose} />
 
-          {/* One Title input for both kinds, never remounted by the toggle,
-              so focus and the caret stay put. Enter submits the form. */}
-          <Field label="Title" required>
-            <Input
-              autoFocus
-              ring
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={kind === "issue" ? "Issue (one line)" : undefined}
-            />
-          </Field>
-
-          <Field label="Description">
-            <RichTextEditor
-              value={description}
-              onChange={setDescription}
-              placeholder="Notes or context"
-              rows={4}
-            />
-          </Field>
-
-          {/* A div, not Field's <label>: the pickers are a button + popover,
-              and a wrapping label would re-click them. */}
-          <div className="block">
-            <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Owner
-            </span>
-            {kind === "todo" ? (
-              // Directory search: a to-do may go to anyone (spec §2.3).
-              <TodoOwnerField
-                teamId={teamId}
-                members={members}
-                value={ownerId}
-                onChange={setOwnerId}
-              />
-            ) : (
-              // Team roster only: addIssue rejects an owner off the roster
-              // (requireRosterOwner), so no Whole org tab.
-              <OwnerPicker
-                variant="field"
-                label="Owner"
-                allowUnassigned
-                teamOnly
-                value={ownerId}
-                valueName={issueOwnerName(ownerId, members, currentUserId)}
-                onChange={setOwnerId}
-                team={ownerTeam}
-                orgPeople={NO_ORG_PEOPLE}
-                onNeedOrg={noOrgNeeded}
-                teamNameById={NO_TEAM_NAMES}
-              />
-            )}
-          </div>
-
-          {kind === "issue" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block space-y-1">
-                <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Term
-                </span>
-                <SelectMenu<IssueType>
-                  variant="field"
-                  options={ISSUE_TERM_OPTIONS}
-                  value={term}
-                  onChange={setTerm}
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Priority
-                </span>
-                <SelectMenu<IssuePriorityValue>
-                  variant="field"
-                  options={ISSUE_PRIORITY_OPTIONS}
-                  value={priority}
-                  onChange={setPriority}
-                />
-              </label>
-            </div>
-          ) : (
-            <>
-              {/* No visibility choice: a to-do captured in an L10 is always
-                  team-visible (addTodo forces it; spec §3.2). */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Due date">
-                  <Input
-                    type="date"
-                    value={due}
-                    onChange={(e) => setDue(e.target.value)}
-                    size="sm"
-                    className="bg-white dark:bg-zinc-900"
-                  />
-                </Field>
+            <ModalBody as="form" onSubmit={submit}>
+              {/* Issue / To-do as two pressed-state buttons. Switching keeps
+                  title, owner and notes; an untouched stage prefix swaps with
+                  the kind (lib/l10/capture.ts titleAfterKindSwitch). */}
+              <div
+                role="group"
+                aria-label="Add as"
+                className="flex h-8 w-fit rounded-md border border-zinc-300 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                {KINDS.map((k) => {
+                  const on = k.value === kind;
+                  return (
+                    <button
+                      key={k.value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => switchKind(k.value)}
+                      className={cn(
+                        "inline-flex items-center justify-center rounded px-4 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40",
+                        on
+                          ? "bg-hpb-blue text-white"
+                          : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800",
+                      )}
+                    >
+                      {k.label}
+                    </button>
+                  );
+                })}
               </div>
 
+              {/* One Title input for both kinds, never remounted by the toggle,
+                  so focus and the caret stay put. Enter submits the form. */}
+              <Field label="Title" required>
+                <Input
+                  autoFocus
+                  ring
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={kind === "issue" ? "Issue (one line)" : undefined}
+                />
+              </Field>
+
+              <Field label="Description">
+                <RichTextEditor
+                  value={description}
+                  onChange={setDescription}
+                  placeholder="Notes or context"
+                  rows={4}
+                />
+              </Field>
+
+              {/* A div, not Field's <label>: the pickers are a button + popover,
+                  and a wrapping label would re-click them. */}
               <div className="block">
                 <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Followers
-                  <span className="ml-1 font-normal text-zinc-400">
-                    · get notified about comments, completion and edits
-                  </span>
+                  Owner
                 </span>
-                <FollowerPicker
-                  members={members}
-                  currentUserId={currentUserId}
-                  impliedIds={[currentUserId, ownerId]}
-                  value={followerIds}
-                  onChange={setFollowerIds}
-                />
+                {kind === "todo" ? (
+                  // Directory search: a to-do may go to anyone (spec §2.3).
+                  <TodoOwnerField
+                    teamId={teamId}
+                    members={members}
+                    value={ownerId}
+                    onChange={setOwnerId}
+                  />
+                ) : (
+                  // Team roster only: addIssue rejects an owner off the roster
+                  // (requireRosterOwner), so no Whole org tab.
+                  <OwnerPicker
+                    variant="field"
+                    label="Owner"
+                    allowUnassigned
+                    teamOnly
+                    value={ownerId}
+                    valueName={issueOwnerName(ownerId, members, currentUserId)}
+                    onChange={setOwnerId}
+                    team={ownerTeam}
+                    orgPeople={NO_ORG_PEOPLE}
+                    onNeedOrg={noOrgNeeded}
+                    teamNameById={NO_TEAM_NAMES}
+                  />
+                )}
               </div>
 
-              <WeeklyFocusField value={weeklyFocus} onChange={setWeeklyFocus} />
-            </>
-          )}
+              {kind === "issue" ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1">
+                    <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Term
+                    </span>
+                    <SelectMenu<IssueType>
+                      variant="field"
+                      options={ISSUE_TERM_OPTIONS}
+                      value={term}
+                      onChange={setTerm}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Priority
+                    </span>
+                    <SelectMenu<IssuePriorityValue>
+                      variant="field"
+                      options={ISSUE_PRIORITY_OPTIONS}
+                      value={priority}
+                      onChange={setPriority}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <>
+                  {/* No visibility choice: a to-do captured in an L10 is always
+                      team-visible (addTodo forces it; spec §3.2). */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Due date">
+                      <Input
+                        type="date"
+                        value={due}
+                        onChange={(e) => setDue(e.target.value)}
+                        size="sm"
+                        className="bg-white dark:bg-zinc-900"
+                      />
+                    </Field>
+                  </div>
 
-          {error && (
-            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
-          )}
+                  <div className="block">
+                    <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Followers
+                      <span className="ml-1 font-normal text-zinc-400">
+                        · get notified about comments, completion and edits
+                      </span>
+                    </span>
+                    <FollowerPicker
+                      members={members}
+                      currentUserId={currentUserId}
+                      impliedIds={[currentUserId, ownerId]}
+                      value={followerIds}
+                      onChange={setFollowerIds}
+                    />
+                  </div>
 
-          <ModalFooter>
-            <Button variant="ghost" onClick={guard.requestClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Adding…" : `Add ${noun}`}
-            </Button>
-          </ModalFooter>
-        </ModalBody>
-      </ModalShell>
+                  <WeeklyFocusField value={weeklyFocus} onChange={setWeeklyFocus} />
+                </>
+              )}
 
-      <DiscardChangesDialog
-        open={guard.asking}
-        onKeepEditing={guard.keepEditing}
-        onDiscard={guard.discard}
-        message={`This ${noun} hasn't been added yet. Close now and what you've typed is gone.`}
-      />
-    </>
+              {error && (
+                <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+              )}
+
+              <ModalFooter>
+                <Button variant="ghost" onClick={guard.requestClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Adding…" : `Add ${noun}`}
+                </Button>
+              </ModalFooter>
+            </ModalBody>
+          </ModalShell>
+
+          <DiscardChangesDialog
+            open={guard.asking}
+            onKeepEditing={guard.keepEditing}
+            onDiscard={guard.discard}
+            message={`This ${noun} hasn't been added yet. Close now and what you've typed is gone.`}
+          />
+        </>
+      )}
+    </CaptureContext.Provider>
+  );
+}
+
+/**
+ * The stage toolbar's "Issue / To-do": an outlined button, right after the
+ * Active | Archived toggle where the old "Drop to Issues" sat, with the same
+ * look and the same green beat after a save. It only asks the page-level
+ * MeetingCaptureProvider to open; renders nothing outside a live meeting or
+ * on a stage without capture (Segue — stageOffersCapture).
+ */
+export function CaptureButton() {
+  const capture = useContext(CaptureContext);
+  if (!capture || !stageOffersCapture(capture.segment)) return null;
+  const { added, open } = capture;
+  return (
+    <button
+      type="button"
+      onClick={open}
+      title="Capture an issue or a to-do from this stage"
+      className={cn(
+        // Same height, padding and type as the Active | Archived toggle and the
+        // stage's own add button beside it (h-8, px-3, text-sm); outlined, not filled.
+        "inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium transition focus:outline-none focus-visible:ring-2",
+        added
+          ? "border-hpb-green/40 bg-hpb-green/10 text-hpb-green focus-visible:ring-hpb-green/40"
+          : "border-zinc-300 text-zinc-600 hover:bg-zinc-50 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800",
+      )}
+    >
+      {added ? (
+        <>
+          <Check className="h-3.5 w-3.5" />
+          {CAPTURE_ADDED_LABEL[added]}
+        </>
+      ) : (
+        <>
+          <Plus className="h-3.5 w-3.5" />
+          Issue / To-do
+        </>
+      )}
+    </button>
   );
 }

@@ -7,6 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { autoFollow } from "@/lib/firebase/follow";
+import { autoFollowStampActor } from "@/lib/follow";
 import { recordActivity } from "@/lib/firebase/activity";
 import { getDirectoryPeople } from "@/lib/firebase/directory";
 import { blockedMentionMessage, resolveMentions } from "@/lib/mentions";
@@ -124,7 +125,7 @@ async function postComment(
   // Spec §5.3: writing a comment, or being mentioned in one, follows the
   // item (only people who may follow it — a mention never grants access).
   const ref = item.ref;
-  await autoFollow(db, ref, [uid, ...mention_ids], {}, uid);
+  await autoFollow(db, ref, [uid, ...mention_ids], {}, autoFollowStampActor(ref.type, uid));
 
   // Mentioned people get `mention`, every other follower `comment`; the
   // send-time access check drops anyone who cannot see the item.

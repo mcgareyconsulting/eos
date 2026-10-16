@@ -168,3 +168,20 @@ export function followersAfterAccessChange(
     ...storedFollowerIds(doc).filter((id) => canSee(id)),
   ]);
 }
+
+/**
+ * Who a comment-triggered auto-follow write is stamped with, or null to
+ * leave the item's `updated_by` / `updated_at` alone. Issues are left alone:
+ * their activity feed reads `updated_by` as the actor of the solve / drop /
+ * archive whose time `updated_at` still equals (issue-events.ts actorAt), so a
+ * stamp from a later comment would turn those events into "Someone". The
+ * comment doc carries the commenter's own stamp, which is the audited action;
+ * the follower change itself lands with actor_uid null (lib/audit-actor.ts),
+ * the same as the issue's comment_count write.
+ */
+export function autoFollowStampActor(
+  type: ItemType,
+  uid: string,
+): string | null {
+  return type === "issue" ? null : uid;
+}

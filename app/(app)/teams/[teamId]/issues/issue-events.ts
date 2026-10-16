@@ -60,7 +60,9 @@ export function issueTimeMs(t: unknown): number | null {
  * and server timestamps in one write share one commit time — so when
  * `updated_at` still equals that field's time, nothing has touched the issue
  * since and `updated_by` is the person who did it. Any later write (an edit,
- * a vote, a term move) moves `updated_at` on and the actor is unknown.
+ * a vote, a term move, a comment posted or deleted — the thread's
+ * `comment_count` lives on the issue) moves `updated_at` on and the actor is
+ * unknown.
  */
 function actorAt(issue: IssueEventSource, ms: number): string | null {
   const stampMs = issueTimeMs(issue.updated_at);

@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { loadUserNames } from "@/lib/firebase/user-names";
-import { FieldValue } from "firebase-admin/firestore";
+import {
+  FieldValue,
+  type DocumentReference,
+  type Firestore,
+} from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { autoFollow } from "@/lib/firebase/follow";
@@ -20,6 +24,7 @@ import {
 } from "@/lib/firebase/thread-gate";
 import { snippetOf } from "@/lib/notifications";
 import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { ISSUE_COMMENT_COUNT_FIELD } from "@/lib/issue-comment-count";
 
 export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
 
@@ -104,7 +109,11 @@ async function postComment(
     mention_ids = ids;
   }
 
-  await db.collection("entity_comments").add({
+  // An issue carries its thread's size for the row indicator (lib/
+  // issue-comment-count.ts). The comment and the increment commit together,
+  // so the counter never runs ahead of or behind the thread.
+  const batch = db.batch();
+  batch.set(db.collection("entity_comments").doc(), {
     team_id: threadTeamId,
     entity_type: entityType,
     entity_id: entityId,
@@ -114,6 +123,13 @@ async function postComment(
     created_at: FieldValue.serverTimestamp(),
     ...stamp(uid),
   });
+  if (entityType === "issue") {
+    batch.update(db.collection("issues").doc(entityId), {
+      [ISSUE_COMMENT_COUNT_FIELD]: FieldValue.increment(1),
+      ...stamp(uid),
+    });
+  }
+  await batch.commit();
 
   // Spec §5.3: writing a comment, or being mentioned in one, follows the
   // item (only people who may follow it — a mention never grants access).
@@ -203,7 +219,11 @@ export async function deleteEntityComment(
     throw new Error("Only the author or an admin can delete this comment");
   }
   await stampBeforeDelete(ref, uid);
-  await ref.delete();
+  if (data.entity_type === "issue") {
+    await deleteIssueComment(db, ref, String(data.entity_id ?? ""), uid);
+  } else {
+    await ref.delete();
+  }
   // The trace keeps a record of the deletion; the row that carried the body
   // is gone, but the snippet on the trace says what it was.
   if (data.entity_type === "todo") {
@@ -227,4 +247,34 @@ export async function deleteEntityComment(
     });
   }
   revalidateThreadPages(teamId, String(data.team_id ?? teamId));
+}
+
+/**
+ * Delete an issue comment and decrement the issue's `comment_count` in one
+ * transaction. The comment is re-read inside it, so two deletes of the same
+ * comment (a double click, author and admin at once) decrement once. An
+ * issue already gone (deleteIssue purges the thread after the issue) has no
+ * counter to keep, so only the comment is deleted.
+ */
+async function deleteIssueComment(
+  db: Firestore,
+  ref: DocumentReference,
+  issueId: string,
+  uid: string,
+) {
+  const issueRef = issueId ? db.collection("issues").doc(issueId) : null;
+  await db.runTransaction(async (tx) => {
+    const [comment, issue] = await Promise.all([
+      tx.get(ref),
+      issueRef ? tx.get(issueRef) : Promise.resolve(null),
+    ]);
+    if (!comment.exists) return;
+    tx.delete(ref);
+    if (issueRef && issue?.exists) {
+      tx.update(issueRef, {
+        [ISSUE_COMMENT_COUNT_FIELD]: FieldValue.increment(-1),
+        ...stamp(uid),
+      });
+    }
+  });
 }

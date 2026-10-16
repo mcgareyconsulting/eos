@@ -30,6 +30,7 @@ import {
 } from "@/lib/access/rock";
 import {
   type Segment,
+  headerOffersAddTodo,
   isSegment,
   normalizeSegment,
   SEGMENT_LABELS,
@@ -67,6 +68,7 @@ import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIssues } from "./segment-issues";
 import { ConcludeReview, type MeetingRating } from "./conclude-review";
+import { AddTodoModal } from "../../todos/add-todo-modal";
 import {
   RecapModal,
   type RecapItem,
@@ -403,6 +405,23 @@ export default async function MeetingDetailPage({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
+              {/* Capture a to-do from any stage (feedback rows 58/40) — the
+                same modal and the same meeting-tagged, team-visible write as
+                the Issues/To-Dos toolbar buttons, so the recap attributes it
+                to this L10. Hidden on those two stages: they carry their own,
+                and two identical buttons in one view is clutter. Gated by
+                nothing new — addTodo re-checks team access server-side, the
+                same check that let this page render. */}
+              {headerOffersAddTodo(viewSegment) && (
+                <AddTodoModal
+                  teamId={tid}
+                  members={members}
+                  defaultOwnerId={uid}
+                  currentUserId={uid}
+                  meetingId={mid}
+                  compact
+                />
+              )}
               {/* Join the team's Google Meet room. DEMO: opens the standing
                 team Meet link a leader set in Members → Meeting settings. In
                 the real integration this href would be a per-meeting URL

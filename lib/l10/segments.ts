@@ -73,3 +73,17 @@ export function normalizeSegment(
   if (isSegment(s)) return s;
   return null;
 }
+
+/**
+ * Stages whose own toolbar already carries an "Add to-do" (N46's button on
+ * Issues, and the To-Dos segment's own). The live meeting header offers the
+ * same control on every OTHER stage, so a to-do can be captured from Segue,
+ * Scorecard, Rocks, Headlines or Conclude without jumping ahead (feedback
+ * rows 58/40) — and stays off these two so one view never shows two
+ * identical buttons.
+ */
+const SEGMENTS_WITH_OWN_ADD_TODO: readonly Segment[] = ["todos", "issues"];
+
+export function headerOffersAddTodo(s: Segment): boolean {
+  return s !== "done" && !SEGMENTS_WITH_OWN_ADD_TODO.includes(s);
+}

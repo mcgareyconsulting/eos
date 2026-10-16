@@ -10,6 +10,7 @@ import {
   prevSegment,
   isSegment,
   normalizeSegment,
+  headerOffersAddTodo,
 } from "./segments";
 // normalizeSegment imported below with other helpers if needed
 
@@ -126,5 +127,23 @@ describe("normalizeSegment", () => {
   });
   test("rejects unknown values", () => {
     assert.equal(normalizeSegment("not-a-segment"), null);
+  });
+});
+
+describe("headerOffersAddTodo", () => {
+  test("offered on every live stage that has no Add to-do of its own", () => {
+    for (const s of SEGMENTS) {
+      if (s === "todos" || s === "issues" || s === "done") continue;
+      assert.equal(headerOffersAddTodo(s), true, s);
+    }
+  });
+
+  test("not duplicated on Issues / To-Dos, which carry their own", () => {
+    assert.equal(headerOffersAddTodo("issues"), false);
+    assert.equal(headerOffersAddTodo("todos"), false);
+  });
+
+  test("never on a finished meeting", () => {
+    assert.equal(headerOffersAddTodo("done"), false);
   });
 });

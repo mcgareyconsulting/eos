@@ -405,13 +405,16 @@ export default async function MeetingDetailPage({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
-              {/* Capture a to-do from any stage (feedback rows 58/40) — the
-                same modal and the same meeting-tagged, team-visible write as
-                the Issues/To-Dos toolbar buttons, so the recap attributes it
-                to this L10. Hidden on those two stages: they carry their own,
-                and two identical buttons in one view is clutter. Gated by
-                nothing new — addTodo re-checks team access server-side, the
-                same check that let this page render. */}
+              {/* The meeting's one "Add to-do" (feedback rows 58/40): every
+                stage, always here — Issues and To-Dos no longer carry their
+                own. A meeting-tagged, team-visible write, so the recap
+                attributes it to this L10. Kept first in this row and never
+                keyed or wrapped by stage: a follower's stage change is a
+                same-URL refresh, so this element staying put is what keeps an
+                open draft alive while the driver moves the room on (see
+                headerOffersAddTodo). Gated by nothing new — addTodo re-checks
+                team access server-side, the same check that let this page
+                render. */}
               {headerOffersAddTodo(viewSegment) && (
                 <AddTodoModal
                   teamId={tid}

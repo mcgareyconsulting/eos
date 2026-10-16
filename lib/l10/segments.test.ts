@@ -131,16 +131,26 @@ describe("normalizeSegment", () => {
 });
 
 describe("headerOffersAddTodo", () => {
-  test("offered on every live stage that has no Add to-do of its own", () => {
-    for (const s of SEGMENTS) {
-      if (s === "todos" || s === "issues" || s === "done") continue;
-      assert.equal(headerOffersAddTodo(s), true, s);
-    }
+  const live = SEGMENTS.filter((s) => s !== "done");
+
+  test("offered on every live stage, Issues and To-Dos included", () => {
+    for (const s of live) assert.equal(headerOffersAddTodo(s), true, s);
   });
 
-  test("not duplicated on Issues / To-Dos, which carry their own", () => {
-    assert.equal(headerOffersAddTodo("issues"), false);
-    assert.equal(headerOffersAddTodo("todos"), false);
+  // The draft-persistence guarantee: the header modal stays mounted only if
+  // no move between two live stages can turn it off. Walk every move the
+  // transport (next / prev) or a peek can make.
+  test("never flips between two live stages, so an open draft survives a stage change", () => {
+    for (const from of live) {
+      for (const to of [nextSegment(from), prevSegment(from), ...live]) {
+        if (to === "done") continue;
+        assert.equal(
+          headerOffersAddTodo(to),
+          headerOffersAddTodo(from),
+          `${from} -> ${to}`,
+        );
+      }
+    }
   });
 
   test("never on a finished meeting", () => {

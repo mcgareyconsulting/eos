@@ -6,9 +6,10 @@
 // `orderBy` (single field, ascending), a bare `collection().get()`,
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
-// (`doc().collection()`, with `.ref` on query results), and
-// `FieldValue.delete()` in set/update. It is not an emulator replacement — just
-// enough shape to drive these modules' logic without touching real Firebase.
+// (`doc().collection()`, with `.ref` on query results),
+// `FieldValue.delete()` in set/update, and a serialized `runTransaction`.
+// It is not an emulator replacement — just enough shape to drive these
+// modules' logic without touching real Firebase.
 
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -211,6 +212,42 @@ export class FakeFirestore {
       },
     };
     return b;
+  }
+
+  private txTail: Promise<unknown> = Promise.resolve();
+
+  /**
+   * `runTransaction(fn)`: `tx.get` reads a doc ref or a query; writes are
+   * queued and applied after `fn` resolves (nothing on a throw). Transactions
+   * run one at a time, standing in for Firestore's serializable isolation —
+   * two racing transactions behave as if one retried after the other.
+   */
+  runTransaction<T>(
+    fn: (tx: {
+      get: (target: FakeDocRef | FakeQuery) => Promise<unknown>;
+      create: (ref: FakeDocRef, data: DocData) => unknown;
+      set: (ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) => unknown;
+      update: (ref: FakeDocRef, data: DocData) => unknown;
+      delete: (ref: FakeDocRef) => unknown;
+    }) => Promise<T>,
+  ): Promise<T> {
+    const run = async () => {
+      const ops: (() => Promise<void>)[] = [];
+      const tx = {
+        get: (target: FakeDocRef | FakeQuery) => target.get(),
+        create: (ref: FakeDocRef, data: DocData) => (ops.push(() => ref.create(data)), tx),
+        set: (ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) =>
+          (ops.push(() => ref.set(data, opts)), tx),
+        update: (ref: FakeDocRef, data: DocData) => (ops.push(() => ref.update(data)), tx),
+        delete: (ref: FakeDocRef) => (ops.push(() => ref.delete()), tx),
+      };
+      const result = await fn(tx);
+      for (const op of ops) await op();
+      return result;
+    };
+    const p = this.txTail.then(run, run);
+    this.txTail = p.catch(() => undefined);
+    return p;
   }
 
   /** Cast for passing to code typed against firebase-admin's `Firestore`. */

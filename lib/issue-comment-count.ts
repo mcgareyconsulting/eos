@@ -3,9 +3,10 @@
 // segment so nobody has to open every issue to find the ones with a thread.
 //
 // Stored on the issue doc as `comment_count` and kept in step with the thread
-// by the comment actions (entity-comments/actions.ts): a post increments it in
-// the same batch that creates the comment, a delete decrements it in the same
-// transaction that removes it. Both lists already ride a live listener on
+// by the comment actions (entity-comments/actions.ts, through
+// lib/firebase/issue-comment-count.ts): a post or delete rewrites it in the
+// same transaction that creates or removes the comment, recounting the thread
+// when the issue predates the counter. Both lists already ride a live listener on
 // `issues`, so the counter updates in place with no extra query. Clients
 // cannot write it (firestore.rules denies every client write).
 //

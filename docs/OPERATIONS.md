@@ -24,7 +24,8 @@ triggers are pointed at the named database.
 
 **Shipped separately:** Monday **todo archive** Cloud Function
 (`archiveStaleTodos`) — `0 3 * * 1` America/Chicago. Moves pure completed
-to-dos from before this week's Monday onto Archived. Deploy:
+to-dos, closed issues and discussed headlines from before this week's Monday
+onto Archived. Rocks are manual-archive only and never swept. Deploy:
 `firebase deploy --only functions:archiveStaleTodos --project <PROJECT_ID>`.
 Param `FIRESTORE_DATABASE_ID` defaults to `hpb-eos-prod-db`.
 

@@ -6,8 +6,9 @@
  *    pointed at the named database (see OPERATIONS / CUTOVER).
  *
  * 2) Monday archive sweep — `archiveStaleTodos` (scheduler): pure to-dos,
- *    closed issues, discussed headlines, and done rocks. Safe to deploy
- *    independently; uses FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
+ *    closed issues and discussed headlines. Rocks are manual-archive only
+ *    and never swept. Safe to deploy independently; uses
+ *    FIRESTORE_DATABASE_ID (default hpb-eos-prod-db).
  *
  * 3) Weekly auth export — `exportAuthUsers` (scheduler, Sunday 4am
  *    America/Chicago, one hour after the Firestore export function):

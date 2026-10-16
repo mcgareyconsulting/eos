@@ -93,7 +93,8 @@ export async function setRockType(
 
 // Atomic: writes the new status onto the rock AND appends an immutable history
 // entry to rock_status_updates. Off-track always requires a "why" comment.
-// Done stamps completed_at (Monday archive sweep clock); leaving Done clears it.
+// Done stamps completed_at (when it was finished); leaving Done clears it.
+// Done never archives the rock — rocks are manual-archive only.
 // The parent team, the audience and admins may move it (rockAccess).
 export async function setRockStatus(
   teamId: string,
@@ -114,9 +115,9 @@ export async function setRockStatus(
   );
   const prevStatus = String(data.status ?? "");
 
-  // Monday worker archives status=done with completed_at before this week's
-  // Monday 00:00. Stamp completed_at only on the transition into Done (don't
-  // reset the clock if they re-save Done). Leaving Done clears it.
+  // Stamp completed_at only on the transition into Done (don't reset the
+  // date if they re-save Done). Leaving Done clears it. Nothing archives Done
+  // rocks automatically; they stay on Active until archived from the row.
   const rockPatch: Record<string, unknown> = { status };
   if (status === "done") {
     if (prevStatus !== "done") {
@@ -151,10 +152,10 @@ export async function setRockStatus(
 
 // Manual archive control (Gmail-style icon on the row) — mirrors
 // headlines' setHeadlineArchived. Reversible, so callers don't confirm.
-// Restore also clears completed_at: a still-Done rock keeps its
-// completed_at from before archiving, and the Monday sweep
-// (isActiveDoneRock in lib/todos-archive.ts) would otherwise re-archive it
-// the moment archived_at goes null again. Re-saving Done re-stamps it.
+// The only in-app way a rock reaches Archived: rocks are manual-archive
+// only (no Monday sweep, no Finish-time archive). Restore keeps status and
+// completed_at as they were, so a Done rock comes back still Done with its
+// original completion date.
 // Takes the rock off every list, so it stays with the parent team and
 // admins, like delete.
 export async function setRockArchived(
@@ -169,7 +170,7 @@ export async function setRockArchived(
     .update({
       ...(archived
         ? { archived_at: FieldValue.serverTimestamp() }
-        : { archived_at: null, completed_at: null }),
+        : { archived_at: null }),
       ...stamp(uid),
     });
 
@@ -796,8 +797,8 @@ export async function createRockWithMilestones(
     ...stamp(uid),
     status: "on_track",
     completed_at: null,
-    // Explicit null so the Monday sweep's `archived_at == null` equality
-    // filter matches (Firestore never matches a missing field).
+    // Explicit null so `archived_at == null` equality filters match
+    // (Firestore never matches a missing field).
     archived_at: null,
     created_at: FieldValue.serverTimestamp(),
   });

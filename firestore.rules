@@ -184,6 +184,10 @@ service cloud.firestore {
     }
 
     // ---------- issues + per-user votes ----------
+    // `comment_count` (the row's comment badge) is written only by the
+    // comment actions; the write denial is what keeps a client from forging
+    // it. Reading it reveals nothing more than the thread: an issue's thread
+    // is gated on the issue's own team_id (teamItemSeeById below).
     match /issues/{id} {
       allow read:  if teamGate(resource.data.team_id);
       allow write: if false;

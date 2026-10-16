@@ -7,6 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { requireTeamAccess } from "@/lib/firebase/teams";
 import { emitEvent } from "@/lib/firebase/notifications";
 import { autoFollow } from "@/lib/firebase/follow";
+import { autoFollowStampActor } from "@/lib/follow";
 import { recordActivity } from "@/lib/firebase/activity";
 import { getDirectoryPeople } from "@/lib/firebase/directory";
 import { blockedMentionMessage, resolveMentions } from "@/lib/mentions";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/firebase/thread-gate";
 import { snippetOf } from "@/lib/notifications";
 import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { deleteIssueComment, postIssueComment } from "@/lib/firebase/issue-comment-count";
 
 export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
 
@@ -104,7 +106,7 @@ async function postComment(
     mention_ids = ids;
   }
 
-  await db.collection("entity_comments").add({
+  const comment = {
     team_id: threadTeamId,
     entity_type: entityType,
     entity_id: entityId,
@@ -113,12 +115,17 @@ async function postComment(
     mention_ids,
     created_at: FieldValue.serverTimestamp(),
     ...stamp(uid),
-  });
+  };
+  const commentRef = db.collection("entity_comments").doc();
+  // An issue carries its thread's size for the row indicator; the comment
+  // and the count commit together (lib/firebase/issue-comment-count.ts).
+  if (entityType === "issue") await postIssueComment(db, commentRef, comment, entityId);
+  else await commentRef.set(comment);
 
   // Spec §5.3: writing a comment, or being mentioned in one, follows the
   // item (only people who may follow it — a mention never grants access).
   const ref = item.ref;
-  await autoFollow(db, ref, [uid, ...mention_ids], {}, uid);
+  await autoFollow(db, ref, [uid, ...mention_ids], {}, autoFollowStampActor(ref.type, uid));
 
   // Mentioned people get `mention`, every other follower `comment`; the
   // send-time access check drops anyone who cannot see the item.
@@ -203,7 +210,11 @@ export async function deleteEntityComment(
     throw new Error("Only the author or an admin can delete this comment");
   }
   await stampBeforeDelete(ref, uid);
-  await ref.delete();
+  if (data.entity_type === "issue") {
+    await deleteIssueComment(db, ref, String(data.entity_id ?? ""));
+  } else {
+    await ref.delete();
+  }
   // The trace keeps a record of the deletion; the row that carried the body
   // is gone, but the snippet on the trace says what it was.
   if (data.entity_type === "todo") {

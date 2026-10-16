@@ -321,6 +321,13 @@ describe("no client writes, on any collection, for anyone", () => {
     });
   }
 
+  test("no one can forge an issue's comment_count from the client", async () => {
+    for (const db of [as("alice"), asAdmin(), as("bob")]) {
+      await assertFails(updateDoc(doc(db, "issues/i1"), { comment_count: 99 }));
+      await assertFails(setDoc(doc(db, "issues/i1"), { team_id: T, comment_count: 99 }, { merge: true }));
+    }
+  });
+
   test("a user cannot write their own team_ids", async () => {
     await assertFails(updateDoc(doc(as("bob"), "users/bob"), { team_ids: ["team-Z", T] }));
     await assertFails(setDoc(doc(as("dave"), "users/dave"), { team_ids: [T] }));

@@ -4,6 +4,7 @@ import {
   applyFollow,
   assignerOf,
   assignmentPatch,
+  autoFollowStampActor,
   effectiveFollowers,
   isFollowing,
   isLockedFollower,
@@ -114,5 +115,15 @@ describe("auto-follow", () => {
       follower_ids: ["a", "b"],
       added: ["b"],
     });
+  });
+});
+
+describe("autoFollowStampActor", () => {
+  test("issues are never re-stamped by a comment's auto-follow", () => {
+    assert.equal(autoFollowStampActor("issue", "u1"), null);
+  });
+  test("other item types keep the commenter as the audit actor", () => {
+    assert.equal(autoFollowStampActor("todo", "u1"), "u1");
+    assert.equal(autoFollowStampActor("rock", "u1"), "u1");
   });
 });

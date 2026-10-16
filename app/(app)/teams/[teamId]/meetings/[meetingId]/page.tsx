@@ -49,6 +49,7 @@ import {
   metricGroupForTeam,
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import {
   oldestPeriodStart,
@@ -948,6 +949,7 @@ async function SegmentContent({
         type: x.type ?? "short",
         status: x.status ?? "open",
         archived_at: x.archived_at ? true : null,
+        comment_count: commentCountOf(x),
       };
     });
     const initialVotes = votesSnap.docs.map((d) => {

@@ -14,11 +14,13 @@ import {
   Pencil,
   Archive,
 } from "lucide-react";
+import { CommentCountBadge } from "@/components/comment-count-badge";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { cn } from "@/lib/utils";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -277,9 +279,12 @@ function IssueRow({
             Closed On: {issue.closed_on ?? "—"}
           </div>
         )}
-        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-          <User className="h-3 w-3" />
-          {ownerName(issue.owner_id)}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+            <User className="h-3 w-3" />
+            {ownerName(issue.owner_id)}
+          </div>
+          <CommentCountBadge count={commentCountOf(issue)} />
         </div>
       </div>
 

@@ -3,6 +3,7 @@ import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { isArchivedIssue } from "@/lib/issues";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { IssueFormModal } from "./issue-form-modal";
 import { IssuesList, type IssueDoc } from "./issues-list";
 
@@ -52,6 +53,7 @@ export default async function IssuesPage({
       status: x.status,
       archived,
       closed_on: archived ? formatClosedOn(x.archived_at) : null,
+      comment_count: commentCountOf(x),
     };
   });
 

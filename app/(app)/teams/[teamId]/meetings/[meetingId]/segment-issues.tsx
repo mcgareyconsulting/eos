@@ -19,7 +19,9 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
+import { CommentCountBadge } from "@/components/comment-count-badge";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { EmptyState } from "@/components/empty-state";
 import {
   PRIORITY_BADGE,
@@ -372,9 +374,12 @@ export function SegmentIssues({
                 >
                   {i.title}
                 </IssueDetailTrigger>
-                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                  <User className="h-3 w-3" />
-                  {ownerName(i.owner_id)}
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    <User className="h-3 w-3" />
+                    {ownerName(i.owner_id)}
+                  </div>
+                  <CommentCountBadge count={commentCountOf(i)} />
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">

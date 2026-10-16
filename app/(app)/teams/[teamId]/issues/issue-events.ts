@@ -60,7 +60,10 @@ export function issueTimeMs(t: unknown): number | null {
  * and server timestamps in one write share one commit time — so when
  * `updated_at` still equals that field's time, nothing has touched the issue
  * since and `updated_by` is the person who did it. Any later write (an edit,
- * a vote, a term move) moves `updated_at` on and the actor is unknown.
+ * a vote, a term move) moves `updated_at` on and the actor is unknown. The
+ * comment counter (`comment_count`, lib/firebase/issue-comment-count.ts) is
+ * written without a stamp for exactly this reason: a comment must not turn
+ * the person who solved or archived the issue into "Someone".
  */
 function actorAt(issue: IssueEventSource, ms: number): string | null {
   const stampMs = issueTimeMs(issue.updated_at);

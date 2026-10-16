@@ -3,7 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { formatDateShort, relativeDueLabel } from "@/lib/dates";
+import {
+  daysUntil,
+  dueDateShort,
+  formatDateShort,
+  relativeDueLabel,
+} from "@/lib/dates";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
@@ -89,6 +95,8 @@ export function HomeRocksList({
 }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const expandMs = useExpandedMilestones();
+  const timeZone = useTimeZone();
+  const now = new Date();
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -229,10 +237,16 @@ export function HomeRocksList({
                       <div
                         className={cn(
                           "text-[10px] font-bold",
-                          dueToneClass(r.due_date, status === "done"),
+                          dueToneClass(
+                            r.due_date,
+                            status === "done",
+                            now,
+                            undefined,
+                            timeZone,
+                          ),
                         )}
                       >
-                        {relativeDueLabel(r.due_date)}
+                        {relativeDueLabel(r.due_date, now, false, timeZone)}
                       </div>
                     </>
                   ) : (
@@ -296,15 +310,37 @@ export function HomeRocksList({
                           <div
                             className={cn(
                               "text-[11.5px] font-semibold tabular-nums",
-                              dueToneClass(m.due_date),
+                              dueToneClass(
+                                m.due_date,
+                                false,
+                                now,
+                                undefined,
+                                timeZone,
+                              ),
                             )}
                           >
-                            {m.due_date ? formatDateShort(m.due_date) : "—"}
+                            {dueDateShort(m.due_date, false, now, timeZone)}
                           </div>
                           <div className="justify-self-end">
-                            {m.due_date ? (
-                              <span className={urgencyChipClass(m.due_date)}>
-                                {relativeDueLabel(m.due_date)}
+                            {/* No "today" chip beside a date column that
+                                already reads "Today". */}
+                            {m.due_date &&
+                            daysUntil(m.due_date, now, timeZone) !== 0 ? (
+                              <span
+                                className={urgencyChipClass(
+                                  m.due_date,
+                                  false,
+                                  now,
+                                  undefined,
+                                  timeZone,
+                                )}
+                              >
+                                {relativeDueLabel(
+                                  m.due_date,
+                                  now,
+                                  false,
+                                  timeZone,
+                                )}
                               </span>
                             ) : null}
                           </div>

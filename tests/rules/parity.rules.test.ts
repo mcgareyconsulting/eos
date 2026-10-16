@@ -121,7 +121,7 @@ for (const rockId of Object.keys(ROCKS)) {
 TODOS["m-priv-legacy"] = todo({ visibility: "private", owner_id: "u-asg", created_by: "u-crt", source_rock_id: "r-none" });
 for (const [id, d] of Object.entries(TODOS)) put(`todos/${id}`, d);
 
-put("issues/i-1", { team_id: P, owner_id: "u-mem" });
+put("issues/i-1", { team_id: P, owner_id: "u-mem", comment_count: 1 });
 put("headlines/h-1", { team_id: P, created_by: "u-mem" });
 put("issue_votes/v-1", { team_id: P, user_id: "u-mem", issue_id: "i-1" });
 put("scorecard_groups/g-1", { team_id: P, name: "Sales" });
@@ -588,6 +588,19 @@ describe("live query shapes: item threads and the to-do activity trace", () => {
     assert.equal(await allowed(getDoc(doc(dbFor(W.outsider), "scorecard_metrics/mt-public"))), true);
     assert.equal(await allowed(getDoc(doc(dbFor(W.outsider), `scorecard_entries/mt-public__${WEEK}`))), true);
     assert.equal(await allowed(getDoc(doc(dbFor(W.outsider), "scorecard_metrics/mt-home"))), false);
+  });
+
+  // The issue row's comment badge reads `comment_count` off the issue doc
+  // (issues-list.tsx, segment-issues.tsx). It must not tell anyone a thread
+  // exists who could not read the thread itself.
+  test("issue comment_count: readable by exactly the viewers who can read the issue's thread", async () => {
+    const problems: string[] = [];
+    for (const [name, w] of WHO) {
+      const issue = await allowed(getDoc(doc(dbFor(w), "issues/i-1")));
+      const thread = await allowed(getDocs(threadQuery(dbFor(w), "issue", "i-1", P)));
+      if (issue !== thread) problems.push(`${name}: issue=${issue} thread=${thread}`);
+    }
+    assert.deepEqual(problems, []);
   });
 });
 

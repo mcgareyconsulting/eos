@@ -124,6 +124,12 @@ export type IssueDoc = FollowFields & {
   archived?: boolean;
   // Live client docs may carry a Firestore Timestamp.
   archived_at?: unknown;
+  // Size of the issue's comment thread, kept by the comment actions
+  // (lib/issue-comment-count.ts). Missing on docs never commented on since
+  // the counter shipped, until the backfill runs or the thread next changes
+  // (which recounts it) — read through
+  // commentCountOf.
+  comment_count?: number;
 };
 
 // ---------------------------------------------------------------------------

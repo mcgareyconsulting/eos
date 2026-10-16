@@ -7,9 +7,9 @@
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
 // (`doc().collection()`, with `.ref` on query results),
-// `FieldValue.delete()` in set/update, `delete({ exists: true })`, and a
-// serialized `runTransaction`. It is not an emulator replacement — just
-// enough shape to drive these modules' logic without touching real Firebase.
+// `FieldValue.delete()` in set/update, and a serialized `runTransaction`.
+// It is not an emulator replacement — just enough shape to drive these
+// modules' logic without touching real Firebase.
 
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -79,14 +79,7 @@ class FakeDocRef {
     }
     this.store.write(this.path, applyPatch(existing, data));
   }
-  async delete(precondition?: { exists?: boolean }) {
-    // Real delete({ exists: true }) fails with NOT_FOUND (code 5) when the doc
-    // is already gone — what a single-use consume relies on.
-    if (precondition?.exists && !this.store.raw(this.path)) {
-      throw Object.assign(new Error(`fake-firestore: delete() on missing doc ${this.path}`), {
-        code: 5,
-      });
-    }
+  async delete() {
     this.store.remove(this.path);
   }
   /** Subcollection, e.g. `meetings/m1/effectiveness_scores`. */

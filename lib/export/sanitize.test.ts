@@ -23,9 +23,31 @@ describe("neutralizeFormula", () => {
     }
   });
 
+  test("after leading whitespace", () => {
+    for (const v of ["  =1+1", " @SUM(A1)", " +1", "   -2"]) {
+      assert.equal(neutralizeFormula(v), `'${v}`, JSON.stringify(v));
+    }
+  });
+
+  test("on any line of a multi-line value", () => {
+    for (const v of ["Call the vendor\n=HYPERLINK(\"x\")", "ok\r\n  @cmd", "a\rb\r-1"]) {
+      assert.equal(neutralizeFormula(v), `'${v}`, JSON.stringify(v));
+    }
+  });
+
   test("leaves ordinary text alone", () => {
-    for (const v of ["", "Call the vendor", "a=b", "Q3 - review", "email@x.com", "'quoted"]) {
-      assert.equal(neutralizeFormula(v), v);
+    for (const v of [
+      "",
+      "Call the vendor",
+      "a=b",
+      "Q3 - review",
+      "email@x.com",
+      "'quoted",
+      "line one\nline two",
+      "   ",
+      "• one\n• two",
+    ]) {
+      assert.equal(neutralizeFormula(v), v, JSON.stringify(v));
     }
   });
 });

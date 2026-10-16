@@ -1,72 +1,120 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import type { Query } from "firebase-admin/firestore";
+import type { Firestore, Query } from "firebase-admin/firestore";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
 import { viewerOf } from "@/lib/access/types";
-import { readXlsx } from "@/lib/xlsx";
-import { recordDataExport, type DataExportInput } from "./audit";
-import { EXPORT_QUERY_LIMIT, readCapped } from "./cap";
-import { todosExport } from "./pages/todos";
-import { PRINT_TOKEN_COLLECTION, PRINT_TOKEN_TTL_MS } from "./print-token";
-import { printPageAction } from "./response";
 import {
+  REFUSED_DEDUPE_MS,
+  recordDataExport,
+  recordRefusedExport,
+  refusedAuditDocId,
+  type DataExportInput,
+} from "./audit";
+import { EXPORT_QUERY_LIMIT, readCapped } from "./cap";
+import { todosExport, TODOS_COLUMNS } from "./pages/todos";
+import { csvResponse } from "./response";
+import {
+  ACCOUNT_INACTIVE,
   AUDIT_FAILED,
   EXPORT_ROW_CAP,
-  NOT_ADMIN,
   NOT_SIGNED_IN,
-  PRINT_LINK_INVALID,
   UNKNOWN_EXPORT,
   overCapMessage,
   runExport,
-  runPrintExport,
-  startPrintExport,
   type RunExportDeps,
 } from "./run";
-import { writeXlsx } from "./xlsx-writer";
 import type { ExportDefinition } from "./types";
 
+// 13:05 MDT.
 const NOW = new Date("2026-10-16T19:05:00Z");
 
+function todoDoc(over: Record<string, unknown>) {
+  return {
+    team_id: "t1",
+    title: "x",
+    description: null,
+    owner_id: "u1",
+    due_date: null,
+    completed_at: null,
+    archived_at: null,
+    visibility: "team",
+    source_rock_id: null,
+    created_by: "u1",
+    ...over,
+  };
+}
+
+/**
+ * Team t1 (Leadership): u1 (Ada, member), u2 (Grace, leader). Team t2
+ * (Ops): u3 only. `admin` is on no team.
+ */
 function seed() {
   const db = new FakeFirestore();
   db.seed("teams", "t1", { name: "Leadership", speaking_order: ["u2", "u1"] });
+  db.seed("teams", "t2", { name: "Ops" });
   db.seed("team_members", "t1__u1", { team_id: "t1", user_id: "u1", role: "member" });
   db.seed("team_members", "t1__u2", { team_id: "t1", user_id: "u2", role: "leader" });
+  db.seed("team_members", "t2__u3", { team_id: "t2", user_id: "u3", role: "member" });
   db.seed("users", "u1", { display_name: "Ada Lovelace" });
   db.seed("users", "u2", { first_name: "Grace", last_name: "Hopper" });
   db.seed("users", "u3", { display_name: "Off Roster" });
-  db.seed("todos", "a", {
-    team_id: "t1",
-    title: '=HYPERLINK("https://evil.example","x")',
-    description: "**Call** the vendor",
-    owner_id: "u1",
-    due_date: "2026-10-20",
-    completed_at: null,
-    visibility: "team",
-    source_rock_id: null,
-    created_by: "u2",
-  });
+  db.seed(
+    "todos",
+    "a",
+    todoDoc({
+      title: '=HYPERLINK("https://evil.example","x")',
+      description: "**Call** the vendor, today",
+      due_date: "2026-10-20",
+      created_by: "u2",
+    }),
+  );
   return db;
 }
 
-function admin(db: FakeFirestore, uid = "admin") {
+/** The hidden items a member must never see in their file. */
+function seedHidden(db: FakeFirestore) {
+  // Grace's private to-do on t1: only Grace (and admins) see it on the list.
+  db.seed(
+    "todos",
+    "grace-private",
+    todoDoc({ title: "Grace private", owner_id: "u2", created_by: "u2", visibility: "private" }),
+  );
+  // Ada's own private to-do: she sees it.
+  db.seed(
+    "todos",
+    "ada-private",
+    todoDoc({ title: "Ada private", owner_id: "u1", created_by: "u1", visibility: "private" }),
+  );
+  // Another team's to-do.
+  db.seed("todos", "ops-item", todoDoc({ team_id: "t2", title: "Ops item", owner_id: "u3" }));
+}
+
+function signedIn(
+  db: FakeFirestore,
+  uid: string,
+  over: { isAdmin?: boolean; active?: boolean } = {},
+): RunExportDeps["user"] {
   return async () => ({
     uid,
-    email: "admin@highplainsbank.com",
-    name: "Org Admin",
-    isAdmin: true,
+    isAdmin: over.isAdmin ?? false,
+    active: over.active ?? true,
     db: db.asFirestore(),
   });
 }
 
-function nonAdmin(db: FakeFirestore, uid = "u1") {
-  return async () => ({ ...(await admin(db, uid)()), isAdmin: false });
+/** loadViewer's answer, from the fake's roster (lib/firebase/viewer.ts). */
+async function fakeViewer(db: Firestore, uid: string, isAdmin: boolean) {
+  const snap = await db.collection("team_members").where("user_id", "==", uid).get();
+  const teams = snap.docs.map((d) => d.data().team_id as string);
+  const leads = snap.docs.filter((d) => d.data().role === "leader").map((d) => d.data().team_id as string);
+  return viewerOf(uid, isAdmin, teams, leads);
 }
 
 function deps(db: FakeFirestore, extra: Partial<RunExportDeps> = {}): RunExportDeps {
   return {
-    user: admin(db),
-    viewer: async (_db, uid, isAdmin) => viewerOf(uid, isAdmin, [], []),
+    user: signedIn(db, "admin", { isAdmin: true }),
+    db: () => db.asFirestore(),
+    viewer: fakeViewer,
     now: () => NOW,
     env: { DEPLOYMENT_ID: "b0ba525-build1" },
     ...extra,
@@ -79,121 +127,218 @@ function auditRows(db: FakeFirestore) {
   return db.docsIn("audit_log").map((d) => d.data as Record<string, unknown>);
 }
 
+/** The to-dos definition with its loader counted. */
+function spiedTodos() {
+  const calls = { load: 0 };
+  const def = {
+    ...todosExport,
+    load: async (...args: Parameters<typeof todosExport.load>) => {
+      calls.load += 1;
+      return todosExport.load(...args);
+    },
+  };
+  return { calls, definitions: { todos: def as unknown as ExportDefinition<never, never> } };
+}
+
 function bulkTodos(db: FakeFirestore, n: number) {
   for (let i = 0; i < n; i++) {
-    db.seed("todos", `bulk-${i}`, {
-      team_id: "t1",
-      title: `Bulk ${i}`,
-      owner_id: "u2",
-      due_date: null,
-      completed_at: null,
-      visibility: "team",
-      source_rock_id: null,
-    });
+    db.seed("todos", `bulk-${i}`, todoDoc({ title: `Bulk ${i}`, owner_id: "u2" }));
   }
 }
 
-describe("runExport — admin gate", () => {
-  test("a signed-in non-admin is refused before anything is loaded; the attempt is audited", async () => {
+const ids = (rows: (string | number)[][]) => rows.map((r) => r[TODOS_COLUMNS.length - 1]);
+
+describe("runExport — who may export", () => {
+  test("no session → 401, refused before any load, audited as anonymous", async () => {
     const db = seed();
-    let loaded = 0;
-    const spy: ExportDefinition<never, never> = {
-      id: "todos",
-      title: "Spy",
-      parseParams: () => ({}) as never,
-      load: async () => {
-        loaded += 1;
-        return { ok: true, rows: [], filters: [], teamId: null, fileNameParts: [] };
-      },
-      columns: [],
-    };
-    const res = await runExport("todos", todosParams(), "xlsx", {
+    const { calls, definitions } = spiedTodos();
+    const res = await runExport("todos", todosParams(), "csv", {
       ...deps(db),
-      user: nonAdmin(db),
-      definitions: { todos: spy },
+      definitions,
+      user: async () => null,
     });
-    assert.deepEqual(res, { ok: false, status: 403, message: NOT_ADMIN, reason: "not_admin" });
-    assert.equal(loaded, 0);
-    const rows = auditRows(db);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].outcome, "refused");
-    assert.equal(rows[0].reason, "not_admin");
-    assert.equal(rows[0].http_status, 403);
-    assert.equal(rows[0].actor_uid, "u1");
-    assert.equal(rows[0].entity_id, "todos");
-    assert.deepEqual(rows[0].export, {
+    assert.deepEqual(res, { ok: false, status: 401, message: NOT_SIGNED_IN, reason: "not_signed_in" });
+    assert.equal(calls.load, 0);
+    const [row] = auditRows(db);
+    assert.equal(row.actor_uid, null);
+    assert.equal(row.outcome, "refused");
+    assert.equal(row.reason, "not_signed_in");
+    assert.equal(row.http_status, 401);
+  });
+
+  test("a disabled or deleted account is refused before any load", async () => {
+    const db = seed();
+    const { calls, definitions } = spiedTodos();
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      definitions,
+      user: signedIn(db, "u1", { active: false }),
+    });
+    assert.deepEqual(res, {
+      ok: false,
+      status: 403,
+      message: ACCOUNT_INACTIVE,
+      reason: "account_inactive",
+    });
+    assert.equal(calls.load, 0);
+    assert.equal(auditRows(db)[0].reason, "account_inactive");
+  });
+
+  test("someone who can't open the page is refused before any load, with the page's 404", async () => {
+    const db = seed();
+    const { calls, definitions } = spiedTodos();
+    // u3 is on Ops, not Leadership.
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      definitions,
+      user: signedIn(db, "u3"),
+    });
+    assert.equal(res.ok, false);
+    assert.equal(!res.ok && res.status, 404);
+    assert.equal(!res.ok && res.reason, "no_page_access");
+    assert.equal(calls.load, 0);
+    const [row] = auditRows(db);
+    assert.equal(row.actor_uid, "u3");
+    assert.equal(row.reason, "no_page_access");
+    assert.equal(row.http_status, 404);
+    assert.deepEqual(row.export, {
       page: "todos",
-      format: "xlsx",
+      format: "csv",
       filters: {},
       row_count: null,
       app_version: "b0ba525-build1",
       query: "team=t1",
+      file_name: null,
     });
   });
 
-  test("no session → 401, and nothing to audit (no actor)", async () => {
+  test("a missing team is the same 404, before any load", async () => {
     const db = seed();
-    const res = await runExport("todos", todosParams(), "xlsx", {
+    const { calls, definitions } = spiedTodos();
+    const res = await runExport("todos", new URLSearchParams({ team: "zz" }), "csv", {
       ...deps(db),
-      user: async () => null,
+      definitions,
     });
-    assert.deepEqual(res, { ok: false, status: 401, message: NOT_SIGNED_IN });
-    assert.equal(auditRows(db).length, 0);
+    assert.equal(!res.ok && res.status, 404);
+    assert.equal(calls.load, 0);
   });
 
-  test("unknown export ids: 404 for an admin, still 403 for a non-admin; both audited", async () => {
+  test("a stale admin claim is not admin: the core trusts only the live one", async () => {
+    // sessionUser() sets isAdmin from the account right now; a member whose
+    // admin role was removed arrives here with isAdmin false.
     const db = seed();
-    const a = await runExport("nope", todosParams(), "xlsx", deps(db));
+    seedHidden(db);
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      user: signedIn(db, "u1", { isAdmin: false }),
+    });
+    assert.ok(res.ok);
+    assert.ok(!ids(res.table.rows).includes("grace-private"));
+  });
+
+  test("unknown export ids are a 404; prototype keys are not export ids", async () => {
+    const db = seed();
+    const a = await runExport("nope", todosParams(), "csv", deps(db));
     assert.deepEqual(a, { ok: false, status: 404, message: UNKNOWN_EXPORT, reason: "unknown_export" });
-    const n = await runExport("nope", todosParams(), "xlsx", { ...deps(db), user: nonAdmin(db) });
-    assert.equal(n.ok === false && n.status, 403);
-    // Prototype keys are not export ids.
-    const p = await runExport("constructor", todosParams(), "xlsx", deps(db));
-    assert.equal(p.ok === false && p.status, 404);
-    assert.deepEqual(
-      auditRows(db).map((r) => [r.outcome, r.reason, r.http_status]),
-      [
-        ["refused", "unknown_export", 404],
-        ["refused", "not_admin", 403],
-        ["refused", "unknown_export", 404],
-      ],
-    );
+    const p = await runExport("constructor", todosParams(), "csv", deps(db));
+    assert.equal(!p.ok && p.status, 404);
+  });
+
+  test("bad parameters are a 400", async () => {
+    const db = seed();
+    const res = await runExport("todos", new URLSearchParams({ team: "../x" }), "csv", deps(db));
+    assert.equal(!res.ok && res.status, 400);
+    assert.equal(auditRows(db)[0].reason, "bad_params");
   });
 
   test("a refusal whose audit write fails is still the same refusal", async () => {
-    const res = await runExport("todos", todosParams(), "xlsx", {
-      ...deps(seed()),
-      user: nonAdmin(seed()),
-      record: async () => {
+    const db = seed();
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      user: signedIn(db, "u3"),
+      recordRefused: async () => {
         throw new Error("unavailable");
       },
     });
-    assert.equal(res.ok === false && res.status, 403);
+    assert.equal(!res.ok && res.status, 404);
   });
 });
 
-describe("runExport — to-dos, end to end", () => {
-  test("provenance, normalized rows and one audit row", async () => {
+describe("runExport — scoped to what the viewer can see", () => {
+  test("a member gets exactly their page: no one else's private to-do, no other team's", async () => {
     const db = seed();
-    const res = await runExport("todos", todosParams(), "xlsx", deps(db));
+    seedHidden(db);
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      user: signedIn(db, "u1"),
+    });
     assert.ok(res.ok);
-    const { table } = res;
-    assert.equal(table.fileName, "hpb-pulse_todos_leadership_active_2026-10-16");
-    assert.deepEqual(table.provenance, [
-      { label: "Export", value: "HPB Pulse — To-Dos" },
-      { label: "Exported by", value: "Org Admin <admin@highplainsbank.com>" },
-      { label: "Exported at", value: "2026-10-16 13:05 MDT (Mountain Time, America/Denver)" },
-      { label: "Filters applied", value: "Team: Leadership · View: Active · Owner: All owners" },
-      { label: "Rows", value: "1" },
-      { label: "App version", value: "b0ba525-build1" },
-      { label: "Times", value: "Dates and times are Mountain Time (America/Denver)" },
-    ]);
-    assert.deepEqual(table.rows, [
+    // Owner cards in speaking order (Grace, then Ada); Grace has nothing Ada can see.
+    assert.deepEqual(ids(res.table.rows), ["a", "ada-private"]);
+  });
+
+  test("a leader doesn't see a member's private to-do either", async () => {
+    const db = seed();
+    seedHidden(db);
+    const res = await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      user: signedIn(db, "u2"),
+    });
+    assert.ok(res.ok);
+    assert.deepEqual(ids(res.table.rows), ["grace-private", "a"]);
+  });
+
+  test("an admin still sees what admins see on the page — every private to-do — but never another team's", async () => {
+    const db = seed();
+    seedHidden(db);
+    const res = await runExport("todos", todosParams(), "csv", deps(db));
+    assert.ok(res.ok);
+    assert.deepEqual(ids(res.table.rows), ["grace-private", "a", "ada-private"]);
+  });
+
+  test("every successful export is audited, for every user, never deduped", async () => {
+    const db = seed();
+    const member = { ...deps(db), user: signedIn(db, "u1") };
+    assert.ok((await runExport("todos", todosParams(), "csv", member)).ok);
+    assert.ok((await runExport("todos", todosParams(), "csv", member)).ok);
+    const rows = auditRows(db);
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.equal(row.entity_type, "data_export");
+      assert.equal(row.action, "data_export");
+      assert.equal(row.entity_id, "todos");
+      assert.equal(row.actor_uid, "u1");
+      assert.equal(row.actor_source, "app");
+      assert.equal(row.team_id, "t1");
+      assert.equal(row.outcome, "ok");
+      assert.equal(row.reason, null);
+      assert.equal(row.http_status, 200);
+      assert.deepEqual(row.export, {
+        page: "todos",
+        format: "csv",
+        filters: { Team: "Leadership", View: "Active", Owner: "All owners" },
+        row_count: 1,
+        app_version: "b0ba525-build1",
+        query: null,
+        file_name: "todos-leadership-active-2026-10-16-1305-MT.csv",
+      });
+      assert.ok(row.timestamp, "server timestamp set");
+    }
+  });
+});
+
+describe("runExport — the file", () => {
+  test("normalized rows; the CSV neutralizes injection and names the file", async () => {
+    const db = seed();
+    const res = await runExport("todos", todosParams(), "csv", deps(db));
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, TODOS_COLUMNS.map((c) => c.header));
+    assert.deepEqual(res.table.rows, [
       [
         "Ada Lovelace",
         '=HYPERLINK("https://evil.example","x")',
-        "Call the vendor",
-        { kind: "date", serial: 46315, text: "2026-10-20" },
+        "Call the vendor, today",
+        "2026-10-20",
         "Open",
         "",
         "",
@@ -204,53 +349,44 @@ describe("runExport — to-dos, end to end", () => {
       ],
     ]);
 
-    const audit = auditRows(db);
-    assert.equal(audit.length, 1);
-    const row = audit[0];
-    assert.equal(row.entity_type, "data_export");
-    assert.equal(row.action, "data_export");
-    assert.equal(row.entity_id, "todos");
-    assert.equal(row.actor_uid, "admin");
-    assert.equal(row.actor_source, "app");
-    assert.equal(row.team_id, "t1");
-    assert.equal(row.outcome, "ok");
-    assert.equal(row.reason, null);
-    assert.equal(row.http_status, 200);
-    assert.deepEqual(row.export, {
-      page: "todos",
-      format: "xlsx",
-      filters: { Team: "Leadership", View: "Active", Owner: "All owners" },
-      row_count: 1,
-      app_version: "b0ba525-build1",
-      query: null,
-    });
-    assert.ok(row.timestamp, "server timestamp set");
+    const http = csvResponse(res);
+    assert.equal(http.headers.get("content-type"), "text/csv; charset=utf-8");
+    assert.equal(
+      http.headers.get("content-disposition"),
+      'attachment; filename="todos-leadership-active-2026-10-16-1305-MT.csv"',
+    );
+    const text = Buffer.from(await http.arrayBuffer()).toString("utf8");
+    assert.equal(
+      text,
+      "﻿Owner,To-do,Description,Due,Status,Completed,Archived,Visibility,Weekly focus,Assigned by,To-do ID\r\n" +
+        `Ada Lovelace,"'=HYPERLINK(""https://evil.example"",""x"")","Call the vendor, today",2026-10-20,Open,,,Team,No,Grace Hopper,a\r\n`,
+    );
   });
 
-  test("the spreadsheet neutralizes the injected title and writes the due date as a date", async () => {
-    const res = await runExport("todos", todosParams(), "xlsx", deps(seed()));
-    assert.ok(res.ok);
-    const t = res.table;
-    const [sheet] = readXlsx(
-      writeXlsx({ sheetName: t.title, preamble: t.provenance, headers: t.headers, rows: t.rows }),
+  test("archived view: completed and archived times are Mountain text", async () => {
+    const db = seed();
+    db.seed(
+      "todos",
+      "old",
+      todoDoc({
+        title: "Old",
+        completed_at: new Date("2026-10-01T17:30:00Z"),
+        archived_at: new Date("2026-10-02T03:00:00Z"),
+      }),
     );
-    const dataRow = sheet.rows.at(-1)!;
-    assert.equal(dataRow[1], `'=HYPERLINK("https://evil.example","x")`);
-    assert.equal(dataRow[3], "2026-10-20");
+    const res = await runExport("todos", new URLSearchParams({ team: "t1", archived: "1" }), "csv", deps(db));
+    assert.ok(res.ok);
+    const [row] = res.table.rows;
+    assert.equal(row[5], "2026-10-01 11:30");
+    // 03:00Z on the 2nd is still the 1st in Denver.
+    assert.equal(row[6], "2026-10-01 21:00");
+    assert.equal(res.table.fileName, "todos-leadership-archived-2026-10-16-1305-MT.csv");
   });
 
   test("off-roster user ids are resolved from /users", async () => {
     const db = seed();
-    db.seed("todos", "b", {
-      team_id: "t1",
-      title: "Outside",
-      owner_id: "u3",
-      due_date: null,
-      completed_at: null,
-      visibility: "team",
-      source_rock_id: null,
-    });
-    const res = await runExport("todos", todosParams(), "xlsx", deps(db));
+    db.seed("todos", "b", todoDoc({ title: "Outside", owner_id: "u3" }));
+    const res = await runExport("todos", todosParams(), "csv", deps(db));
     assert.ok(res.ok);
     assert.deepEqual(
       res.table.rows.map((r) => r[0]),
@@ -259,7 +395,7 @@ describe("runExport — to-dos, end to end", () => {
   });
 
   test("the audit write failing means no file", async () => {
-    const res = await runExport("todos", todosParams(), "xlsx", {
+    const res = await runExport("todos", todosParams(), "csv", {
       ...deps(seed()),
       record: async () => {
         throw new Error("unavailable");
@@ -272,7 +408,7 @@ describe("runExport — to-dos, end to end", () => {
     const db = seed();
     bulkTodos(db, EXPORT_ROW_CAP);
     let nameLookups = 0;
-    const res = await runExport("todos", todosParams(), "xlsx", {
+    const res = await runExport("todos", todosParams(), "csv", {
       ...deps(db),
       names: async () => {
         nameLookups += 1;
@@ -293,25 +429,83 @@ describe("runExport — to-dos, end to end", () => {
     assert.equal(rows[0].reason, "over_cap");
     assert.equal(rows[0].http_status, 413);
   });
+});
 
-  test("a missing team is a 404, audited as refused", async () => {
+describe("refused attempts — deduped per (actor, export, reason, 10 minutes)", () => {
+  test("a second identical refusal in the window writes no new row; a different reason does", async () => {
     const db = seed();
-    const res = await runExport("todos", new URLSearchParams({ team: "zz" }), "xlsx", deps(db));
-    assert.equal(res.ok === false && res.status, 404);
-    const [row] = auditRows(db);
-    assert.equal(row.outcome, "refused");
-    assert.equal(row.reason, "not_found");
-    assert.equal(row.http_status, 404);
-    assert.equal((row.export as { query: string }).query, "team=zz");
+    const outsider = { ...deps(db), user: signedIn(db, "u3") };
+    await runExport("todos", todosParams(), "csv", outsider);
+    await runExport("todos", todosParams(), "csv", outsider);
+    // Different team, same page, same reason: still the same key.
+    await runExport("todos", new URLSearchParams({ team: "zz" }), "csv", outsider);
+    assert.equal(auditRows(db).length, 1);
+
+    await runExport("todos", new URLSearchParams({ team: "../x" }), "csv", outsider);
+    assert.deepEqual(
+      auditRows(db).map((r) => r.reason).sort(),
+      ["bad_params", "no_page_access"],
+    );
   });
 
-  test("bad parameters are a 400, audited as refused", async () => {
+  test("a different person, or the next window, gets its own row", async () => {
     const db = seed();
-    const res = await runExport("todos", new URLSearchParams({ team: "../x" }), "xlsx", deps(db));
-    assert.equal(res.ok === false && res.status, 400);
+    await runExport("todos", todosParams(), "csv", { ...deps(db), user: signedIn(db, "u3") });
+    await runExport("todos", todosParams(), "csv", { ...deps(db), user: signedIn(db, "u9") });
+    assert.equal(auditRows(db).length, 2);
+    const later = new Date(NOW.getTime() + REFUSED_DEDUPE_MS);
+    await runExport("todos", todosParams(), "csv", {
+      ...deps(db),
+      user: signedIn(db, "u3"),
+      now: () => later,
+    });
+    assert.equal(auditRows(db).length, 3);
+  });
+
+  test("anonymous attempts and made-up export ids share one key each", async () => {
+    const db = seed();
+    const anon = { ...deps(db), user: async () => null };
+    await runExport("todos", todosParams(), "csv", anon);
+    await runExport("todos", todosParams(), "csv", anon);
+    assert.equal(auditRows(db).length, 1);
+    for (const id of ["nope", "x1", "x2", "constructor"]) {
+      await runExport(id, todosParams(), "csv", { ...deps(db), user: signedIn(db, "u1") });
+    }
+    const unknown = auditRows(db).filter((r) => r.reason === "unknown_export");
+    assert.equal(unknown.length, 1);
+    assert.equal(unknown[0].entity_id, "nope");
+  });
+
+  test("the doc id is a hash of the key plus the window; URL input never lands in it raw", () => {
+    const id = refusedAuditDocId("u1", "todos", "no_page_access", NOW);
+    assert.equal(id, refusedAuditDocId("u1", "todos", "no_page_access", new Date(NOW.getTime() + 1000)));
+    assert.notEqual(id, refusedAuditDocId("u1", "todos", "bad_params", NOW));
+    assert.notEqual(id, refusedAuditDocId(null, "todos", "no_page_access", NOW));
+    assert.match(refusedAuditDocId("a/b", "../..", "x", NOW), /^data_export_refused__[0-9a-f]{40}__\d+$/);
+  });
+
+  test("recordRefusedExport says whether it wrote", async () => {
+    const db = new FakeFirestore();
+    const input = {
+      actorUid: "u1",
+      exportId: "todos",
+      exportKey: "todos",
+      teamId: null,
+      format: "csv" as const,
+      filters: [],
+      rowCount: null,
+      appVersion: "local build",
+      reason: "bad_params",
+      httpStatus: 400,
+      query: "q".repeat(5000),
+      now: NOW,
+    };
+    assert.equal(await recordRefusedExport(db.asFirestore(), input), true);
+    assert.equal(await recordRefusedExport(db.asFirestore(), input), false);
     const [row] = auditRows(db);
-    assert.equal(row.reason, "bad_params");
-    assert.equal(row.http_status, 400);
+    assert.equal(row.outcome, "refused");
+    assert.equal(row.dedupe_window, "2026-10-16T19:00:00.000Z");
+    assert.equal((row.export as { query: string }).query.length, 1000);
   });
 });
 
@@ -323,6 +517,7 @@ describe("row cap — early", () => {
       id: "things",
       title: "Things",
       parseParams: () => null,
+      authorize: async () => null,
       async load({ db }) {
         const base = db.collection("things") as unknown as Query;
         const spied = {
@@ -354,7 +549,7 @@ describe("row cap — early", () => {
     const db = seed();
     for (let i = 0; i < EXPORT_ROW_CAP + 50; i++) db.seed("things", `x${i}`, {});
     const counters = { subReads: 0 } as { subReads: number; limit?: number };
-    const res = await runExport("things", new URLSearchParams(), "xlsx", {
+    const res = await runExport("things", new URLSearchParams(), "csv", {
       ...deps(db),
       definitions: cappedDef(counters),
     });
@@ -374,175 +569,12 @@ describe("row cap — early", () => {
     const db = seed();
     for (let i = 0; i < EXPORT_ROW_CAP; i++) db.seed("things", `x${i}`, {});
     const counters = { subReads: 0 };
-    const res = await runExport("things", new URLSearchParams(), "xlsx", {
+    const res = await runExport("things", new URLSearchParams(), "csv", {
       ...deps(db),
       definitions: cappedDef(counters),
     });
     assert.ok(res.ok);
     assert.equal(res.table.rows.length, EXPORT_ROW_CAP);
-  });
-});
-
-describe("print door — single-use token", () => {
-  async function mint(db: FakeFirestore, extra: Partial<RunExportDeps> = {}, params = todosParams()) {
-    const started = await startPrintExport("todos", params, { ...deps(db), ...extra });
-    assert.ok(started.ok, "minted");
-    return started.token;
-  }
-
-  test("a valid token renders once; the export is audited as print", async () => {
-    const db = seed();
-    const token = await mint(db);
-    // Minting reads nothing and audits nothing: the export is the render.
-    assert.equal(auditRows(db).length, 0);
-
-    const first = await runPrintExport("todos", token, { crossSite: false }, deps(db));
-    assert.ok(first.ok);
-    assert.equal(printPageAction(first).kind, "sheet");
-    const [row] = auditRows(db);
-    assert.equal(row.outcome, "ok");
-    assert.equal((row.export as { format: string }).format, "print");
-
-    const again = await runPrintExport("todos", token, { crossSite: false }, deps(db));
-    assert.deepEqual(again, {
-      ok: false,
-      status: 410,
-      message: PRINT_LINK_INVALID,
-      reason: "print_token_invalid",
-    });
-    assert.deepEqual(printPageAction(again), { kind: "message", message: PRINT_LINK_INVALID });
-    assert.equal(auditRows(db).at(-1)!.reason, "print_token_invalid");
-  });
-
-  test("the view comes from the token, not the print URL", async () => {
-    const db = seed();
-    const token = await mint(db, {}, new URLSearchParams({ team: "t1", archived: "1" }));
-    const res = await runPrintExport("todos", token, { crossSite: false }, deps(db));
-    assert.ok(res.ok);
-    assert.equal(
-      res.table.provenance.find((l) => l.label === "Filters applied")?.value,
-      "Team: Leadership · View: Archived · Owner: All owners",
-    );
-  });
-
-  test("only the token's hash is stored, and spending it removes it", async () => {
-    const db = seed();
-    const token = await mint(db);
-    const stored = db.docsIn(PRINT_TOKEN_COLLECTION);
-    assert.equal(stored.length, 1);
-    assert.notEqual(stored[0].id, token);
-    assert.ok(!JSON.stringify(stored[0].data).includes(token));
-    assert.equal(stored[0].data.uid, "admin");
-    assert.equal(stored[0].data.export_id, "todos");
-    assert.equal(stored[0].data.params, "team=t1");
-    await runPrintExport("todos", token, { crossSite: false }, deps(db));
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 0);
-  });
-
-  test("missing, garbage and expired tokens are refused and audited", async () => {
-    const db = seed();
-    const missing = await runPrintExport("todos", null, { crossSite: false }, deps(db));
-    assert.equal(missing.ok === false && missing.reason, "print_token_missing");
-    const junk = await runPrintExport("todos", "not-a-token", { crossSite: false }, deps(db));
-    assert.equal(junk.ok === false && junk.reason, "print_token_invalid");
-
-    const token = await mint(db);
-    const late = new Date(NOW.getTime() + PRINT_TOKEN_TTL_MS + 1);
-    const expired = await runPrintExport("todos", token, { crossSite: false }, {
-      ...deps(db),
-      now: () => late,
-    });
-    assert.equal(expired.ok === false && expired.status, 410);
-    assert.equal(expired.ok === false && expired.reason, "print_token_expired");
-    // Burned, not just rejected.
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 0);
-
-    assert.deepEqual(
-      auditRows(db).map((r) => [r.outcome, r.reason, r.http_status, (r.export as { query: unknown }).query]),
-      [
-        ["refused", "print_token_missing", 410, null],
-        ["refused", "print_token_invalid", 410, null],
-        ["refused", "print_token_expired", 410, null],
-      ],
-    );
-  });
-
-  test("a token works only for the admin and the export it was minted for", async () => {
-    const db = seed();
-    const other = { ...todosExport, id: "other" } as unknown as ExportDefinition<never, never>;
-    const definitions = {
-      todos: todosExport as unknown as ExportDefinition<never, never>,
-      other,
-    };
-    const t1 = await mint(db, { definitions });
-    const otherAdmin = await runPrintExport("todos", t1, { crossSite: false }, {
-      ...deps(db),
-      definitions,
-      user: admin(db, "admin2"),
-    });
-    assert.equal(otherAdmin.ok === false && otherAdmin.reason, "print_token_mismatch");
-
-    const t2 = await mint(db, { definitions });
-    const otherExport = await runPrintExport("other", t2, { crossSite: false }, {
-      ...deps(db),
-      definitions,
-    });
-    assert.equal(otherExport.ok === false && otherExport.reason, "print_token_mismatch");
-  });
-
-  test("a non-admin gets the 404, can't mint, and doesn't spend an admin's token", async () => {
-    const db = seed();
-    const token = await mint(db);
-    const res = await runPrintExport("todos", token, { crossSite: false }, {
-      ...deps(db),
-      user: nonAdmin(db),
-    });
-    assert.equal(res.ok === false && res.status, 403);
-    assert.deepEqual(printPageAction(res), { kind: "not_found" });
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 1);
-
-    const minted = await startPrintExport("todos", todosParams(), { ...deps(db), user: nonAdmin(db) });
-    assert.equal(minted.ok === false && minted.status, 403);
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 1);
-
-    assert.deepEqual(
-      auditRows(db).map((r) => [r.reason, (r.export as { format: string }).format]),
-      [
-        ["not_admin", "print"],
-        ["not_admin", "print"],
-      ],
-    );
-  });
-
-  test("a cross-site navigation is refused without spending the token", async () => {
-    const db = seed();
-    const token = await mint(db);
-    const res = await runPrintExport("todos", token, { crossSite: true }, deps(db));
-    assert.equal(res.ok === false && res.reason, "cross_site");
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 1);
-    const ok = await runPrintExport("todos", token, { crossSite: false }, deps(db));
-    assert.ok(ok.ok);
-  });
-
-  test("minting refuses bad parameters (audited) and an unknown page", async () => {
-    const db = seed();
-    const bad = await startPrintExport("todos", new URLSearchParams({ team: "../x" }), deps(db));
-    assert.equal(bad.ok === false && bad.status, 400);
-    const unknown = await startPrintExport("nope", todosParams(), deps(db));
-    assert.equal(unknown.ok === false && unknown.status, 404);
-    assert.equal(db.docsIn(PRINT_TOKEN_COLLECTION).length, 0);
-    assert.deepEqual(
-      auditRows(db).map((r) => r.reason),
-      ["bad_params", "unknown_export"],
-    );
-  });
-
-  test("no session at the print door → login", async () => {
-    const res = await runPrintExport("todos", "x", { crossSite: false }, {
-      ...deps(seed()),
-      user: async () => null,
-    });
-    assert.deepEqual(printPageAction(res), { kind: "login" });
   });
 });
 
@@ -553,34 +585,31 @@ describe("recordDataExport", () => {
       actorUid: "a",
       exportId: "todos",
       teamId: null,
-      format: "xlsx",
+      format: "csv",
       filters: [],
       rowCount: 0,
       appVersion: "local build",
+      fileName: "todos-2026-10-16-1305-MT.csv",
     };
     await recordDataExport(db.asFirestore(), input);
     const rows = auditRows(db);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].outcome, "ok");
+    assert.equal((rows[0].export as { file_name: string }).file_name, "todos-2026-10-16-1305-MT.csv");
   });
 
-  test("refused rows truncate URL-shaped input", async () => {
+  test("URL-shaped ids are truncated", async () => {
     const db = new FakeFirestore();
     await recordDataExport(db.asFirestore(), {
       actorUid: "a",
       exportId: "x".repeat(500),
       teamId: null,
-      format: "print",
+      format: "csv",
       filters: [],
       rowCount: null,
       appVersion: "local build",
-      outcome: "refused",
-      reason: "unknown_export",
-      httpStatus: 404,
-      query: "q".repeat(5000),
     });
     const [row] = auditRows(db);
     assert.equal((row.entity_id as string).length, 128);
-    assert.equal((row.export as { query: string }).query.length, 1000);
   });
 });

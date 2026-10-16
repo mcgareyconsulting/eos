@@ -15,6 +15,7 @@
 
 import type { Firestore } from "firebase-admin/firestore";
 import { accessFor, type Viewer } from "@/lib/access";
+import { checkTeamAccess } from "@/lib/firebase/team-access";
 import type { TodoDoc } from "@/lib/firestore-types";
 import { reconcileSpeakingOrder } from "@/lib/l10/speaking-order";
 import { byDue, groupByOwner } from "@/lib/todo-board-order";
@@ -39,8 +40,8 @@ export type TodoExportRow = TodoDoc & { id: string };
 
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
-function refuse(status: number, message: string): ExportRefusal {
-  return { ok: false, status, message };
+function refuse(status: number, message: string, reason?: string): ExportRefusal {
+  return { ok: false, status, message, ...(reason ? { reason } : {}) };
 }
 
 export function parseTodosParams(sp: URLSearchParams): TodosExportParams | ExportRefusal {
@@ -116,50 +117,44 @@ export function todosViewRows(input: {
 }
 
 export const TODOS_COLUMNS: readonly ExportColumn<TodoExportRow>[] = [
-  { key: "owner", header: "Owner", kind: "user", value: (t) => t.owner_id, width: 22 },
-  { key: "title", header: "To-do", kind: "text", value: (t) => t.title, width: 48 },
+  { key: "owner", header: "Owner", kind: "user", value: (t) => t.owner_id },
+  { key: "title", header: "To-do", kind: "text", value: (t) => t.title },
   {
     key: "description",
     header: "Description",
     kind: "richtext",
     value: (t) => t.description,
-    width: 60,
   },
-  { key: "due_date", header: "Due", kind: "date", value: (t) => t.due_date, width: 12 },
+  { key: "due_date", header: "Due", kind: "date", value: (t) => t.due_date },
   {
     key: "status",
     header: "Status",
     kind: "text",
     value: (t) => (t.completed_at ? "Done" : "Open"),
-    width: 8,
   },
   {
     key: "completed_at",
     header: "Completed",
     kind: "datetime",
     value: (t) => t.completed_at,
-    width: 20,
   },
   {
     key: "archived_at",
     header: "Archived",
     kind: "datetime",
     value: (t) => t.archived_at,
-    width: 20,
   },
   {
     key: "visibility",
     header: "Visibility",
     kind: "text",
     value: (t) => (t.visibility === "private" ? "Private" : "Team"),
-    width: 10,
   },
   {
     key: "weekly_focus",
     header: "Weekly focus",
     kind: "boolean",
     value: (t) => t.weekly_focus === true,
-    width: 12,
   },
   {
     key: "assigned_by",
@@ -167,9 +162,8 @@ export const TODOS_COLUMNS: readonly ExportColumn<TodoExportRow>[] = [
     kind: "user",
     // lib/follow.ts assignerOf: legacy docs fall back to the creator.
     value: (t) => t.assigned_by ?? t.created_by ?? null,
-    width: 22,
   },
-  { key: "id", header: "To-do ID", kind: "text", value: (t) => t.id, width: 24 },
+  { key: "id", header: "To-do ID", kind: "text", value: (t) => t.id },
 ];
 
 async function loadRoster(db: Firestore, teamId: string): Promise<Member[]> {
@@ -191,13 +185,16 @@ export const todosExport: ExportDefinition<TodoExportRow, TodosExportParams> = {
   title: "To-Dos",
   parseParams: parseTodosParams,
   columns: TODOS_COLUMNS,
+  // The page's gate, requireTeamAccess: on the roster or an org admin, and
+  // the team exists. A non-member gets the same answer as a team that
+  // doesn't exist, before any to-do is read.
+  async authorize({ db, uid, viewer }, p) {
+    const access = await checkTeamAccess(db, p.teamId, uid, viewer.isAdmin);
+    return access.ok ? null : refuse(404, "Team not found.", "no_page_access");
+  },
   async load({ db, uid, viewer }, p): Promise<LoadedView<TodoExportRow> | ExportRefusal> {
     const teamSnap = await db.collection("teams").doc(p.teamId).get();
-    // requireTeamAccess: a non-member who is not an admin gets the same
-    // answer as a team that doesn't exist.
-    if (!teamSnap.exists || (!viewer.isAdmin && !viewer.teamIds.has(p.teamId))) {
-      return refuse(404, "Team not found.");
-    }
+    if (!teamSnap.exists) return refuse(404, "Team not found.");
     const team = teamSnap.data() ?? {};
     const teamName = (team.name as string) ?? "Team";
 

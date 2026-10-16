@@ -496,14 +496,12 @@ export function TodosBoard({
               revoked={tasksStatus.revoked}
               showHint={false}
             />
-            {/* Admin export of exactly this view (docs/EXPORT.md). The
-                server re-checks the role; hiding it is only convenience. */}
-            {isAdmin && (
-              <ExportControl
-                exportId="todos"
-                params={todosExportParams({ teamId, showArchived, ownerFilter })}
-              />
-            )}
+            {/* CSV of exactly this view, for everyone, holding what this
+                viewer can see (docs/EXPORT.md). The server re-checks. */}
+            <ExportControl
+              exportId="todos"
+              params={todosExportParams({ teamId, showArchived, ownerFilter })}
+            />
           </div>
         }
         filter={<OwnerFilter members={members} currentUserId={userId} />}

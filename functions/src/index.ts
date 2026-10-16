@@ -167,9 +167,7 @@ async function recordAuditEvent(
 // Copying their before/after snapshots would move those secrets into a log
 // that admins can read (firestore.rules) and that keeps them forever
 // (append-only, surviving disconnect). Neither collection is a business
-// record, so skip them entirely. export_print_tokens (single-use print-view
-// tokens, lib/export/print-token.ts) is the same kind of thing: the export
-// it gates writes its own data_export row.
+// record, so skip them entirely.
 //
 // DERIVED GUARD: notifications are per-user inbox rows fanned out *from*
 // writes this log already captures (a comment, a to-do completion, a
@@ -181,7 +179,6 @@ const AUDIT_EXCLUDED_COLLECTIONS = new Set([
   "audit_log",
   "google_tasks_connections",
   "oauth_csrf_states",
-  "export_print_tokens",
   "notifications",
 ]);
 

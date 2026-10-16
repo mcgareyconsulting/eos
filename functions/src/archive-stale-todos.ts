@@ -1,6 +1,8 @@
 /**
- * Monday ~3:00 America/Chicago — archive pure to-dos / issues / discussed
- * headlines closed before this week's Monday 00:00.
+ * Monday ~3:00 Mountain (APP_TIME_ZONE, America/Denver — the bank's clock)
+ * — archive pure to-dos / issues / discussed headlines closed before this
+ * week's Monday 00:00 Mountain. The schedule and the cutoff read the same
+ * constant, so they cannot drift apart.
  *
  * Rocks are NOT swept: they are manual-archive only (client decision,
  * feedback row 59) so Done rocks stay visible through the quarter.
@@ -18,8 +20,9 @@ import {
   selectTodosCompletedBeforeWeek,
 } from "../../lib/todos-archive";
 import { autoArchiveActivity } from "../../lib/activity";
+import { APP_TIME_ZONE } from "../../lib/time-zone";
 
-const TIME_ZONE = "America/Chicago";
+const TIME_ZONE = APP_TIME_ZONE;
 const BATCH_SIZE = 400;
 
 function adminDb() {

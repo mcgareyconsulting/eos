@@ -243,9 +243,11 @@ firebase deploy --only functions --project "$PROJECT_ID"
 firebase deploy --only functions:archiveStaleTodos --project "$PROJECT_ID"
 ```
 
-**`archiveStaleTodos`:** scheduled `0 3 * * 1` America/Chicago. Archives
-pure to-dos, closed issues and discussed headlines from before this week's
-Monday 00:00 local. Rocks are manual-archive only and never swept. Param
+**`archiveStaleTodos`:** scheduled `0 3 * * 1` Mountain, i.e. Monday ~3:00
+Mountain (`APP_TIME_ZONE` in `lib/time-zone.ts`, America/Denver — the bank's
+clock). Archives pure to-dos, closed issues and discussed headlines from
+before this week's Monday 00:00 Mountain; the schedule and the cutoff read
+the same constant. Rocks are manual-archive only and never swept. Param
 `FIRESTORE_DATABASE_ID` (see `functions/.env.hpb-eos-prod` →
 `hpb-eos-prod-db`). **All** functions in this codebase — including audit
 triggers — must declare that named database; the project has **no**

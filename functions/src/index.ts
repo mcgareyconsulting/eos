@@ -36,7 +36,7 @@ import {
 import { firestoreDatabaseId } from "./config";
 import { resolveAuditActor, type AuditAction } from "../../lib/audit-actor";
 
-// Re-export scheduled todo archive (Monday 3am America/Chicago).
+// Re-export scheduled todo archive (Monday 3am Mountain — APP_TIME_ZONE).
 export { archiveStaleTodos } from "./archive-stale-todos";
 
 // Re-export scheduled Firebase Auth user export (Sunday 4am America/Chicago).

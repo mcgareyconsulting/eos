@@ -207,8 +207,8 @@ const WEEKDAY_TO_MONDAY_OFFSET: Record<string, number> = {
 
 /**
  * Epoch ms for Monday 00:00:00 in `timeZone` of the week containing `now`.
- * Used by the Cloud Scheduler job (America/Chicago) so "last week" matches
- * the bank's calendar, not the container's UTC clock.
+ * Used by the Monday sweep with APP_TIME_ZONE (lib/time-zone.ts, Mountain) so
+ * "last week" matches the bank's calendar, not the container's UTC clock.
  */
 export function mondayMidnightMsInTimeZone(
   timeZone: string,

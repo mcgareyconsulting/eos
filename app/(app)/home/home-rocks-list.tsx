@@ -3,7 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { formatDateShort, relativeDueLabel } from "@/lib/dates";
+import {
+  dueDateShort,
+  formatDateShort,
+  relativeDueLabel,
+} from "@/lib/dates";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
@@ -299,7 +303,7 @@ export function HomeRocksList({
                               dueToneClass(m.due_date),
                             )}
                           >
-                            {m.due_date ? formatDateShort(m.due_date) : "—"}
+                            {dueDateShort(m.due_date)}
                           </div>
                           <div className="justify-self-end">
                             {m.due_date ? (

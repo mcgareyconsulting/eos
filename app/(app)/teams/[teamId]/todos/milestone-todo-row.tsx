@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatDateOnly, formatDateShort } from "@/lib/dates";
+import { dueDateShort, formatDateOnly } from "@/lib/dates";
 import { dueToneClass } from "@/lib/due";
 import { cn } from "@/lib/utils";
 import { TodoCheckbox } from "./todo-row";
@@ -90,7 +90,7 @@ export function MilestoneTodoRow({
             dueToneClass(milestone.due_date, milestone.completed),
           )}
         >
-          {formatDateShort(milestone.due_date)}
+          {dueDateShort(milestone.due_date, milestone.completed)}
         </div>
       </div>
 

@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Archive, Lock, Pencil, Star, Trash2 } from "lucide-react";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
-import { formatDateShort } from "@/lib/dates";
-import { dueToneClass } from "@/lib/due";
+import { dueDateShort } from "@/lib/dates";
+import { TODO_DUE_SOON_DAYS, dueToneClass } from "@/lib/due";
 import { WeeklyFocusPill } from "@/components/weekly-focus-pill";
 import { pendingArchiveLabel } from "@/lib/todos-archive";
 import { TodoCheckbox } from "./todo-row";
@@ -236,10 +236,15 @@ export function TodoListRow({
             "w-14 shrink-0 pt-1 text-right text-xs font-semibold tabular-nums",
             archived
               ? "text-zinc-400 dark:text-zinc-500"
-              : dueToneClass(todo.due_date, todo.completed),
+              : dueToneClass(
+                  todo.due_date,
+                  todo.completed,
+                  new Date(),
+                  TODO_DUE_SOON_DAYS,
+                ),
           )}
         >
-          {formatDateShort(todo.due_date)}
+          {dueDateShort(todo.due_date, todo.completed || archived)}
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"

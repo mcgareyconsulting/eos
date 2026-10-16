@@ -6,7 +6,11 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { RichText } from "@/components/rich-text";
 import { hasRichMarkup } from "@/lib/rich-text";
-import { formatDateOnly, formatDateShort, relativeDueLabel } from "@/lib/dates";
+import {
+  dueDateShort,
+  formatDateOnly,
+  relativeDueLabel,
+} from "@/lib/dates";
 import type { RockHeadline } from "@/lib/access/rock";
 import { StatusPill, StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
@@ -518,7 +522,7 @@ export function RockBlockRow({
                           dueToneClass(m.due_date, m.completed),
                         )}
                       >
-                        {formatDateShort(m.due_date)}
+                        {dueDateShort(m.due_date, m.completed)}
                       </span>
                     </label>
                   </li>

@@ -4,7 +4,11 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { richTextToPlain } from "@/lib/rich-text";
-import { formatDateShort, relativeDueLabel } from "@/lib/dates";
+import {
+  dueDateShort,
+  formatDateShort,
+  relativeDueLabel,
+} from "@/lib/dates";
 import { TodoCheckbox } from "../todos/todo-row";
 import { dueToneClass, urgencyChipClass } from "@/lib/due";
 import { ownerLabel } from "@/lib/user-name";
@@ -144,7 +148,7 @@ export function MilestoneChecklist({
                 dueToneClass(m.due_date, m.completed),
               )}
             >
-              {formatDateShort(m.due_date)}
+              {dueDateShort(m.due_date, m.completed)}
             </span>
           </div>
           {panel(

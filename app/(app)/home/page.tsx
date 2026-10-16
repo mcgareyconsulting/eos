@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import type { Firestore } from "firebase-admin/firestore";
-import { formatDateShort } from "@/lib/dates";
-import { dueToneClass } from "@/lib/due";
+import { dueDateShort } from "@/lib/dates";
+import { TODO_DUE_SOON_DAYS, dueToneClass } from "@/lib/due";
 import { chunkForInQuery } from "@/lib/firestore-in";
 import {
   loadMilestonesForRocks,
@@ -700,10 +700,10 @@ function TodoRowLink({ todo, pill }: { todo: TodoRow; pill?: string }) {
       <span
         className={cn(
           "text-[11.5px] font-bold tabular-nums whitespace-nowrap",
-          dueToneClass(todo.due_date),
+          dueToneClass(todo.due_date, false, new Date(), TODO_DUE_SOON_DAYS),
         )}
       >
-        {todo.due_date ? formatDateShort(todo.due_date) : "—"}
+        {dueDateShort(todo.due_date)}
       </span>
     </Link>
   );

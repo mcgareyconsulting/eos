@@ -131,6 +131,19 @@ export function relativeDueLabel(
   return `in ${Math.round(n / 7)}w`;
 }
 
+// The compact date for a due column that `dueToneClass` colours: "Today" when
+// it is due today (so the blue due-today tone is never the only signal),
+// otherwise `formatDateShort`. Done items keep their date — their tone is
+// muted, so there is no "today" urgency to call out.
+export function dueDateShort(
+  due: string | null | undefined,
+  done = false,
+  from: Date = new Date(),
+): string {
+  if (due && !done && daysUntil(due, from) === 0) return "Today";
+  return formatDateShort(due);
+}
+
 // "2026-08-12" → "Aug 12" (compact milestone dates in lists).
 export function formatDateShort(d: string | null | undefined): string {
   if (!d) return "—";

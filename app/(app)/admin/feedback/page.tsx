@@ -1,23 +1,43 @@
 import { requireAdmin } from "@/lib/firebase/teams";
-import { listFeedbackItems } from "@/lib/firebase/feedback";
+import { getFeedbackItem, listFeedbackActivity, listFeedbackItems } from "@/lib/firebase/feedback";
+import { loadUserNames } from "@/lib/firebase/user-names";
+import { SYSTEM_ACTOR_ID } from "@/lib/activity";
+import { isFeedbackDocId } from "@/lib/feedback/model";
 import { AdminHeader } from "../admin-header";
+import type { FeedbackDetailData } from "./feedback-detail-modal";
 import { FeedbackTracker } from "./feedback-tracker";
 
 /**
  * Feedback tracker (ROADMAP N73): HPB staff feedback on the app, worked by
  * the org admins. Admin-only — requireAdmin() 404s anyone else, as on every
- * admin page, and listFeedbackItems() checks again.
+ * admin page, and every read below checks again.
  *
- * `?view=board` shows the kanban; the list is the default.
+ *   ?view=board   the kanban; the list is the default
+ *   ?item=fb-037  that item open in the detail modal (deep-linkable); its
+ *                 activity and actor names are loaded here
  */
 export default async function AdminFeedbackPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  await requireAdmin();
+  const { db } = await requireAdmin();
   const [items, sp] = await Promise.all([listFeedbackItems(), searchParams]);
   const view = sp.view === "board" ? "board" : "list";
+  const itemParam = typeof sp.item === "string" && sp.item !== "" ? sp.item : null;
+
+  let detail: FeedbackDetailData | null = null;
+  if (itemParam && isFeedbackDocId(itemParam)) {
+    const item = await getFeedbackItem(itemParam);
+    if (item) {
+      const activity = await listFeedbackActivity(item.id);
+      const names = await loadUserNames(
+        db,
+        activity.map((a) => a.actor_uid).filter((uid) => uid !== SYSTEM_ACTOR_ID),
+      );
+      detail = { item, activity, actorNames: Object.fromEntries(names) };
+    }
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -25,7 +45,7 @@ export default async function AdminFeedbackPage({
         title="Feedback tracker"
         blurb="Reported problems and requests from HPB staff, seeded from the HPB feedback spreadsheet. Admins only."
       />
-      <FeedbackTracker items={items} view={view} />
+      <FeedbackTracker items={items} view={view} itemParam={itemParam} detail={detail} />
     </div>
   );
 }

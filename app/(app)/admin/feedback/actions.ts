@@ -13,9 +13,9 @@ import {
 // are ./action-core.ts → lib/firebase/feedback.ts (requireAdmin). This file
 // only refreshes the pages after a write.
 
-function revalidateFeedback(id?: string) {
+// One page: the detail is a modal on it (?item=).
+function revalidateFeedback() {
   revalidatePath("/admin/feedback");
-  if (id) revalidatePath(`/admin/feedback/${id}`);
 }
 
 /** Save the detail page's Edit form: the changed fields + updated_at as opened. */
@@ -25,14 +25,14 @@ export async function saveFeedbackEdits(
   openedUpdatedAt: string | null,
 ): Promise<FeedbackSaveResult> {
   const result = await saveFeedbackEditsCore(id, form, openedUpdatedAt);
-  if (result.ok && result.changed.length > 0) revalidateFeedback(id);
+  if (result.ok && result.changed.length > 0) revalidateFeedback();
   return result;
 }
 
 /** Change one item's status (the board's select). */
 export async function setFeedbackStatus(id: string, status: unknown): Promise<FeedbackSaveResult> {
   const result = await setFeedbackStatusCore(id, status);
-  if (result.ok && result.changed.length > 0) revalidateFeedback(id);
+  if (result.ok && result.changed.length > 0) revalidateFeedback();
   return result;
 }
 

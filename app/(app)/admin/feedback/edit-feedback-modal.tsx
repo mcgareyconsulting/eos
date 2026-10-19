@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 import {
   DiscardChangesDialog,
   ModalBody,
@@ -14,15 +15,19 @@ import {
   draftChanged,
   useDiscardGuard,
 } from "@/components/ui/modal";
-import { entityHeaderButtonClass } from "@/components/entity-page-header";
 import { SHIPPED_STATUSES, changedEditFields, type FeedbackEditForm } from "@/lib/feedback/edit";
 import { FEEDBACK_STATUSES, FEEDBACK_STATUS_LABELS, type FeedbackStatus } from "@/lib/feedback/types";
-import { saveFeedbackEdits } from "../actions";
-import { Field, Textarea } from "../form-fields";
+
+const STATUS_OPTIONS = FEEDBACK_STATUSES.map((s) => ({ value: s, label: FEEDBACK_STATUS_LABELS[s] }));
+import { saveFeedbackEdits } from "./actions";
+import { Field, Textarea } from "./form-fields";
 
 /**
- * Edit a feedback item's working fields. The reporter's comment, the number
- * and the spreadsheet thread are not here: they are never edited.
+ * Edit a feedback item's working fields — its own dialog over the detail
+ * modal, as Issues and Rocks do. Portalled after the detail, so it is the
+ * topmost dialog: Escape and the backdrop answer it (through its discard
+ * guard), and closing it lands back on the detail. The reporter's comment,
+ * the number, the spreadsheet thread and the PRs are not here.
  */
 export function EditFeedbackButton({
   id,
@@ -84,28 +89,31 @@ export function EditFeedbackButton({
 
   return (
     <>
-      <button type="button" onClick={openForm} className={entityHeaderButtonClass}>
-        <Pencil className="h-4 w-4" />
+      <Button variant="outline" onClick={openForm} className="h-7 px-2.5 text-xs">
+        <Pencil className="h-3.5 w-3.5" aria-hidden />
         Edit
-      </button>
+      </Button>
       <ModalShell
         open={open}
         onClose={guard.requestClose}
         dismissible={!guard.asking}
         ariaLabel={`Edit ${label}`}
         size="3xl"
+        portal
+        escape="topmost"
       >
         <ModalHeader title={`Edit ${label}`} onClose={guard.requestClose} />
         <ModalBody as="form" onSubmit={submit}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Status" htmlFor="fb-edit-status">
-              <Select id="fb-edit-status" value={draft.status} onChange={set("status")} autoFocus>
-                {FEEDBACK_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {FEEDBACK_STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </Select>
+              <SelectMenu
+                id="fb-edit-status"
+                variant="field"
+                options={STATUS_OPTIONS}
+                value={draft.status as FeedbackStatus}
+                onChange={(v) => setDraft((prev) => ({ ...prev, status: v }))}
+                autoFocus
+              />
             </Field>
             <Field
               label="Shipped"
@@ -157,9 +165,6 @@ export function EditFeedbackButton({
           </div>
           <Field label="Follow-ups" htmlFor="fb-edit-follow-ups" hint="One per line.">
             <Textarea id="fb-edit-follow-ups" rows={3} value={draft.follow_ups} onChange={set("follow_ups")} />
-          </Field>
-          <Field label="PRs" htmlFor="fb-edit-prs" hint="PR numbers, separated by commas or spaces, e.g. 40, 86.">
-            <Input id="fb-edit-prs" value={draft.prs} onChange={set("prs")} inputMode="numeric" />
           </Field>
           <Field label="Evidence" htmlFor="fb-edit-evidence" hint="One per line: PRs, file paths, roadmap rows.">
             <Textarea id="fb-edit-evidence" rows={4} value={draft.evidence} onChange={set("evidence")} />

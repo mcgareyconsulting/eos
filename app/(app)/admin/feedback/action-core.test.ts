@@ -100,12 +100,13 @@ describe("saveFeedbackEditsCore", () => {
     const res = await saveFeedbackEditsCore(
       id,
       { ...formFor(db, id), status: "answered", client_resolution: "Answered in the L10.", prs: "40" },
+      // ^ prs is not a form field (PRs stay in the data, unedited in the UI): ignored.
       null,
       admin(db),
     );
-    assert.deepEqual(res, { ok: true, changed: ["status", "client_resolution", "prs"] });
+    assert.deepEqual(res, { ok: true, changed: ["status", "client_resolution"] });
     assert.equal(item(db, id).status, "answered");
-    assert.deepEqual(item(db, id).prs, [40]);
+    assert.deepEqual(item(db, id).prs, []);
     assert.equal(item(db, id).updated_by, "admin-1");
     assert.equal(item(db, id).shipped_at, null, "answered is not a shipped status");
     const rows = activity(db, id);
@@ -114,7 +115,7 @@ describe("saveFeedbackEditsCore", () => {
     assert.equal(rows[0].from, "follow_up");
     assert.equal(rows[0].to, "answered");
     assert.equal(rows[0].actor_uid, "admin-1");
-    assert.deepEqual(rows[0].fields, ["client_resolution", "prs"]);
+    assert.deepEqual(rows[0].fields, ["client_resolution"]);
   });
 
   test("moving to Completed with no shipped date fills today (Denver)", async () => {
@@ -141,7 +142,7 @@ describe("saveFeedbackEditsCore", () => {
     const id = seed(db, 5);
     for (const [patch, re] of [
       [{ status: "closed" }, /Unknown status/],
-      [{ prs: "40, abc" }, /not a PR number/],
+      [{ follow_ups: 7 }, /must be text/],
       [{ shipped_at: "yesterday" }, /Shipped date/],
     ] as const) {
       const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), ...patch }, null, admin(db));

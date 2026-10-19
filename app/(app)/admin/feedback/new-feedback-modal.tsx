@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 import {
   DiscardChangesDialog,
   ModalBody,
@@ -17,6 +17,9 @@ import {
 import { entityAddButtonClass } from "@/components/entity-page-header";
 import { bankToday } from "@/lib/feedback/edit";
 import { FEEDBACK_TYPES, FEEDBACK_TYPE_LABELS } from "@/lib/feedback/types";
+import { cn } from "@/lib/utils";
+
+const TYPE_OPTIONS = FEEDBACK_TYPES.map((t) => ({ value: t, label: FEEDBACK_TYPE_LABELS[t] }));
 import { createFeedback } from "./actions";
 import { Field, Textarea } from "./form-fields";
 
@@ -42,10 +45,18 @@ function emptyDraft(): Draft {
 
 /**
  * Log feedback: text only in v1 (no screenshot upload, no followers). The
- * new item starts as New, numbered after the highest existing one.
+ * new item starts as New, numbered after the highest existing one, and
+ * opens in the detail modal (`onCreated`).
  */
-export function NewFeedbackButton({ pages, reviewers }: { pages: string[]; reviewers: string[] }) {
-  const router = useRouter();
+export function NewFeedbackButton({
+  pages,
+  reviewers,
+  onCreated,
+}: {
+  pages: string[];
+  reviewers: string[];
+  onCreated: (id: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [opened, setOpened] = useState<Draft>(draft);
@@ -75,15 +86,20 @@ export function NewFeedbackButton({ pages, reviewers }: { pages: string[]; revie
         return;
       }
       setOpen(false);
-      router.push(`/admin/feedback/${res.id}`);
+      onCreated(res.id);
     });
   }
 
   return (
     <>
-      <button type="button" onClick={openForm} className={entityAddButtonClass}>
-        <Plus className="h-4 w-4" />
-        Log feedback
+      <button
+        type="button"
+        onClick={openForm}
+        aria-label="Log feedback"
+        className={cn(entityAddButtonClass, "min-w-0 px-3")}
+      >
+        <Plus className="h-4 w-4" aria-hidden />
+        Feedback
       </button>
       <ModalShell
         open={open}
@@ -134,13 +150,13 @@ export function NewFeedbackButton({ pages, reviewers }: { pages: string[]; revie
               </datalist>
             </Field>
             <Field label="Type" htmlFor="fb-new-type">
-              <Select id="fb-new-type" value={draft.type} onChange={set("type")}>
-                {FEEDBACK_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {FEEDBACK_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </Select>
+              <SelectMenu
+                id="fb-new-type"
+                variant="field"
+                options={TYPE_OPTIONS}
+                value={draft.type}
+                onChange={(v) => setDraft((prev) => ({ ...prev, type: v }))}
+              />
             </Field>
           </div>
           <Field label="Summary" htmlFor="fb-new-summary" hint="One line. Optional — you can add it later.">

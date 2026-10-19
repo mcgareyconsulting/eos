@@ -83,17 +83,3 @@ export function meetingsExportParams(view: {
 }): Record<string, string | undefined> {
   return { team: view.teamId };
 }
-
-/**
- * The Directory's view: search, Role and Team filters (client state in
- * DirectoryTable). Sets go out comma-joined and sorted, so the URL is stable.
- */
-export function directoryExportParams(view: {
-  query: string;
-  access: ReadonlySet<string>;
-  teams: ReadonlySet<string>;
-}): Record<string, string | undefined> {
-  const q = view.query.trim();
-  const join = (s: ReadonlySet<string>) => (s.size > 0 ? [...s].sort().join(",") : undefined);
-  return { q: q || undefined, access: join(view.access), teams: join(view.teams) };
-}

@@ -282,8 +282,8 @@ describe("runExport — every registered page", () => {
 
   const TEAM_PAGES = ["headlines", "issues", "meetings", "rocks", "scorecard", "todos"];
 
-  test("the registry is the six team pages and the Directory", () => {
-    assert.deepEqual(Object.keys(EXPORT_DEFINITIONS).sort(), ["directory", ...TEAM_PAGES]);
+  test("the registry is the six team pages", () => {
+    assert.deepEqual(Object.keys(EXPORT_DEFINITIONS).sort(), TEAM_PAGES);
   });
 
   test("each team page is refused to someone off its roster, before anything loads; each attempt is audited", async () => {
@@ -321,35 +321,6 @@ describe("runExport — every registered page", () => {
         assert.equal(calls.load, 1, `${id} ${uid}`);
       }
     }
-  });
-
-  test("the Directory opens to every signed-in, live account (as the page does)", async () => {
-    const db = seed();
-    const { calls, def } = spied("directory");
-    const ok = await runExport("directory", new URLSearchParams(), "csv", {
-      ...deps(db),
-      user: signedIn(db, "u3"),
-      definitions: { directory: def },
-    });
-    assert.ok(ok.ok);
-    const inactive = await runExport("directory", new URLSearchParams(), "csv", {
-      ...deps(db),
-      user: signedIn(db, "u3", { active: false }),
-      definitions: { directory: def },
-    });
-    assert.deepEqual(inactive, {
-      ok: false,
-      status: 403,
-      message: ACCOUNT_INACTIVE,
-      reason: "account_inactive",
-    });
-    const anonymous = await runExport("directory", new URLSearchParams(), "csv", {
-      ...deps(db),
-      user: async () => null,
-      definitions: { directory: def },
-    });
-    assert.equal(!anonymous.ok && anonymous.status, 401);
-    assert.equal(calls.load, 1);
   });
 
   test("a view may carry its own columns (the Scorecard's periods)", async () => {

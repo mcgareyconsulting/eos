@@ -13,8 +13,8 @@ auditors or to work with in Excel. Every page that has opted in shows an
   no in-app print view and no `.xlsx` export.
 
 Reference page: **To-Dos** (`/teams/{teamId}/todos`). Every page with a data
-list is wired up (To-Dos, Rocks, Issues, Headlines, Scorecard, Meetings,
-Directory), and the Export CSV button shows for every viewer on each. See
+list is wired up (To-Dos, Rocks, Issues, Headlines, Scorecard, Meetings),
+and the Export CSV button shows for every viewer on each. See
 [Pages](#pages) for each one's view, its columns and what it leaves out,
 and for the pages that have no export and why.
 
@@ -25,7 +25,7 @@ out of any of it.
 
 | # | Guardrail | Where |
 |---|-----------|-------|
-| 1 | **Who.** Checked on the server for every request, in this order, before any of the page's data is read: (a) the session verifies; (b) the account is live: a fresh Identity Platform read shows it still exists and is not disabled (deactivation disables it), and the admin claim is re-read from it rather than trusted from a cookie up to 25 hours old; (c) the page exists and its parameters parse; (d) the **page's own access rule** passes for this viewer (`definition.authorize`: every team page uses `authorizeTeamPage` in `lib/export/pages/shared.ts`, which is `checkTeamAccess`, the rule behind `requireTeamAccess`: on the roster or an org admin, and the team exists; the Directory, which every signed-in user can open, needs only (a) and (b)). Someone who can't open the page gets the page's own 404. The button being on the page is a convenience, not the gate. | `run.ts`, `lib/firebase/team-access.ts` |
+| 1 | **Who.** Checked on the server for every request, in this order, before any of the page's data is read: (a) the session verifies; (b) the account is live: a fresh Identity Platform read shows it still exists and is not disabled (deactivation disables it), and the admin claim is re-read from it rather than trusted from a cookie up to 25 hours old; (c) the page exists and its parameters parse; (d) the **page's own access rule** passes for this viewer (`definition.authorize`: every team page uses `authorizeTeamPage` in `lib/export/pages/shared.ts`, which is `checkTeamAccess`, the rule behind `requireTeamAccess`: on the roster or an org admin, and the team exists). Someone who can't open the page gets the page's own 404. The button being on the page is a convenience, not the gate. | `run.ts`, `lib/firebase/team-access.ts` |
 | 2 | **What.** Exactly the current view for this viewer. The definition reads the page's own query parameters and runs the page's own queries with the page's visibility predicate (`lib/todo-lists`, `lib/access` `accessFor`) for the signed-in viewer. There is no "admin sees everything" shortcut the page doesn't have: a member's file has no one else's private to-dos and no other team's items. | `lib/export/pages/*.ts` |
 | 3 | **Provenance**, without breaking the sheet. A CSV has no header block (extra rows above the table would break sorting and filtering), so provenance goes in the **file name**: `todos-leadership-active-2026-10-16-1305-MT.csv` (page, team, view, Mountain date and time; safe characters only). The **audit row** has the rest: who, the filters, the row count, the app version (`DEPLOYMENT_ID` = git sha + Cloud Build id, plus the Cloud Run `K_REVISION`) and the file name. | `provenance.ts`, `audit.ts` |
 | 4 | **Audit.** One `audit_log` row per successful export, for every user (outcome `ok`, never deduped), written **before** the file leaves the server. If that write fails, the export is refused (fail closed). Refused attempts are audited too (outcome `refused`), deduped; see [Audit row](#audit-row). | `audit.ts` |
@@ -154,7 +154,7 @@ You add configuration only. The core, the route and the writer do not change.
      columns don't re-read `/users`).
    - `columns` can also come back on the loaded view when they depend on
      it (the Scorecard's period columns follow its Weekly/Monthly tab and
-     week range; the Directory's Account column is there for admins only).
+     week range).
      The definition still declares its fixed columns, which the snapshot
      test pins.
    - Shared team-page pieces (the `team` param, the team gate
@@ -176,7 +176,7 @@ You add configuration only. The core, the route and the writer do not change.
    the control in `EntityPageHeader`'s `leading` slot. When part of the
    view is client state (a toggle or a toolbar filter), render the control
    in the client component that holds that state and pass it as params too
-   (Issues, Scorecard and Directory do this).
+   (Issues and Scorecard do this).
 4. **Tests**:
    - in `lib/export/pages/{page}.test.ts`: a column snapshot (`[key, header,
      kind]` for every column), each filter, the ordering, and the params
@@ -208,7 +208,6 @@ they lived in a component.
 | Headlines | `headlines` | `team`, `archived`, `owner` | owner groups then Cascading; Archived flat, newest first (`lib/headlines.ts`) | header |
 | Scorecard | `scorecard` | `team`, `period`, `weeks`, `archived`, and the toolbar's `status`, `owner`, `group`, `sort`, `q` | the toolbar's filter and sort (`lib/scorecard-view.ts`), then the grid's grouping (`bucketMetricsByGroup` + `orderGroupNames`) | toolbar |
 | Meetings | `meetings` | `team` (the page has no filters) | newest first (`lib/l10/meeting-summary.ts`) | header |
-| Directory | `directory` | `q`, `access`, `teams` (comma-joined sets) | the loader's last-name order, the table's filter (`lib/directory-filter.ts`) | toolbar |
 
 ### What each file holds, and leaves out
 
@@ -236,11 +235,6 @@ they lived in a component.
 - **Meetings**: the History list. Meeting settings (agendas, Meet link,
   speaking order) are configuration, not history, and each meeting's recap
   is its own page. A live meeting has no rating, as on the page.
-- **Directory**: the table as this viewer sees it. Everyone gets First
-  Name, Last Name, Team, Role access, Email and User ID. Only an admin's
-  file lists deactivated people and has the Account column (No account /
-  Never signed in / Signed in), because only admins see those on the page;
-  for anyone else the loader never returns them and the column is left out.
 
 ### How each page honors the row cap early
 
@@ -248,7 +242,7 @@ they lived in a component.
   An oversize history is refused after that one query, before any
   per-meeting `effectiveness_scores` read. Ratings are read only for
   completed meetings, since a live meeting's cell is blank.
-- **To-Dos, Issues, Headlines, Directory**: the view is the query's docs
+- **To-Dos, Issues, Headlines**: the view is the query's docs
   filtered in memory, as on the page, so `checkRowCap` runs on the filtered
   rows before the core resolves names. None of them reads per row.
 - **Scorecard**: when no status filter is set, the count is known before
@@ -267,6 +261,8 @@ they lived in a component.
 - **Notifications**: the viewer's personal inbox, not organization data.
 - **Admin** (`/admin` redirects to `/admin/import`), team import, new team,
   Directory → new person: forms and import tools, no list of records.
+- **Directory**: no export (Daniel, 2026-10-19). It is the org's people
+  list, and account state is an admin concern.
 - **Integrations, Settings**: per-user settings.
 - **A single meeting** (`/meetings/{id}`, the live L10 or its recap): one
   record, not a list; its items are in the Rocks, To-Dos, Issues and

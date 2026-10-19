@@ -34,6 +34,7 @@ import {
   type FeedbackEditableField,
   type FeedbackItem,
   type FeedbackItemDoc,
+  type FeedbackPatch,
 } from "@/lib/feedback/types";
 import { requireAdmin, type TeamsDeps } from "./teams";
 
@@ -41,6 +42,23 @@ import { requireAdmin, type TeamsDeps } from "./teams";
 export type FeedbackDeps = TeamsDeps;
 
 export const FEEDBACK_NOT_FOUND = "Feedback item not found.";
+export const FEEDBACK_STALE = "This item changed since you opened it. Reload to see the latest.";
+
+export type FeedbackUpdateOptions = {
+  /**
+   * Optimistic concurrency: the item's `updated_at` (ISO, as read by
+   * readFeedbackItem) that the caller's form was built from. When the stored
+   * value differs inside the transaction — someone saved since — the update
+   * throws FEEDBACK_STALE and writes nothing. Undefined = no check.
+   */
+  expectedUpdatedAt?: string | null;
+  /**
+   * Adjust the validated patch against the item as read INSIDE the
+   * transaction (e.g. the shipped_at fill), so the rule sees the same
+   * snapshot the write is based on. The result is validated again.
+   */
+  prepare?: (current: FeedbackItem, patch: FeedbackPatch) => FeedbackPatch;
+};
 
 /** Every item, by number. */
 export async function listFeedbackItems(deps: FeedbackDeps = {}): Promise<FeedbackItem[]> {
@@ -110,12 +128,14 @@ export async function createFeedbackItem(
  * Apply a partial edit (any FEEDBACK_EDITABLE_FIELDS; status may move to any
  * status). Writes only the fields whose value actually changes; a save that
  * changes nothing writes nothing and logs nothing. Returns the changed
- * fields. Throws FEEDBACK_NOT_FOUND for a missing item.
+ * fields. Throws FEEDBACK_NOT_FOUND for a missing item, FEEDBACK_STALE when
+ * `opts.expectedUpdatedAt` no longer matches.
  */
 export async function updateFeedbackItem(
   id: string,
   patch: Record<string, unknown>,
   deps: FeedbackDeps = {},
+  opts: FeedbackUpdateOptions = {},
 ): Promise<{ changed: FeedbackEditableField[] }> {
   const { db, uid } = await requireAdmin(deps);
   if (!isFeedbackDocId(id)) throw new Error(FEEDBACK_NOT_FOUND);
@@ -126,14 +146,18 @@ export async function updateFeedbackItem(
     const snap = await tx.get(ref);
     if (!snap.exists) throw new Error(FEEDBACK_NOT_FOUND);
     const current = readFeedbackItem(snap.id, snap.data() ?? {});
-    const changed = changedFeedbackFields(current, valid);
+    if (opts.expectedUpdatedAt !== undefined && current.updated_at !== opts.expectedUpdatedAt) {
+      throw new Error(FEEDBACK_STALE);
+    }
+    const final = opts.prepare ? validateFeedbackPatch(opts.prepare(current, valid)) : valid;
+    const changed = changedFeedbackFields(current, final);
     if (changed.length === 0) return { changed };
 
     const update: Partial<FeedbackItemDoc> = {};
-    for (const f of changed) (update as Record<string, unknown>)[f] = valid[f];
+    for (const f of changed) (update as Record<string, unknown>)[f] = final[f];
     tx.update(ref, { ...update, ...stamp(uid) });
     tx.set(ref.collection(FEEDBACK_ACTIVITY_COLLECTION).doc(), {
-      ...feedbackEditActivity(current.status, valid, changed, uid),
+      ...feedbackEditActivity(current.status, final, changed, uid),
       at: FieldValue.serverTimestamp(),
     });
     return { changed };

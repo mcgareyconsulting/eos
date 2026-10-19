@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
 import {
   FEEDBACK_NOT_FOUND,
+  FEEDBACK_STALE,
   createFeedbackItem,
   getFeedbackItem,
   listFeedbackActivity,
@@ -171,6 +172,53 @@ describe("updateFeedbackItem", () => {
     assert.equal(rows[0].kind, "edited");
     assert.deepEqual(rows[0].fields, ["client_resolution", "follow_ups"]);
     assert.equal(rows[0].from, undefined);
+  });
+
+  test("expectedUpdatedAt: a stale save is refused and writes nothing", async () => {
+    const db = new FakeFirestore();
+    const opened = "2026-10-01T12:00:00.000Z";
+    seedItem(db, 11, { updated_at: opened, status: "building" });
+    // Another admin changes the status after the form opened.
+    await updateFeedbackItem("fb-011", { status: "deployed" }, admin(db));
+    const before = JSON.stringify(db.raw("feedback_items/fb-011"));
+    await assert.rejects(
+      () => updateFeedbackItem("fb-011", { status: "building", resolution: "x" }, admin(db), { expectedUpdatedAt: opened }),
+      { message: FEEDBACK_STALE },
+    );
+    assert.equal(JSON.stringify(db.raw("feedback_items/fb-011")), before);
+    assert.equal(db.raw("feedback_items/fb-011")?.status, "deployed");
+    assert.equal(activity(db, "fb-011").length, 1);
+  });
+
+  test("expectedUpdatedAt: a matching value saves", async () => {
+    const db = new FakeFirestore();
+    seedItem(db, 12, { updated_at: "2026-10-01T12:00:00.000Z" });
+    const res = await updateFeedbackItem("fb-012", { resolution: "y" }, admin(db), {
+      expectedUpdatedAt: "2026-10-01T12:00:00.000Z",
+    });
+    assert.deepEqual(res.changed, ["resolution"]);
+  });
+
+  test("prepare sees the in-transaction snapshot and its result is validated", async () => {
+    const db = new FakeFirestore();
+    seedItem(db, 13, { status: "building", shipped_at: "2026-09-01" });
+    const seen: unknown[] = [];
+    const res = await updateFeedbackItem("fb-013", { status: "completed" }, admin(db), {
+      prepare: (current, patch) => {
+        seen.push(current.shipped_at);
+        return { ...patch, follow_ups: ["from prepare"] };
+      },
+    });
+    assert.deepEqual(seen, ["2026-09-01"]);
+    assert.deepEqual(res.changed, ["status", "follow_ups"]);
+    await assert.rejects(
+      () =>
+        updateFeedbackItem("fb-013", { status: "new" }, admin(db), {
+          prepare: (_c, p) => ({ ...p, shipped_at: "not a date" }),
+        }),
+      /Shipped date/,
+    );
+    assert.equal(db.raw("feedback_items/fb-013")?.status, "completed");
   });
 
   test("a save that changes nothing writes and logs nothing", async () => {

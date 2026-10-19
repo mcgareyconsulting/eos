@@ -147,3 +147,20 @@ export function planSeedImport(
   }
   return plan;
 }
+
+/**
+ * Seed ids already taken by an item that was NOT imported (no `sheet_row`):
+ * an item logged in the app before the import ran takes fb-001, fb-002, …
+ * and the seed record with that number is then skipped — never imported.
+ * The script warns about each one; run the import before anyone logs an
+ * item in that environment.
+ */
+export function seedIdCollisions(
+  skipped: readonly string[],
+  existing: ReadonlyMap<string, Readonly<Record<string, unknown>>>,
+): string[] {
+  return skipped.filter((id) => {
+    const row = existing.get(id)?.sheet_row;
+    return typeof row !== "number";
+  });
+}

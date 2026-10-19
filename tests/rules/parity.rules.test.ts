@@ -173,6 +173,7 @@ put(`team_members/${P}__u-mem`, { team_id: P, user_id: "u-mem", role: "member" }
 put("audit_log/e-1", { x: 1 });
 put("feedback_items/fb-001", { number: 1, status: "new" });
 put("feedback_items/fb-001/activity/a-1", { kind: "created", actor_uid: "u-admin", to: "new" });
+put("app_config/feedback_tracker", { emails: ["admin@example.com"] });
 // users/{uid}.team_ids is what myTeamIds() reads (server-maintained).
 for (const [, w] of WHO) put(`users/${w.viewer.uid}`, { team_ids: [...w.viewer.teamIds] });
 
@@ -245,8 +246,12 @@ function moduleSees(path: string, v: Viewer): boolean {
     case "notifications":
       return d.user_id === v.uid;
     case "audit_log":
-    case "feedback_items": // lib/firebase/feedback.ts requireAdmin
       return v.isAdmin;
+    // Server-only: the tracker's access list is not something rules can see
+    // (lib/firebase/feedback-access.ts), so no client reads either.
+    case "feedback_items":
+    case "app_config":
+      return false;
     // The directory has no client reader: server pages only.
     case "users":
     case "teams":
@@ -633,7 +638,7 @@ describe("hand-rolled client queries the UI never makes are refused", () => {
   });
 
   test("whole collections", async () => {
-    for (const col of ["rocks", "todos", "entity_comments", "entity_activity", "rock_status_updates", "scorecard_metrics", "notifications", "users", "teams", "team_members", "feedback_items"]) {
+    for (const col of ["rocks", "todos", "entity_comments", "entity_activity", "rock_status_updates", "scorecard_metrics", "notifications", "users", "teams", "team_members", "feedback_items", "app_config"]) {
       await refused(W.parentMember, query(collection(dbFor(W.parentMember), col)));
     }
   });

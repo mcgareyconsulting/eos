@@ -23,6 +23,7 @@
     "user:merge": "tsx scripts/merge-import-user.ts",
     "users:backfill-team-ids": "tsx scripts/backfill-team-ids.ts",
     "issues:backfill-comment-counts": "tsx scripts/backfill-issue-comment-counts.ts",
+    "feedback:import": "tsx scripts/import-feedback-seed.ts",
     "db:copy": "tsx scripts/copy-db.ts",
     "backup:restore-test": "bash scripts/restore-test.sh",
     "ship": "bash scripts/deploy.sh"

@@ -23,6 +23,7 @@ import {
   runExport,
   type RunExportDeps,
 } from "./run";
+import { EXPORT_DEFINITIONS } from "./registry";
 import type { ExportDefinition } from "./types";
 
 // 13:05 MDT.
@@ -261,6 +262,93 @@ describe("runExport — who may export", () => {
       },
     });
     assert.equal(!res.ok && res.status, 404);
+  });
+});
+
+describe("runExport — every registered page", () => {
+  /** Every registered definition with its loader counted (and emptied). */
+  function spied(id: string) {
+    const calls = { load: 0 };
+    const real = EXPORT_DEFINITIONS[id] as unknown as ExportDefinition<unknown, unknown>;
+    const def = {
+      ...real,
+      load: async () => {
+        calls.load += 1;
+        return { ok: true as const, rows: [], filters: [], teamId: null, fileNameParts: [] };
+      },
+    } as unknown as ExportDefinition<never, never>;
+    return { calls, def };
+  }
+
+  const TEAM_PAGES = ["headlines", "issues", "meetings", "rocks", "scorecard", "todos"];
+
+  test("the registry is the six team pages", () => {
+    assert.deepEqual(Object.keys(EXPORT_DEFINITIONS).sort(), TEAM_PAGES);
+  });
+
+  test("each team page is refused to someone off its roster, before anything loads; each attempt is audited", async () => {
+    const db = seed();
+    for (const id of TEAM_PAGES) {
+      const { calls, def } = spied(id);
+      // u3 is on t2 only.
+      const res = await runExport(id, new URLSearchParams({ team: "t1" }), "csv", {
+        ...deps(db),
+        user: signedIn(db, "u3"),
+        definitions: { [id]: def },
+      });
+      assert.equal(!res.ok && res.status, 404, id);
+      assert.equal(!res.ok && res.reason, "no_page_access", id);
+      assert.equal(calls.load, 0, id);
+    }
+    // One refused row per page, never an "ok" export row.
+    assert.deepEqual(
+      auditRows(db).map((r) => [r.outcome, r.reason, r.entity_id]),
+      TEAM_PAGES.map((id) => ["refused", "no_page_access", id]),
+    );
+  });
+
+  test("each team page loads for a member and for an admin who is on no team", async () => {
+    for (const uid of ["u1", "admin"]) {
+      const db = seed();
+      for (const id of TEAM_PAGES) {
+        const { calls, def } = spied(id);
+        const res = await runExport(id, new URLSearchParams({ team: "t1" }), "csv", {
+          ...deps(db),
+          user: signedIn(db, uid, { isAdmin: uid === "admin" }),
+          definitions: { [id]: def },
+        });
+        assert.ok(res.ok, `${id} ${uid}`);
+        assert.equal(calls.load, 1, `${id} ${uid}`);
+      }
+    }
+  });
+
+  test("a view may carry its own columns (the Scorecard's periods)", async () => {
+    const def: ExportDefinition<{ v: number }, Record<string, never>> = {
+      id: "dyn",
+      title: "Dynamic",
+      parseParams: () => ({}),
+      authorize: async () => null,
+      columns: [{ key: "fixed", header: "Fixed", kind: "text", value: () => "x" }],
+      load: async () => ({
+        ok: true,
+        rows: [{ v: 3 }],
+        filters: [],
+        teamId: null,
+        fileNameParts: [],
+        columns: [
+          { key: "fixed", header: "Fixed", kind: "text", value: () => "x" },
+          { key: "p1", header: "Oct 2026", kind: "number", value: (r) => r.v },
+        ],
+      }),
+    };
+    const res = await runExport("dyn", new URLSearchParams(), "csv", {
+      ...deps(seed()),
+      definitions: { dyn: def as unknown as ExportDefinition<never, never> },
+    });
+    assert.ok(res.ok);
+    assert.deepEqual(res.table.headers, ["Fixed", "Oct 2026"]);
+    assert.deepEqual(res.table.rows, [["x", 3]]);
   });
 });
 

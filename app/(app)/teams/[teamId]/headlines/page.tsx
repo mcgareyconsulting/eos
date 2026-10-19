@@ -4,6 +4,8 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
+import { ExportControl } from "@/components/export/export-control";
+import { teamListExportParams } from "@/lib/export/urls";
 import { requireTeamAccess, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizeDescription } from "@/lib/csv-import";
 import { HeadlineBody } from "./headline-body";
@@ -246,6 +248,14 @@ export default async function HeadlinesPage({
       <div className="space-y-6">
         <EntityPageHeader
           title="Headlines"
+          leading={
+            // Export of exactly this view for whoever is looking
+            // (docs/EXPORT.md). The server re-checks team access.
+            <ExportControl
+              exportId="headlines"
+              params={teamListExportParams({ teamId, showArchived, ownerFilter })}
+            />
+          }
           filter={<OwnerFilter members={members} currentUserId={uid} />}
           tabs={
             <EntityViewTabs

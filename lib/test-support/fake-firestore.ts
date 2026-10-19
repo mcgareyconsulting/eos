@@ -2,7 +2,8 @@
 //
 // Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts,
 // lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
-// single-doc get/set/update/delete, `where` (==, "in" and "array-contains"),
+// single-doc get/set/update/delete, `where` (==, "in", "array-contains" and
+// ">=" on same-typed values),
 // `orderBy` (single field, ascending), `limit(n)`, a bare `collection().get()`,
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
@@ -135,6 +136,10 @@ class FakeQuery {
         // rocks.
         if (op === "array-contains")
           return Array.isArray(actual) && actual.includes(value);
+        // Same-type comparison only, as Firestore orders values by type
+        // first (scorecard entries: `week_start_date >= "YYYY-MM-DD"`).
+        if (op === ">=")
+          return typeof actual === typeof value && (actual as string) >= (value as string);
         throw new Error(`fake-firestore: unsupported where operator ${op}`);
       });
     }

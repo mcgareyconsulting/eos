@@ -11,6 +11,9 @@ import {
 } from "@/lib/l10/agenda";
 import { SEGMENT_LABELS } from "@/lib/l10/segments";
 import { isStaleLiveMeeting } from "@/lib/l10/driver";
+import { averageRating } from "@/lib/l10/meeting-summary";
+import { ExportControl } from "@/components/export/export-control";
+import { meetingsExportParams } from "@/lib/export/urls";
 import { AgendasPanel, StartMeetingPicker } from "./agendas";
 import { MeetingsList, type MeetingListDoc } from "./meetings-list";
 import { setMeetLink } from "./actions";
@@ -114,21 +117,10 @@ export default async function MeetingsPage({
         .doc(m.id)
         .collection("effectiveness_scores")
         .get();
-      if (r.empty) {
-        ratingsByMeeting[m.id] = null;
-        return;
-      }
-      const ratings = r.docs
-        .map((d) => (d.data() as { rating: number }).rating)
-        .filter((n) => Number.isFinite(n));
-      if (ratings.length === 0) {
-        ratingsByMeeting[m.id] = null;
-        return;
-      }
-      ratingsByMeeting[m.id] =
-        Math.round(
-          (ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10,
-        ) / 10;
+      // lib/l10/meeting-summary.ts, shared with the export.
+      ratingsByMeeting[m.id] = averageRating(
+        r.docs.map((d) => (d.data() as { rating: unknown }).rating),
+      );
     }),
   );
 
@@ -136,11 +128,19 @@ export default async function MeetingsPage({
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Meetings</h1>
-        <HeaderAction
-          teamId={tid}
-          liveMeeting={liveMeeting}
-          customs={customs}
-        />
+        <div className="flex items-center gap-2">
+          {/* Export of the meeting history, for everyone on the team
+              (docs/EXPORT.md). The server re-checks team access. */}
+          <ExportControl
+            exportId="meetings"
+            params={meetingsExportParams({ teamId: tid })}
+          />
+          <HeaderAction
+            teamId={tid}
+            liveMeeting={liveMeeting}
+            customs={customs}
+          />
+        </div>
       </header>
 
       {isLeader && (

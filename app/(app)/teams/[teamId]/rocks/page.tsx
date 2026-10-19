@@ -3,6 +3,8 @@ import { EmptyState } from "@/components/empty-state";
 import { EntityPageHeader } from "@/components/entity-page-header";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { OwnerFilter } from "@/components/owner-filter";
+import { ExportControl } from "@/components/export/export-control";
+import { teamListExportParams } from "@/lib/export/urls";
 import {
   requireTeamAccess,
   getTeamMembers,
@@ -25,62 +27,24 @@ import {
   partitionSharedRocks,
 } from "@/lib/rocks-share";
 import {
-  audienceTeamIdsOf,
-  audienceUserIdsOf,
   isAudienceTeam,
   isPrivateRock,
   rockAccess,
   rockSubjectOf,
   type RockHeadline,
 } from "@/lib/access/rock";
+import {
+  buildRockSections,
+  mapFullRock,
+  sortRocks,
+  type FullRock,
+} from "@/lib/rocks-view";
 import { viewerOf } from "@/lib/access/types";
 import { NewRockButton } from "./rock-modal";
 import { RockBlockRow, RockRow } from "./rock-row";
-import {
-  COMPANY_SECTION_TITLE,
-  DEPARTMENT_SECTION_TITLE,
-  rockBucket,
-} from "./rock-type";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
 import { type TodoDoc } from "@/lib/firestore-types";
-
-const STATUS_ORDER = ["on_track", "off_track", "done", "cancelled"];
-
-// Timestamp | millis | null → millis | null. Unknown-but-set still counts
-// as archived (0), matching the != null checks downstream.
-function archivedAtMillis(v: unknown): number | null {
-  if (v == null) return null;
-  if (typeof v === "number") return v;
-  const t = v as { toMillis?: () => number };
-  return typeof t.toMillis === "function" ? t.toMillis() : 0;
-}
-
-// Within a section: status, then quarter (so Q3 / Q4 sit together), then due.
-// Block entries carry no status and sort after the section's own rocks.
-function sortRocks<
-  T extends {
-    status: string;
-    quarter?: string | null;
-    due_date: string | null;
-  },
->(rocks: T[]): T[] {
-  const rank = (s: string) => {
-    const i = STATUS_ORDER.indexOf(s);
-    return i < 0 ? STATUS_ORDER.length : i;
-  };
-  return [...rocks].sort((a, b) => {
-    const byStatus = rank(a.status) - rank(b.status);
-    if (byStatus !== 0) return byStatus;
-    const qa = a.quarter ?? "";
-    const qb = b.quarter ?? "";
-    if (qa !== qb) return qa.localeCompare(qb);
-    if (!a.due_date && !b.due_date) return 0;
-    if (!a.due_date) return 1;
-    if (!b.due_date) return -1;
-    return a.due_date.localeCompare(b.due_date);
-  });
-}
 
 // Plain data for the client: TodoDoc.completed_at is a Firestore
 // Timestamp, which can't cross the Server → Client component boundary.
@@ -94,40 +58,6 @@ function serializeMilestone(id: string, t: TodoDoc): MilestoneSerialized {
     description: t.description ?? null,
   };
 }
-
-/**
- * Plain fields of a full rock. Audience and Private come out as their
- * EFFECTIVE values (lib/access/rock.ts — legacy `shared_team_ids` /
- * `team_only` folded in), so nothing downstream reads the old names.
- */
-function mapFullRock(id: string, x: FirebaseFirestore.DocumentData) {
-  const subject = rockSubjectOf(x);
-  return {
-    id,
-    team_id: subject.team_id,
-    title: x.title as string,
-    owner_id: subject.owner_id,
-    quarter: x.quarter as string,
-    due_date: (x.due_date as string | null) ?? null,
-    status: x.status as string,
-    description: (x.description as string | null) ?? null,
-    rock_type: (x.rock_type as string | null) ?? null,
-    is_company_rock: x.is_company_rock === true,
-    audience_team_ids: audienceTeamIdsOf(subject),
-    audience_user_ids: audienceUserIdsOf(subject),
-    private: isPrivateRock(subject),
-    assigned_by: (x.assigned_by as string | null) ?? null,
-    created_by: (x.created_by as string | null) ?? null,
-    follower_ids: Array.isArray(x.follower_ids)
-      ? (x.follower_ids as unknown[]).filter((v): v is string => typeof v === "string")
-      : [],
-    // archived_at is a Firestore Timestamp — pass millis, the raw class
-    // instance can't cross into the client RockRow.
-    archived_at: archivedAtMillis(x.archived_at),
-  };
-}
-
-type FullRock = ReturnType<typeof mapFullRock>;
 
 /** A member's block entry (spec §4): a rock headline + their milestones. */
 type BlockEntry = {
@@ -377,92 +307,12 @@ export default async function RocksPage({
     }
   }
 
-  // All view: Company section first, then Department (shared ownership +
-  // Team rocks, even when a person is accountable), then members A–Z, then
-  // owners no longer on the roster. A rock lands in exactly one section down
-  // that ladder (lib/rock-bucket.ts). L10 matches (see segment-rocks.tsx).
-  //
-  // An audience rock whose owner sits on this roster, and every block
-  // entry, skip the ladder and file under that person.
-  type RockGroup = { key: string; title: string; rocks: Entry[] };
-  const bucketOf = (r: Entry) =>
-    r.team_id === teamId ? rockBucket(r) : "owner";
-
-  function buildSections(rocks: Entry[]): RockGroup[] {
-    if (filter !== "all") {
-      const list = rocks.filter((r) => r.owner_id === filter);
-      if (list.length === 0) return [];
-      return [
-        { key: filter, title: ownerName(filter), rocks: sortRocks(list) },
-      ];
-    }
-
-    const companyRocks: Entry[] = [];
-    const deptRocks: Entry[] = [];
-    const byOwner = new Map<string, Entry[]>();
-    for (const r of rocks) {
-      const bucket = bucketOf(r);
-      if (bucket === "company") {
-        companyRocks.push(r);
-        continue;
-      }
-      if (bucket === "department") {
-        deptRocks.push(r);
-        continue;
-      }
-      const id = r.owner_id as string;
-      const list = byOwner.get(id) ?? [];
-      list.push(r);
-      byOwner.set(id, list);
-    }
-
-    const groups: RockGroup[] = [];
-    if (companyRocks.length > 0) {
-      groups.push({
-        key: "company",
-        title: COMPANY_SECTION_TITLE,
-        rocks: sortRocks(companyRocks),
-      });
-    }
-    if (deptRocks.length > 0) {
-      groups.push({
-        key: "department",
-        title: DEPARTMENT_SECTION_TITLE,
-        rocks: sortRocks(deptRocks),
-      });
-    }
-
-    const named = [...members].sort((a, b) =>
-      a.full_name.localeCompare(b.full_name),
-    );
-    for (const m of named) {
-      const list = byOwner.get(m.user_id);
-      if (!list || list.length === 0) continue;
-      groups.push({
-        key: m.user_id,
-        title: m.full_name,
-        rocks: sortRocks(list),
-      });
-    }
-
-    // Owners not on the current roster (left the team, stale id).
-    const orphanIds = [...byOwner.keys()].filter((id) => !rosterIds.has(id));
-    orphanIds.sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
-    for (const id of orphanIds) {
-      groups.push({
-        key: id,
-        title: ownerName(id),
-        rocks: sortRocks(byOwner.get(id)!),
-      });
-    }
-
-    return groups;
-  }
-
-  const sections = buildSections(
+  // Sections: lib/rocks-view.ts buildRockSections (shared with the export).
+  const sections = buildRockSections<Entry>(
     showArchived
       ? allRocks
       : [...allRocks, ...sharedIntoSections, ...blockEntries],
+    { teamId, filter, members, ownerName },
   );
 
   const sharedForView = showArchived
@@ -512,6 +362,14 @@ export default async function RocksPage({
     <div className="space-y-6">
       <EntityPageHeader
         title="Rocks"
+        leading={
+          // Export of exactly this view for whoever is looking, milestones
+          // included (docs/EXPORT.md). The server re-checks team access.
+          <ExportControl
+            exportId="rocks"
+            params={teamListExportParams({ teamId, showArchived, ownerFilter: filter })}
+          />
+        }
         filter={<OwnerFilter members={members} currentUserId={uid} />}
         tabs={
           <EntityViewTabs

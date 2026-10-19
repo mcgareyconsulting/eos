@@ -269,9 +269,12 @@ export async function runExport(
     });
   }
 
+  // A view may carry its own columns (the Scorecard's periods).
+  const columns = view.columns ?? def.columns;
+
   // 7. Normalize. User ids the loader couldn't name come from /users.
   const known = new Map(view.names ?? []);
-  const userCols = def.columns.filter((c) => c.kind === "user");
+  const userCols = columns.filter((c) => c.kind === "user");
   const missing = new Set<string>();
   for (const row of view.rows) {
     for (const c of userCols) {
@@ -285,7 +288,7 @@ export async function runExport(
   }
   const nameOf = (id: string) => known.get(id);
   const rows = view.rows.map((row) =>
-    def.columns.map((c) => normalizeCell(c.kind, c.value(row), nameOf)),
+    columns.map((c) => normalizeCell(c.kind, c.value(row), nameOf)),
   );
 
   // 3. Provenance: the file name.
@@ -313,7 +316,7 @@ export async function runExport(
     ok: true,
     table: {
       title: def.title,
-      headers: def.columns.map((c) => c.header),
+      headers: columns.map((c) => c.header),
       rows,
       fileName,
     },

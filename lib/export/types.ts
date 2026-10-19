@@ -80,6 +80,13 @@ export type LoadedView<R> = {
    * through this first; any uid still missing is looked up in `/users`.
    */
   names?: ReadonlyMap<string, string>;
+  /**
+   * The columns for this view, when they depend on it — the Scorecard's
+   * period columns follow its Weekly/Monthly tab and week range. Omit it and
+   * the definition's own `columns` are used. A definition that sets it still
+   * declares its fixed columns in `columns`, which the snapshot tests pin.
+   */
+  columns?: readonly ExportColumn<R>[];
 };
 
 /**

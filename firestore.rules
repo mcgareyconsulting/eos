@@ -280,6 +280,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---------- feedback tracker (admin-only; ROADMAP N73) ----------
+    // Staff feedback on the app and its per-item activity trace. Org admins
+    // only (lib/firebase/feedback.ts gates the server side the same way).
+    // Written by lib/firebase/feedback.ts and
+    // scripts/import-feedback-seed.ts. 0 lookups.
+    match /feedback_items/{itemId} {
+      allow read:  if admin();
+      allow write: if false;
+
+      match /activity/{activityId} {
+        allow read:  if admin();
+        allow write: if false;
+      }
+    }
+
     // ---------- server-only secrets (Admin SDK only) ----------
     match /google_tasks_connections/{uid} { allow read, write: if false; }
     match /oauth_csrf_states/{state}      { allow read, write: if false; }

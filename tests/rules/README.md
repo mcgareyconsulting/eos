@@ -6,7 +6,8 @@ permanent and run against the app's own rules file.
 - `firestore.rules.test.ts` — smoke matrix: the app's client reads allowed for
   a team member and denied for a non-member and anonymous callers; shared
   lists have no 8-team cap; notifications are readable only by their
-  `user_id`; every collection rejects client set/update/delete/create,
+  `user_id`; the feedback tracker (`feedback_items` + its `activity`) is
+  readable only with the admin claim; every collection rejects client set/update/delete/create,
   including with an admin-claim token.
 - `parity.rules.test.ts` — the rules against the server access modules
   (`lib/access/**`) on one set of fixtures:

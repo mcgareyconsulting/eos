@@ -8,13 +8,19 @@
 // Seed fields NOT carried over (the seed file stays in the repo, keyed by
 // `sheet_row`, for anything they held):
 //   question_for_daniel, confidence  — triage notes for the seeding pass
-//   sheet_note, thread               — spreadsheet cell notes / reply history
+//   sheet_note                       — spreadsheet cell notes
 //   deployed_note, phase             — one-off notes on 1–2 items
 //   work.state / before_release / updated — branch bookkeeping
-// `work.prs` and `work.branches` become `prs` / `branches`.
+// `work.prs` and `work.branches` become `prs` / `branches`; `thread` (the
+// reviewer reply history, one line of text) is carried over read-only.
 
 import { requireMaxLength, LONG_TEXT_MAX } from "@/lib/text-limits";
-import { FEEDBACK_FIELD_VALIDATORS as V, feedbackDocId, type FeedbackItemBody } from "./model";
+import {
+  FEEDBACK_FIELD_VALIDATORS as V,
+  feedbackDocId,
+  optionalText,
+  type FeedbackItemBody,
+} from "./model";
 
 /** One record of the seed file, as loosely as it is written. */
 export type FeedbackSeedRecord = Readonly<Record<string, unknown>>;
@@ -40,6 +46,15 @@ export function prsInEvidence(lines: readonly string[]): number[] {
 /** `screenshots/row02.png` → `row02.png`. */
 export function screenshotBasename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/**
+ * The seed's `thread`: reviewer reply history, one string. Not an editable
+ * field, so it has no FEEDBACK_FIELD_VALIDATORS entry — same text rules as
+ * the other long notes.
+ */
+export function seedThread(v: unknown): string | null {
+  return optionalText(v, LONG_TEXT_MAX, "thread");
 }
 
 function work(rec: FeedbackSeedRecord): { prs: unknown[]; branches: unknown[] } {
@@ -88,6 +103,7 @@ export function mapSeedRecord(rec: FeedbackSeedRecord): MappedSeed {
       follow_up_topic: V.follow_up_topic(rec.follow_up_topic),
       follow_ups: V.follow_ups(rec.follow_ups),
       decision_source: V.decision_source(rec.decision_source),
+      thread: seedThread(rec.thread),
       screenshots: V.screenshots(
         Array.isArray(rec.screenshots)
           ? rec.screenshots.map((s) => (typeof s === "string" ? screenshotBasename(s) : s))

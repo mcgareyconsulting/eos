@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { mapSeedRecord, planSeedImport, prsInEvidence, type FeedbackSeedRecord } from "./seed";
 import { feedbackDocId, validateFeedbackPatch } from "./model";
+import { LONG_TEXT_MAX } from "@/lib/text-limits";
 
 const SEED_PATH = resolve("docs/feedback/feedback-tracker-seed.json");
 const SCREENSHOT_DIR = resolve("docs/feedback/screenshots");
@@ -78,6 +79,22 @@ describe("the real seed file", () => {
     assert.equal(some.create.length, 57);
     assert.deepEqual(some.skip, ["fb-001", "fb-037"]);
   });
+
+  test("thread (reviewer reply history) is carried over read-only on the 6 items that have one", () => {
+    const withThread = SEED.filter((r) => typeof r.thread === "string" && r.thread.trim());
+    assert.deepEqual(
+      withThread.map((r) => r.number),
+      [6, 39, 48, 49, 51, 52],
+    );
+    for (const rec of SEED) {
+      const m = mapSeedRecord(rec);
+      assert.ok(m.ok);
+      assert.equal(m.item.thread, withThread.includes(rec) ? (rec.thread as string).trim() : null, m.id);
+    }
+    const m6 = mapSeedRecord(SEED.find((r) => r.number === 6)!);
+    assert.ok(m6.ok);
+    assert.match(m6.item.thread ?? "", /^Steph 10\/13 asked Jenna re attachments/);
+  });
 });
 
 describe("mapping edge cases", () => {
@@ -89,6 +106,13 @@ describe("mapping edge cases", () => {
     assert.match(m.ok ? "" : m.error, /Unknown status/);
     assert.equal(mapSeedRecord({ ...base, number: undefined }).ok, false);
     assert.equal(mapSeedRecord({ ...base, original_comment: " " }).ok, false);
+  });
+
+  test("thread: absent or blank maps to null; over-long is invalid", () => {
+    const m = mapSeedRecord({ ...base, thread: "   " });
+    assert.ok(m.ok && m.item.thread === null);
+    assert.equal(mapSeedRecord({ ...base, thread: 42 }).ok, false);
+    assert.equal(mapSeedRecord({ ...base, thread: "x".repeat(LONG_TEXT_MAX + 1) }).ok, false);
   });
 
   test("a repeated number is invalid", () => {

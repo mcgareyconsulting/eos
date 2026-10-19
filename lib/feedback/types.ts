@@ -122,6 +122,13 @@ export type FeedbackItemDoc = {
   follow_ups: string[];
   /** Who decided the current status, e.g. "Daniel, 2026-10-15". */
   decision_source: string | null;
+  /**
+   * Reviewer reply history carried over from the spreadsheet (the seed's
+   * `thread`), e.g. "Steph 9/2: added new items from meeting." Read-only:
+   * set once by the import, never in FEEDBACK_EDITABLE_FIELDS; null for
+   * items logged in the app.
+   */
+  thread: string | null;
   /** Screenshot file basenames, e.g. "row02.png" (docs/feedback/screenshots for seeded items). */
   screenshots: string[];
   status: FeedbackStatus;
@@ -135,7 +142,7 @@ export type FeedbackItemDoc = {
   updated_at: unknown;
 };
 
-/** Fields an admin may change after create. Never number, sheet_row, original_comment. */
+/** Fields an admin may change after create. Never number, sheet_row, original_comment, thread. */
 export const FEEDBACK_EDITABLE_FIELDS = [
   "status",
   "reported_on",

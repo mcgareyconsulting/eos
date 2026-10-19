@@ -168,7 +168,7 @@ describe("validateFeedbackPatch", () => {
   });
 
   test("never-edited and unknown fields are refused", () => {
-    for (const key of ["original_comment", "number", "sheet_row", "created_by", "internal_note"]) {
+    for (const key of ["original_comment", "number", "sheet_row", "created_by", "thread", "internal_note"]) {
       assert.throws(() => validateFeedbackPatch({ [key]: "x" }), /cannot be edited/, key);
     }
   });
@@ -233,6 +233,8 @@ describe("read model", () => {
     assert.equal(item.created_at, "2026-10-19T12:00:00.000Z");
     assert.equal(item.updated_at, null);
     assert.deepEqual(item.screenshots, []);
+    assert.equal(item.thread, null);
+    assert.equal(readFeedbackItem("fb-006", { thread: "Steph 10/13 asked Jenna" }).thread, "Steph 10/13 asked Jenna");
     const act = readFeedbackActivity("a", { at, actor_uid: "u", kind: "status", from: "new", to: "x" });
     assert.deepEqual(act, { id: "a", at: "2026-10-19T12:00:00.000Z", actor_uid: "u", kind: "status", from: "new" });
   });

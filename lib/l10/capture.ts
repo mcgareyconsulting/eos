@@ -1,7 +1,7 @@
 // The live meeting's one "Issue / To-do" capture (feedback row 58): which
 // kind a fresh capture opens on, the stage prefix an issue title starts
-// with, how switching kind treats the title, and which server action the
-// save goes to. Kept free of React so the rules can be tested; the modal is
+// with, how switching kind treats the title and the owner, and which server
+// action the save goes to. Kept free of React so the rules can be tested; the modal is
 // app/(app)/teams/[teamId]/meetings/[meetingId]/meeting-capture-modal.tsx.
 
 import type { Segment } from "./segments";
@@ -59,6 +59,42 @@ export function titleAfterKindSwitch({
   if (title !== autoTitle) return { title, autoTitle };
   const next = autoTitleFor(to, segment);
   return { title: next, autoTitle: next };
+}
+
+/**
+ * The owner after switching kind. A to-do may go to anyone in the org, but
+ * addIssue only takes an owner on the team roster, unassigned, or the
+ * viewer themself (requireRosterOwner with `self`). So switching to Issue
+ * with an off-roster owner would leave a draft the server refuses; the owner
+ * resets to the viewer — the capture's opening owner, so the reset alone
+ * never marks the draft dirty — and `reset` tells the modal to say why.
+ * Any issue owner is a valid to-do owner, so To-do keeps it.
+ */
+export function ownerAfterKindSwitch({
+  ownerId,
+  to,
+  members,
+  selfId,
+}: {
+  ownerId: string;
+  to: CaptureKind;
+  members: readonly { user_id: string }[];
+  selfId: string;
+}): { ownerId: string; reset: boolean } {
+  if (
+    to === "todo" ||
+    !ownerId ||
+    ownerId === selfId ||
+    members.some((m) => m.user_id === ownerId)
+  ) {
+    return { ownerId, reset: false };
+  }
+  return { ownerId: selfId, reset: true };
+}
+
+/** The note under Owner after ownerAfterKindSwitch reset it. */
+export function ownerResetNote(name: string | null | undefined): string {
+  return `${name?.trim() || "That person"} isn't on this team, so the issue owner is set to you.`;
 }
 
 /** A title with nothing in it but the form's own prefix is no title. */

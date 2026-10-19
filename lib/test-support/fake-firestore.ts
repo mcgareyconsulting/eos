@@ -3,7 +3,7 @@
 // Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts,
 // lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
 // single-doc get/set/update/delete, `where` (==, "in" and "array-contains"),
-// `orderBy` (single field, ascending), a bare `collection().get()`,
+// `orderBy` (single field, ascending), `limit(n)`, a bare `collection().get()`,
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
 // (`doc().collection()`, with `.ref` on query results),
@@ -96,6 +96,7 @@ class FakeQuery {
     private collectionPath: string,
     private wheres: WhereClause[] = [],
     private order?: string,
+    private max?: number,
   ) {}
 
   where(field: string, op: string, value: unknown): FakeQuery {
@@ -104,11 +105,16 @@ class FakeQuery {
       this.collectionPath,
       [...this.wheres, [field, op, value]],
       this.order,
+      this.max,
     );
   }
 
   orderBy(field: string): FakeQuery {
-    return new FakeQuery(this.store, this.collectionPath, this.wheres, field);
+    return new FakeQuery(this.store, this.collectionPath, this.wheres, field, this.max);
+  }
+
+  limit(n: number): FakeQuery {
+    return new FakeQuery(this.store, this.collectionPath, this.wheres, this.order, n);
   }
 
   async get() {
@@ -140,6 +146,7 @@ class FakeQuery {
         return av.localeCompare(bv);
       });
     }
+    if (this.max !== undefined) docs = docs.slice(0, this.max);
     return { docs };
   }
 }
@@ -183,6 +190,7 @@ export class FakeFirestore {
       where: (field: string, op: string, value: unknown) =>
         new FakeQuery(this, name).where(field, op, value),
       orderBy: (field: string) => new FakeQuery(this, name).orderBy(field),
+      limit: (n: number) => new FakeQuery(this, name).limit(n),
       get: () => new FakeQuery(this, name).get(),
     };
   }

@@ -14,12 +14,14 @@
 
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import type { Firestore } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { getVerifiedSessionToken, requireFirebaseUser } from "./auth";
 import {
   FEEDBACK_ACCESS_COLLECTION,
   FEEDBACK_ACCESS_DOC_ID,
+  applyAccessChanges,
   hasFeedbackAccess,
+  normalizeAccessEmail,
   readAccessEmails,
 } from "@/lib/feedback/access";
 
@@ -77,4 +79,37 @@ export async function requireFeedbackTrackerAccess(deps?: FeedbackDeps): Promise
   const { user, allowed } = await evaluate(deps);
   if (!allowed) notFound();
   return user;
+}
+
+/**
+ * The access list for the Directory's Feedback chip (admins only). Empty when
+ * there is no list or it cannot be read.
+ */
+export async function readFeedbackAccessList(db: Firestore): Promise<string[]> {
+  return (await readList(db)) ?? [];
+}
+
+/**
+ * Grant or remove tracker access for one email, as the Directory's Edit
+ * person dialog does (the caller has already checked org admin). One
+ * transaction over the list, stamped like the feedback:access script.
+ * Returns whether the list changed.
+ */
+export async function setFeedbackAccess(
+  db: Firestore,
+  actorUid: string,
+  email: string,
+  on: boolean,
+): Promise<boolean> {
+  const normalized = normalizeAccessEmail(email);
+  if (!normalized) throw new Error("This person has no email on file, so tracker access can't be set.");
+  const ref = db.collection(FEEDBACK_ACCESS_COLLECTION).doc(FEEDBACK_ACCESS_DOC_ID);
+  return db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    const before = cur.exists ? readAccessEmails(cur.data()) : [];
+    if (before.includes(normalized) === on) return false;
+    const next = applyAccessChanges(before, on ? [normalized] : [], on ? [] : [normalized]);
+    tx.set(ref, { emails: next, updated_at: FieldValue.serverTimestamp(), updated_by: actorUid });
+    return true;
+  });
 }

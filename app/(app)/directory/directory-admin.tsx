@@ -188,6 +188,26 @@ function OrgAdminToggle({ defaultChecked, disabled }: { defaultChecked: boolean;
   );
 }
 
+function FeedbackTrackerToggle({ defaultChecked, disabled }: { defaultChecked: boolean; disabled?: boolean }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 text-sm">
+      <input
+        type="checkbox"
+        name="feedback_tracker"
+        defaultChecked={defaultChecked}
+        disabled={disabled}
+        className="mt-0.5 h-4 w-4 accent-hpb-blue dark:accent-hpb-gold"
+      />
+      <span>
+        <span className="font-medium">Feedback tracker</span>
+        <span className="block text-xs text-zinc-500">
+          Can open the feedback tracker and see, edit and log every item. Separate from org admin.
+        </span>
+      </span>
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Per-row menu
 // ---------------------------------------------------------------------------
@@ -341,6 +361,13 @@ function EditPersonModal({
             // Nobody removes their own admin: the server refuses it too.
             disabled={isSelf}
           />
+          <FeedbackTrackerToggle
+            defaultChecked={person.feedbackAccess === true}
+            // Access is keyed by sign-in email.
+            disabled={!person.email}
+          />
+          {/* Sent so the server can tell "unchecked" from "not shown". */}
+          <input type="hidden" name="feedback_tracker_shown" value="1" />
           {person.hasAuth === false && (
             <p className="text-xs text-amber-700 dark:text-amber-400">
               No sign-in account yet, so org admin can&rsquo;t be granted until

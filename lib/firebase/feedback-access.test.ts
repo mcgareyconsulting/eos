@@ -2,7 +2,12 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Firestore } from "firebase-admin/firestore";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { canUseFeedbackTracker, requireFeedbackTrackerAccess } from "./feedback-access";
+import {
+  canUseFeedbackTracker,
+  readFeedbackAccessList,
+  requireFeedbackTrackerAccess,
+  setFeedbackAccess,
+} from "./feedback-access";
 
 function user(db: Firestore, email: string | null, emailVerified?: boolean | null) {
   return { user: async () => ({ uid: "u", email, emailVerified, db }) };
@@ -62,5 +67,27 @@ describe("requireFeedbackTrackerAccess", () => {
       console.error = orig;
     }
     assert.ok(errors.length > 0, "the failure is logged");
+  });
+});
+
+describe("setFeedbackAccess (the Directory's Feedback tracker switch)", () => {
+  test("grants and removes by email, case-insensitively, stamped; no-op reports false", async () => {
+    const db = new FakeFirestore();
+    db.seed("app_config", "feedback_tracker", { emails: ["daniel@example.com"] });
+    const fs = db.asFirestore();
+    assert.equal(await setFeedbackAccess(fs, "admin1", "Steph@Example.com", true), true);
+    assert.deepEqual(await readFeedbackAccessList(fs), ["daniel@example.com", "steph@example.com"]);
+    assert.equal(db.docsIn("app_config")[0].data.updated_by, "admin1");
+    assert.equal(await setFeedbackAccess(fs, "admin1", "steph@example.com", true), false);
+    assert.equal(await setFeedbackAccess(fs, "admin1", "steph@example.com", false), true);
+    assert.deepEqual(await readFeedbackAccessList(fs), ["daniel@example.com"]);
+  });
+
+  test("creates the list when there is none; refuses a missing email", async () => {
+    const db = new FakeFirestore();
+    const fs = db.asFirestore();
+    assert.equal(await setFeedbackAccess(fs, "admin1", "joe@example.com", true), true);
+    assert.deepEqual(await readFeedbackAccessList(fs), ["joe@example.com"]);
+    await assert.rejects(() => setFeedbackAccess(fs, "admin1", "  ", true), /no email/);
   });
 });

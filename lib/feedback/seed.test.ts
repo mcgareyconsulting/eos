@@ -2,7 +2,13 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { mapSeedRecord, planSeedImport, prsInEvidence, type FeedbackSeedRecord } from "./seed";
+import {
+  mapSeedRecord,
+  planSeedImport,
+  prsInEvidence,
+  seedIdCollisions,
+  type FeedbackSeedRecord,
+} from "./seed";
 import { feedbackDocId, validateFeedbackPatch } from "./model";
 import { LONG_TEXT_MAX } from "@/lib/text-limits";
 
@@ -113,6 +119,16 @@ describe("mapping edge cases", () => {
     assert.ok(m.ok && m.item.thread === null);
     assert.equal(mapSeedRecord({ ...base, thread: 42 }).ok, false);
     assert.equal(mapSeedRecord({ ...base, thread: "x".repeat(LONG_TEXT_MAX + 1) }).ok, false);
+  });
+
+  test("seedIdCollisions: a skipped id held by an app-logged item (no sheet_row)", () => {
+    const existing = new Map<string, Record<string, unknown>>([
+      ["fb-001", { number: 1, sheet_row: null }],
+      ["fb-002", { number: 2, sheet_row: 3 }],
+      ["fb-003", { number: 3 }],
+    ]);
+    assert.deepEqual(seedIdCollisions(["fb-001", "fb-002", "fb-003"], existing), ["fb-001", "fb-003"]);
+    assert.deepEqual(seedIdCollisions([], existing), []);
   });
 
   test("a repeated number is invalid", () => {

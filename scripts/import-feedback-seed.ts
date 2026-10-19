@@ -15,6 +15,11 @@
 //   pnpm feedback:import -- --target prod                         # LIVE, dry-run
 //   pnpm feedback:import -- --target prod --apply --actor <uid>
 //
+// Run it BEFORE anyone logs an item in that environment: an item logged in
+// the app takes the next number (fb-001 on an empty tracker), and the seed
+// record with that number is then skipped, never imported. The plan warns
+// about every seed id held by an item that has no sheet_row.
+//
 // A target is required — `--target sandbox|prod` (see scripts/lib/target.ts;
 // prod uses Application Default Credentials) or `--env-file <path>`.
 //
@@ -36,7 +41,7 @@ import { getAdminDb } from "../lib/firebase/admin";
 import { stamp } from "../lib/audit-stamp";
 import { SYSTEM_ACTOR_ID } from "../lib/activity";
 import { feedbackCreateActivity } from "../lib/feedback/model";
-import { planSeedImport, type FeedbackSeedRecord } from "../lib/feedback/seed";
+import { planSeedImport, seedIdCollisions, type FeedbackSeedRecord } from "../lib/feedback/seed";
 import { FEEDBACK_ACTIVITY_COLLECTION, FEEDBACK_COLLECTION } from "../lib/feedback/types";
 
 const SEED_PATH = "docs/feedback/feedback-tracker-seed.json";
@@ -77,6 +82,16 @@ async function main() {
 
   for (const bad of plan.invalid) console.log(`  invalid  ${bad.label}: ${bad.error}`);
   if (plan.skip.length > 0) console.log(`  skip (already in the database): ${plan.skip.join(", ")}`);
+  const collisions = seedIdCollisions(
+    plan.skip,
+    new Map(existing.docs.map((d) => [d.id, d.data()])),
+  );
+  for (const id of collisions) {
+    console.warn(
+      `  WARNING  ${id} is held by an item logged in the app (no sheet_row): ` +
+        `seed record ${Number(id.slice(3))} will NOT be imported.`,
+    );
+  }
   console.log(
     `\n${records.length} seed record(s): create ${plan.create.length} / ` +
       `skip ${plan.skip.length} existing / invalid ${plan.invalid.length}.`,

@@ -38,7 +38,9 @@ export function TodoOwnerField({
   teamId: string;
   members: Member[];
   value: string;
-  onChange: (userId: string) => void;
+  /** `name` is the picked person's name when known — the L10 capture uses it
+   *  to say whose ownership it cleared on a switch to Issue. */
+  onChange: (userId: string, name?: string) => void;
 }) {
   const [directory, setDirectory] = useState<Directory | null>(null);
 
@@ -59,10 +61,10 @@ export function TodoOwnerField({
     [directory],
   );
   const onTeam = !value || members.some((m) => m.user_id === value);
-  const valueName =
-    members.find((m) => m.user_id === value)?.full_name ??
-    directory?.people.find((p) => p.user_id === value)?.full_name ??
-    (value ? "…" : "Choose owner");
+  const nameOf = (id: string) =>
+    members.find((m) => m.user_id === id)?.full_name ??
+    directory?.people.find((p) => p.user_id === id)?.full_name;
+  const valueName = nameOf(value) ?? (value ? "…" : "Choose owner");
   const ownerTeams = (directory?.people.find((p) => p.user_id === value)?.team_ids ?? [])
     .map((id) => teamNameById.get(id) ?? "Team")
     .join(", ");
@@ -72,7 +74,7 @@ export function TodoOwnerField({
       <OwnerPicker
         value={value}
         valueName={valueName}
-        onChange={onChange}
+        onChange={(id) => onChange(id, nameOf(id))}
         team={{
           id: teamId,
           name: teamNameById.get(teamId) ?? "This team",

@@ -1,7 +1,7 @@
 ---
 project: HPB
-updated: 2026-09-17
-verified: main @ 1d7624b  # prod runs 1d7624b (rev eos-00070-pjg) — verified against gcloud 2026-08-26, NOT from this file
+updated: 2026-10-19
+verified: main @ 10a1993  # prod kept in lockstep with main (daniel, 2026-10-19); last gcloud check was 1d7624b / eos-00070-pjg on 2026-08-26 — NOT from this file
 config:                       # inputs to derived math — store inputs, never results
   horizon:
     - 2026-11-02 HPB Q3 rocks close (client target, stated in the 7/29 L10)
@@ -40,6 +40,14 @@ commits sit between prod and main.
   Live on both `hpb-eos-prod-db` and `hpb-eos-sandbox-db`.
 - **Cloud Functions**: `archiveStaleTodos` last updated 2026-08-25 14:26Z,
   after the N26 sweep change landed in code (2026-08-24 20:26Z). Deployed.
+  **Superseded 2026-10-16 (PR #87):** `archiveStaleTodos` redeployed —
+  rocks are no longer swept (manual archive only), and the schedule + cutoff
+  run on America/Denver (Monday ~03:00 Mountain), not Central.
+- **Update 2026-10-19 — stated by daniel, not re-checked with `gcloud` here:**
+  prod Cloud Run is kept in lockstep with `main`, now `10a1993` (PR #93).
+  Prod `authDomain` is `pulse.highplainsbank.com`, with `/__/auth/*` and
+  `/__/firebase/*` proxied to `firebaseapp.com` (PR #89, deployed 2026-10-19;
+  see **N72**).
 
 ⚠ **This section was wrong for two weeks and nothing caught it.** It claimed
 prod ran `98bb30b` / `eos-00046-nxv` from 2026-08-12; prod was in fact 24
@@ -334,6 +342,29 @@ status; run `gcloud run services describe` before trusting a revision id) but
 not 3, 4 or 5 — those need someone re-reading the item's premise against the
 code, which is what this pass was.
 
+**Session 2026-10-15 → 10-19 — the October client-feedback wave.** The HPB
+feedback spreadsheet (58 rows; reviewers Steph Benes, Jessica Teichman, Jenna
+Scheeler, Brian Otteman) was audited 2026-10-15/16 against code and PRs, and
+**every row now has an answer**. After this wave, in the client report's
+labels: **43 completed · 1 deployed · 5 answered · 8 follow-up · 2 postponed**
+(59 items, numbered 1–59, counting a new mobile sign-in item). The seed is
+committed at `docs/feedback/feedback-tracker-seed.json` + `screenshots/`
+(daniel approved the client report 2026-10-19 as v1 of the admin tracker,
+**N73**). Shipped (PRs #84–#93, all on prod): due-date
+urgency colors in the viewer's time zone (**N69**, row 36), comment counts on
+issue rows (**N70**, row 35), one Issue / To-do capture on L10 stages
+(**N71**, rows 58/40), rocks manual-archive only (row 59 → **F4**), mobile
+sign-in on a first-party auth domain (**N72**), CSV export on six pages
+(**N68**, row 55), and operator scripts' `--target sandbox|prod` (→ **F8**).
+**Decisions (daniel):** Google Tasks automatic two-way sync deferred to a later
+phase (row 11 → P1-7); Workspace-only SSO deferred until HPB IT confirms MFA
+(row 46 → N52); no email notifications this phase (row 54 → N31); presence
+monitor deferred (→ N25); an in-app admin feedback tracker was deferred,
+then **undeferred 2026-10-19 (N73)** — v1 without an upload store; no Directory export. **Open follow-ups with the client:** Steph/Jenna
+on rows 12 (N57), 16/23/51 (N10), 33 (G2), 52 (N25), 56 (N18) and 11 (P1-7);
+Jessica on row 31 (N6). **Queue unchanged** — new items landed shipped, and
+ordering is a session decision.
+
 **Tier key (workstreams — the project's forcing logic):**
 
 | Tier | Workstream |
@@ -470,7 +501,7 @@ project is confirmed working (hence deps F1).
 - 2026-07-27 · note · src cutover-checklist#12 — decommission steps written; explicitly sequenced after client project confirmed working
 
 ### F4 · Archive model + rules hardening — audit follow-through
-*W0 · in-progress · due — · deps — · owner daniel · src audit-2026-08-04#medium · upd 2026-08-19*
+*W0 · in-progress · due — · deps — · owner daniel · src audit-2026-08-04#medium · upd 2026-10-16*
 
 Effort S–M remaining. The 2026-08-04 audit's triage items 1–6 are **merged**
 (PR #19): H1 merge-script guards, H2 Home private-todo leak, M12/M13 date +
@@ -495,6 +526,7 @@ unfixed. M5 is **N23**. Backfill script: `scripts/backfill-archived-at.ts`
 - 2026-08-04 · note · src audit-2026-08-04#fixes-applied — operator TODO recorded: archived_at backfill required before the next Monday sweep matters; rules need a deploy for M4 to take effect
 - 2026-08-10 · note · src F1 — prod ship closed; rules deploy assumed with F1 (spot-check if Monday sweep or tenancy misbehaves)
 - 2026-08-19 · build · src session-2026-08-19 — `scripts/backfill-archived-at.ts` (todos/issues/headlines; dry-run default). Monday sweep 08-17 has already run; still worth applying so the next Monday sees legacy imports. N32 also froze client updates on concluded meeting docs (partial close of (c)).
+- 2026-10-16 · ship · src pr#87 — feedback row 59 (Steph): rocks are **manual-archive only**. The Monday `archiveStaleTodos` sweep no longer reads rocks (to-dos, closed issues, discussed headlines unchanged); schedule + cutoff on `APP_TIME_ZONE` America/Denver; restore keeps `completed_at`. Function redeployed 2026-10-16. Rocks the old sweep archived earlier this quarter were not bulk-restored (on hold until the client asks)
 
 ### F6 · Security audit
 *W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-08-31*
@@ -548,7 +580,7 @@ which is the problem.
 - 2026-08-31 · note · src session-2026-08-31 — inputs captured while working the scorecard group/filter batch; lint counts measured, not estimated
 
 ### F8 · README + operator docs refresh
-*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-08-31*
+*W0 · not-started · due — · deps — · owner daniel · src session-2026-08-31 · upd 2026-10-19*
 
 Effort S–M. The README plus the `docs/` set, which has grown to fourteen
 files with overlapping authority. One defect is already known and is a live
@@ -570,6 +602,26 @@ already distinguishes authorities from sources and is the model.
 **Trail**
 - 2026-08-31 · request · src session-2026-08-31 — daniel: readme + "bunch of docs"
 - 2026-08-31 · note · src session-2026-08-31 — CLAUDE.md → docs/ROADMAP.md pointer contradiction found by reading both files this session
+- 2026-10-19 · build · src pr#92 — operator scripts take `--target sandbox|prod` (prod = `hpb-eos-prod` / `hpb-eos-prod-db` via ADC). `.env.prod` is deprecated for security reasons; docs refreshed under this item must not present it as the path to prod
+
+### N72 · Mobile sign-in — first-party auth domain
+*W0 · shipped · due — · deps — · owner daniel · src session-2026-10-19 · upd 2026-10-19*
+
+Effort S. Steph reported 2026-10-19 that sign-in failed on phones with
+Firebase's **"missing initial state"** error. Fixed in PR #89: prod
+`authDomain` is now `pulse.highplainsbank.com`, and `/__/auth/*` and
+`/__/firebase/*` are proxied to `firebaseapp.com`, so the auth handler is
+served first-party. Deployed 2026-10-19.
+
+**Two constraints this leaves in place:**
+- The Firebase sign-in OAuth client keeps **both** redirect URIs (the pulse
+  host and `firebaseapp.com`). Do not trim either.
+- A future **IAP lock-down** must leave `/__/auth/*` reachable
+  unauthenticated, or sign-in breaks for everyone.
+
+**Trail**
+- 2026-10-19 · report · src session-2026-10-19 — Steph: sign-in fails on phones ("missing initial state")
+- 2026-10-19 · ship · src pr#89 — first-party authDomain on the pulse host, `/__/auth/*` + `/__/firebase/*` proxied; deployed
 
 ---
 
@@ -873,7 +925,8 @@ Merged to main 2026-08-10; **on the live revision** (F1 done). Nine
 Pass 18 list items in one batch: **#5** sidebar collapse/expand (icon rail,
 localStorage, team-initials button); **#7** manual rock archive/restore
 (same `archived_at` as the Monday sweep; restore clears `completed_at` so
-the sweep doesn't instantly re-archive); **#8** confirm before every delete
+the sweep doesn't instantly re-archive — **superseded 2026-10-16, PR #87:
+rocks are no longer swept; restore now keeps `completed_at`**); **#8** confirm before every delete
 (audit found 6 unguarded deletes — headline, issue, rock, todo, metric,
 comment — all now use `ConfirmSubmitForm`; reversible archives stay
 confirm-free by convention); **#9** leader-only L10 transport
@@ -1162,7 +1215,9 @@ Archived crashes. Every other tab already serializes defensively server-side
 the boundary); Rocks is the one surface passing the raw object. Prod now runs the
 same code (`98bb30b` via the F5 ship, which predated this fix), so its tab
 breaks the moment the Monday sweep archives its first rock — which F4's
-backfill (due before 2026-08-17) is about to make happen. Fix is small:
+backfill (due before 2026-08-17) is about to make happen. *(Superseded
+2026-10-16, PR #87: the sweep no longer archives rocks — they archive only by
+hand.)* Fix is small:
 serialize at the projection (millis or a boolean — `rock-row.tsx` only ever
 checks `!= null`). F5 shipped without it, so this now needs its **own
 mini-ship to prod** (same F5 mechanics, no rules deploy); the due date is
@@ -1181,7 +1236,7 @@ subscription and server prefetch). L1 remainder closed in this tree:
 - 2026-08-19 · verify · src session-2026-08-19 — serialization + L1 milestone filter both present on this tree; still not on prod (`98bb30b`). Ships with N32.
 
 ### N24 · Coherent add-{item} + Active | Archived pattern on every entity tab
-*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*
+*W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-10-16*
 
 **Both halves shipped 2026-08-26.** The standalone half turned out to be
 already built (08-26 audit) — all four tabs route through `EntityPageHeader`
@@ -1252,9 +1307,11 @@ choice; that choice is overruled by this ask).
 - 2026-08-12 · client · src l10-2026-08-12 — bug per client: Active/Archived views absent in the L10, present in normal mode; wanted in both
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph endorses manual (not quarter-end automatic) rock archiving: planning timing varies per team, "it's helpful to just archive it once we've discussed it and it creates a clean slate" — validates the F4/N23 model; she archived Cora's rocks live during the meeting
 - 2026-08-12 · build · src pr#35 — L10 slice built same day: `EntityViewToggle` (client-state twin of EntityViewTabs) + archived views in all four segments, restore working in-meeting; PR open awaiting review. Standalone-tab placement/label coherence (the rest of this item) still open
+- 2026-10-16 · decision · src feedback-2026-10#59 — the manual model Steph endorsed 08-15 is now the only one: rocks are manual-archive only (PR #87, see F4)
+- 2026-10-16 · build · src pr#88 — the L10 Scorecard segment gets the same toolbar row as the other stages, Active | Archived on it; the standalone Scorecard page is unchanged
 
 ### N25 · Meeting presence confirmation
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-15*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-10-19*
 
 Effort S–M. Better visibility into who is actually **in** the meeting: when
 a user joins the L10, surface a confirmation that they're present, and give
@@ -1275,6 +1332,8 @@ team already reads.
 **Trail**
 - 2026-08-12 · request · src l10-2026-08-12 — need a better way to see who is present; confirmation when a user joins
 - 2026-08-15 · client · src l10-2026-08-12-transcript — 90's shape: "3 of 7 of us are here" + per-member checkmarks + joined members queued for sharing order
+- 2026-10-16 · client · src feedback-2026-10#52 — meeting presence raised again on the spreadsheet; open follow-up with Steph/Jenna
+- 2026-10-19 · decision · src session-2026-10-19 — daniel: presence monitor deferred
 
 ### N26 · Headlines — collapse long bodies + check off after sharing
 *W3 · shipped · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-08-24*
@@ -1537,7 +1596,7 @@ description, but we do do that a lot").
 - 2026-08-15 · client · src l10-2026-08-12-transcript — origin: Steph wants a discussion-notes home other than the description; Jessica points at comments; demarcation resolves it without a new field
 
 ### N31 · Issue-discussion notification — internal, not email
-*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-09-10*
+*W3 · not-started · due — · deps — · owner daniel · src l10-2026-08-12 · upd 2026-10-19*
 
 Effort M. Steph wants to know when there's discussion on a particular issue
 — her current system distributes that as an **email**. We have freedom to
@@ -1566,6 +1625,7 @@ this replaces email volume rather than adding to it.
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Steph wants activity signal on issues that are not hers; explicit noise constraint (bell must replace email, not add to it)
 - 2026-09-10 · note · src feedback-2026-09-10 — **N61** arrived asking for the same thing on to-dos (follow + notify-on-complete). Design the two as one model over `entity_type`. Nancy using follow in ninety today is evidence for the subscribe shape, but the participants-vs-owner answer above is still owed
 - 2026-09-16 · build · src session-2026-09-16 — the transport now exists: N61 shipped `follower_ids` + a `notifications` collection + the `/notifications` hub, to-dos only. Extending to issues is a `follower_ids` seed on `addIssue` plus the same `notify()` calls in the issue actions — but the subscribe-vs-broadcast answer above still decides *who* gets seeded, so this stays parked on Steph
+- 2026-10-19 · decision · src feedback-2026-10#54 — daniel: no email notifications this phase; the in-app hub from N61 is the only transport
 
 ### N32 · Meeting rating stays editable after the meeting ends
 *W3 · in-progress · due — · deps — · owner daniel · src l10-2026-08-12-transcript · upd 2026-08-19*
@@ -1950,7 +2010,8 @@ invisible until archived rows became reachable in a meeting.
 **1. Restore didn't survive Finish.** Rocks and headlines already cleared the
 field that made them sweepable (`completed_at`, `discussed`) *"so the sweep
 doesn't instantly re-archive"* — the lesson was learned twice and applied
-twice. Issues and to-dos never got it:
+twice. *(Rocks half superseded 2026-10-16, PR #87: rocks are no longer swept,
+so rock restore now keeps `completed_at`.)* Issues and to-dos never got it:
 
 | Entity | Restore was | Now |
 |---|---|---|
@@ -2177,7 +2238,7 @@ may not be the parity that was asked for.
 - 2026-09-10 · finding · src session-2026-09-10 — **deps N35 added.** This table renders `getOrgDirectory()`, which is a projection of `team_members` — so until N35 makes the directory a stored collection, a person-per-row table can only ever show people who are already on a team. That is not ninety parity, it is the roster with different chrome
 
 ### N46 · Create a to-do from an issue, inside the meeting
-*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+*W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-10-16*
 
 Effort S–M. Steph: "Add the ability to create a 'To Do' from the Issues
 section of the meeting." Solving an issue usually ends in someone owing an
@@ -2221,6 +2282,7 @@ stays on the schema, unused, as it was before.
 - 2026-09-04 · build · src session-2026-09-04 — first cut: per-row control, title seeded from the issue, `source_issue_id` stamped and verified to resolve back to the originating issue
 - 2026-09-04 · decision · src session-2026-09-04 — daniel: drop the issue link; issues already have owners and the real use is assigning a slice of the work, not creating a child of one issue. Per-row control and `sourceIssueId` plumbing reverted rather than left dormant, so nothing implies a relationship the app does not model
 - 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in a real meeting**: a single **Add to-do** button in the segment header, zero per-row controls, `source_issue_id` back to `null` on every write
+- 2026-10-16 · superseded · src pr#86 — the in-segment Add to-do buttons (Issues, To-Dos) were removed in favor of the meeting-wide Issue / To-do capture, **N71**
 
 ### N47 · Issues re-order mid-vote, so you click the wrong one
 *W3 · built · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
@@ -2354,8 +2416,94 @@ on when to run it against prod.
 - 2026-09-04 · fix · src session-2026-09-04 — row alignment: the pill had borrowed `translate-y-px` from the Lock icon beside it, but an icon has no baseline while 10px uppercase text sets its own, so it sat low against the 14px title; and the due-date / owner columns used `pt-0.5` (centre 10) against a title and icon buttons that are both 24px boxes centring at 12, reading 2px high next to every icon. `align-middle` + `leading-none` on the pill, `pt-1` on the columns — and the same `pt-0.5` fixed in `milestone-todo-row.tsx`, which shares the geometry and sits in the adjacent column on the same page
 - 2026-09-04 · verify · src session-2026-09-04 — **confirmed live in the sandbox**: the star toggle set the flag and the gold WEEKLY pill rendered on the To-Dos row and on Home. Alignment measured on glyph boxes after the fix — due-date text, title text and star icon all centre at the same y (0px offset). Backfill dry run on the ES team found exactly the 3 marked rows — including the **archived** one, confirming a backfill limited to active rows would have missed it — across both spellings (`** Title` and `**Title`). Toggle reverted; migration deliberately left unapplied
 
+### N68 · CSV export on every entity page
+*W3 · shipped · due — · deps — · owner daniel · src feedback-2026-10#55 · upd 2026-10-19*
+
+Effort M. An **Export CSV** button on To-Dos, Rocks, Issues, Headlines,
+Scorecard and Meetings (core PR #90, pages PR #93). Open to every signed-in
+user and **scoped to exactly what that viewer sees**: each export runs the
+page's own access rule before loading anything, then `accessFor().canSee`
+per row. Files are RFC 4180 with a BOM, cells are formula-neutralized (OWASP,
+including leading control and zero-width characters), there is a row cap, and
+the filename carries provenance. Successful exports write a **fail-closed**
+audit row; refused attempts are audited too, deduped per 10-minute bucket.
+Docs: `docs/EXPORT.md`.
+
+**Scope decisions (daniel):** CSV only — no PDF or xlsx; users print from
+Excel. **No Directory export** (2026-10-19).
+
+**Trail**
+- 2026-10-16 · client · src feedback-2026-10#55 — export asked for on the feedback spreadsheet
+- 2026-10-19 · decision · src session-2026-10-19 — daniel: CSV only, open to everyone scoped to what they see, no Directory export
+- 2026-10-19 · ship · src pr#90 — export core: access rule before load, RFC 4180 + BOM, formula neutralizing, fail-closed audit, deduped refusals, row cap
+- 2026-10-19 · ship · src pr#93 — Export CSV on the six pages
+
+### N69 · Due-date urgency colors in the viewer's time zone
+*W3 · shipped · due — · deps — · owner daniel · src feedback-2026-10#36 · upd 2026-10-16*
+
+Effort S. Due **"Today"** renders in HPB blue, to-dos turn **amber at ≤7
+days**, overdue is **red**. Dates resolve in the **viewer's** time zone (a
+`tz` cookie), with `APP_TIME_ZONE` = America/Denver as the server default.
+The same constant now drives the Monday sweep's clock (PR #87, see F4).
+
+**Trail**
+- 2026-10-16 · client · src feedback-2026-10#36 — due-date urgency colors
+- 2026-10-16 · ship · src pr#84 — Today blue, ≤7 days amber, overdue red; viewer time zone via `tz` cookie, America/Denver default
+
+### N70 · Comment count on issue rows
+*W3 · shipped · due — · deps — · owner daniel · src feedback-2026-10#35 · upd 2026-10-16*
+
+Effort S. Issue rows show how many comments the issue has, from a
+denormalized `comment_count` kept by a self-correcting transaction. Existing
+issues were backfilled with `pnpm issues:backfill-comment-counts`, run on
+sandbox and prod 2026-10-16.
+
+**Trail**
+- 2026-10-16 · client · src feedback-2026-10#35 — comment count visible on the issue row
+- 2026-10-16 · ship · src pr#85 — `comment_count` + self-correcting txn; backfill run on sandbox and prod
+
+### N71 · One "Issue / To-do" capture on every L10 stage
+*W3 · shipped · due — · deps — · owner daniel · src feedback-2026-10#58 · upd 2026-10-19*
+
+Effort S–M. Rows 58 and 40 (Steph): during an L10 you could only create a
+to-do from the Issues and To-Dos stages. Now one modal with an **Issue /
+To-do** toggle, opened from a button in each stage's toolbar (none on Segue),
+with a type default per stage. It replaced `QuickAddIssue`, the six inline
+Drop to Issues boxes and the in-segment Add to-do buttons (**N46**). PR #88
+also gave the Scorecard stage the shared toolbar row with Active | Archived,
+and restyled the L10 To-Dos stage to the To-Dos page's board layout. PR #91:
+switching to **Issue** resets an off-team owner to the viewer, with a note,
+since issues must be owned by someone on the roster.
+
+**Trail**
+- 2026-10-16 · client · src feedback-2026-10#58 — capture from any part of the meeting (also row 40)
+- 2026-10-16 · ship · src pr#86 — one capture modal; QuickAddIssue and inline Drop to Issues removed
+- 2026-10-16 · ship · src pr#88 — button back in each stage toolbar (not Segue); Scorecard Active | Archived on the shared row; L10 To-Dos in the To-Dos board layout
+- 2026-10-19 · ship · src pr#91 — switching to Issue resets an off-team owner to the viewer, with a note
+
+### N73 · Admin feedback tracker (v1)
+*W3 · in-progress · due — · deps — · owner daniel · src feedback-2026-10 · upd 2026-10-19*
+
+Effort M. An admin-only, in-app home for the client-feedback record, so the
+spreadsheet and the PDF report stop being the source. Seeded from
+`docs/feedback/feedback-tracker-seed.json` (59 items, numbered 1–59; the
+client report daniel approved 2026-10-19 is v1). Statuses are the report's:
+Completed, Deployed, Answered, Follow-up, Postponed. Screens follow the
+design mockups (list, board, detail, activity log, new item).
+
+**v1 scope (daniel, 2026-10-19):** no upload store. The 18 existing
+screenshots are served from the repo through an **admin-only route**, never
+from `public/` (that would put the client's screenshots behind an
+unguessable URL with no sign-in). New items are text only until a Cloud
+Storage upload store is built as its own PR. Two PRs: data layer (collection,
+rules, tests, import script) then the admin pages + screenshot route.
+
+**Trail**
+- 2026-10-15 · decision · src session-2026-10-15 — in-app tracker deferred; the spreadsheet stays the record
+- 2026-10-19 · decision · src session-2026-10-19 — undeferred; client report approved as v1; screenshots served from the repo via an admin-only route, no upload store in v1
+
 ### N6 · Better import functionality
-*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-09-10*
+*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-10-16*
 
 Effort M. Beyond the current CSV/xlsx import: clearer mapping, validation,
 dry-run, re-import, error report. Attachments are out of import scope
@@ -2429,9 +2577,10 @@ todos / issues only — headlines was added 2026-08-19 (`2de1be1`, finding 5);
 - 2026-08-18 · decision · src onboarding-2026-08-18 — people/directory CSV is N35, not this item
 - 2026-08-24 · request · src session-2026-08-24 — daniel: need an in-app Import path for **scorecard** data so other teams can be onboarded without the CLI. Parser already supports it; only `WebImportKind` gates it. Flagged alongside: two-collection preview, and the hardcoded `interval: "weekly"`
 - 2026-09-10 · note · src feedback-2026-09-10 — **N60** (to-dos importing as rocks) is the cost of finding 2 above being unbuilt: a row-level preview is what would have caught a mis-picked kind. The two should ship together, or the guard ships alone first
+- 2026-10-16 · client · src feedback-2026-10#31 — Jessica: import template, and Team vs Department wording; open follow-up with Jessica
 
 ### N10 · Attachments + links on entities (forward only)
-*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-09-10*
+*W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-10-16*
 
 Effort L. Rocks/issues/todos/headlines accept file attachments and/or
 hyperlinks. **No data migration** of ninety attachments (decided
@@ -2457,6 +2606,7 @@ client asks for first**.
 - 2026-07-13 · note · src roadmap-prior#pass-11 — attachments imply a Cloud Storage bucket not in the Terraform footprint
 - 2026-08-10 · decision · src roadmap-prior#pass-18 — forward only; no ninety attachment migration
 - 2026-09-10 · client · src feedback-2026-09-10 — Steph Benes, Issues: cannot attach a PDF to an issue, would like images too. Recorded here rather than as a new item — same ask, sharper. Contradicts the 2026-07-30 links-are-an-acceptable-substitute concession, which P3-2 has since satisfied without closing this
+- 2026-10-16 · client · src feedback-2026-10#16 — links & attachments across items asked again on rows 16, 23 and 51; open follow-up with Steph/Jenna on scope. Still gated on the F2 bucket
 
 ### N15 · Meeting notes UX
 *W3 · not-started · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
@@ -2471,7 +2621,7 @@ never persisted.
 - 2026-08-10 · note · src roadmap-prior#pass-18 — captured as next-work item 15
 
 ### N18 · Scorecard trend-status write-up for Joe
-*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-08-10*
+*W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-10-16*
 
 Effort S. No product change — report the **current** rules for client
 review. The write-up exists in the superseded roadmap (Pass 18 box, sourced
@@ -2490,6 +2640,7 @@ M14).
 - 2026-08-04 · note · src audit-2026-08-04#medium — M14: goal-less metrics render On-track next to 0/13 hit — contradictory status to resolve or footnote
 - 2026-08-05 · transcript · src roadmap-prior#pass-18 — Joe asks how on-track/at-risk/off-track is decided; docs-only response agreed
 - 2026-08-10 · note · src roadmap-prior#pass-18 — rules table written against lib/scorecard.ts + tests; delivery pending
+- 2026-10-16 · client · src feedback-2026-10#56 — off-track rule questioned: 2-of-3 vs 3-of-3 misses. The current rule (strict majority of the last 3 populated periods) is 2-of-3; open follow-up with Steph/Jenna
 
 ### P2-1 · Custom meeting agendas
 *W3 · shipped · due — · deps F5 · owner daniel · src roadmap-prior#pass-11 · upd 2026-08-15*
@@ -2684,7 +2835,7 @@ yet.
 - 2026-08-04 · note · src audit-2026-08-04#low — L5: source_meeting_id accepted unvalidated on addIssue
 
 ### G2 · L10 meeting polish backlog (L10_GAPS remainder)
-*W3 · parked · due — · deps — · owner daniel · src l10-gaps#deferred · upd 2026-08-10*
+*W3 · parked · due — · deps — · owner daniel · src l10-gaps#deferred · upd 2026-10-16*
 
 Effort M–L if taken whole. Parked bundle of the surviving `l10-gaps`
 yellows: in-meeting issue solve → to-do affordance (the natural "solved;
@@ -2704,13 +2855,14 @@ work — that instruction predates this file and stands.
 - 2026-08-10 · decision · src — — bundled and parked; individual items promote out when picked up
 - 2026-08-15 · followup · src l10-2026-08-12-transcript — Joe owns a dark-mode sweep ("if you see anything super wrong with dark mode"); he is the team's dark-mode user, Jessica uses it personally but not for work. No defect reported yet — this is a request for one
 - 2026-08-15 · client · src l10-2026-08-12-transcript — Joe wants the issue owner's photo or initials on the issue row; daniel: profile photos are in flight but not on prod. Steph: "that's low priority"
+- 2026-10-16 · client · src feedback-2026-10#33 — per-measurable drop-to-issues asked for; open follow-up with Steph/Jenna. Note PR #86 removed the six inline Drop to Issues boxes in favor of the N71 capture, which opens on Issue from the Scorecard stage
 
 ---
 
 ## Workstream 4 — Integrations & platform ops
 
 ### P1-7 · Google Tasks two-way sync
-*W4 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#10 · upd 2026-08-11*
+*W4 · shipped · due — · deps F5 · owner daniel · src tracker-2026-08-03#10 · upd 2026-10-19*
 
 **Shipped PR #26** (`feature/settings-profile`) — **completion only**.
 Google → EOS sets `completed_at` when a mirrored task is completed in
@@ -2739,6 +2891,7 @@ client's project (cutover-checklist §9 — never reuse the trial's).
 - 2026-07-13 · note · src roadmap-prior#pass-11 — Google Tasks sync is the client's only flagged phase-1 integration
 - 2026-07-30 · transcript · src tracker-2026-08-03#10 — Steph: Tasks complete → EOS complete not working; two-way expected
 - 2026-08-04 · note · src audit-2026-08-04#medium — M6/L11: milestone edits and archive path bypass the Tasks mirror
+- 2026-10-19 · decision · src feedback-2026-10#11 — daniel: automatic Google Tasks sync deferred to a later phase; ideally full two-way, not one-way scheduled. Open follow-up with Steph/Jenna
 
 ### P1-2 · Access ops — allowlist + membership
 *W4 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-13 · upd 2026-08-18*
@@ -2807,7 +2960,10 @@ cleared together). (b) is a field on the doc and a line in the edit view —
 decide whether it is free text or the sweep's own reason (`finish` /
 `monday` / manual), which is also what an audit-log row would want.
 **Confirm where the Monday sweep actually runs** before building on it — the
-code names it, but this pass did not locate the scheduled job.
+code names it, but this pass did not locate the scheduled job. **Located
+2026-10-16 (PR #87):** the `archiveStaleTodos` Cloud Function, Monday ~03:00
+America/Denver; it sweeps to-dos, closed issues and discussed headlines, and
+no longer touches rocks.
 
 ### N63 · Archive a scorecard measurable from inside the L10
 *W3 · not-started · due — · deps N48 · owner daniel · src demo-2026-09-17 · upd 2026-09-17*
@@ -3257,7 +3413,7 @@ M2 together, not in sequence.
 - 2026-09-09 · finding · src session-2026-09-09 — TTL change couples to **M2** / **N52**; `checkRevoked` is already on and is the mitigation that makes a longer TTL arguable
 
 ### N57 · Scorecard sharing, editing and permissions — the model
-*W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
+*W3 · not-started · due — · deps — · owner daniel · src steph-joe-2026-09-08 · upd 2026-10-16*
 
 Effort L, and **not yet scoped on purpose** — daniel: "we will need to
 brainstorm about improved scorecard/metrics sharing, editing, etc over a few
@@ -3301,6 +3457,7 @@ expressed in.
 - 2026-08-10 · note · src tracker-2026-08-03#11 — (via P3-1) Brian's sum-of-branches → leadership, editable formula, history preserved
 - 2026-09-08 · request · src steph-joe-2026-09-08 — delete permissions, adopt-to-my-list, hide/show, non-owner group + archive actions; flagged by daniel as a multi-turn brainstorm
 - 2026-09-09 · decision · src steph-joe-2026-09-08 — **P3-1 folded in**; share-up is one case of this model's central fork, so scoping it separately would answer the same question twice
+- 2026-10-16 · client · src feedback-2026-10#12 — calculated measurables asked again; open follow-up with Steph/Jenna
 
 ### N58 · Data Directory for Admin
 *W3 · not-started · due — · deps N49 · owner daniel · src steph-joe-2026-09-08 · upd 2026-09-09*
@@ -3344,7 +3501,7 @@ it reopens a question closed on an inference, and it un-accepts a security
 finding that was accepted only while Google stays the sole sign-in provider.
 
 ### N52 · SSO vs. Google login — investigate the identity provider
-*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-09-04*
+*W3 · not-started · due — · deps — · owner daniel · src feedback-2026-09-02 · upd 2026-10-19*
 
 Effort S to answer, S–M to build. Steph: "Let's investigate setting up SSO
 vs. just Google Login." The ask is an investigation, so the deliverable is a
@@ -3406,6 +3563,7 @@ undocumented; a provider change is invisible to infra-as-code and matters to
 - 2026-09-04 · finding · src session-2026-09-04 — `Q-sso`'s 2026-07-13 close was inferred from the Workspace integration asks, not answered; the `CLIENT_GCP_SETUP` §3 question to HPB has no recorded reply
 - 2026-09-04 · finding · src session-2026-09-04 — this reopens audit **M2**, accepted 2026-09-02 explicitly conditional on Google being the only provider; confirmed unfixed in `session.ts` and `firestore.rules`
 - 2026-09-04 · finding · src session-2026-09-04 — P1-7 Google Tasks sync assumes Google identities; a non-Google IdP makes it a second login rather than a broken feature
+- 2026-10-19 · decision · src feedback-2026-10#46 — daniel: Workspace-only SSO deferred; HPB IT to confirm MFA on the Workspace identity first
 
 ### N49 · Say what an Admin can do that others cannot
 *W3 · not-started · due — · deps P2-7 · owner daniel · src feedback-2026-09-02 · upd 2026-09-02*
@@ -3550,6 +3708,13 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-09-02 · Q-vote-freeze · answered — N47 freezes the issue order until all votes are cast (Steph's own fix), released off N41's `teamVoteTally()` denominator rather than a new one. Per-voter freeze and a manual "apply new order" pill both rejected. Leaves one hole to build around: an unmarked absentee holds the freeze for the whole room
 - 2026-09-02 · Q-weekly-focus · answered — N50's weekly-focus is a **free flag, any number**, not one per person per week: `**` is already unlimited, and a field that silently unmarks someone's first to-do would overrule a working habit on its way to replacing it. What clears the flag is still open
 - 2026-08-26 · Q-deploy-truth · answered — deployment state is never read from this file. `gcloud run services describe eos --project hpb-eos-prod --region us-east1` is the authority; the rules check is a diff of the live ruleset source against `firestore.rules`, not a timestamp comparison
+- 2026-10-16 · N69 · closed — due-date urgency colors (Today blue, ≤7 days amber, overdue red) in the viewer's time zone (PR #84)
+- 2026-10-16 · N70 · closed — comment count on issue rows (PR #85); backfill run on sandbox and prod
+- 2026-10-16 · Q-rock-archive · answered — rocks are manual-archive only; the Monday sweep no longer touches them and runs on Mountain time (PR #87, row 59). Retires the restore-clears-`completed_at` rule for rocks
+- 2026-10-19 · N71 · closed — one Issue / To-do capture on every L10 stage except Segue (PRs #86, #88, #91)
+- 2026-10-19 · N72 · closed — mobile sign-in fixed with a first-party authDomain on the pulse host (PR #89); OAuth client keeps both redirect URIs, IAP must exempt `/__/auth/*`
+- 2026-10-19 · N68 · closed — CSV export on six pages, scoped to what each viewer sees (PRs #90, #93); CSV only, no Directory export
+- 2026-10-19 · Q-feedback-sheet · answered — all 58 spreadsheet rows (plus new row 60) have an answer: 40 shipped, 8 follow-up, 5 closed, 4 answered, 2 deferred. Seed committed 2026-10-19 (`docs/feedback/feedback-tracker-seed.json`) after daniel approved the client report
 
 ## Sources
 
@@ -3570,6 +3735,7 @@ distinct from Trail entries, which carry a layer + src.*
 | feedback-2026-09-10 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes feedback dated 2026-09-10, four rows; anchors are the reporter + area (Issues / Meetings / Import / To-Dos). N59 / N60 / N61, plus a second report on N10 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
+| feedback-2026-10 | (HPB feedback spreadsheet, client-held — not a repo artifact; seed copy committed at `docs/feedback/feedback-tracker-seed.json`, the source for the N73 admin tracker import) | 58 rows from Steph Benes, Jessica Teichman, Jenna Scheeler, Brian Otteman, audited 2026-10-15/16; anchors are its row numbers. N68–N71, plus log lines on F4, N6, N10, N18, N25, N31, N52, N57, G2, P1-7 |
 | demo-2026-09-17 | (daniel's notes after the to-dos demo, this session — not a repo artifact) | Seven lines; anchors are the line topics (archive / driver / scorecard / to-dos page / rock sharing / milestones / roles). N62–N67 |
 
 `src pr#NN` refs resolve to pull requests on the project's GitHub origin

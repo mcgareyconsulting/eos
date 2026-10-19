@@ -15,7 +15,7 @@ import {
   useDiscardGuard,
 } from "@/components/ui/modal";
 import { entityHeaderButtonClass } from "@/components/entity-page-header";
-import { SHIPPED_STATUSES, type FeedbackEditForm } from "@/lib/feedback/edit";
+import { SHIPPED_STATUSES, changedEditFields, type FeedbackEditForm } from "@/lib/feedback/edit";
 import { FEEDBACK_STATUSES, FEEDBACK_STATUS_LABELS, type FeedbackStatus } from "@/lib/feedback/types";
 import { saveFeedbackEdits } from "../actions";
 import { Field, Textarea } from "../form-fields";
@@ -28,10 +28,13 @@ export function EditFeedbackButton({
   id,
   label,
   initial,
+  updatedAt,
 }: {
   id: string;
   label: string;
   initial: FeedbackEditForm;
+  /** The item's updated_at as this page loaded it (the save's staleness check). */
+  updatedAt: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -60,9 +63,16 @@ export function EditFeedbackButton({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Only what this admin changed: another admin's newer value for any other
+    // field is never written back.
+    const changes = changedEditFields(draft, opened);
+    if (Object.keys(changes).length === 0) {
+      setOpen(false);
+      return;
+    }
     start(async () => {
       setError(null);
-      const res = await saveFeedbackEdits(id, draft);
+      const res = await saveFeedbackEdits(id, changes, updatedAt);
       if (!res.ok) {
         setError(res.error);
         return;

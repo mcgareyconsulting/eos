@@ -78,7 +78,12 @@ export default async function FeedbackDetailPage({
             {item.shipped_at && <span>Shipped {formatFeedbackDate(item.shipped_at)}</span>}
           </div>
         </div>
-        <EditFeedbackButton id={item.id} label={label} initial={feedbackEditFormFrom(item)} />
+        <EditFeedbackButton
+          id={item.id}
+          label={label}
+          initial={feedbackEditFormFrom(item)}
+          updatedAt={item.updated_at}
+        />
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">

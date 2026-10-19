@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFeedbackItem } from "./model";
 import {
   bankToday,
+  changedEditFields,
   feedbackEditFormFrom,
   feedbackEditFormToPatch,
   parseLines,
@@ -51,6 +52,18 @@ describe("form parsing", () => {
       evidence: ["PR #40 merged"],
       shipped_at: null,
     });
+  });
+
+  test("absent keys are left out of the patch", () => {
+    assert.deepEqual(feedbackEditFormToPatch({ resolution: " x " }), { resolution: "x" });
+    assert.deepEqual(feedbackEditFormToPatch({ prs: "7", status: undefined }), { prs: [7] });
+    assert.deepEqual(feedbackEditFormToPatch({}), {});
+  });
+
+  test("changedEditFields: only what differs from the opened values", () => {
+    const opened = feedbackEditFormFrom(readFeedbackItem("fb-001", { number: 1, status: "new", prs: [4] }));
+    assert.deepEqual(changedEditFields(opened, opened), {});
+    assert.deepEqual(changedEditFields({ ...opened, resolution: "r", prs: "4" }, opened), { resolution: "r" });
   });
 
   test("bad values are refused with readable text", () => {

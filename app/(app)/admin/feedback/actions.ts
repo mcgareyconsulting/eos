@@ -18,9 +18,13 @@ function revalidateFeedback(id?: string) {
   if (id) revalidatePath(`/admin/feedback/${id}`);
 }
 
-/** Save the detail page's Edit form. */
-export async function saveFeedbackEdits(id: string, form: unknown): Promise<FeedbackSaveResult> {
-  const result = await saveFeedbackEditsCore(id, form);
+/** Save the detail page's Edit form: the changed fields + updated_at as opened. */
+export async function saveFeedbackEdits(
+  id: string,
+  form: unknown,
+  openedUpdatedAt: string | null,
+): Promise<FeedbackSaveResult> {
+  const result = await saveFeedbackEditsCore(id, form, openedUpdatedAt);
   if (result.ok && result.changed.length > 0) revalidateFeedback(id);
   return result;
 }

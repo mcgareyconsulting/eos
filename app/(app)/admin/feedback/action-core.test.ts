@@ -72,11 +72,14 @@ describe("non-admins are refused before any write", () => {
     const id = seed(db, 1);
     const before = JSON.stringify(item(db, id));
     await assertNotFound(() =>
-      saveFeedbackEditsCore(id, { ...formFor(db, id), status: "completed" }, member(db)),
+      saveFeedbackEditsCore(id, { ...formFor(db, id), status: "completed" }, null, member(db)),
     );
     await assertNotFound(() => setFeedbackStatusCore(id, "completed", member(db)));
-    // Invalid input too: the gate comes before validation.
+    // Invalid input and malformed ids too: the gate comes before anything else.
     await assertNotFound(() => setFeedbackStatusCore(id, "closed", member(db)));
+    await assertNotFound(() => setFeedbackStatusCore("../users/x", "completed", member(db)));
+    await assertNotFound(() => saveFeedbackEditsCore(42, null, "bogus", member(db)));
+    await assertNotFound(() => saveFeedbackEditsCore("fb-404", {}, null, member(db)));
     await assertNotFound(() =>
       createFeedbackCore(
         { reported_on: "2026-10-19", reviewer: "S", page: "Rocks", type: "bug", original_comment: "x" },
@@ -97,6 +100,7 @@ describe("saveFeedbackEditsCore", () => {
     const res = await saveFeedbackEditsCore(
       id,
       { ...formFor(db, id), status: "answered", client_resolution: "Answered in the L10.", prs: "40" },
+      null,
       admin(db),
     );
     assert.deepEqual(res, { ok: true, changed: ["status", "client_resolution", "prs"] });
@@ -116,7 +120,7 @@ describe("saveFeedbackEditsCore", () => {
   test("moving to Completed with no shipped date fills today (Denver)", async () => {
     const db = new FakeFirestore();
     const id = seed(db, 3);
-    const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), status: "completed" }, admin(db));
+    const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), status: "completed" }, null, admin(db));
     assert.deepEqual(res, { ok: true, changed: ["status", "shipped_at"] });
     assert.equal(item(db, id).shipped_at, "2026-10-19");
     assert.deepEqual(activity(db, id)[0].fields, ["shipped_at"]);
@@ -125,9 +129,9 @@ describe("saveFeedbackEditsCore", () => {
   test("a typed shipped date wins, and it stays editable", async () => {
     const db = new FakeFirestore();
     const id = seed(db, 4);
-    await saveFeedbackEditsCore(id, { ...formFor(db, id), status: "deployed", shipped_at: "2026-10-01" }, admin(db));
+    await saveFeedbackEditsCore(id, { ...formFor(db, id), status: "deployed", shipped_at: "2026-10-01" }, null, admin(db));
     assert.equal(item(db, id).shipped_at, "2026-10-01");
-    const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), shipped_at: "2026-10-02" }, admin(db));
+    const res = await saveFeedbackEditsCore(id, { shipped_at: "2026-10-02" }, null, admin(db));
     assert.deepEqual(res, { ok: true, changed: ["shipped_at"] });
     assert.equal(item(db, id).shipped_at, "2026-10-02");
   });
@@ -140,11 +144,11 @@ describe("saveFeedbackEditsCore", () => {
       [{ prs: "40, abc" }, /not a PR number/],
       [{ shipped_at: "yesterday" }, /Shipped date/],
     ] as const) {
-      const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), ...patch }, admin(db));
+      const res = await saveFeedbackEditsCore(id, { ...formFor(db, id), ...patch }, null, admin(db));
       assert.equal(res.ok, false);
       assert.match(res.ok ? "" : res.error, re);
     }
-    const res = await saveFeedbackEditsCore(id, null, admin(db));
+    const res = await saveFeedbackEditsCore(id, null, null, admin(db));
     assert.equal(res.ok, false);
     assert.deepEqual(activity(db, id), []);
   });
@@ -155,6 +159,7 @@ describe("saveFeedbackEditsCore", () => {
     const res = await saveFeedbackEditsCore(
       id,
       { ...formFor(db, id), original_comment: "rewritten", thread: "x", number: 99 },
+      null,
       admin(db),
     );
     assert.deepEqual(res, { ok: true, changed: [] });
@@ -165,9 +170,75 @@ describe("saveFeedbackEditsCore", () => {
   test("a missing or malformed id is a refusal", async () => {
     const db = new FakeFirestore();
     for (const id of ["fb-404", "../fb-001", 7]) {
-      const res = await saveFeedbackEditsCore(id, {}, admin(db));
+      const res = await saveFeedbackEditsCore(id, {}, null, admin(db));
       assert.deepEqual(res, { ok: false, error: "Feedback item not found." });
     }
+  });
+});
+
+describe("concurrent edits", () => {
+  const OPENED = "2026-10-01T12:00:00.000Z";
+
+  test("a status changed on the board after the dialog opened is not reverted; the stale save is refused", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 20, { status: "building", updated_at: OPENED });
+    const form = formFor(db, id); // admin A opens the dialog
+    await setFeedbackStatusCore(id, "follow_up", admin(db)); // admin B, on the board
+    const res = await saveFeedbackEditsCore(id, { ...form, resolution: "A's note" }, OPENED, admin(db));
+    assert.deepEqual(res, {
+      ok: false,
+      error: "This item changed since you opened it. Reload to see the latest.",
+    });
+    assert.equal(item(db, id).status, "follow_up");
+    assert.equal(item(db, id).resolution ?? null, null);
+    assert.equal(activity(db, id).length, 1, "only B's change is logged");
+  });
+
+  test("after a reload, sending only the changed field leaves the other admin's status alone", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 21, { status: "building", updated_at: OPENED });
+    await setFeedbackStatusCore(id, "follow_up", admin(db));
+    const reloaded = readFeedbackItem(id, item(db, id)).updated_at;
+    const res = await saveFeedbackEditsCore(id, { resolution: "A's note" }, reloaded, admin(db));
+    assert.deepEqual(res, { ok: true, changed: ["resolution"] });
+    assert.equal(item(db, id).status, "follow_up");
+    assert.equal(activity(db, id).at(-1)?.kind, "edited");
+  });
+
+  test("an updated_at that is not a string or null is refused", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 22, { updated_at: OPENED });
+    const res = await saveFeedbackEditsCore(id, { resolution: "x" }, 12345, admin(db));
+    assert.equal(res.ok, false);
+    assert.deepEqual(activity(db, id), []);
+  });
+
+  test("a save with no changed fields writes no activity", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 23, { updated_at: OPENED, updated_by: "earlier" });
+    assert.deepEqual(await saveFeedbackEditsCore(id, {}, OPENED, admin(db)), { ok: true, changed: [] });
+    assert.deepEqual(await saveFeedbackEditsCore(id, formFor(db, id), OPENED, admin(db)), { ok: true, changed: [] });
+    assert.deepEqual(activity(db, id), []);
+    assert.equal(item(db, id).updated_by, "earlier");
+  });
+});
+
+describe("shipped_at fill (inside the update transaction)", () => {
+  test("status → Completed with empty shipped_at fills today on the Denver clock", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 30, { status: "building", shipped_at: null });
+    const res = await saveFeedbackEditsCore(id, { status: "completed" }, null, admin(db));
+    assert.deepEqual(res, { ok: true, changed: ["status", "shipped_at"] });
+    // NOW is 2026-10-20 04:30 UTC = Oct 19 in Denver.
+    assert.equal(item(db, id).shipped_at, "2026-10-19");
+  });
+
+  test("an already-set shipped_at is untouched", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 31, { status: "building", shipped_at: "2026-09-02" });
+    const res = await saveFeedbackEditsCore(id, { status: "completed" }, null, admin(db));
+    assert.deepEqual(res, { ok: true, changed: ["status"] });
+    assert.equal(item(db, id).shipped_at, "2026-09-02");
   });
 });
 

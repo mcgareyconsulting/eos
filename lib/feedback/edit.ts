@@ -74,24 +74,41 @@ function text(v: unknown, label: string): string {
 }
 
 /**
- * The form → a validated patch. Only the form's own fields are read; any
- * other key in `form` is ignored (the action's input is untrusted). Throws
- * a readable Error for a bad value.
+ * The form → a validated patch. Only the form's own fields are read, and
+ * only those PRESENT in `form` (the dialog sends just the fields the admin
+ * changed, so a concurrent edit to another field is never written back).
+ * Any other key is ignored (the action's input is untrusted). Throws a
+ * readable Error for a bad value.
  */
 export function feedbackEditFormToPatch(form: Readonly<Record<string, unknown>>): FeedbackPatch {
-  const t = (k: (typeof FEEDBACK_EDIT_FORM_FIELDS)[number]) => text(form[k], k);
-  return validateFeedbackPatch({
-    status: t("status"),
-    client_resolution: t("client_resolution"),
-    resolution: t("resolution"),
-    client_note: t("client_note"),
-    follow_up_with: t("follow_up_with"),
-    follow_up_topic: t("follow_up_topic"),
-    follow_ups: parseLines(t("follow_ups")),
-    prs: parsePrText(t("prs")),
-    evidence: parseLines(t("evidence")),
-    shipped_at: t("shipped_at"),
-  });
+  const parse: Record<(typeof FEEDBACK_EDIT_FORM_FIELDS)[number], (t: string) => unknown> = {
+    status: (t) => t,
+    client_resolution: (t) => t,
+    resolution: (t) => t,
+    client_note: (t) => t,
+    follow_up_with: (t) => t,
+    follow_up_topic: (t) => t,
+    follow_ups: parseLines,
+    prs: parsePrText,
+    evidence: parseLines,
+    shipped_at: (t) => t,
+  };
+  const raw: Record<string, unknown> = {};
+  for (const k of FEEDBACK_EDIT_FORM_FIELDS) {
+    if (!Object.hasOwn(form, k) || form[k] === undefined) continue;
+    raw[k] = parse[k](text(form[k], k));
+  }
+  return validateFeedbackPatch(raw);
+}
+
+/** The fields of `draft` that differ from `opened` — what the dialog sends. */
+export function changedEditFields(
+  draft: FeedbackEditForm,
+  opened: FeedbackEditForm,
+): Partial<FeedbackEditForm> {
+  const out: Partial<FeedbackEditForm> = {};
+  for (const k of FEEDBACK_EDIT_FORM_FIELDS) if (draft[k] !== opened[k]) out[k] = draft[k];
+  return out;
 }
 
 /** The edit form's opening values for an item. */

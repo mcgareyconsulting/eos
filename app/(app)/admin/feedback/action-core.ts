@@ -13,8 +13,8 @@
 import { unstable_rethrow } from "next/navigation";
 import {
   FEEDBACK_NOT_FOUND,
+  FEEDBACK_STALE,
   createFeedbackItem,
-  getFeedbackItem,
   updateFeedbackItem,
   type FeedbackDeps,
 } from "@/lib/firebase/feedback";
@@ -52,19 +52,22 @@ function logFailure(event: string, id: string | null, e: unknown) {
 }
 
 /**
- * Validate `buildPatch` against the item as stored, apply the shipped_at
- * fill rule, and save. Shared by the detail form and the board's status
- * select.
+ * Validate `buildPatch`, then save it through updateFeedbackItem with the
+ * shipped_at fill applied inside its transaction (against the snapshot the
+ * write is based on). Shared by the detail form and the board's select.
+ * `expectedUpdatedAt` (undefined = no check) refuses a save made from a
+ * form opened before someone else's save.
  */
 async function saveFeedback(
   id: unknown,
   buildPatch: () => FeedbackPatch,
+  expectedUpdatedAt: string | null | undefined,
   deps: FeedbackActionDeps,
 ): Promise<FeedbackSaveResult> {
-  // The gate first: getFeedbackItem → requireAdmin. A non-admin never
-  // reaches validation, so even the refusal wording is admin-only.
-  const current = isFeedbackDocId(id) ? await getFeedbackItem(id, deps) : null;
-  if (!current) return { ok: false, error: FEEDBACK_NOT_FOUND };
+  // The gate first, whatever the input: a non-admin always gets the 404 and
+  // never reaches validation, so even the refusal wording is admin-only.
+  await requireAdmin(deps);
+  if (!isFeedbackDocId(id)) return { ok: false, error: FEEDBACK_NOT_FOUND };
 
   let patch: FeedbackPatch;
   try {
@@ -73,31 +76,44 @@ async function saveFeedback(
     return { ok: false, error: message(e) };
   }
   const today = bankToday((deps.now ?? (() => new Date()))());
-  patch = withShippedAtFill(current, patch, today);
 
   try {
-    const { changed } = await updateFeedbackItem(current.id, patch, deps);
+    const { changed } = await updateFeedbackItem(id, patch, deps, {
+      expectedUpdatedAt,
+      prepare: (current, p) => withShippedAtFill(current, p, today),
+    });
     return { ok: true, changed };
   } catch (e) {
     unstable_rethrow(e);
-    if (message(e) === FEEDBACK_NOT_FOUND) return { ok: false, error: FEEDBACK_NOT_FOUND };
-    logFailure("feedback_save_failed", current.id, e);
+    const m = message(e);
+    if (m === FEEDBACK_NOT_FOUND || m === FEEDBACK_STALE) return { ok: false, error: m };
+    logFailure("feedback_save_failed", id, e);
     return { ok: false, error: GENERIC_FEEDBACK_ERROR };
   }
 }
 
-/** The detail page's Edit form (lib/feedback/edit.ts FeedbackEditForm). */
+/**
+ * The detail page's Edit dialog: only the fields the admin changed
+ * (lib/feedback/edit.ts changedEditFields), plus the item's updated_at as the
+ * dialog loaded it — required, so a save over someone else's newer change is
+ * refused rather than silently reverting it.
+ */
 export function saveFeedbackEditsCore(
   id: unknown,
   form: unknown,
+  openedUpdatedAt: unknown,
   deps: FeedbackActionDeps = {},
 ): Promise<FeedbackSaveResult> {
   return saveFeedback(
     id,
     () => {
       if (!form || typeof form !== "object") throw new Error("Nothing to save");
+      if (openedUpdatedAt !== null && typeof openedUpdatedAt !== "string") {
+        throw new Error(FEEDBACK_STALE);
+      }
       return feedbackEditFormToPatch(form as Record<string, unknown>);
     },
+    openedUpdatedAt === null || typeof openedUpdatedAt === "string" ? openedUpdatedAt : null,
     deps,
   );
 }
@@ -108,7 +124,9 @@ export function setFeedbackStatusCore(
   status: unknown,
   deps: FeedbackActionDeps = {},
 ): Promise<FeedbackSaveResult> {
-  return saveFeedback(id, () => validateFeedbackPatch({ status }), deps);
+  // No staleness check: the board writes only the status (and the fill),
+  // so it cannot revert anyone else's field.
+  return saveFeedback(id, () => validateFeedbackPatch({ status }), undefined, deps);
 }
 
 /** The Log feedback form (text only; no upload in v1). */

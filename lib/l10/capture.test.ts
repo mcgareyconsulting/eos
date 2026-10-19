@@ -6,6 +6,8 @@ import {
   captureSubmission,
   captureTitleMissing,
   defaultCaptureKind,
+  ownerAfterKindSwitch,
+  ownerResetNote,
   titleAfterKindSwitch,
   type CaptureDraft,
 } from "./capture";
@@ -97,6 +99,76 @@ describe("titleAfterKindSwitch", () => {
       segment: "scorecard",
     });
     assert.equal(out.title, "Off-track metric:");
+  });
+});
+
+describe("ownerAfterKindSwitch", () => {
+  const members = [{ user_id: "u1" }, { user_id: "u2" }];
+  const selfId = "me";
+
+  test("an off-roster owner resets to the viewer when switching to Issue", () => {
+    assert.deepEqual(
+      ownerAfterKindSwitch({ ownerId: "outsider", to: "issue", members, selfId }),
+      { ownerId: "me", reset: true },
+    );
+  });
+
+  test("a roster owner, the viewer, or unassigned is kept on Issue", () => {
+    for (const ownerId of ["u2", "me", ""]) {
+      assert.deepEqual(
+        ownerAfterKindSwitch({ ownerId, to: "issue", members, selfId }),
+        { ownerId, reset: false },
+        ownerId,
+      );
+    }
+  });
+
+  test("the viewer off the roster is still kept (requireRosterOwner's self)", () => {
+    assert.deepEqual(
+      ownerAfterKindSwitch({ ownerId: "me", to: "issue", members: [], selfId }),
+      { ownerId: "me", reset: false },
+    );
+  });
+
+  test("switching to To-do never changes the owner", () => {
+    for (const ownerId of ["outsider", "u1", "me", ""]) {
+      assert.deepEqual(
+        ownerAfterKindSwitch({ ownerId, to: "todo", members, selfId }),
+        { ownerId, reset: false },
+        ownerId,
+      );
+    }
+  });
+
+  test("the reset lands on the opening owner, so it alone is not dirty", () => {
+    // Every capture opens owned by the viewer (freshFields), and the modal's
+    // `dirty` compares the owner to that opening value.
+    const opened = selfId;
+    let ownerId = "outsider"; // picked on To-do: off the opening value
+    assert.notEqual(ownerId, opened);
+    ownerId = ownerAfterKindSwitch({ ownerId, to: "issue", members, selfId }).ownerId;
+    assert.equal(ownerId, opened);
+    // Back to To-do keeps the viewer — still the opening value.
+    ownerId = ownerAfterKindSwitch({ ownerId, to: "todo", members, selfId }).ownerId;
+    assert.equal(ownerId, opened);
+  });
+});
+
+describe("ownerResetNote", () => {
+  test("names the person who was cleared", () => {
+    assert.equal(
+      ownerResetNote("Pat Lee"),
+      "Pat Lee isn't on this team, so the issue owner is set to you.",
+    );
+  });
+
+  test("falls back when the name is unknown", () => {
+    for (const name of [null, undefined, "", "  "]) {
+      assert.equal(
+        ownerResetNote(name),
+        "That person isn't on this team, so the issue owner is set to you.",
+      );
+    }
   });
 });
 

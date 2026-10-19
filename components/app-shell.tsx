@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Settings, Shield } from "lucide-react";
+import { Home, MessageSquareText, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
@@ -73,6 +73,10 @@ export function AppShell({
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
+              {/* Org admins only (ROADMAP N73); the page 404s anyone else. */}
+              {isAdmin && (
+                <NavLink href="/admin/feedback" icon={MessageSquareText} label="Feedback" />
+              )}
             </nav>
 
             {membershipCount === 0 && !isAdmin && (

@@ -345,11 +345,12 @@ code, which is what this pass was.
 **Session 2026-10-15 → 10-19 — the October client-feedback wave.** The HPB
 feedback spreadsheet (58 rows; reviewers Steph Benes, Jessica Teichman, Jenna
 Scheeler, Brian Otteman) was audited 2026-10-15/16 against code and PRs, and
-**every row now has an answer**. After this wave the tally is **40 shipped ·
-8 follow-up · 5 closed · 4 answered · 2 deferred** (59 items, counting a new
-row 60). A seed file for it (`docs/feedback/feedback-tracker-seed.json` +
-screenshots) exists on the consultant machine but is **not committed** —
-pending daniel's review. Shipped (PRs #84–#93, all on prod): due-date
+**every row now has an answer**. After this wave, in the client report's
+labels: **43 completed · 1 deployed · 5 answered · 8 follow-up · 2 postponed**
+(59 items, numbered 1–59, counting a new mobile sign-in item). The seed is
+committed at `docs/feedback/feedback-tracker-seed.json` + `screenshots/`
+(daniel approved the client report 2026-10-19 as v1 of the admin tracker,
+**N73**). Shipped (PRs #84–#93, all on prod): due-date
 urgency colors in the viewer's time zone (**N69**, row 36), comment counts on
 issue rows (**N70**, row 35), one Issue / To-do capture on L10 stages
 (**N71**, rows 58/40), rocks manual-archive only (row 59 → **F4**), mobile
@@ -358,9 +359,8 @@ sign-in on a first-party auth domain (**N72**), CSV export on six pages
 **Decisions (daniel):** Google Tasks automatic two-way sync deferred to a later
 phase (row 11 → P1-7); Workspace-only SSO deferred until HPB IT confirms MFA
 (row 46 → N52); no email notifications this phase (row 54 → N31); presence
-monitor deferred (→ N25); an in-app admin feedback tracker (Firestore
-`feedback_items` + screenshot store) deferred — the spreadsheet stays the
-record; no Directory export. **Open follow-ups with the client:** Steph/Jenna
+monitor deferred (→ N25); an in-app admin feedback tracker was deferred,
+then **undeferred 2026-10-19 (N73)** — v1 without an upload store; no Directory export. **Open follow-ups with the client:** Steph/Jenna
 on rows 12 (N57), 16/23/51 (N10), 33 (G2), 52 (N25), 56 (N18) and 11 (P1-7);
 Jessica on row 31 (N6). **Queue unchanged** — new items landed shipped, and
 ordering is a session decision.
@@ -2481,6 +2481,27 @@ since issues must be owned by someone on the roster.
 - 2026-10-16 · ship · src pr#88 — button back in each stage toolbar (not Segue); Scorecard Active | Archived on the shared row; L10 To-Dos in the To-Dos board layout
 - 2026-10-19 · ship · src pr#91 — switching to Issue resets an off-team owner to the viewer, with a note
 
+### N73 · Admin feedback tracker (v1)
+*W3 · in-progress · due — · deps — · owner daniel · src feedback-2026-10 · upd 2026-10-19*
+
+Effort M. An admin-only, in-app home for the client-feedback record, so the
+spreadsheet and the PDF report stop being the source. Seeded from
+`docs/feedback/feedback-tracker-seed.json` (59 items, numbered 1–59; the
+client report daniel approved 2026-10-19 is v1). Statuses are the report's:
+Completed, Deployed, Answered, Follow-up, Postponed. Screens follow the
+design mockups (list, board, detail, activity log, new item).
+
+**v1 scope (daniel, 2026-10-19):** no upload store. The 18 existing
+screenshots are served from the repo through an **admin-only route**, never
+from `public/` (that would put the client's screenshots behind an
+unguessable URL with no sign-in). New items are text only until a Cloud
+Storage upload store is built as its own PR. Two PRs: data layer (collection,
+rules, tests, import script) then the admin pages + screenshot route.
+
+**Trail**
+- 2026-10-15 · decision · src session-2026-10-15 — in-app tracker deferred; the spreadsheet stays the record
+- 2026-10-19 · decision · src session-2026-10-19 — undeferred; client report approved as v1; screenshots served from the repo via an admin-only route, no upload store in v1
+
 ### N6 · Better import functionality
 *W3 · in-progress · due — · deps — · owner daniel · src roadmap-prior#pass-18 · upd 2026-10-16*
 
@@ -3693,7 +3714,7 @@ distinct from Trail entries, which carry a layer + src.*
 - 2026-10-19 · N71 · closed — one Issue / To-do capture on every L10 stage except Segue (PRs #86, #88, #91)
 - 2026-10-19 · N72 · closed — mobile sign-in fixed with a first-party authDomain on the pulse host (PR #89); OAuth client keeps both redirect URIs, IAP must exempt `/__/auth/*`
 - 2026-10-19 · N68 · closed — CSV export on six pages, scoped to what each viewer sees (PRs #90, #93); CSV only, no Directory export
-- 2026-10-19 · Q-feedback-sheet · answered — all 58 spreadsheet rows (plus new row 60) have an answer: 40 shipped, 8 follow-up, 5 closed, 4 answered, 2 deferred. Seed file pending daniel's review, not committed
+- 2026-10-19 · Q-feedback-sheet · answered — all 58 spreadsheet rows (plus new row 60) have an answer: 40 shipped, 8 follow-up, 5 closed, 4 answered, 2 deferred. Seed committed 2026-10-19 (`docs/feedback/feedback-tracker-seed.json`) after daniel approved the client report
 
 ## Sources
 
@@ -3714,7 +3735,7 @@ distinct from Trail entries, which carry a layer + src.*
 | feedback-2026-09-10 | (client feedback tracker rows, client-held — not a repo artifact) | Steph Benes feedback dated 2026-09-10, four rows; anchors are the reporter + area (Issues / Meetings / Import / To-Dos). N59 / N60 / N61, plus a second report on N10 |
 | onboarding-2026-08-18 | (session notes — not a repo artifact) | Steph new-team + import walkthrough 2026-08-18; N1 / N4 / N6 / N35 / N38 |
 | iam-request | docs/HPB_IAM_REQUEST.md | IAM ask to HPB's GCP admin (2026-07-27) |
-| feedback-2026-10 | (HPB feedback spreadsheet, client-held — not a repo artifact; a seed copy `docs/feedback/feedback-tracker-seed.json` is pending daniel's review and not committed) | 58 rows from Steph Benes, Jessica Teichman, Jenna Scheeler, Brian Otteman, audited 2026-10-15/16; anchors are its row numbers. N68–N71, plus log lines on F4, N6, N10, N18, N25, N31, N52, N57, G2, P1-7 |
+| feedback-2026-10 | (HPB feedback spreadsheet, client-held — not a repo artifact; seed copy committed at `docs/feedback/feedback-tracker-seed.json`, the source for the N73 admin tracker import) | 58 rows from Steph Benes, Jessica Teichman, Jenna Scheeler, Brian Otteman, audited 2026-10-15/16; anchors are its row numbers. N68–N71, plus log lines on F4, N6, N10, N18, N25, N31, N52, N57, G2, P1-7 |
 | demo-2026-09-17 | (daniel's notes after the to-dos demo, this session — not a repo artifact) | Seven lines; anchors are the line topics (archive / driver / scorecard / to-dos page / rock sharing / milestones / roles). N62–N67 |
 
 `src pr#NN` refs resolve to pull requests on the project's GitHub origin

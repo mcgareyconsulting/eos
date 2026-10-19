@@ -4,7 +4,8 @@
 // lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
 // single-doc get/set/update/delete, `where` (==, "in", "array-contains" and
 // ">=" on same-typed values),
-// `orderBy` (single field, ascending), `limit(n)`, a bare `collection().get()`,
+// `orderBy` (single field, ascending or "desc"; numbers compare as numbers),
+// `limit(n)`, a bare `collection().get()`,
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
 // (`doc().collection()`, with `.ref` on query results),
@@ -98,6 +99,7 @@ class FakeQuery {
     private wheres: WhereClause[] = [],
     private order?: string,
     private max?: number,
+    private desc = false,
   ) {}
 
   where(field: string, op: string, value: unknown): FakeQuery {
@@ -107,15 +109,23 @@ class FakeQuery {
       [...this.wheres, [field, op, value]],
       this.order,
       this.max,
+      this.desc,
     );
   }
 
-  orderBy(field: string): FakeQuery {
-    return new FakeQuery(this.store, this.collectionPath, this.wheres, field, this.max);
+  orderBy(field: string, direction: "asc" | "desc" = "asc"): FakeQuery {
+    return new FakeQuery(
+      this.store,
+      this.collectionPath,
+      this.wheres,
+      field,
+      this.max,
+      direction === "desc",
+    );
   }
 
   limit(n: number): FakeQuery {
-    return new FakeQuery(this.store, this.collectionPath, this.wheres, this.order, n);
+    return new FakeQuery(this.store, this.collectionPath, this.wheres, this.order, n, this.desc);
   }
 
   async get() {
@@ -146,9 +156,13 @@ class FakeQuery {
     if (this.order) {
       const field = this.order;
       docs = [...docs].sort((a, b) => {
-        const av = String((a.data() ?? {})[field] ?? "");
-        const bv = String((b.data() ?? {})[field] ?? "");
-        return av.localeCompare(bv);
+        const ar = (a.data() ?? {})[field];
+        const br = (b.data() ?? {})[field];
+        const cmp =
+          typeof ar === "number" && typeof br === "number"
+            ? ar - br
+            : String(ar ?? "").localeCompare(String(br ?? ""));
+        return this.desc ? -cmp : cmp;
       });
     }
     if (this.max !== undefined) docs = docs.slice(0, this.max);
@@ -194,7 +208,8 @@ export class FakeFirestore {
       },
       where: (field: string, op: string, value: unknown) =>
         new FakeQuery(this, name).where(field, op, value),
-      orderBy: (field: string) => new FakeQuery(this, name).orderBy(field),
+      orderBy: (field: string, direction?: "asc" | "desc") =>
+        new FakeQuery(this, name).orderBy(field, direction),
       limit: (n: number) => new FakeQuery(this, name).limit(n),
       get: () => new FakeQuery(this, name).get(),
     };

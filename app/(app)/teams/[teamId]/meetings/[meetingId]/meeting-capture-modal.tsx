@@ -24,6 +24,8 @@ import {
   captureSubmission,
   captureTitleMissing,
   defaultCaptureKind,
+  ownerAfterKindSwitch,
+  ownerResetNote,
   titleAfterKindSwitch,
   type CaptureKind,
 } from "@/lib/l10/capture";
@@ -145,6 +147,10 @@ export function MeetingCaptureProvider({
   // ""). The title still equal to it means nothing has been typed.
   const [autoTitle, setAutoTitle] = useState("");
   const [ownerId, setOwnerId] = useState(currentUserId);
+  // The to-do picker's name for the owner it set (for ownerNote), and the
+  // note under Owner after a switch to Issue reset an off-roster owner.
+  const [ownerName, setOwnerName] = useState<string | null>(null);
+  const [ownerNote, setOwnerNote] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [due, setDue] = useState(daysFromNow(7));
   const [weeklyFocus, setWeeklyFocus] = useState(false);
@@ -179,6 +185,8 @@ export function MeetingCaptureProvider({
     setTitle(t);
     setAutoTitle(t);
     setOwnerId(fields.ownerId);
+    setOwnerName(null);
+    setOwnerNote(null);
     setDescription(fields.description);
     setDue(fields.due);
     setWeeklyFocus(fields.weeklyFocus);
@@ -199,8 +207,27 @@ export function MeetingCaptureProvider({
     const next = titleAfterKindSwitch({ title, autoTitle, to, segment });
     setTitle(next.title);
     setAutoTitle(next.autoTitle);
+    // An org-wide to-do owner can't own the issue; fall back to the viewer
+    // and say so. Lands on the opening owner, so `dirty` reads it as unmoved.
+    const owner = ownerAfterKindSwitch({
+      ownerId,
+      to,
+      members,
+      selfId: currentUserId,
+    });
+    if (owner.reset) {
+      setOwnerId(owner.ownerId);
+      setOwnerName(null);
+    }
+    setOwnerNote(owner.reset ? ownerResetNote(ownerName) : null);
     setKind(to);
     setError(null);
+  }
+
+  function changeOwner(id: string, name?: string) {
+    setOwnerId(id);
+    setOwnerName(name ?? null);
+    setOwnerNote(null);
   }
 
   // Flipping the toggle, or a prefix the form filled in, is not typing worth
@@ -277,7 +304,8 @@ export function MeetingCaptureProvider({
             <ModalBody as="form" onSubmit={submit}>
               {/* Issue / To-do as two pressed-state buttons. Switching keeps
                   title, owner and notes; an untouched stage prefix swaps with
-                  the kind (lib/l10/capture.ts titleAfterKindSwitch). */}
+                  the kind, and an off-team owner resets to you on Issue
+                  (lib/l10/capture.ts titleAfterKindSwitch, ownerAfterKindSwitch). */}
               <div
                 role="group"
                 aria-label="Add as"
@@ -337,7 +365,7 @@ export function MeetingCaptureProvider({
                     teamId={teamId}
                     members={members}
                     value={ownerId}
-                    onChange={setOwnerId}
+                    onChange={changeOwner}
                   />
                 ) : (
                   // Team roster only: addIssue rejects an owner off the roster
@@ -349,12 +377,20 @@ export function MeetingCaptureProvider({
                     teamOnly
                     value={ownerId}
                     valueName={issueOwnerName(ownerId, members, currentUserId)}
-                    onChange={setOwnerId}
+                    onChange={(id) => changeOwner(id)}
                     team={ownerTeam}
                     orgPeople={NO_ORG_PEOPLE}
                     onNeedOrg={noOrgNeeded}
                     teamNameById={NO_TEAM_NAMES}
                   />
+                )}
+                {ownerNote && (
+                  <p
+                    role="status"
+                    className="mt-1 text-[11px] leading-snug text-zinc-500"
+                  >
+                    {ownerNote}
+                  </p>
                 )}
               </div>
 

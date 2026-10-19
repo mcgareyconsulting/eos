@@ -2,8 +2,13 @@
 // Firestore database to another in the same project. Built for refreshing
 // the sandbox database from the live one:
 //
-//   pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db
-//   pnpm db:copy --from hpb-eos-prod-db --to hpb-eos-sandbox-db --dry-run
+//   pnpm db:copy --target prod --from hpb-eos-prod-db --to hpb-eos-sandbox-db --dry-run
+//   pnpm db:copy --target prod --from hpb-eos-prod-db --to hpb-eos-sandbox-db
+//
+// Both databases live in one project; `--target` (scripts/lib/target.ts)
+// only picks the project + credentials — `prod` reads the live database
+// with Application Default Credentials. Without it, the project comes from
+// .env.local as before. --from / --to always name the databases.
 //
 // Existing destination docs with the same path are overwritten; docs that
 // exist only in the destination are left alone (this is a copy, not a sync —
@@ -14,9 +19,8 @@
 // a flag: the only database anyone would point --to by mistake is the live
 // one, and there is no legitimate reason to bulk-overwrite it from a script.
 
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { pathToFileURL } from "node:url";
-import { config } from "dotenv";
-config({ path: ".env.local" });
 
 import { getApps, initializeApp } from "firebase-admin/app";
 import {

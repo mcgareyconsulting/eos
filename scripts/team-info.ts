@@ -3,11 +3,13 @@
 // on. Touches nothing — safe to run anytime.
 //
 // Usage:
-//   pnpm tsx scripts/team-info.ts [your-login-email]
+//   pnpm team:info --target sandbox [your-login-email]
+//   pnpm team:info --target prod [your-login-email]
+//
+// `--target sandbox|prod` picks the database (scripts/lib/target.ts; prod
+// uses Application Default Credentials). Without it, .env.local as before.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { getAdminDb, getAdminAuth } from "../lib/firebase/admin";
 
 const DATA_COLLECTIONS = [

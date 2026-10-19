@@ -2,15 +2,16 @@
 // `role: "admin"` (god-mode: all team data + create teams).
 //
 // Usage:
-//   pnpm tsx scripts/set-admin-role.ts --email you@highplainsbank.com --apply
-//   pnpm tsx scripts/set-admin-role.ts --email you@… --role normal --apply
+//   pnpm admin:set-role --target sandbox --email you@highplainsbank.com --apply
+//   pnpm admin:set-role --target prod --email you@… --role normal --apply
+//
+// `--target sandbox|prod` picks the project (scripts/lib/target.ts; prod uses
+// Application Default Credentials). Without it, .env.local as before.
 //
 // Dry-run by default (no --apply). User must sign out and back in after a
 // claim change so the session cookie picks up the new token.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { getAdminAuth } from "../lib/firebase/admin";
 
 type Args = {

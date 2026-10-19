@@ -9,10 +9,13 @@
 // (before → after). Pass --apply to write.
 //
 // Usage:
-//   pnpm users:backfill-team-ids --database hpb-eos-sandbox-db
-//   pnpm users:backfill-team-ids --database hpb-eos-sandbox-db --apply
+//   pnpm users:backfill-team-ids --target sandbox
+//   pnpm users:backfill-team-ids --target prod            # LIVE, dry-run
+//   pnpm users:backfill-team-ids --target prod --apply
 //
 // Options:
+//   --target sandbox|prod  Named database (scripts/lib/target.ts; prod uses
+//                    ADC). Replaces --database; the two cannot be combined.
 //   --database <id>  Firestore database id (default: NEXT_PUBLIC_FIREBASE_DATABASE_ID,
 //                    else "(default)"). Same flag as scripts/reassign-user.ts.
 //   --apply          Write. Without it, nothing is written.
@@ -21,9 +24,7 @@
 // Never creates a profile: a uid with team_members rows but no users/{uid}
 // doc is reported, not written.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 

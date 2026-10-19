@@ -12,9 +12,13 @@
 //     --from import-sam-reyes \
 //     --to feBGEk83HEd1fssMOQsnbUweThG3 \
 //     --team VSI5aSuR45v55WKqthA5 \
-//     --database hpb-eos-prod-db
+//     --target prod
 //
 //   pnpm tsx scripts/merge-import-user.ts ... --apply
+//
+// `--target sandbox|prod` picks the database (scripts/lib/target.ts; prod
+// uses Application Default Credentials). `--database <id>` still works
+// without --target; the two cannot be combined.
 //
 // Safe operations only:
 //   • owner_id reassignment on rocks / todos / issues / scorecard_metrics
@@ -29,9 +33,7 @@
 // Refuses to run unless `from` looks like an import placeholder (id prefix /
 // created_via marker, and no Firebase Auth record). --force overrides.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";

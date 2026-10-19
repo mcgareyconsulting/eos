@@ -2,18 +2,20 @@
 // exports (or any spreadsheet with the same columns).
 //
 // Usage:
-//   pnpm import:csv --team "Leadership Team" \
+//   pnpm import:csv --target sandbox --team "Leadership Team" \
 //     --scorecard ~/Downloads/scorecard.csv \
 //     --rocks ~/Downloads/rocks.csv \
 //     --milestones ~/Downloads/milestones.csv \
 //     --dry-run
 //
+// `--target sandbox|prod` picks the database (scripts/lib/target.ts; prod
+// uses Application Default Credentials) and cannot be combined with
+// --project / --database. Without any of them, .env.local as before.
+//
 // Core parsing + Firestore writes live in lib/team-import.ts so the in-app
 // Import page can share the same engine.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { readFileSync } from "node:fs";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";

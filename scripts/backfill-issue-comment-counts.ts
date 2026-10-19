@@ -10,32 +10,22 @@
 // (before → after). Pass --apply to write.
 //
 // Usage (dry-run first, always):
-//   pnpm issues:backfill-comment-counts -- --env-file .env.local           # sandbox, dry-run
-//   pnpm issues:backfill-comment-counts -- --env-file .env.prod            # LIVE, dry-run
-//   pnpm issues:backfill-comment-counts -- --env-file .env.prod --apply
+//   pnpm issues:backfill-comment-counts -- --target sandbox           # sandbox, dry-run
+//   pnpm issues:backfill-comment-counts -- --target prod              # LIVE, dry-run
+//   pnpm issues:backfill-comment-counts -- --target prod --apply
 //
-// `--env-file` is required: there is no default target, so the database is
-// always one you named (`.env.local` points at the SANDBOX database). The
-// env file, project and database are printed before anything is written;
-// read them before adding --apply.
+// A target is required — `--target sandbox|prod` (see scripts/lib/target.ts;
+// prod uses Application Default Credentials) or, as before,
+// `--env-file <path>` — so the database is always one you named. The target,
+// project and database are printed before anything is written; read them
+// before adding --apply.
 //
 // Each write recounts its issue's thread inside a transaction, so a comment
 // posted or deleted between the dry-run read and the write is not lost.
 // Writes only `comment_count` — no audit stamp, since no person made the
 // change (the audit row's actor is null, as for every operator script).
 
-import { config } from "dotenv";
-
-const envFlag = process.argv.indexOf("--env-file");
-const envFile = envFlag === -1 ? undefined : process.argv[envFlag + 1];
-if (!envFile || envFile.startsWith("--")) {
-  console.error(
-    "--env-file is required, e.g. --env-file .env.local (sandbox) or --env-file .env.prod (live)",
-  );
-  process.exit(1);
-}
-config({ path: envFile });
-
+import { target } from "./lib/load-target-explicit"; // first: sets up env before anything reads it
 import { getAdminDb } from "../lib/firebase/admin";
 import {
   ISSUE_COMMENT_COUNT_FIELD,
@@ -53,7 +43,7 @@ async function main() {
 
   console.log(
     `\nIssue comment_count backfill` +
-      `\n  env file:  ${envFile}` +
+      `\n  target:    ${target.target ?? `--env-file ${target.envFile}`}` +
       `\n  project:   ${project}` +
       `\n  database:  ${database}` +
       `\n  mode:      ${apply ? "APPLY — writes" : "dry-run (pass --apply to write)"}\n`,

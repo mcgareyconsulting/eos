@@ -5,14 +5,17 @@
 // or a demo team that's outlived its usefulness, needs a way out.
 //
 // Usage:
-//   pnpm team:delete --team "Demo Team" [--project hpb-eos --database ""]
-//   pnpm team:delete --team "Demo Team" --yes
+//   pnpm team:delete --target sandbox --team "Demo Team"
+//   pnpm team:delete --target sandbox --team "Demo Team" --yes
+//   pnpm team:delete --team "Demo Team" --project hpb-eos --database ""
 //
 // Options:
 //   --team <name|id>   Team to delete. Matched by doc id first, then by name. [required]
 //   --yes              Actually delete. Without it, this only reports.
-//   --project <id>     Firestore project, overriding .env.local.
-//   --database <id>    Firestore database id ("" for the default database).
+//   --target sandbox|prod  Named database (scripts/lib/target.ts; prod uses ADC).
+//   --project <id>     Firestore project, overriding .env.local (not with --target).
+//   --database <id>    Firestore database id ("" for the default database; not
+//                      with --target).
 //   --prune-users      Also delete /users docs for synthetic members (demo-*,
 //                      import-*) left on no other team. Real accounts are never
 //                      touched.
@@ -20,9 +23,7 @@
 // Leaves alone: audit_log (it's the record of what happened), /users docs for
 // real accounts, and every other team.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import type { DocumentReference, Firestore, Query } from "firebase-admin/firestore";
 import { getAdminDb } from "../lib/firebase/admin";
 import { syncUsersTeamIds } from "../lib/firebase/membership";

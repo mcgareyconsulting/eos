@@ -20,6 +20,10 @@ test("the tracker has no native <select>", () => {
   }
 });
 
+test("the tracker has no browser suggestion lists (<datalist>)", () => {
+  for (const [f, src] of files) assert.doesNotMatch(src, /<datalist\b|\blist="/, f);
+});
+
 test("the tracker links nowhere on github.com", () => {
   for (const [f, src] of files) assert.doesNotMatch(src, /github\.com/i, f);
 });

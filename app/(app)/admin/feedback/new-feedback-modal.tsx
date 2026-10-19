@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SelectMenu } from "@/components/ui/select-menu";
+import { Combobox, SelectMenu } from "@/components/ui/select-menu";
 import {
   DiscardChangesDialog,
   ModalBody,
@@ -112,19 +112,16 @@ export function NewFeedbackButton({
         <ModalBody as="form" onSubmit={submit}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Reported by" htmlFor="fb-new-reviewer">
-              <Input
+              <Combobox
                 id="fb-new-reviewer"
+                options={reviewers}
                 value={draft.reviewer}
-                onChange={set("reviewer")}
-                list="fb-new-reviewers"
+                onChange={(v) => setDraft((prev) => ({ ...prev, reviewer: v }))}
+                placeholder="Who reported it"
+                createLabel={(text) => <>New reporter “{text}”</>}
                 required
                 autoFocus
               />
-              <datalist id="fb-new-reviewers">
-                {reviewers.map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
             </Field>
             <Field label="Date reported" htmlFor="fb-new-date">
               <Input
@@ -136,18 +133,15 @@ export function NewFeedbackButton({
               />
             </Field>
             <Field label="Page" htmlFor="fb-new-page">
-              <Input
+              <Combobox
                 id="fb-new-page"
+                options={pages}
                 value={draft.page}
-                onChange={set("page")}
-                list="fb-new-pages"
+                onChange={(v) => setDraft((prev) => ({ ...prev, page: v }))}
+                placeholder="e.g. Rocks, Scorecard"
+                createLabel={(text) => <>New page “{text}”</>}
                 required
               />
-              <datalist id="fb-new-pages">
-                {pages.map((p) => (
-                  <option key={p} value={p} />
-                ))}
-              </datalist>
             </Field>
             <Field label="Type" htmlFor="fb-new-type">
               <SelectMenu

@@ -10,6 +10,7 @@ import { RatingForm } from "@/components/l10/rating-form";
 import { saveMeetingNotes, rateMeeting, setAttendeeAbsence } from "../actions";
 import { Eyebrow } from "@/components/ui/text";
 import { LONG_TEXT_MAX } from "@/lib/text-limits";
+import { CaptureButton } from "./meeting-capture-modal";
 
 type Member = { user_id: string; full_name: string };
 
@@ -86,12 +87,23 @@ export function ConcludeReview({
 
   return (
     <div className="space-y-6">
-      <NotesCard
-        teamId={teamId}
-        meetingId={meetingId}
-        initialNotes={notes}
-        readOnly={readOnly}
-      />
+      {/* Conclude has no Active | Archived toolbar, so its capture gets a
+          top row of its own, right-aligned like the other stages' (opens on
+          To-do — recapping next steps). Live only; CaptureButton renders
+          nothing on a finished meeting. */}
+      <div className="space-y-3">
+        {!readOnly && (
+          <div className="flex items-center justify-end">
+            <CaptureButton />
+          </div>
+        )}
+        <NotesCard
+          teamId={teamId}
+          meetingId={meetingId}
+          initialNotes={notes}
+          readOnly={readOnly}
+        />
+      </div>
 
       <section className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
         <header className="mb-3 flex items-baseline justify-between">

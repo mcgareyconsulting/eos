@@ -29,6 +29,7 @@ import { RockBlockRow, RockRow } from "../../rocks/rock-row";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { CaptureButton } from "./meeting-capture-modal";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { initials, ownerLabel } from "@/lib/user-name";
 import {
@@ -426,6 +427,7 @@ export function SegmentRocks({
             activeCount={rocks.filter((r) => r.status !== "cancelled").length}
             archivedCount={archivedRocks.length}
           />
+          <CaptureButton />
         </div>
       </div>
 

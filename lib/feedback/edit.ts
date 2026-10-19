@@ -2,6 +2,9 @@
 // shipped_at fill rule. Used by the server actions
 // (app/(app)/admin/feedback/action-core.ts); the client only sends text.
 //
+// PR numbers stay in the model, the seed and the database, but the UI
+// neither shows nor edits them while the repository moves hosts.
+//
 // Pure: no Firestore, no React — safe to import from client components.
 
 import { calendarDateIn, APP_TIME_ZONE } from "@/lib/time-zone";
@@ -19,23 +22,6 @@ export function parseLines(text: string): string[] {
     .filter((l) => l !== "");
 }
 
-/**
- * PR numbers from free text: "40, #86 93" → [40, 86, 93]. Separators are
- * commas and whitespace; a leading # is optional. Anything else is refused,
- * so a typo is reported rather than dropped.
- */
-export function parsePrText(text: string): number[] {
-  const out: number[] = [];
-  for (const tok of text.split(/[\s,]+/).filter((t) => t !== "")) {
-    const m = /^#?(\d{1,7})$/.exec(tok);
-    if (!m || Number(m[1]) < 1) {
-      throw new Error(`"${tok}" is not a PR number`);
-    }
-    out.push(Number(m[1]));
-  }
-  return out;
-}
-
 /** What the edit form sends: text fields as typed, lists one per line. */
 export type FeedbackEditForm = {
   status: string;
@@ -46,8 +32,6 @@ export type FeedbackEditForm = {
   follow_up_topic: string;
   /** One follow-up per line. */
   follow_ups: string;
-  /** "40, 86" — see parsePrText. */
-  prs: string;
   /** One evidence line per line. */
   evidence: string;
   /** yyyy-mm-dd, or empty. */
@@ -62,7 +46,6 @@ export const FEEDBACK_EDIT_FORM_FIELDS = [
   "follow_up_with",
   "follow_up_topic",
   "follow_ups",
-  "prs",
   "evidence",
   "shipped_at",
 ] as const satisfies readonly (keyof FeedbackEditForm)[];
@@ -89,7 +72,6 @@ export function feedbackEditFormToPatch(form: Readonly<Record<string, unknown>>)
     follow_up_with: (t) => t,
     follow_up_topic: (t) => t,
     follow_ups: parseLines,
-    prs: parsePrText,
     evidence: parseLines,
     shipped_at: (t) => t,
   };
@@ -121,7 +103,6 @@ export function feedbackEditFormFrom(item: FeedbackItem): FeedbackEditForm {
     follow_up_with: item.follow_up_with ?? "",
     follow_up_topic: item.follow_up_topic ?? "",
     follow_ups: item.follow_ups.join("\n"),
-    prs: item.prs.join(", "),
     evidence: item.evidence.join("\n"),
     shipped_at: item.shipped_at ?? "",
   };

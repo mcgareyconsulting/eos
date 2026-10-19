@@ -6,7 +6,9 @@ import {
   NO_FEEDBACK_FILTERS,
   describeFeedbackActivity,
   distinctFeedbackValues,
-  feedbackPrUrl,
+  feedbackStatusOptions,
+  feedbackStatusSummary,
+  feedbackTrackerHref,
   feedbackStatusCounts,
   filterFeedbackItems,
   formatFeedbackDate,
@@ -95,8 +97,29 @@ describe("groupFeedbackByColumn", () => {
 });
 
 describe("links and wording", () => {
-  test("PR url", () => {
-    assert.equal(feedbackPrUrl(40), "https://github.com/mcgareyconsulting/eos/pull/40");
+  test("status options carry counts; summary reads the pick", () => {
+    const opts = feedbackStatusOptions(feedbackStatusCounts(ITEMS));
+    assert.deepEqual(opts.map((o) => o.value), [...FEEDBACK_STATUSES]);
+    assert.equal(opts.find((o) => o.value === "completed")?.label, "Completed · 1");
+    assert.equal(opts.find((o) => o.value === "new")?.label, "New · 0");
+    assert.equal(feedbackStatusSummary(new Set()), "All statuses");
+    assert.equal(feedbackStatusSummary(new Set<FeedbackStatus>(["follow_up"])), "Follow-up");
+    assert.equal(feedbackStatusSummary(new Set<FeedbackStatus>(["new", "building", "deployed"])), "3 statuses");
+  });
+
+  test("feedbackTrackerHref keeps the view and the open item", () => {
+    assert.equal(feedbackTrackerHref({ view: "list" }), "/admin/feedback");
+    assert.equal(feedbackTrackerHref({ view: "board" }), "/admin/feedback?view=board");
+    assert.equal(feedbackTrackerHref({ view: "list", item: "fb-037" }), "/admin/feedback?item=fb-037");
+    assert.equal(feedbackTrackerHref({ view: "board", item: "fb-037" }), "/admin/feedback?view=board&item=fb-037");
+    assert.equal(feedbackTrackerHref({ view: "board", item: null }), "/admin/feedback?view=board");
+  });
+
+  test("no GitHub URLs in the tracker helpers", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const f of ["lib/feedback/view.ts", "lib/feedback/edit.ts"]) {
+      assert.doesNotMatch(readFileSync(f, "utf8"), /github\.com/i, f);
+    }
   });
 
   test("formatFeedbackDate", () => {

@@ -7,7 +7,6 @@ import {
   feedbackEditFormFrom,
   feedbackEditFormToPatch,
   parseLines,
-  parsePrText,
   withShippedAtFill,
 } from "./edit";
 
@@ -15,14 +14,6 @@ describe("form parsing", () => {
   test("parseLines drops blank lines and trims", () => {
     assert.deepEqual(parseLines("  a \r\n\n b\n   \n"), ["a", "b"]);
     assert.deepEqual(parseLines(""), []);
-  });
-
-  test("parsePrText accepts commas, spaces and #", () => {
-    assert.deepEqual(parsePrText("40, #86  93,"), [40, 86, 93]);
-    assert.deepEqual(parsePrText(""), []);
-    assert.throws(() => parsePrText("40, abc"), /"abc" is not a PR number/);
-    assert.throws(() => parsePrText("0"), /not a PR number/);
-    assert.throws(() => parsePrText("-3"), /not a PR number/);
   });
 
   test("the form → a validated patch; other keys ignored", () => {
@@ -35,6 +26,7 @@ describe("form parsing", () => {
       follow_up_topic: "",
       follow_ups: "Ask Jenna\n\nAsk Joe",
       prs: "93 40",
+      // ^ not a form field any more: ignored, like the other non-form keys.
       evidence: "PR #40 merged",
       shipped_at: "",
       original_comment: "rewritten",
@@ -48,7 +40,6 @@ describe("form parsing", () => {
       follow_up_with: "Steph",
       follow_up_topic: null,
       follow_ups: ["Ask Jenna", "Ask Joe"],
-      prs: [40, 93],
       evidence: ["PR #40 merged"],
       shipped_at: null,
     });
@@ -56,14 +47,14 @@ describe("form parsing", () => {
 
   test("absent keys are left out of the patch", () => {
     assert.deepEqual(feedbackEditFormToPatch({ resolution: " x " }), { resolution: "x" });
-    assert.deepEqual(feedbackEditFormToPatch({ prs: "7", status: undefined }), { prs: [7] });
+    assert.deepEqual(feedbackEditFormToPatch({ evidence: "a\nb", status: undefined }), { evidence: ["a", "b"] });
     assert.deepEqual(feedbackEditFormToPatch({}), {});
   });
 
   test("changedEditFields: only what differs from the opened values", () => {
     const opened = feedbackEditFormFrom(readFeedbackItem("fb-001", { number: 1, status: "new", prs: [4] }));
     assert.deepEqual(changedEditFields(opened, opened), {});
-    assert.deepEqual(changedEditFields({ ...opened, resolution: "r", prs: "4" }, opened), { resolution: "r" });
+    assert.deepEqual(changedEditFields({ ...opened, resolution: "r" }, opened), { resolution: "r" });
   });
 
   test("bad values are refused with readable text", () => {
@@ -85,7 +76,7 @@ describe("form parsing", () => {
     });
     const patch = feedbackEditFormToPatch(feedbackEditFormFrom(item));
     assert.equal(patch.status, "completed");
-    assert.deepEqual(patch.prs, [12, 40]);
+    assert.equal("prs" in patch, false, "PRs are kept but not edited in the UI");
     assert.deepEqual(patch.evidence, ["a", "b"]);
     assert.equal(patch.shipped_at, "2026-09-02");
   });

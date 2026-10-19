@@ -1,5 +1,6 @@
 // Feedback tracker — what the admin pages derive from the items: filters,
-// status counts, board columns, PR links and the activity wording.
+// status counts and options, board columns, tracker URLs and the activity
+// wording.
 //
 // Pure: no Firestore, no React — safe to import from client components.
 
@@ -119,11 +120,36 @@ export function groupFeedbackByColumn(items: readonly FeedbackItem[]): FeedbackB
 // Links and wording
 // ---------------------------------------------------------------------------
 
-export const FEEDBACK_REPO_URL = "https://github.com/mcgareyconsulting/eos";
+/** Status filter options, each with its count: "Completed · 43". */
+export function feedbackStatusOptions(
+  counts: Readonly<Record<FeedbackStatus, number>>,
+): { value: FeedbackStatus; label: string }[] {
+  return FEEDBACK_STATUSES.map((s) => ({
+    value: s,
+    label: `${FEEDBACK_STATUS_LABELS[s]} · ${counts[s]}`,
+  }));
+}
 
-/** The GitHub page for PR `n`. Only ever a positive integer (prList), so no escaping. */
-export function feedbackPrUrl(n: number): string {
-  return `${FEEDBACK_REPO_URL}/pull/${n}`;
+/** The status filter's trigger: "All statuses", the one picked, or "3 statuses". */
+export function feedbackStatusSummary(picked: ReadonlySet<FeedbackStatus>): string {
+  if (picked.size === 0) return "All statuses";
+  if (picked.size === 1) return FEEDBACK_STATUS_LABELS[[...picked][0]];
+  return `${picked.size} statuses`;
+}
+
+export const FEEDBACK_TRACKER_PATH = "/admin/feedback";
+
+/**
+ * The tracker URL for a view and (optionally) an open item:
+ * `/admin/feedback?view=board&item=fb-037`. The list view and no item are
+ * the defaults and leave no parameter.
+ */
+export function feedbackTrackerHref(opts: { view: "list" | "board"; item?: string | null }): string {
+  const sp = new URLSearchParams();
+  if (opts.view === "board") sp.set("view", "board");
+  if (opts.item) sp.set("item", opts.item);
+  const qs = sp.toString();
+  return qs ? `${FEEDBACK_TRACKER_PATH}?${qs}` : FEEDBACK_TRACKER_PATH;
 }
 
 /** Field names as the edit form labels them, for the activity log. */

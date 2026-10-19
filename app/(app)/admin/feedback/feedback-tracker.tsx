@@ -362,18 +362,18 @@ function FeedbackList({ items, view, onOpen }: ViewProps) {
 function FeedbackBoard({ items, view, onOpen }: ViewProps) {
   const groups = useMemo(() => groupFeedbackByColumn(items), [items]);
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       {groups.map(({ column, items: colItems }) => (
         <section
           key={column.id}
           aria-label={column.label}
           className="flex min-w-0 flex-col rounded-xl border border-zinc-300 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
         >
-          <header className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+          <header className="flex items-center justify-between border-b border-zinc-200 px-2.5 py-1.5 dark:border-zinc-800">
             <h2 className="text-sm font-semibold tracking-tight">{column.label}</h2>
             <span className="text-xs tabular-nums text-zinc-500">{colItems.length}</span>
           </header>
-          <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-col gap-1.5 p-1.5">
             {colItems.length === 0 && (
               <p className="px-1 py-3 text-center text-xs text-zinc-400">None</p>
             )}
@@ -410,7 +410,7 @@ function BoardCard({
   }
 
   return (
-    <article className="rounded-lg border border-zinc-200 bg-white p-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <article className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <ItemLink item={item} view={view} onOpen={onOpen} className="block rounded hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
         <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
           <span className="font-semibold tabular-nums text-hpb-blue dark:text-hpb-gold">
@@ -432,7 +432,7 @@ function BoardCard({
         value={item.status}
         onChange={change}
         disabled={pending}
-        className={cn("mt-2 font-semibold ring-1 ring-inset", FEEDBACK_STATUS_TONE[item.status])}
+        className={cn("mt-1.5 font-semibold ring-1 ring-inset", FEEDBACK_STATUS_TONE[item.status])}
       />
       {error && (
         <p role="alert" className="mt-1 text-[11px] text-red-600 dark:text-red-400">

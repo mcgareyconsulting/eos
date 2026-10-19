@@ -6,6 +6,17 @@ const nextConfig: NextConfig = {
   // a full `pnpm install` or the source tree. See docs/DEPLOY.md.
   output: "standalone",
 
+  // The feedback tracker's screenshots (ROADMAP N73) are read from disk by
+  // their admin-only route, never served from public/. The route reads a
+  // computed path, so tracing cannot see the files on its own: list them
+  // here and they land in .next/standalone/docs/feedback/screenshots/.
+  // Keys are route globs (picomatch), hence the escaped brackets. The
+  // Docker build context must carry them too — see the exceptions for this
+  // directory in .gcloudignore and .dockerignore.
+  outputFileTracingIncludes: {
+    "/api/admin/feedback/screenshots/\\[name\\]": ["./docs/feedback/screenshots/*.png"],
+  },
+
   // Version-skew protection. `gcloud run deploy` (cloudbuild.yaml) sends 100%
   // of traffic to the new revision at once and drains the old one, so a tab
   // that was open across a deploy is instantly holding a stale bundle: its

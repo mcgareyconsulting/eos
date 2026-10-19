@@ -55,6 +55,13 @@ functions/lib/
 terraform/
 
 # --- Prose and binaries not consumed by the Docker build ------------------
-docs/
+# Except the feedback tracker's screenshots (ROADMAP N73): the admin-only
+# route app/api/admin/feedback/screenshots/[name] reads them at runtime, so
+# they must reach the image. gitignore rules cannot re-include a file under
+# an excluded directory, hence docs/* + the two-step re-include.
+docs/*
+!docs/feedback/
+docs/feedback/*
+!docs/feedback/screenshots/
 *.md
 *.pdf

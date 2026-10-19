@@ -35,6 +35,10 @@ out
 build
 terraform
 docs
+# The feedback tracker's screenshots are runtime files of the admin-only
+# route app/api/admin/feedback/screenshots/[name] (ROADMAP N73; traced into
+# the standalone output by next.config.ts). Keep in step with .gcloudignore.
+!docs/feedback/screenshots/*.png
 **/*.md
 **/*.pdf
 

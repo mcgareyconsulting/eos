@@ -110,6 +110,11 @@ beforeEach(async () => {
     await put("organizations/o1", { name: "HPB" });
     await put("teams/team-T", { name: "T" });
     await put("audit_log/e1", { x: 1 });
+    await put("feedback_items/fb-001", { number: 1, status: "new", reviewer: "Steph Benes" });
+    await put("feedback_items/fb-001/activity/a1", { kind: "created", actor_uid: "root", to: "new" });
+    // lee: a leader of T (no admin claim) — leadership grants nothing here.
+    await put("users/lee", { team_ids: [T] });
+    await put(`team_members/${T}__lee`, { team_id: T, user_id: "lee", role: "leader" });
     await put("google_tasks_connections/alice", { refresh_token: "secret" });
     await put("oauth_csrf_states/s", { uid: "alice" });
   });
@@ -280,6 +285,32 @@ describe("notifications: readable only by their user_id", () => {
   });
 });
 
+describe("feedback tracker: org admins read, nobody else", () => {
+  const item = (db: Firestore) => doc(db, "feedback_items/fb-001");
+  const items = (db: Firestore) => query(collection(db, "feedback_items"), orderBy("number"));
+  const trace = (db: Firestore) => collection(db, "feedback_items/fb-001/activity");
+
+  test("admin reads items, the list and the activity trace", async () => {
+    assert.equal((await assertSucceeds(getDoc(item(asAdmin())))).data()?.reviewer, "Steph Benes");
+    assert.equal((await assertSucceeds(getDocs(items(asAdmin())))).size, 1);
+    assert.equal((await assertSucceeds(getDocs(trace(asAdmin())))).size, 1);
+  });
+
+  test("member, leader, a user with no profile and anonymous are denied", async () => {
+    for (const db of [as("alice"), as("lee"), as("nobody"), anon()]) {
+      await assertFails(getDoc(item(db)));
+      await assertFails(getDocs(items(db)));
+      await assertFails(getDocs(trace(db)));
+      await assertFails(getDoc(doc(db, "feedback_items/fb-001/activity/a1")));
+    }
+  });
+
+  test("a non-admin role claim is not admin", async () => {
+    const db = env.authenticatedContext("lee", { role: "leader" }).firestore() as unknown as Firestore;
+    await assertFails(getDoc(item(db)));
+  });
+});
+
 describe("no client writes, on any collection, for anyone", () => {
   const PATHS = [
     "organizations/o1",
@@ -304,10 +335,12 @@ describe("no client writes, on any collection, for anyone", () => {
     "meetings/m1/presence/alice",
     "entity_activity/ea-team",
     "audit_log/e1",
+    "feedback_items/fb-001",
+    "feedback_items/fb-001/activity/a1",
     "google_tasks_connections/alice",
     "oauth_csrf_states/s",
   ];
-  const actors: Array<() => Firestore> = [() => as("alice"), asAdmin, anon];
+  const actors: Array<() => Firestore> = [() => as("alice"), () => as("lee"), asAdmin, anon];
 
   for (const path of PATHS) {
     test(`${path}: set / update / delete / create all rejected`, async () => {

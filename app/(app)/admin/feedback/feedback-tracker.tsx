@@ -3,7 +3,18 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ImageIcon, LayoutGrid, List, MessageSquareText, Search, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ImageIcon,
+  LayoutGrid,
+  List,
+  MessageSquareText,
+  Search,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
 import { Card } from "@/components/ui/card";
@@ -359,30 +370,110 @@ function FeedbackList({ items, view, onOpen }: ViewProps) {
   );
 }
 
+// Which lanes are collapsed, per viewer (a convenience, so browser storage
+// is fine; it can come back empty or throw, and the board then starts open).
+const COLLAPSED_LANES_KEY = "feedback-board-collapsed";
+
+function readCollapsedLanes(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_LANES_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedLanes(lanes: Set<string>) {
+  try {
+    window.localStorage.setItem(COLLAPSED_LANES_KEY, JSON.stringify([...lanes]));
+  } catch {
+    // Storage blocked (private window, cleared site data): collapse still
+    // works for this visit.
+  }
+}
+
 function FeedbackBoard({ items, view, onOpen }: ViewProps) {
   const groups = useMemo(() => groupFeedbackByColumn(items), [items]);
+  // Server render and first paint start open; the stored choice applies once
+  // hydrated, and a toggle replaces it from then on.
+  const hydrated = useHydrated();
+  const stored = useMemo(() => (hydrated ? readCollapsedLanes() : new Set<string>()), [hydrated]);
+  const [toggled, setToggled] = useState<Set<string> | null>(null);
+  const collapsed = toggled ?? stored;
+
+  function toggleLane(id: string) {
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    writeCollapsedLanes(next);
+    setToggled(next);
+  }
+
+  // Trello-style collapse: a collapsed lane keeps its place as a narrow strip
+  // with its name turned on its side (wide screens), or just its header row
+  // (narrow screens). Its cards are hidden until it is opened again.
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-      {groups.map(({ column, items: colItems }) => (
-        <section
-          key={column.id}
-          aria-label={column.label}
-          className="flex min-w-0 flex-col rounded-xl border border-zinc-300 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
-        >
-          <header className="flex items-center justify-between border-b border-zinc-200 px-2.5 py-1.5 dark:border-zinc-800">
-            <h2 className="text-sm font-semibold tracking-tight">{column.label}</h2>
-            <span className="text-xs tabular-nums text-zinc-500">{colItems.length}</span>
-          </header>
-          <div className="flex flex-col gap-1.5 p-1.5">
-            {colItems.length === 0 && (
-              <p className="px-1 py-3 text-center text-xs text-zinc-400">None</p>
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:items-stretch">
+      {groups.map(({ column, items: colItems }) => {
+        const isCollapsed = collapsed.has(column.id);
+        return (
+          <section
+            key={column.id}
+            aria-label={column.label}
+            className={cn(
+              "flex min-w-0 flex-col rounded-xl border border-zinc-300 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60",
+              isCollapsed ? "lg:w-10 lg:flex-none" : "lg:flex-1",
             )}
-            {colItems.map((item) => (
-              <BoardCard key={item.id} item={item} view={view} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ))}
+          >
+            {isCollapsed ? (
+              <button
+                type="button"
+                onClick={() => toggleLane(column.id)}
+                aria-expanded={false}
+                aria-label={`Expand ${column.label} (${colItems.length})`}
+                title={`Expand ${column.label}`}
+                className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800/60 lg:h-full lg:flex-col lg:justify-start lg:px-0 lg:py-2"
+              >
+                <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-zinc-500 lg:block" />
+                <ChevronDown className="order-last h-3.5 w-3.5 shrink-0 text-zinc-500 lg:hidden" />
+                <span className="flex items-center gap-2 lg:rotate-180 lg:[writing-mode:vertical-rl]">
+                  <span className="text-sm font-semibold tracking-tight">{column.label}</span>
+                  <span className="text-xs tabular-nums text-zinc-500">{colItems.length}</span>
+                </span>
+              </button>
+            ) : (
+              <>
+                <header className="flex items-center justify-between gap-2 border-b border-zinc-200 px-2.5 py-1.5 dark:border-zinc-800">
+                  <h2 className="truncate text-sm font-semibold tracking-tight">{column.label}</h2>
+                  <span className="flex items-center gap-1">
+                    <span className="text-xs tabular-nums text-zinc-500">{colItems.length}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleLane(column.id)}
+                      aria-expanded
+                      aria-label={`Collapse ${column.label}`}
+                      title={`Collapse ${column.label}`}
+                      className="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                    >
+                      <ChevronLeft className="hidden h-3.5 w-3.5 lg:block" />
+                      <ChevronUp className="h-3.5 w-3.5 lg:hidden" />
+                    </button>
+                  </span>
+                </header>
+                <div className="flex flex-col gap-1.5 p-1.5">
+                  {colItems.length === 0 && (
+                    <p className="px-1 py-3 text-center text-xs text-zinc-400">None</p>
+                  )}
+                  {colItems.map((item) => (
+                    <BoardCard key={item.id} item={item} view={view} onOpen={onOpen} />
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

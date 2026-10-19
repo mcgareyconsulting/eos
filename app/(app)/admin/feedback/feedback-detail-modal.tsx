@@ -141,20 +141,6 @@ export function FeedbackDetailModal({
           <List items={item.follow_ups} className="mt-2" />
         </Section>
 
-        <Section title="Branches">
-          {item.branches.length === 0 ? (
-            <Blank />
-          ) : (
-            <ul className="space-y-0.5">
-              {item.branches.map((b) => (
-                <li key={b} className="break-all font-mono text-xs">
-                  {b}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
         <Section title="Evidence">
           <List items={item.evidence} />
         </Section>

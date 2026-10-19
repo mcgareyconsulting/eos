@@ -4,17 +4,16 @@
 // this is only for idle connections. It never prints a token.
 //
 // Usage (prod; dry-run lists uids only, --apply writes):
-//   NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod \
-//   NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db \
 //   GOOGLE_TOKENS_KMS_KEY=projects/hpb-eos-prod/locations/us-east1/keyRings/eos/cryptoKeys/eos-tokens \
-//   pnpm tsx scripts/encrypt-google-tokens.ts [--apply]
+//   pnpm tsx scripts/encrypt-google-tokens.ts --target prod [--apply]
+//
+// `--target sandbox|prod` picks the database (scripts/lib/target.ts; prod
+// uses Application Default Credentials). Without it, .env.local as before.
 //
 // --apply needs encrypt (not decrypt) on the key for whoever runs it:
 // roles/cloudkms.cryptoKeyEncrypter on eos-tokens — see docs/SECRETS_RUNBOOK.md.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { getAdminDb } from "../lib/firebase/admin";
 import { refreshTokenFields, tokenCipher } from "../lib/google/tasks";
 

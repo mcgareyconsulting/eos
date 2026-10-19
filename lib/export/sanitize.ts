@@ -13,8 +13,9 @@
 // (lib/export/csv.ts) to EVERY text cell, headers included — callers cannot
 // forget it. Beyond the first character it also checks:
 //
-//   - after leading whitespace (`  =1+1`): some spreadsheets trim before
-//     deciding a cell is a formula;
+//   - after leading whitespace, control characters or zero-width
+//     characters (`  =1+1`, NUL or U+200B then `=`): some spreadsheets trim
+//     before deciding a cell is a formula;
 //   - every line of a multi-line value: a cell whose second line begins
 //     with `=` can surface as a formula once someone splits or re-pastes it.
 //
@@ -35,8 +36,13 @@ const TRIGGERS = new Set([
   "＠", // ＠
 ]);
 
-/** Leading whitespace that is not itself a trigger (tab, CR, LF are). */
-const LEADING_SPACE = /^[^\S\t\r\n]+/;
+/**
+ * Leading characters a spreadsheet may skip before deciding a cell is a
+ * formula: whitespace that is not itself a trigger (tab, CR, LF are), other
+ * control characters (NUL and friends), and the invisible zero-width ones.
+ */
+const LEADING_SPACE =
+  /^(?:[^\S\t\r\n]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200d\u2060\ufeff])+/;
 
 function lineStartsLikeFormula(line: string): boolean {
   if (line.length === 0) return false;

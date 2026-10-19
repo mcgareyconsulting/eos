@@ -402,6 +402,16 @@ _NEXT_PUBLIC_FIREBASE_APP_ID=...,\
 _NEXT_PUBLIC_FIREBASE_DATABASE_ID=hpb-eos-prod-db
 ```
 
+> **`_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` = the app's own hostname**
+> (`pulse.highplainsbank.com` in prod), **not** `<project>.firebaseapp.com`.
+> `next.config.ts` proxies `/__/auth/*` to firebaseapp.com so the sign-in
+> handler is same-site with the app; with the firebaseapp.com value, mobile
+> browsers' storage partitioning breaks sign-in with "missing initial state".
+> The Firebase sign-in OAuth client (ui7v… in prod — *not* the Tasks client)
+> must list `https://<app host>/__/auth/handler` as an authorized redirect
+> URI, and the host must be a Firebase Auth authorized domain. Add the URI
+> **before** deploying a build with the new value.
+
 > `_NEXT_PUBLIC_FIREBASE_HOSTED_DOMAIN` is deliberately **left empty** for
 > this project. Setting it hides every non-`highplainsbank.com` account —
 > including the operator's own `daniel@mcgareyconsulting.com` — from Google's

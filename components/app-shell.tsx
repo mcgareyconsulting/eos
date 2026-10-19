@@ -22,6 +22,7 @@ export function AppShell({
   profile,
   teams,
   isAdmin = false,
+  showFeedback = false,
   membershipCount = 0,
   importTeamIds = [],
   unreadNotifications = 0,
@@ -33,6 +34,8 @@ export function AppShell({
   /** Teams the sidebar can open for data (memberships, or all teams if admin). */
   teams: ShellTeam[];
   isAdmin?: boolean;
+  /** On the feedback tracker's access list (lib/firebase/feedback-access.ts) — not the admin role. */
+  showFeedback?: boolean;
   /** Real membership count (may be 0 for admin with god-mode only). */
   membershipCount?: number;
   /** Teams whose Import page this user may open (leaders + admin god-mode). */
@@ -73,8 +76,8 @@ export function AppShell({
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
-              {/* Org admins only (ROADMAP N73); the page 404s anyone else. */}
-              {isAdmin && (
+              {/* The tracker's access list only (ROADMAP N73); the page 404s anyone else. */}
+              {showFeedback && (
                 <NavLink href="/admin/feedback" icon={MessageSquareText} label="Feedback" />
               )}
             </nav>

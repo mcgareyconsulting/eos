@@ -16,7 +16,7 @@ import { describeFeedbackActivity, formatFeedbackDate } from "@/lib/feedback/vie
 import { EditFeedbackButton } from "./edit-feedback-modal";
 import { FeedbackStatusChip } from "./feedback-status-chip";
 
-/** What the page loads server-side for `?item=` (admin-gated reads). */
+/** What the page loads server-side for `?item=` (reads gated by the tracker access list). */
 export type FeedbackDetailData = {
   item: FeedbackItem;
   activity: FeedbackActivity[];
@@ -99,7 +99,7 @@ export function FeedbackDetailModal({
               {item.screenshots.map((name) => (
                 <figure key={name}>
                   <a href={feedbackScreenshotUrl(name)} target="_blank" rel="noopener noreferrer">
-                    {/* Admin-only route, private no-store: next/image would
+                    {/* Access-list-only route, private no-store: next/image would
                         cache it through the optimizer, so a plain img. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -126,7 +126,7 @@ export function FeedbackDetailModal({
         <Section title="Resolution for staff" hint="Client-facing.">
           <TextOrBlank text={item.client_resolution} />
         </Section>
-        <Section title="Internal resolution" hint="Admins only — never in the client report.">
+        <Section title="Internal resolution" hint="Internal — never in the client report.">
           <TextOrBlank text={item.resolution} />
         </Section>
         <Section title="Client note">

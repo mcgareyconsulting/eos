@@ -1,10 +1,13 @@
 // Feedback tracker (ROADMAP N73) — the Firestore half (Admin SDK; server only).
 // Pure model, validation and change detection: lib/feedback/model.ts.
 //
-// Admin-only, enforced HERE: every export starts with requireAdmin(), so a
-// server action or page that calls in cannot forget the gate (a non-admin
-// gets the same 404 as every other admin surface). The client rules
-// (firestore.rules `feedback_items`) let admins read and nobody write.
+// Access-list only, enforced HERE: every export starts with
+// requireFeedbackTrackerAccess() (lib/firebase/feedback-access.ts — the
+// dedicated list in app_config/feedback_tracker, not the org-admin role), so
+// a server action or page that calls in cannot forget the gate; anyone not
+// listed gets the same 404 as every admin surface. The client rules
+// (firestore.rules `feedback_items`) let no client read or write: the tracker
+// is served from the server only.
 //
 // Every write is one transaction that changes the item and appends its
 // `feedback_items/{id}/activity/{auto}` row, so the trace cannot miss or
@@ -36,10 +39,9 @@ import {
   type FeedbackItemDoc,
   type FeedbackPatch,
 } from "@/lib/feedback/types";
-import { requireAdmin, type TeamsDeps } from "./teams";
+import { requireFeedbackTrackerAccess, type FeedbackDeps } from "./feedback-access";
 
-/** Test seam, as for lib/firebase/teams.ts: production callers pass nothing. */
-export type FeedbackDeps = TeamsDeps;
+export type { FeedbackDeps };
 
 export const FEEDBACK_NOT_FOUND = "Feedback item not found.";
 export const FEEDBACK_STALE = "This item changed since you opened it. Reload to see the latest.";
@@ -62,7 +64,7 @@ export type FeedbackUpdateOptions = {
 
 /** Every item, by number. */
 export async function listFeedbackItems(deps: FeedbackDeps = {}): Promise<FeedbackItem[]> {
-  const { db } = await requireAdmin(deps);
+  const { db } = await requireFeedbackTrackerAccess(deps);
   const snap = await db.collection(FEEDBACK_COLLECTION).orderBy("number").get();
   return snap.docs.map((d) => readFeedbackItem(d.id, d.data()));
 }
@@ -72,7 +74,7 @@ export async function getFeedbackItem(
   id: string,
   deps: FeedbackDeps = {},
 ): Promise<FeedbackItem | null> {
-  const { db } = await requireAdmin(deps);
+  const { db } = await requireFeedbackTrackerAccess(deps);
   if (!isFeedbackDocId(id)) return null;
   const snap = await db.collection(FEEDBACK_COLLECTION).doc(id).get();
   return snap.exists ? readFeedbackItem(snap.id, snap.data() ?? {}) : null;
@@ -83,7 +85,7 @@ export async function listFeedbackActivity(
   id: string,
   deps: FeedbackDeps = {},
 ): Promise<FeedbackActivity[]> {
-  const { db } = await requireAdmin(deps);
+  const { db } = await requireFeedbackTrackerAccess(deps);
   if (!isFeedbackDocId(id)) return [];
   const snap = await db
     .collection(FEEDBACK_COLLECTION)
@@ -104,7 +106,7 @@ export async function createFeedbackItem(
   input: NewFeedbackInput,
   deps: FeedbackDeps = {},
 ): Promise<{ id: string; number: number }> {
-  const { db, uid } = await requireAdmin(deps);
+  const { db, uid } = await requireFeedbackTrackerAccess(deps);
   const fields = validateNewFeedback(input);
   const col = db.collection(FEEDBACK_COLLECTION);
 
@@ -137,7 +139,7 @@ export async function updateFeedbackItem(
   deps: FeedbackDeps = {},
   opts: FeedbackUpdateOptions = {},
 ): Promise<{ changed: FeedbackEditableField[] }> {
-  const { db, uid } = await requireAdmin(deps);
+  const { db, uid } = await requireFeedbackTrackerAccess(deps);
   if (!isFeedbackDocId(id)) throw new Error(FEEDBACK_NOT_FOUND);
   const valid = validateFeedbackPatch(patch);
   const ref = db.collection(FEEDBACK_COLLECTION).doc(id);

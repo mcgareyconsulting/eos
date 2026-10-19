@@ -10,27 +10,37 @@ import {
   type FeedbackActionDeps,
 } from "./action-core";
 
-function fakeUser(opts: { uid: string; isAdmin: boolean; db: FakeFirestore }) {
+function fakeUser(opts: { uid: string; email: string; isAdmin: boolean; db: FakeFirestore }) {
   return async () => ({
     uid: opts.uid,
-    email: null,
+    email: opts.email,
     name: null,
     picture: null,
     isAdmin: opts.isAdmin,
+    emailVerified: true,
     db: opts.db.asFirestore(),
   });
 }
 
 // 2026-10-20 04:30 UTC: still Oct 19 on the bank's clock.
 const NOW = () => new Date("2026-10-20T04:30:00Z");
-const admin = (db: FakeFirestore): FeedbackActionDeps => ({
-  user: fakeUser({ uid: "admin-1", isAdmin: true, db }),
-  now: NOW,
-});
-const member = (db: FakeFirestore): FeedbackActionDeps => ({
-  user: fakeUser({ uid: "mem-1", isAdmin: false, db }),
-  now: NOW,
-});
+/** The tracker's access list (app_config/feedback_tracker). */
+function grant(db: FakeFirestore) {
+  db.seed("app_config", "feedback_tracker", { emails: ["listed@example.com"] });
+}
+const admin = (db: FakeFirestore): FeedbackActionDeps => {
+  grant(db);
+  return { user: fakeUser({ uid: "admin-1", email: "listed@example.com", isAdmin: false, db }), now: NOW };
+};
+const member = (db: FakeFirestore): FeedbackActionDeps => {
+  grant(db);
+  return { user: fakeUser({ uid: "mem-1", email: "mem@example.com", isAdmin: false, db }), now: NOW };
+};
+/** Holds the org-admin role but is not on the list: denied like anyone else. */
+const orgAdmin = (db: FakeFirestore): FeedbackActionDeps => {
+  grant(db);
+  return { user: fakeUser({ uid: "root", email: "root@example.com", isAdmin: true, db }), now: NOW };
+};
 
 function seed(db: FakeFirestore, number: number, data: Record<string, unknown> = {}) {
   const id = `fb-${String(number).padStart(3, "0")}`;
@@ -66,7 +76,17 @@ function formFor(db: FakeFirestore, id: string) {
   return feedbackEditFormFrom(readFeedbackItem(id, item(db, id)));
 }
 
-describe("non-admins are refused before any write", () => {
+describe("unlisted users are refused before any read or write", () => {
+  test("an org admin who is not on the access list is refused too", async () => {
+    const db = new FakeFirestore();
+    const id = seed(db, 1);
+    await assertNotFound(() => setFeedbackStatusCore(id, "completed", orgAdmin(db)));
+    await assertNotFound(() => saveFeedbackEditsCore(id, { resolution: "x" }, null, orgAdmin(db)));
+    await assertNotFound(() => createFeedbackCore({}, orgAdmin(db)));
+    assert.equal(item(db, id).status, "building");
+    assert.deepEqual(activity(db, id), []);
+  });
+
   test("save, status and create all 404 and write nothing", async () => {
     const db = new FakeFirestore();
     const id = seed(db, 1);

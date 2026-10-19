@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   // The feedback tracker's screenshots (ROADMAP N73) are read from disk by
-  // their admin-only route, never served from public/. The route reads a
+  // their access-list-gated route, never served from public/. The route reads a
   // computed path, so tracing cannot see the files on its own: list them
   // here and they land in .next/standalone/docs/feedback/screenshots/.
   // Keys are route globs (picomatch), hence the escaped brackets. The

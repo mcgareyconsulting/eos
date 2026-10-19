@@ -2,10 +2,11 @@
 // "use server" module (./actions.ts) so it can be tested without a Next
 // request: actions.ts only adds revalidatePath.
 //
-// Every path goes through lib/firebase/feedback.ts, whose functions start
-// with requireAdmin(): a non-admin gets the admin pages' 404 (notFound()
-// propagates — it is control flow, not a refusal) before anything is read
-// or written. Expected refusals — a bad value, a missing item — come back as
+// Every path starts with requireFeedbackTrackerAccess() (the dedicated
+// access list, lib/firebase/feedback-access.ts) and goes through
+// lib/firebase/feedback.ts, which checks again: anyone not listed — org
+// admins included — gets the admin pages' 404 (notFound() propagates — it is
+// control flow, not a refusal) before anything is read or written. Expected refusals — a bad value, a missing item — come back as
 // { ok: false, error } with readable text, because a production build masks
 // any error thrown from a server action ("Minified React error #441").
 // Unexpected failures are logged with their stack and reported generically.
@@ -18,7 +19,7 @@ import {
   updateFeedbackItem,
   type FeedbackDeps,
 } from "@/lib/firebase/feedback";
-import { requireAdmin } from "@/lib/firebase/teams";
+import { requireFeedbackTrackerAccess } from "@/lib/firebase/feedback-access";
 import { bankToday, feedbackEditFormToPatch, withShippedAtFill } from "@/lib/feedback/edit";
 import { isFeedbackDocId, validateFeedbackPatch, validateNewFeedback } from "@/lib/feedback/model";
 import type { FeedbackEditableField, FeedbackPatch } from "@/lib/feedback/types";
@@ -64,9 +65,9 @@ async function saveFeedback(
   expectedUpdatedAt: string | null | undefined,
   deps: FeedbackActionDeps,
 ): Promise<FeedbackSaveResult> {
-  // The gate first, whatever the input: a non-admin always gets the 404 and
-  // never reaches validation, so even the refusal wording is admin-only.
-  await requireAdmin(deps);
+  // The gate first, whatever the input: anyone not listed always gets the
+  // 404 and never reaches validation, so even the refusal wording is gated.
+  await requireFeedbackTrackerAccess(deps);
   if (!isFeedbackDocId(id)) return { ok: false, error: FEEDBACK_NOT_FOUND };
 
   let patch: FeedbackPatch;
@@ -135,8 +136,8 @@ export async function createFeedbackCore(
   deps: FeedbackActionDeps = {},
 ): Promise<FeedbackCreateResult> {
   // createFeedbackItem gates too, but the gate must come before validation
-  // here so a non-admin never sees a validation message.
-  await requireAdmin(deps);
+  // here so an unlisted caller never sees a validation message.
+  await requireFeedbackTrackerAccess(deps);
 
   const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const fields = {

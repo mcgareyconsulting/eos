@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/firebase/teams";
+import { requireFeedbackTrackerAccess } from "@/lib/firebase/feedback-access";
 import { getFeedbackItem, listFeedbackActivity, listFeedbackItems } from "@/lib/firebase/feedback";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import { SYSTEM_ACTOR_ID } from "@/lib/activity";
@@ -9,8 +9,9 @@ import { FeedbackTracker } from "./feedback-tracker";
 
 /**
  * Feedback tracker (ROADMAP N73): HPB staff feedback on the app, worked by
- * the org admins. Admin-only — requireAdmin() 404s anyone else, as on every
- * admin page, and every read below checks again.
+ * the people on its access list (app_config/feedback_tracker, `pnpm
+ * feedback:access`) — not the org-admin role. requireFeedbackTrackerAccess()
+ * 404s anyone else, org admins included, and every read below checks again.
  *
  *   ?view=board   the kanban; the list is the default
  *   ?item=fb-037  that item open in the detail modal (deep-linkable); its
@@ -21,7 +22,7 @@ export default async function AdminFeedbackPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { db } = await requireAdmin();
+  const { db } = await requireFeedbackTrackerAccess();
   const [items, sp] = await Promise.all([listFeedbackItems(), searchParams]);
   const view = sp.view === "board" ? "board" : "list";
   const itemParam = typeof sp.item === "string" && sp.item !== "" ? sp.item : null;
@@ -43,7 +44,8 @@ export default async function AdminFeedbackPage({
     <div className="mx-auto max-w-7xl space-y-6">
       <AdminHeader
         title="Feedback tracker"
-        blurb="Reported problems and requests from HPB staff, seeded from the HPB feedback spreadsheet. Admins only."
+        eyebrow="Restricted"
+        blurb="Reported problems and requests from HPB staff, seeded from the HPB feedback spreadsheet. Only the people on the tracker's access list can open it."
       />
       <FeedbackTracker items={items} view={view} itemParam={itemParam} detail={detail} />
     </div>

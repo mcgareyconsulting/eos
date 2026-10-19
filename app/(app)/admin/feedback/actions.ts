@@ -9,8 +9,9 @@ import {
   type FeedbackSaveResult,
 } from "./action-core";
 
-// Feedback tracker actions (ROADMAP N73). Admin-only: the logic and the gate
-// are ./action-core.ts → lib/firebase/feedback.ts (requireAdmin). This file
+// Feedback tracker actions (ROADMAP N73). Access-list only: the logic and the
+// gate are ./action-core.ts → lib/firebase/feedback.ts
+// (requireFeedbackTrackerAccess). This file
 // only refreshes the pages after a write.
 
 // One page: the detail is a modal on it (?item=).

@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { TimeZoneProvider } from "@/components/time-zone-provider";
 import { getSessionRenewInMs, getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { canUseFeedbackTracker } from "@/lib/firebase/feedback-access";
 import { getViewerTimeZone } from "@/lib/viewer-time-zone";
 
 export default async function AppLayout({
@@ -18,6 +19,9 @@ export default async function AppLayout({
     db,
   } = await getUserTeamsFirebase();
   const sessionRenewInMs = await getSessionRenewInMs();
+  // The Feedback link follows the tracker's own access list, not isAdmin
+  // (one doc read, shared with the tracker page via React cache()).
+  const showFeedback = await canUseFeedbackTracker();
   // Seeds client components' due-date "today" with the zone the server
   // renders in, so the two agree at hydration (components/time-zone-provider).
   const timeZone = await getViewerTimeZone();
@@ -55,6 +59,7 @@ export default async function AppLayout({
         profile={profile}
         teams={teams}
         isAdmin={isAdmin}
+        showFeedback={showFeedback}
         membershipCount={membershipTeamIds.length}
         importTeamIds={importTeamIds}
         unreadNotifications={unreadNotifications}

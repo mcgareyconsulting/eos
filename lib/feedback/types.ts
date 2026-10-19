@@ -1,11 +1,13 @@
 // Feedback tracker (ROADMAP N73) — stored shapes and enums.
 //
-// Admin-only: HPB staff feedback on the app itself (bugs, requests,
+// Restricted: HPB staff feedback on the app itself (bugs, requests,
 // questions), seeded from the HPB feedback spreadsheet
 // (docs/feedback/feedback-tracker-seed.json, scripts/import-feedback-seed.ts)
-// and worked in the app afterwards. Only org admins read it (firestore.rules
-// `feedback_items`); every write is a server-side call into
-// lib/firebase/feedback.ts, which checks the admin claim itself.
+// and worked in the app afterwards. Only the people on the tracker's access
+// list (app_config/feedback_tracker; lib/feedback/access.ts) can open it —
+// not the org-admin role. No client reads or writes it (firestore.rules
+// `feedback_items`); every read and write is a server-side call into
+// lib/firebase/feedback.ts, which checks the access list itself.
 //
 // Pure: no Firestore, no React — safe to import from client components.
 
@@ -105,7 +107,7 @@ export type FeedbackItemDoc = {
   comment_display: string | null;
   /** Client-facing resolution — what HPB staff read (the seed's `resolution_ste`). */
   client_resolution: string | null;
-  /** Internal resolution note — admins only, never in the client report. */
+  /** Internal resolution note — tracker only, never in the client report. */
   resolution: string | null;
   /** Longer client-facing explanation. */
   client_note: string | null;

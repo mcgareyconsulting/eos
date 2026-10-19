@@ -144,7 +144,7 @@ export function EditFeedbackButton({
           <Field
             label="Internal resolution"
             htmlFor="fb-edit-resolution"
-            hint="Admins only — never in the client report."
+            hint="Internal — never in the client report."
           >
             <Textarea id="fb-edit-resolution" rows={3} value={draft.resolution} onChange={set("resolution")} />
           </Field>

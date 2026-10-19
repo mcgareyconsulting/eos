@@ -1,6 +1,6 @@
 // Feedback tracker — the seed's screenshots (docs/feedback/screenshots/*.png).
 //
-// They are served ONLY through the admin-gated route
+// They are served ONLY through the access-list-gated route
 // app/api/admin/feedback/screenshots/[name]/route.ts, never from public/:
 // they are pictures of the client's data. The route reads a file only when
 // its name matches FEEDBACK_SCREENSHOT_RE *and* is in this fixed list — the

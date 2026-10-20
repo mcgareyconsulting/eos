@@ -31,8 +31,10 @@ export function DetailShell({
   banner,
   dismissible = true,
   portal = true,
+  closeButton = true,
   className,
   bodyClassName,
+  asideClassName,
   children,
 }: {
   ariaLabel: string;
@@ -51,10 +53,20 @@ export function DetailShell({
   dismissible?: boolean;
   /** Render in place instead of into <body>. Rarely what you want. */
   portal?: boolean;
+  /**
+   * The × over the rail's corner. Off when `banner` is a full header that
+   * carries its own close control (the feedback tracker's modal).
+   */
+  closeButton?: boolean;
   /** Extra classes on the panel. */
   className?: string;
   /** Extra classes on the left (details) column. */
   bodyClassName?: string;
+  /**
+   * Extra classes on the rail — e.g. `flex flex-col p-0 md:overflow-hidden`
+   * for a rail that scrolls its own list under a pinned composer.
+   */
+  asideClassName?: string;
   /** Left column — the item's details. */
   children: ReactNode;
 }) {
@@ -74,14 +86,16 @@ export function DetailShell({
           this grid is the one scroll region; from md up it stops scrolling
           and hands that to each column. */}
       <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:min-h-[min(28rem,80vh)] md:grid-cols-[minmax(0,1fr)_360px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-3 top-3 z-10 rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {closeButton && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 z-10 rounded p-1 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
         <div
           className={cn(
             // pr-12 below md keeps the title clear of the close button,
@@ -94,7 +108,10 @@ export function DetailShell({
         </div>
         <aside
           aria-label={asideLabel}
-          className="min-h-0 border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 md:overflow-y-auto md:border-l md:border-t-0"
+          className={cn(
+            "min-h-0 border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 md:overflow-y-auto md:border-l md:border-t-0",
+            asideClassName,
+          )}
         >
           {aside}
         </aside>

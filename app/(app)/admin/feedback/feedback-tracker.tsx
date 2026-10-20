@@ -71,6 +71,7 @@ export function FeedbackTracker({
   view,
   itemParam,
   detail,
+  userId,
 }: {
   items: FeedbackItem[];
   view: View;
@@ -78,6 +79,8 @@ export function FeedbackTracker({
   itemParam: string | null;
   /** The server's load for `itemParam`, when it names an item. */
   detail: FeedbackDetailData | null;
+  /** The signed-in person (their own comments read "You" and can be deleted). */
+  userId: string;
 }) {
   const router = useRouter();
   const hydrated = useHydrated();
@@ -252,6 +255,7 @@ export function FeedbackTracker({
           item={openFeedback}
           activity={openDetail?.activity ?? null}
           actorNames={openDetail?.actorNames ?? {}}
+          userId={userId}
           onClose={closeItem}
         />
       )}

@@ -5,11 +5,12 @@
 // Pure: no Firestore, no React — safe to import from client components.
 
 import { APP_TIME_ZONE, calendarDateIn } from "@/lib/time-zone";
-import { boardColumnFor } from "./model";
+import { boardColumnFor, feedbackLabel } from "./model";
 import {
   FEEDBACK_BOARD_COLUMNS,
   FEEDBACK_STATUSES,
   FEEDBACK_STATUS_LABELS,
+  FEEDBACK_TYPE_LABELS,
   type FeedbackActivity,
   type FeedbackBoardColumn,
   type FeedbackEditableField,
@@ -28,7 +29,7 @@ export type FeedbackFilters = {
   page: string;
   /** Exact reviewer; empty = everyone. */
   reviewer: string;
-  /** Case-insensitive substring over the label, summary, comments and resolutions. */
+  /** Case-insensitive substring over the label, summary, comments and the staff resolution. */
   query: string;
 };
 
@@ -48,7 +49,8 @@ function searchText(item: FeedbackItem): string {
     item.original_comment,
     item.comment_display ?? "",
     item.client_resolution ?? "",
-    item.resolution ?? "",
+    // Not the internal resolution note: it is not in the UI, so a hit on it
+    // would show a row with no visible reason.
     item.page,
     item.reviewer,
   ]
@@ -221,4 +223,57 @@ export function formatFeedbackDate(value: string | null): string {
   if (!ymd) return value;
   const d = new Date(`${ymd}T00:00:00Z`);
   return Number.isNaN(d.getTime()) ? value : DATE_FMT.format(d);
+}
+
+// ---------------------------------------------------------------------------
+// The detail modal (design "A")
+// ---------------------------------------------------------------------------
+
+/** The header's eyebrow: "FB-036" (bold, HPB blue) · page · type. */
+export function feedbackEyebrow(
+  item: Pick<FeedbackItem, "number" | "page" | "type">,
+): { label: string; rest: string[] } {
+  return {
+    label: feedbackLabel(item.number),
+    rest: [item.page.trim(), FEEDBACK_TYPE_LABELS[item.type]].filter((x) => x !== ""),
+  };
+}
+
+/** The modal's title: the summary, else "<page> feedback". */
+export function feedbackTitle(item: Pick<FeedbackItem, "summary" | "page">): string {
+  return item.summary?.trim() || `${item.page} feedback`;
+}
+
+/**
+ * The FEEDBACK block: the display wording, plus the reporter's original
+ * words only when the display wording actually differs from them.
+ */
+export function feedbackWording(
+  item: Pick<FeedbackItem, "comment_display" | "original_comment">,
+): { text: string; original: string | null } {
+  const shown = item.comment_display?.trim() ? item.comment_display : null;
+  if (!shown) return { text: item.original_comment, original: null };
+  const differs = shown.trim() !== item.original_comment.trim() && item.original_comment.trim() !== "";
+  return { text: shown, original: differs ? item.original_comment : null };
+}
+
+export type FeedbackDetailTerm = { label: string; value: string | null };
+
+/**
+ * The details grid under the resolution: always Follow up with, Decision
+ * source and Type (a blank shows as a dash); the follow-up topic only when
+ * there is one. Not the internal resolution note, evidence, PRs or
+ * branches — those stay in the data, out of the UI.
+ */
+export function feedbackDetailTerms(
+  item: Pick<FeedbackItem, "follow_up_with" | "decision_source" | "type" | "follow_up_topic">,
+): FeedbackDetailTerm[] {
+  const terms: FeedbackDetailTerm[] = [
+    { label: "Follow up with", value: item.follow_up_with?.trim() || null },
+    { label: "Decision source", value: item.decision_source?.trim() || null },
+    { label: "Type", value: FEEDBACK_TYPE_LABELS[item.type] },
+  ];
+  const topic = item.follow_up_topic?.trim();
+  if (topic) terms.push({ label: "Follow-up topic", value: topic });
+  return terms;
 }

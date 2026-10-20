@@ -10,6 +10,10 @@ import {
   feedbackStatusSummary,
   feedbackTrackerHref,
   feedbackStatusCounts,
+  feedbackDetailTerms,
+  feedbackEyebrow,
+  feedbackTitle,
+  feedbackWording,
   filterFeedbackItems,
   formatFeedbackDate,
   groupFeedbackByColumn,
@@ -142,5 +146,57 @@ describe("links and wording", () => {
       describeFeedbackActivity({ ...base, kind: "imported", to: "answered" }),
       "imported from the HPB feedback spreadsheet as Answered",
     );
+  });
+});
+
+describe("the detail modal's pure helpers (design A)", () => {
+  test("eyebrow: FB number, then page and type", () => {
+    assert.deepEqual(feedbackEyebrow(item(36, { page: "Scorecard", type: "bug" })), {
+      label: "FB-036",
+      rest: ["Scorecard", "Bug"],
+    });
+    assert.deepEqual(feedbackEyebrow(item(7, { page: " ", type: "ux" })).rest, ["UX"]);
+  });
+
+  test("title: the summary, else '<page> feedback'", () => {
+    assert.equal(feedbackTitle(item(1, { summary: "Slow rocks" })), "Slow rocks");
+    assert.equal(feedbackTitle(item(2, { page: "Rocks" })), "Rocks feedback");
+  });
+
+  test("wording: the original shows only when the display text differs", () => {
+    assert.deepEqual(feedbackWording(item(1, { original_comment: "teh bug" })), { text: "teh bug", original: null });
+    assert.deepEqual(feedbackWording(item(2, { original_comment: "teh bug", comment_display: "The bug." })), {
+      text: "The bug.",
+      original: "teh bug",
+    });
+    assert.deepEqual(feedbackWording(item(3, { original_comment: "Same", comment_display: " Same " })).original, null);
+  });
+
+  test("details grid: follow up with, decision source, type; topic only when set; never internal fields", () => {
+    const plain = feedbackDetailTerms(item(1, { type: "feature" }));
+    assert.deepEqual(plain, [
+      { label: "Follow up with", value: null },
+      { label: "Decision source", value: null },
+      { label: "Type", value: "Feature" },
+    ]);
+    const full = feedbackDetailTerms(
+      item(2, {
+        follow_up_with: "Steph/Jenna",
+        decision_source: "Daniel, Sep 2",
+        follow_up_topic: "links",
+        resolution: "internal note",
+        evidence: ["PR #40"],
+      }),
+    );
+    assert.deepEqual(full.map((t) => t.label), ["Follow up with", "Decision source", "Type", "Follow-up topic"]);
+    assert.ok(!JSON.stringify(full).includes("internal note"));
+    assert.ok(!JSON.stringify(full).includes("PR #40"));
+  });
+
+  test("search no longer reaches the internal resolution note", () => {
+    const items = [item(1, { resolution: "secret internal words" }), item(2, { client_resolution: "staff words" })];
+    const q = (query: string) => filterFeedbackItems(items, { ...NO_FEEDBACK_FILTERS, query }).map((i) => i.number);
+    assert.deepEqual(q("secret internal"), []);
+    assert.deepEqual(q("staff words"), [2]);
   });
 });

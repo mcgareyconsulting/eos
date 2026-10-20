@@ -22,7 +22,7 @@ export default async function AdminFeedbackPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { db } = await requireFeedbackTrackerAccess();
+  const { db, uid } = await requireFeedbackTrackerAccess();
   const [items, sp] = await Promise.all([listFeedbackItems(), searchParams]);
   const view = sp.view === "board" ? "board" : "list";
   const itemParam = typeof sp.item === "string" && sp.item !== "" ? sp.item : null;
@@ -47,7 +47,7 @@ export default async function AdminFeedbackPage({
         eyebrow="Restricted"
         blurb="Reported problems and requests from HPB staff, seeded from the HPB feedback spreadsheet. Only the people on the tracker's access list can open it."
       />
-      <FeedbackTracker items={items} view={view} itemParam={itemParam} detail={detail} />
+      <FeedbackTracker items={items} view={view} itemParam={itemParam} detail={detail} userId={uid} />
     </div>
   );
 }

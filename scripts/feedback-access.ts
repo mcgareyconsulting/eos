@@ -1,8 +1,8 @@
 // Who may open the feedback tracker (ROADMAP N73; Daniel, 2026-10-19).
 //
-// Access is a dedicated list, NOT the org-admin role: only the emails in
-// `app_config/feedback_tracker.emails` get in (an org admin who is not listed
-// does not), and they see and edit everything in the tracker. The app reads
+// Every org admin gets in; this script keeps the list that lets non-admins
+// in too: the emails in `app_config/feedback_tracker.emails`. Everyone who
+// gets in sees and edit everything in the tracker. The app reads
 // the list on every tracker request (lib/firebase/feedback-access.ts), so a
 // change here takes effect on the person's next page load — no deploy.
 //

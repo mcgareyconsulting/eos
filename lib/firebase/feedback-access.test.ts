@@ -11,8 +11,8 @@ import {
   setFeedbackAccess,
 } from "./feedback-access";
 
-function user(db: Firestore, email: string | null, emailVerified?: boolean | null) {
-  return { user: async () => ({ uid: "u", email, emailVerified, db }) };
+function user(db: Firestore, email: string | null, emailVerified?: boolean | null, isAdmin = false) {
+  return { user: async () => ({ uid: "u", email, emailVerified, isAdmin, db }) };
 }
 
 function listed(emails: unknown) {
@@ -47,6 +47,11 @@ describe("requireFeedbackTrackerAccess", () => {
     await denied(() => requireFeedbackTrackerAccess(user(new FakeFirestore().asFirestore(), "steph@example.com", true)));
     await denied(() => requireFeedbackTrackerAccess(user(listed([]), "steph@example.com", true)));
     await denied(() => requireFeedbackTrackerAccess(user(listed("steph@example.com"), "steph@example.com", true)));
+  });
+
+  test("an org admin gets in without being listed, even with no list at all", async () => {
+    assert.equal((await requireFeedbackTrackerAccess(user(listed(["steph@example.com"]), "boss@example.com", true, true))).uid, "u");
+    assert.equal(await canUseFeedbackTracker(user(new FakeFirestore().asFirestore(), "boss@example.com", true, true)), true);
   });
 
   test("a failed read fails closed", async () => {
@@ -95,16 +100,25 @@ describe("setFeedbackAccess (the Directory's Feedback tracker switch)", () => {
 });
 
 describe("feedbackAccessUids — the list as uids (a feedback item's access subject)", () => {
-  type Account = { uid: string; email?: string; emailVerified?: boolean; disabled?: boolean };
+  type Account = {
+    uid: string;
+    email?: string;
+    emailVerified?: boolean;
+    disabled?: boolean;
+    customClaims?: Record<string, unknown>;
+  };
   const ACCOUNTS: Account[] = [
     { uid: "u-steph", email: "steph@example.com", emailVerified: true },
     { uid: "u-dan", email: "dan@example.com", emailVerified: true },
     { uid: "u-unverified", email: "joe@example.com", emailVerified: false },
     { uid: "u-off", email: "gone@example.com", emailVerified: true, disabled: true },
     { uid: "u-other", email: "other@example.com", emailVerified: true },
+    { uid: "u-admin", email: "boss@example.com", emailVerified: true, customClaims: { role: "admin" } },
+    { uid: "u-admin-off", email: "ex@example.com", disabled: true, customClaims: { role: "admin" } },
   ];
   // Auth's getUsers by email: returns the accounts that exist.
   const fakeAuth = (calls: string[][] = []) => () => ({
+    listUsers: async () => ({ users: ACCOUNTS as never, pageToken: undefined }),
     getUsers: async (ids: { email: string }[]) => {
       calls.push(ids.map((i) => i.email));
       return {
@@ -117,18 +131,23 @@ describe("feedbackAccessUids — the list as uids (a feedback item's access subj
   test("listed, verified, enabled accounts only", async () => {
     const db = listed(["steph@example.com", "DAN@example.com", "joe@example.com", "gone@example.com", "nobody@example.com"]);
     const uids = await feedbackAccessUids(db, fakeAuth());
-    assert.deepEqual(uids.sort(), ["u-dan", "u-steph"]);
+    assert.deepEqual(uids.sort(), ["u-admin", "u-dan", "u-steph"]);
   });
 
-  test("no list or an empty list: nobody, and no Auth lookup", async () => {
+  test("no list or an empty list: the enabled admins only, and no email lookup", async () => {
     const calls: string[][] = [];
-    assert.deepEqual(await feedbackAccessUids(new FakeFirestore().asFirestore(), fakeAuth(calls)), []);
-    assert.deepEqual(await feedbackAccessUids(listed([]), fakeAuth(calls)), []);
+    assert.deepEqual(await feedbackAccessUids(new FakeFirestore().asFirestore(), fakeAuth(calls)), ["u-admin"]);
+    assert.deepEqual(await feedbackAccessUids(listed([]), fakeAuth(calls)), ["u-admin"]);
     assert.equal(calls.length, 0);
+  });
+
+  test("a listed admin appears once", async () => {
+    assert.deepEqual(await feedbackAccessUids(listed(["boss@example.com"]), fakeAuth()), ["u-admin"]);
   });
 
   test("an Auth failure fails closed", async () => {
     const boom = () => ({
+      listUsers: async () => ({ users: [], pageToken: undefined }),
       getUsers: async () => {
         throw new Error("auth down");
       },

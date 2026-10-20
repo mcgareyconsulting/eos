@@ -1,12 +1,11 @@
 // Feedback tracker items (ROADMAP N73) — not one of the four team shapes.
 //
-// Access is the tracker's dedicated list (app_config/feedback_tracker; see
-// lib/feedback/access.ts), keyed by email, not by team or the admin role: an
-// org admin who is not listed gets nothing, and everyone listed gets the
-// same full access. The list is resolved to uids when the item is loaded
+// Access is every org admin plus the tracker's dedicated list
+// (app_config/feedback_tracker; see lib/feedback/access.ts), not by team:
+// everyone who gets in gets the same full access. Both are resolved to uids when the item is loaded
 // (lib/firebase/items.ts `loadItem` → lib/firebase/feedback-access.ts
-// `feedbackAccessUids`: the Auth accounts whose verified email is on the
-// list), and carried on the subject, so every question here stays the same
+// `feedbackAccessUids`: the enabled admin accounts and the accounts whose
+// verified email is on the list), and carried on the subject, so every question here stays the same
 // pure `(subject, viewer)` call as for every other type — and a mention
 // resolved against the Directory, or a recipient checked at send time, is
 // judged by exactly the rule the caller was.
@@ -17,7 +16,7 @@
 import type { AccessModule, Viewer } from "./types";
 
 export type FeedbackSubject = {
-  /** Uids on the tracker's access list, resolved at load time. */
+  /** Uids of the admins and the listed people, resolved at load time. */
   access_uids?: readonly string[];
 };
 

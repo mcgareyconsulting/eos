@@ -3,7 +3,7 @@
 // without a Next server. Server only (reads the file system).
 //
 // Every refusal is the same bare 404 — no session, not on the tracker's
-// access list (org admins included), a bad name, a name not on the file
+// access list and not an org admin, a bad name, a name not on the file
 // allow-list, a missing file — so the route says nothing about which
 // screenshots exist to anyone who may not see them.
 

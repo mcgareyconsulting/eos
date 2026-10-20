@@ -13,7 +13,7 @@ import {
 
 // The tracker's gate (lib/firebase/feedback-access.ts) reads the session's
 // email and app_config/feedback_tracker. "listed" is on the list; "member"
-// is not; "orgAdmin" holds the admin role but is NOT listed — and is denied.
+// is not; "orgAdmin" holds the admin role but is NOT listed — and gets in.
 function fakeUser(opts: { uid: string; email: string | null; isAdmin: boolean; db: FakeFirestore }) {
   return async () => ({
     uid: opts.uid,
@@ -79,8 +79,8 @@ function activity(db: FakeFirestore, id: string) {
 }
 
 describe("access-list gate", () => {
-  test("every function 404s an unlisted user — org admins included — and writes nothing", async () => {
-    for (const who of [member, orgAdmin]) {
+  test("every function 404s an unlisted non-admin and writes nothing", async () => {
+    for (const who of [member]) {
       const db = new FakeFirestore();
       seedItem(db, 1);
       await assertNotFound(() => listFeedbackItems(who(db)));
@@ -94,10 +94,16 @@ describe("access-list gate", () => {
     }
   });
 
-  test("no access doc (or an empty list) denies everyone, fail closed", async () => {
+  test("an org admin who is not on the list gets in", async () => {
     const db = new FakeFirestore();
     seedItem(db, 1);
-    const listed = { user: fakeUser({ uid: "admin-1", email: "listed@example.com", isAdmin: true, db }) };
+    assert.equal((await listFeedbackItems(orgAdmin(db))).length, 1);
+  });
+
+  test("no access doc (or an empty list) denies every non-admin, fail closed", async () => {
+    const db = new FakeFirestore();
+    seedItem(db, 1);
+    const listed = { user: fakeUser({ uid: "admin-1", email: "listed@example.com", isAdmin: false, db }) };
     await assertNotFound(() => listFeedbackItems(listed));
     db.seed("app_config", "feedback_tracker", { emails: [] });
     await assertNotFound(() => listFeedbackItems({ user: listed.user }));

@@ -34,7 +34,7 @@ export function AppShell({
   /** Teams the sidebar can open for data (memberships, or all teams if admin). */
   teams: ShellTeam[];
   isAdmin?: boolean;
-  /** On the feedback tracker's access list (lib/firebase/feedback-access.ts) — not the admin role. */
+  /** An org admin or on the feedback tracker's access list (lib/firebase/feedback-access.ts). */
   showFeedback?: boolean;
   /** Real membership count (may be 0 for admin with god-mode only). */
   membershipCount?: number;

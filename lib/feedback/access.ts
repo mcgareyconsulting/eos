@@ -1,7 +1,8 @@
-// Feedback tracker access (ROADMAP N73; Daniel, 2026-10-19): a DEDICATED
-// ACCESS LIST, not the org-admin role. Only the listed people get in — an
-// org admin who is not listed does not — and listed people see and edit
-// everything in the tracker.
+// Feedback tracker access (ROADMAP N73; Daniel, 2026-10-19, admins added
+// 2026-10-20): every org admin gets in, plus the people on a DEDICATED
+// ACCESS LIST, so non-admins can be given the tracker without admin. Everyone
+// who gets in sees and edits everything in the tracker. The admin half is
+// lib/firebase/feedback-access.ts; this file is the list.
 //
 // The list is `app_config/feedback_tracker` = { emails, updated_at,
 // updated_by }, read and written with the Admin SDK only (firestore.rules
@@ -47,7 +48,8 @@ export type AccessIdentity = {
 };
 
 /**
- * Whether this person may use the tracker. Fails closed: no list, an empty
+ * Whether this person is on the list (admins are let in before this is
+ * asked). Fails closed: no list, an empty
  * list, no email claim, or an email the token says is unverified → no.
  * Case-insensitive on the email.
  */

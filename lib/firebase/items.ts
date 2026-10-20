@@ -44,7 +44,7 @@ export function subjectFor(
   type: ItemType,
   data: Data,
   rock?: Data | null,
-  /** A feedback item: the uids on the tracker's access list. */
+  /** A feedback item: the uids of the admins and the people on the tracker's list. */
   feedbackUids?: readonly string[],
 ): AccessSubjectFor[ItemType] {
   if (type === "feedback") {

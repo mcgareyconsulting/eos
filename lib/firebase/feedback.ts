@@ -1,11 +1,10 @@
 // Feedback tracker (ROADMAP N73) — the Firestore half (Admin SDK; server only).
 // Pure model, validation and change detection: lib/feedback/model.ts.
 //
-// Access-list only, enforced HERE: every export starts with
-// requireFeedbackTrackerAccess() (lib/firebase/feedback-access.ts — the
-// dedicated list in app_config/feedback_tracker, not the org-admin role), so
-// a server action or page that calls in cannot forget the gate; anyone not
-// listed gets the same 404 as every admin surface. The client rules
+// Admins + access list, enforced HERE: every export starts with
+// requireFeedbackTrackerAccess() (lib/firebase/feedback-access.ts — org
+// admins plus the list in app_config/feedback_tracker), so a server action
+// or page that calls in cannot forget the gate; anyone else gets the same 404 as every admin surface. The client rules
 // (firestore.rules `feedback_items`) let no client read or write: the tracker
 // is served from the server only.
 //

@@ -9,9 +9,9 @@ import { FeedbackTracker } from "./feedback-tracker";
 
 /**
  * Feedback tracker (ROADMAP N73): HPB staff feedback on the app, worked by
- * the people on its access list (app_config/feedback_tracker, `pnpm
- * feedback:access`) — not the org-admin role. requireFeedbackTrackerAccess()
- * 404s anyone else, org admins included, and every read below checks again.
+ * org admins and the people on its access list (app_config/feedback_tracker,
+ * `pnpm feedback:access`). requireFeedbackTrackerAccess() 404s anyone else,
+ * and every read below checks again.
  *
  *   ?view=board   the kanban; the list is the default
  *   ?item=fb-037  that item open in the detail modal (deep-linkable); its

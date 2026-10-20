@@ -267,7 +267,8 @@ export function DirectoryTable({
                         {i === 0 && isAdmin && p.hasAuth && p.hasSignedIn === false && (
                           <Chip tone="zinc">Never signed in</Chip>
                         )}
-                        {i === 0 && isAdmin && p.feedbackAccess && !p.deactivated && (
+                        {/* Admins have the tracker already; the chip marks list grants. */}
+                        {i === 0 && isAdmin && p.feedbackAccess && p.access !== "admin" && !p.deactivated && (
                           <Chip tone="blue" title="On the feedback tracker's access list.">
                             Feedback
                           </Chip>

@@ -86,8 +86,15 @@ describe("feedbackScreenshotResponse", () => {
     assert.deepEqual(bytes.subarray(0, 8), PNG);
   });
 
-  test("unlisted (an org admin included) and anonymous callers get a 404, and nothing is read", async () => {
-    for (const who of ["unlisted", "orgAdmin", "anonymous"] as const) {
+  test("an org admin who is not listed gets the screenshot", async () => {
+    const reads: string[] = [];
+    const res = await feedbackScreenshotResponse("row02.png", deps("orgAdmin", reads));
+    assert.equal(res.status, 200);
+    assert.equal(reads.length, 1);
+  });
+
+  test("unlisted non-admins and anonymous callers get a 404, and nothing is read", async () => {
+    for (const who of ["unlisted", "anonymous"] as const) {
       const reads: string[] = [];
       const res = await feedbackScreenshotResponse("row02.png", deps(who, reads));
       assert.equal(res.status, 404, String(who));

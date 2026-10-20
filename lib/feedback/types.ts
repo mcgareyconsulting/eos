@@ -3,9 +3,9 @@
 // Restricted: HPB staff feedback on the app itself (bugs, requests,
 // questions), seeded from the HPB feedback spreadsheet
 // (docs/feedback/feedback-tracker-seed.json, scripts/import-feedback-seed.ts)
-// and worked in the app afterwards. Only the people on the tracker's access
-// list (app_config/feedback_tracker; lib/feedback/access.ts) can open it —
-// not the org-admin role. No client reads or writes it (firestore.rules
+// and worked in the app afterwards. Only org admins and the people on the
+// tracker's access list (app_config/feedback_tracker; lib/feedback/access.ts)
+// can open it. No client reads or writes it (firestore.rules
 // `feedback_items`); every read and write is a server-side call into
 // lib/firebase/feedback.ts, which checks the access list itself.
 //

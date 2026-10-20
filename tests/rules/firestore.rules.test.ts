@@ -113,6 +113,15 @@ beforeEach(async () => {
     await put("feedback_items/fb-001", { number: 1, status: "new", reviewer: "Steph Benes" });
     await put("feedback_items/fb-001/activity/a1", { kind: "created", actor_uid: "root", to: "new" });
     await put("app_config/feedback_tracker", { emails: ["root@example.com"] });
+    // A feedback tracker comment: entity_comments, but server-only.
+    await put("entity_comments/c-fb", {
+      team_id: "",
+      entity_type: "feedback",
+      entity_id: "fb-001",
+      author_id: "root",
+      body: "@Alice see this",
+      mention_ids: ["alice"],
+    });
     // lee: a leader of T (no admin claim) — leadership grants nothing here.
     await put("users/lee", { team_ids: [T] });
     await put(`team_members/${T}__lee`, { team_id: T, user_id: "lee", role: "leader" });
@@ -300,6 +309,37 @@ describe("feedback tracker: no client reads, org admins included (server-only, a
     }
   });
 
+  test("feedback comments (entity_comments, entity_type feedback): no client reads, author, mentioned person and admins included", async () => {
+    for (const db of [asAdmin(), as("root"), as("alice"), as("lee"), as("nobody"), anon()]) {
+      await assertFails(getDoc(doc(db, "entity_comments/c-fb")));
+      await assertFails(
+        getDocs(
+          query(collection(db, "entity_comments"), where("entity_type", "==", "feedback"), where("entity_id", "==", "fb-001")),
+        ),
+      );
+      await assertFails(
+        getDocs(
+          query(
+            collection(db, "entity_comments"),
+            where("team_id", "==", ""),
+            where("entity_type", "==", "feedback"),
+            where("entity_id", "==", "fb-001"),
+          ),
+        ),
+      );
+    }
+  });
+
+  test("an admin's thread listeners on other item types still work (the feedback guard is per type)", async () => {
+    const db = asAdmin();
+    await assertSucceeds(
+      getDocs(query(collection(db, "entity_comments"), where("entity_type", "==", "rock"), where("entity_id", "==", "r-own"))),
+    );
+    await assertSucceeds(getDoc(doc(db, "entity_comments/c-issue")));
+    // Not pinned to a type: could include feedback rows, so refused.
+    await assertFails(getDocs(query(collection(db, "entity_comments"), where("entity_id", "==", "fb-001"))));
+  });
+
   test("the access list (app_config) is unreadable by every client", async () => {
     for (const db of [asAdmin(), as("alice"), as("lee"), anon()]) {
       await assertFails(getDoc(doc(db, "app_config/feedback_tracker")));
@@ -324,6 +364,7 @@ describe("no client writes, on any collection, for anyone", () => {
     "issues/i1",
     "issue_votes/v1",
     "entity_comments/c-rock",
+    "entity_comments/c-fb",
     "notifications/n1",
     "headlines/h1",
     "agendas/a1",

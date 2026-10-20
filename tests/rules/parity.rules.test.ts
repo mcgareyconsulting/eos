@@ -152,6 +152,8 @@ for (const id of Object.keys(ROCKS)) put(`entity_comments/c-${id}`, { team_id: P
 for (const id of Object.keys(TODOS)) put(`entity_comments/c-${id}`, { team_id: P, entity_type: "todo", entity_id: id });
 put("entity_comments/c-i-1", { team_id: P, entity_type: "issue", entity_id: "i-1" });
 put("entity_comments/c-h-1", { team_id: P, entity_type: "headline", entity_id: "h-1" });
+// A feedback tracker thread: server-only, so no viewer may read it (threadSees → false).
+put("entity_comments/c-fb-1", { team_id: "", entity_type: "feedback", entity_id: "fb-001" });
 
 // Activity rows carry a snapshot of visibility/owner that grants nothing.
 for (const [id, d] of Object.entries(TODOS)) {
@@ -210,6 +212,9 @@ function threadSees(d: Data, v: Viewer): boolean {
       return accessFor("issue").canComment(F[`issues/${id}`] as never, v);
     case "headline":
       return accessFor("headline").canComment(F[`headlines/${id}`] as never, v);
+    // The tracker's access list is invisible to rules: server-only thread.
+    case "feedback":
+      return false;
     default:
       return false;
   }

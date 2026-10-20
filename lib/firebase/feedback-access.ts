@@ -15,6 +15,8 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import type { Auth } from "firebase-admin/auth";
+import { getAdminAuth } from "./admin";
 import { getVerifiedSessionToken, requireFirebaseUser } from "./auth";
 import {
   FEEDBACK_ACCESS_COLLECTION,
@@ -79,6 +81,59 @@ export async function requireFeedbackTrackerAccess(deps?: FeedbackDeps): Promise
   const { user, allowed } = await evaluate(deps);
   if (!allowed) notFound();
   return user;
+}
+
+/** The fields of an Auth account the uid resolution reads. */
+type AccountRecord = { uid: string; email?: string; emailVerified?: boolean; disabled?: boolean };
+
+/**
+ * The uids of the accounts on the list: an Auth account whose email — the
+ * one its session token carries, which is what the gate above reads — is
+ * listed, is not marked unverified, and is not disabled. Pure; exported for
+ * tests.
+ */
+export function listedAccountUids(
+  emails: readonly string[],
+  accounts: readonly AccountRecord[],
+): string[] {
+  const out: string[] = [];
+  for (const a of accounts) {
+    if (a.disabled) continue;
+    if (!hasFeedbackAccess({ email: a.email ?? null, emailVerified: a.emailVerified ?? null }, emails)) continue;
+    if (!out.includes(a.uid)) out.push(a.uid);
+  }
+  return out;
+}
+
+/**
+ * Who is on the tracker's access list, as uids — what a feedback item's
+ * access subject carries (lib/access/feedback.ts), so the shared thread,
+ * mention and notification code can ask about a person by uid exactly as
+ * the gate asks about the caller by email. One list read plus one Auth
+ * lookup per 100 emails. Fails closed: no list, or any failure, is nobody.
+ */
+export async function feedbackAccessUids(
+  db: Firestore,
+  auth: () => Pick<Auth, "getUsers"> = getAdminAuth,
+): Promise<string[]> {
+  try {
+    const emails = (await readList(db)) ?? [];
+    if (emails.length === 0) return [];
+    const accounts: AccountRecord[] = [];
+    for (let i = 0; i < emails.length; i += 100) {
+      const res = await auth().getUsers(emails.slice(i, i + 100).map((email) => ({ email })));
+      accounts.push(...res.users);
+    }
+    return listedAccountUids(emails, accounts);
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        event: "feedback_access_uids_failed",
+        message: e instanceof Error ? e.message : String(e),
+      }),
+    );
+    return [];
+  }
 }
 
 /**

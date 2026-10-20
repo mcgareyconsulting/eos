@@ -188,6 +188,11 @@ export function useCommentActions(
   teamId: string,
   entityType: CommentEntityType,
   entityId: string,
+  /**
+   * Runs after a comment is posted or deleted — for a thread read from the
+   * server rather than a live listener (the feedback tracker's), to reload.
+   */
+  onChanged?: () => void,
 ) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -207,6 +212,7 @@ export function useCommentActions(
           return;
         }
         onPosted?.();
+        onChanged?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -218,6 +224,7 @@ export function useCommentActions(
     start(async () => {
       try {
         await deleteEntityComment(teamId, commentId);
+        onChanged?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }

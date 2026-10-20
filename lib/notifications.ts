@@ -334,6 +334,7 @@ const NOUN: Record<ItemType, string> = {
   issue: "an issue",
   metric: "a metric",
   headline: "a headline",
+  feedback: "a feedback item",
 };
 
 /** "a to-do", "an issue" — what a row names when it has no title to show. */
@@ -421,10 +422,27 @@ export function itemLabel(
   type: ItemType,
   data: Readonly<Record<string, unknown>>,
 ): { title: string; snippet: string | null } {
+  if (type === "feedback") return feedbackItemLabel(data);
   const rawTitle = type === "metric" ? data.name : data.title;
   const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : "";
   const rawBody = type === "headline" ? data.body : data.description;
   const snippet =
     typeof rawBody === "string" && rawBody.trim() ? snippetOf(rawBody) : null;
   return { title, snippet };
+}
+
+/** A feedback item's peek: "FB-036 · its summary", and the reporter's words. */
+function feedbackItemLabel(
+  data: Readonly<Record<string, unknown>>,
+): { title: string; snippet: string | null } {
+  const n = typeof data.number === "number" && Number.isInteger(data.number) ? data.number : null;
+  const label = n !== null ? `FB-${String(n).padStart(3, "0")}` : "Feedback";
+  const summary = typeof data.summary === "string" ? data.summary.trim() : "";
+  const comment = [data.comment_display, data.original_comment].find(
+    (v): v is string => typeof v === "string" && v.trim() !== "",
+  );
+  return {
+    title: summary ? `${label} · ${summary}` : label,
+    snippet: comment ? snippetOf(comment) : null,
+  };
 }

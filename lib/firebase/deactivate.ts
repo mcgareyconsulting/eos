@@ -3,12 +3,12 @@
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
-import type { ItemCollection } from "@/lib/item-registry";
 import {
   BATCH_LIMIT,
   checkDeactivate,
   chunk,
   planUnassign,
+  type OwnedCollection,
   type OwnedDoc,
 } from "@/lib/deactivation";
 import { LAST_ADMIN_MESSAGE, hasOtherAdmin } from "./admin-guard";
@@ -18,7 +18,7 @@ import { syncUserTeamIds } from "./membership";
 import { emitEvent } from "./notifications";
 import { leaderIdsOfTeams } from "./rock-events";
 
-const OWNED: readonly { collection: ItemCollection; field: string }[] = [
+const OWNED: readonly { collection: OwnedCollection; field: string }[] = [
   { collection: "rocks", field: "owner_id" },
   { collection: "todos", field: "owner_id" }, // to-dos + milestones
   { collection: "issues", field: "owner_id" },

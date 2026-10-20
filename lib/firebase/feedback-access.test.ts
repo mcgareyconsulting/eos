@@ -4,6 +4,8 @@ import type { Firestore } from "firebase-admin/firestore";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
 import {
   canUseFeedbackTracker,
+  feedbackAccessUids,
+  listedAccountUids,
   readFeedbackAccessList,
   requireFeedbackTrackerAccess,
   setFeedbackAccess,
@@ -89,5 +91,59 @@ describe("setFeedbackAccess (the Directory's Feedback tracker switch)", () => {
     assert.equal(await setFeedbackAccess(fs, "admin1", "joe@example.com", true), true);
     assert.deepEqual(await readFeedbackAccessList(fs), ["joe@example.com"]);
     await assert.rejects(() => setFeedbackAccess(fs, "admin1", "  ", true), /no email/);
+  });
+});
+
+describe("feedbackAccessUids — the list as uids (a feedback item's access subject)", () => {
+  type Account = { uid: string; email?: string; emailVerified?: boolean; disabled?: boolean };
+  const ACCOUNTS: Account[] = [
+    { uid: "u-steph", email: "steph@example.com", emailVerified: true },
+    { uid: "u-dan", email: "dan@example.com", emailVerified: true },
+    { uid: "u-unverified", email: "joe@example.com", emailVerified: false },
+    { uid: "u-off", email: "gone@example.com", emailVerified: true, disabled: true },
+    { uid: "u-other", email: "other@example.com", emailVerified: true },
+  ];
+  // Auth's getUsers by email: returns the accounts that exist.
+  const fakeAuth = (calls: string[][] = []) => () => ({
+    getUsers: async (ids: { email: string }[]) => {
+      calls.push(ids.map((i) => i.email));
+      return {
+        users: ACCOUNTS.filter((a) => ids.some((i) => i.email === a.email)) as never,
+        notFound: [],
+      };
+    },
+  });
+
+  test("listed, verified, enabled accounts only", async () => {
+    const db = listed(["steph@example.com", "DAN@example.com", "joe@example.com", "gone@example.com", "nobody@example.com"]);
+    const uids = await feedbackAccessUids(db, fakeAuth());
+    assert.deepEqual(uids.sort(), ["u-dan", "u-steph"]);
+  });
+
+  test("no list or an empty list: nobody, and no Auth lookup", async () => {
+    const calls: string[][] = [];
+    assert.deepEqual(await feedbackAccessUids(new FakeFirestore().asFirestore(), fakeAuth(calls)), []);
+    assert.deepEqual(await feedbackAccessUids(listed([]), fakeAuth(calls)), []);
+    assert.equal(calls.length, 0);
+  });
+
+  test("an Auth failure fails closed", async () => {
+    const boom = () => ({
+      getUsers: async () => {
+        throw new Error("auth down");
+      },
+    });
+    const err = console.error;
+    console.error = () => {};
+    try {
+      assert.deepEqual(await feedbackAccessUids(listed(["steph@example.com"]), boom as never), []);
+    } finally {
+      console.error = err;
+    }
+  });
+
+  test("listedAccountUids: an account whose email is not on the list never counts", () => {
+    assert.deepEqual(listedAccountUids(["steph@example.com"], ACCOUNTS), ["u-steph"]);
+    assert.deepEqual(listedAccountUids([], ACCOUNTS), []);
   });
 });

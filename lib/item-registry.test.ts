@@ -33,6 +33,8 @@ describe("item registry (spec §5.0)", () => {
     assert.deepEqual(registryFor("issue").shapes, ["team-item"]);
     assert.deepEqual(registryFor("metric").shapes, ["metric"]);
     assert.deepEqual(registryFor("headline").shapes, ["team-item"]);
+    // The tracker's access list is not a team shape (lib/access/feedback.ts).
+    assert.deepEqual(registryFor("feedback").shapes, []);
   });
 
   test("collections — a milestone is a to-do doc", () => {
@@ -42,26 +44,30 @@ describe("item registry (spec §5.0)", () => {
     assert.equal(registryFor("issue").collection, "issues");
     assert.equal(registryFor("metric").collection, "scorecard_metrics");
     assert.equal(registryFor("headline").collection, "headlines");
+    assert.equal(registryFor("feedback").collection, "feedback_items");
   });
 
-  test("owner: the assignee, except a headline's creator", () => {
+  test("owner: the assignee, except a headline's creator; a feedback item has none", () => {
     for (const type of ITEM_TYPES) {
       assert.equal(
         registryFor(type).ownerField,
-        type === "headline" ? "created_by" : "owner_id",
+        type === "headline" ? "created_by" : type === "feedback" ? null : "owner_id",
         type,
       );
     }
+    // Its creator is not an owner: no locked follower on a tracker item.
+    assert.equal(ownerOf("feedback", { created_by: "u1", owner_id: "u2" }), null);
     assert.equal(ownerOf("headline", { created_by: "u1", owner_id: "u2" }), "u1");
     assert.equal(ownerOf("todo", { owner_id: "u2" }), "u2");
     assert.equal(ownerOf("issue", { owner_id: "" }), null);
     assert.equal(ownerOf("rock", {}), null);
   });
 
-  test("assigner: every type but headline, stored as assigned_by", () => {
+  test("assigner: every type but headline and feedback, stored as assigned_by", () => {
     for (const type of ITEM_TYPES) {
-      assert.equal(registryFor(type).hasAssigner, type !== "headline", type);
-      assert.equal(registryFor(type).assignerField, type === "headline" ? null : "assigned_by", type);
+      const none = type === "headline" || type === "feedback";
+      assert.equal(registryFor(type).hasAssigner, !none, type);
+      assert.equal(registryFor(type).assignerField, none ? null : "assigned_by", type);
     }
   });
 
@@ -72,6 +78,13 @@ describe("item registry (spec §5.0)", () => {
     assert.equal(registryFor("issue").threadEntityType, "issue");
     assert.equal(registryFor("metric").threadEntityType, null);
     assert.equal(registryFor("headline").threadEntityType, "headline");
+    assert.equal(registryFor("feedback").threadEntityType, "feedback");
+  });
+
+  test("mention picker: the whole Directory, except the tracker's own audience", () => {
+    for (const type of ITEM_TYPES) {
+      assert.equal(registryFor(type).mentionPicker, type === "feedback" ? "audience" : "everyone", type);
+    }
   });
 
   test("events (spec §5.3)", () => {
@@ -109,6 +122,7 @@ describe("item registry (spec §5.0)", () => {
       "discussed",
       "archived",
     ]);
+    assert.deepEqual(registryFor("feedback").events, ["comment"]);
     assert.equal(isEventFor("metric", "comment"), false);
     assert.equal(isEventFor("rock", "status_changed"), true);
   });
@@ -143,6 +157,12 @@ describe("item registry (spec §5.0)", () => {
       "/teams/t1/headlines?headline=h1",
     );
     assert.equal(linkFor({ type: "issue", id: "i1" }, "t1"), "/teams/t1/issues?issue=i1");
+    // The tracker is one page, not a team's: the team is ignored.
+    assert.equal(registryFor("feedback").link("", "fb-036"), "/admin/feedback?item=fb-036");
+    assert.equal(
+      notificationHref({ team_id: "", entity_type: "feedback", entity_id: "fb-036" }),
+      "/admin/feedback?item=fb-036",
+    );
   });
 
   test("classifying a todos doc", () => {

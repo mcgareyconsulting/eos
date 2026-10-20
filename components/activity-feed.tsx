@@ -13,6 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { CommentEntityType } from "@/app/(app)/teams/[teamId]/entity-comments/actions";
+import type { FeedEntityType } from "@/lib/activity-feed";
 import {
   ACTIVITY_DEFAULT_TONE,
   ACTIVITY_KIND_ICON,
@@ -77,7 +78,11 @@ const NO_EVENTS: readonly FeedEvent[] = [];
 export type ActivityFeedProps = {
   /** The page the feed is shown from; comments are filed under the item's own team. */
   teamId: string;
-  entityType: CommentEntityType;
+  /**
+   * The item's thread. Not a feedback item: its thread has no live client
+   * read (firestore.rules) — the tracker's modal reads it from the server.
+   */
+  entityType: Extract<CommentEntityType, FeedEntityType>;
   entityId: string;
   /** The viewer — reads as "You", and may delete their own comments. */
   userId: string;
@@ -361,7 +366,7 @@ function EventRow({
   statusDotClass,
 }: {
   event: FeedEvent;
-  entityType: CommentEntityType;
+  entityType: FeedEntityType;
   noun?: string;
   userId: string;
   statusDotClass?: (status: string) => string | undefined;

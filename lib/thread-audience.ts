@@ -39,6 +39,10 @@ export function visibleToLine(
   subject: unknown,
   teamName: (id: string) => string,
 ): string {
+  // The tracker's list is the whole audience: admins are not implied.
+  if (type === "feedback") {
+    return "Visible to the people with feedback tracker access.";
+  }
   const s = subject as Record<string, unknown>;
   const parts: string[] = [];
   switch (type) {

@@ -58,7 +58,8 @@ export async function peekItem(
     access: "ok",
     ref: item.ref,
     teamId: item.teamId,
-    teamName: names.get(item.teamId) ?? "Team",
+    // A feedback item has no team: the tracker is its home.
+    teamName: item.ref.type === "feedback" ? "Feedback tracker" : (names.get(item.teamId) ?? "Team"),
     title,
     snippet,
     href: linkFor(item.ref, item.teamId),

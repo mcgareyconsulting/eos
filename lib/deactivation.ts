@@ -16,15 +16,18 @@ export function chunk<T>(items: readonly T[], size = BATCH_LIMIT): T[][] {
   return out;
 }
 
+/** Collections whose items have an owner to unassign (feedback items have none). */
+export type OwnedCollection = Exclude<ItemCollection, "feedback_items">;
+
 /** The owned docs, as read from each collection. */
 export type OwnedDoc = {
-  collection: ItemCollection;
+  collection: OwnedCollection;
   id: string;
   data: Record<string, unknown>;
 };
 
 export type UnassignPatch = {
-  collection: ItemCollection;
+  collection: OwnedCollection;
   id: string;
   patch: Record<string, null | boolean>;
 };

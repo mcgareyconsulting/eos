@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   accessFor,
+  feedbackAccess,
   headlineAccess,
   issueAccess,
   metricAccess,
@@ -28,6 +29,7 @@ describe("accessFor", () => {
     assert.equal(accessFor("issue"), issueAccess);
     assert.equal(accessFor("metric"), metricAccess);
     assert.equal(accessFor("headline"), headlineAccess);
+    assert.equal(accessFor("feedback"), feedbackAccess);
   });
 
   test("every registry type has a module implementing the common interface", () => {

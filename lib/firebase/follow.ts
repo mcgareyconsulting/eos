@@ -60,7 +60,7 @@ export async function autoFollow(
   actorUid?: string | null,
 ): Promise<string[]> {
   try {
-    const item = await loadItem(db, ref);
+    const item = await loadItem(db, ref, deps);
     if (!item) return [];
     const { added } = withAutoFollowers(item.data, uids);
     if (added.length === 0) return [];

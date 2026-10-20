@@ -11,20 +11,37 @@ import {
   updateFeedbackItem,
 } from "./feedback";
 
-// requireFirebaseUser()'s shape, trimmed to what requireAdmin reads.
-function fakeUser(opts: { uid: string; isAdmin: boolean; db: FakeFirestore }) {
+// The tracker's gate (lib/firebase/feedback-access.ts) reads the session's
+// email and app_config/feedback_tracker. "listed" is on the list; "member"
+// is not; "orgAdmin" holds the admin role but is NOT listed — and gets in.
+function fakeUser(opts: { uid: string; email: string | null; isAdmin: boolean; db: FakeFirestore }) {
   return async () => ({
     uid: opts.uid,
-    email: null,
+    email: opts.email,
     name: null,
     picture: null,
     isAdmin: opts.isAdmin,
+    emailVerified: true,
     db: opts.db.asFirestore(),
   });
 }
 
-const admin = (db: FakeFirestore) => ({ user: fakeUser({ uid: "admin-1", isAdmin: true, db }) });
-const member = (db: FakeFirestore) => ({ user: fakeUser({ uid: "mem-1", isAdmin: false, db }) });
+function grant(db: FakeFirestore) {
+  db.seed("app_config", "feedback_tracker", { emails: ["listed@example.com"] });
+}
+
+const admin = (db: FakeFirestore) => {
+  grant(db);
+  return { user: fakeUser({ uid: "admin-1", email: "Listed@Example.com", isAdmin: false, db }) };
+};
+const member = (db: FakeFirestore) => {
+  grant(db);
+  return { user: fakeUser({ uid: "mem-1", email: "mem@example.com", isAdmin: false, db }) };
+};
+const orgAdmin = (db: FakeFirestore) => {
+  grant(db);
+  return { user: fakeUser({ uid: "root", email: "root@example.com", isAdmin: true, db }) };
+};
 
 async function assertNotFound(run: () => Promise<unknown>) {
   await assert.rejects(run, (err: unknown) => {
@@ -61,18 +78,41 @@ function activity(db: FakeFirestore, id: string) {
   return db.docsIn(`feedback_items/${id}/activity`).map((d) => d.data);
 }
 
-describe("admin gate", () => {
-  test("every function 404s a non-admin and writes nothing", async () => {
+describe("access-list gate", () => {
+  test("every function 404s an unlisted non-admin and writes nothing", async () => {
+    for (const who of [member]) {
+      const db = new FakeFirestore();
+      seedItem(db, 1);
+      await assertNotFound(() => listFeedbackItems(who(db)));
+      await assertNotFound(() => getFeedbackItem("fb-001", who(db)));
+      await assertNotFound(() => listFeedbackActivity("fb-001", who(db)));
+      await assertNotFound(() => createFeedbackItem(NEW, who(db)));
+      await assertNotFound(() => updateFeedbackItem("fb-001", { status: "completed" }, who(db)));
+      assert.equal(db.docsIn("feedback_items").length, 1);
+      assert.equal(db.raw("feedback_items/fb-001")?.status, "follow_up");
+      assert.equal(activity(db, "fb-001").length, 0);
+    }
+  });
+
+  test("an org admin who is not on the list gets in", async () => {
     const db = new FakeFirestore();
     seedItem(db, 1);
-    await assertNotFound(() => listFeedbackItems(member(db)));
-    await assertNotFound(() => getFeedbackItem("fb-001", member(db)));
-    await assertNotFound(() => listFeedbackActivity("fb-001", member(db)));
-    await assertNotFound(() => createFeedbackItem(NEW, member(db)));
-    await assertNotFound(() => updateFeedbackItem("fb-001", { status: "completed" }, member(db)));
-    assert.equal(db.docsIn("feedback_items").length, 1);
-    assert.equal(db.raw("feedback_items/fb-001")?.status, "follow_up");
-    assert.equal(activity(db, "fb-001").length, 0);
+    assert.equal((await listFeedbackItems(orgAdmin(db))).length, 1);
+  });
+
+  test("no access doc (or an empty list) denies every non-admin, fail closed", async () => {
+    const db = new FakeFirestore();
+    seedItem(db, 1);
+    const listed = { user: fakeUser({ uid: "admin-1", email: "listed@example.com", isAdmin: false, db }) };
+    await assertNotFound(() => listFeedbackItems(listed));
+    db.seed("app_config", "feedback_tracker", { emails: [] });
+    await assertNotFound(() => listFeedbackItems({ user: listed.user }));
+  });
+
+  test("a listed user who is not an org admin gets in", async () => {
+    const db = new FakeFirestore();
+    seedItem(db, 1);
+    assert.equal((await listFeedbackItems(admin(db))).length, 1);
   });
 });
 

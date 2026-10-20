@@ -17,6 +17,7 @@ import {
   type RockSubject,
 } from "./rock";
 import { metricAccess, type MetricSubject } from "./metric";
+import { feedbackAccess, type FeedbackSubject } from "./feedback";
 import type { AccessModule, CompletableAccessModule, ItemType } from "./types";
 
 export * from "./types";
@@ -24,6 +25,7 @@ export * from "./team-item";
 export * from "./private-item";
 export * from "./rock";
 export * from "./metric";
+export * from "./feedback";
 
 /** A plain to-do (no `source_rock_id`): team (shape A) or private (shape B). */
 export type TodoSubject = PrivateTodoSubject;
@@ -57,6 +59,7 @@ export type AccessSubjectFor = {
   issue: IssueSubject;
   metric: MetricSubject;
   headline: HeadlineSubject;
+  feedback: FeedbackSubject;
 };
 
 const MODULES: { [K in ItemType]: AccessModule<AccessSubjectFor[K]> } = {
@@ -66,6 +69,7 @@ const MODULES: { [K in ItemType]: AccessModule<AccessSubjectFor[K]> } = {
   issue: issueAccess,
   metric: metricAccess,
   headline: headlineAccess,
+  feedback: feedbackAccess,
 };
 
 /**

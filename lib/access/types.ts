@@ -37,14 +37,18 @@ export type AccessShape =
   /** D. Scorecard metric. */
   | "metric";
 
-/** The six item types of spec §5.0. */
+/**
+ * The six item types of spec §5.0, plus the feedback tracker's items
+ * (ROADMAP N73; access list, not a team shape — lib/access/feedback.ts).
+ */
 export type ItemType =
   | "rock"
   | "milestone"
   | "todo"
   | "issue"
   | "metric"
-  | "headline";
+  | "headline"
+  | "feedback";
 
 /**
  * The common interface each access module implements. `item` is the

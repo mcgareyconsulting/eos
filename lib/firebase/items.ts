@@ -21,6 +21,7 @@ import {
   type ItemType,
 } from "@/lib/item-registry";
 import { getAdminAuth } from "./admin";
+import { feedbackAccessUids } from "./feedback-access";
 
 type Data = Record<string, unknown>;
 
@@ -43,7 +44,13 @@ export function subjectFor(
   type: ItemType,
   data: Data,
   rock?: Data | null,
+  /** A feedback item: the uids of the admins and the people on the tracker's list. */
+  feedbackUids?: readonly string[],
 ): AccessSubjectFor[ItemType] {
+  if (type === "feedback") {
+    // Only the resolved list: a stored field can never widen access.
+    return { access_uids: [...(feedbackUids ?? [])] };
+  }
   if (type === "milestone") {
     return {
       milestone: data as AccessSubjectFor["milestone"]["milestone"],
@@ -79,6 +86,7 @@ export function canFollowItem(item: LoadedItem, viewer: Viewer): boolean {
 export async function loadItem(
   db: Firestore,
   ref: ItemRef,
+  deps: ViewerDeps = {},
 ): Promise<LoadedItem | null> {
   if (!ref.id) return null;
   const snap = await db.collection(registryFor(ref.type).collection).doc(ref.id).get();
@@ -98,10 +106,14 @@ export async function loadItem(
     // A milestone whose rock is gone is just a to-do on its team.
     if (!rock) type = "todo";
   }
+  const feedbackUids =
+    type === "feedback"
+      ? await (deps.feedbackAccessUids ?? feedbackAccessUids)(db)
+      : undefined;
   return {
     ref: { type, id: ref.id },
     data,
-    subject: subjectFor(type, data, rock),
+    subject: subjectFor(type, data, rock, feedbackUids),
     teamId: typeof data.team_id === "string" ? data.team_id : "",
   };
 }
@@ -109,6 +121,11 @@ export async function loadItem(
 export type ViewerDeps = {
   /** Which of `uids` hold the admin claim. Defaults to an Auth lookup. */
   adminUids?: (uids: string[]) => Promise<Set<string>>;
+  /**
+   * The uids on the feedback tracker's access list (a feedback item's
+   * subject). Defaults to the list + an Auth lookup by email.
+   */
+  feedbackAccessUids?: (db: Firestore) => Promise<string[]>;
 };
 
 async function adminUidsFromAuth(uids: string[]): Promise<Set<string>> {

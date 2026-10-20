@@ -131,3 +131,21 @@ describe("getDirectoryPeople", () => {
     }
   });
 });
+
+describe("getDirectoryPeople — feedback tracker access (N73)", () => {
+  test("flags listed people for admins only, matching email case-insensitively", async () => {
+    const db = new FakeFirestore();
+    db.seed("users", "steph", { first_name: "Steph", last_name: "Benes", email: "Steph@x.com" });
+    db.seed("users", "cy", { first_name: "Cy", last_name: "Young", email: "cy@x.com" });
+    db.seed("app_config", "feedback_tracker", { emails: ["steph@x.com"] });
+    const auth = fakeAuth([record("steph", { signedIn: true }), record("cy", { signedIn: true })]);
+
+    const forAdmin = await getDirectoryPeople(true, { user: fakeUser(db), auth });
+    assert.deepEqual(
+      forAdmin.map((p) => [p.uid, p.feedbackAccess]),
+      [["steph", true], ["cy", false]],
+    );
+    const forMember = await getDirectoryPeople(false, { user: fakeUser(db), auth });
+    assert.ok(forMember.every((p) => !("feedbackAccess" in p)));
+  });
+});

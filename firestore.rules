@@ -214,8 +214,18 @@ service cloud.firestore {
            : d.entity_type == 'headline' ? teamItemSeeById('headlines', d.entity_id)
            : false;
     }
+    // Only the four client-read thread types, checked BEFORE the admin
+    // short-circuit. A feedback tracker thread (`entity_type: "feedback"`,
+    // ROADMAP N73) is as server-only as the tracker itself: its audience is
+    // the tracker's access list, which rules cannot see, so no client reads
+    // it — org admins included. An allowlist, not `!= 'feedback'`: a list
+    // query that does not pin `entity_type` cannot prove it (a `.get()`
+    // default would, and over-return — tests/rules/README.md), and a future
+    // thread type stays closed until it is added here. Every UI query pins
+    // `entity_type` by equality. 0 extra lookups.
     match /entity_comments/{id} {
-      allow read:  if admin() || threadSee(resource.data);
+      allow read:  if resource.data.entity_type in ['rock', 'todo', 'issue', 'headline']
+                   && (admin() || threadSee(resource.data));
       allow write: if false;
     }
 
@@ -280,19 +290,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ---------- feedback tracker (admin-only; ROADMAP N73) ----------
-    // Staff feedback on the app and its per-item activity trace. Org admins
-    // only (lib/firebase/feedback.ts gates the server side the same way).
-    // Written by lib/firebase/feedback.ts and
-    // scripts/import-feedback-seed.ts. 0 lookups.
+    // ---------- feedback tracker (access list; ROADMAP N73) ----------
+    // Staff feedback on the app and its per-item activity trace. Access is a
+    // dedicated list (app_config/feedback_tracker), not the org-admin role,
+    // and the rules cannot see that list — so no client reads it at all,
+    // admins included. The tracker is served from the server only:
+    // lib/firebase/feedback.ts (requireFeedbackTrackerAccess) reads and
+    // writes it with the Admin SDK, as does scripts/import-feedback-seed.ts.
     match /feedback_items/{itemId} {
-      allow read:  if admin();
-      allow write: if false;
+      allow read, write: if false;
 
       match /activity/{activityId} {
-        allow read:  if admin();
-        allow write: if false;
+        allow read, write: if false;
       }
+    }
+
+    // ---------- server configuration (Admin SDK only) ----------
+    // app_config/feedback_tracker holds the tracker's access list (emails),
+    // read by lib/firebase/feedback-access.ts and written by
+    // scripts/feedback-access.ts. The catch-all below already denies it;
+    // this match says so on purpose.
+    match /app_config/{docId} {
+      allow read, write: if false;
     }
 
     // ---------- server-only secrets (Admin SDK only) ----------

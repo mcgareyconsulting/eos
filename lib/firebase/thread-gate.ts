@@ -10,7 +10,7 @@
 import { notFound } from "next/navigation";
 import type { Firestore } from "firebase-admin/firestore";
 import { accessFor, viewerOf, type Viewer } from "@/lib/access";
-import type { ThreadEntityType } from "@/lib/item-registry";
+import { registryFor, type ThreadEntityType } from "@/lib/item-registry";
 import {
   candidatesFromPeople,
   type MentionCandidate,
@@ -26,6 +26,7 @@ export const THREAD_ENTITY_TYPES: readonly ThreadEntityType[] = [
   "rock",
   "todo",
   "headline",
+  "feedback",
 ];
 
 export function isThreadEntityType(v: unknown): v is ThreadEntityType {
@@ -94,6 +95,22 @@ export function mentionPeopleOf(
   return out;
 }
 
+/**
+ * The people the @ picker lists for this item: everyone (the ones who cannot
+ * see it greyed), or — for a type whose registry entry says "audience", the
+ * feedback tracker — only the people who can see it. The server's mention
+ * check still runs against everyone (`mentionPeopleOf`), so a name typed by
+ * hand is refused, not resolved, when its person cannot see the item.
+ */
+export function pickerPeopleOf(
+  item: LoadedItem,
+  people: readonly MentionPerson[],
+): MentionPerson[] {
+  return registryFor(item.ref.type).mentionPicker === "audience"
+    ? people.filter((p) => p.canSee)
+    : [...people];
+}
+
 /** Team ids named by the item's access subject (parent team + rock audience). */
 function teamIdsOf(item: LoadedItem): string[] {
   const s = item.subject as unknown as Record<string, unknown>;
@@ -131,7 +148,9 @@ export type ThreadContext = {
 
 export async function loadThreadContext(gate: ThreadGate): Promise<ThreadContext> {
   const [people, visibleTo] = await Promise.all([
-    getDirectoryPeople(gate.isAdmin).then((d) => mentionPeopleOf(gate.item, d)),
+    getDirectoryPeople(gate.isAdmin).then((d) =>
+      pickerPeopleOf(gate.item, mentionPeopleOf(gate.item, d)),
+    ),
     threadAudienceLine(gate.db, gate.item),
   ]);
   return {

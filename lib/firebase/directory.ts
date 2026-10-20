@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { requireFirebaseUser } from "./auth";
 import { getAdminAuth } from "./admin";
+import { readFeedbackAccessList } from "./feedback-access";
+import { normalizeAccessEmail } from "@/lib/feedback/access";
 import { splitFullName } from "@/lib/user-import/normalize";
 
 // Test-only seam, same shape as lib/firebase/teams.ts: production call
@@ -35,6 +37,8 @@ export type DirectoryPerson = {
   hasSignedIn?: boolean;
   /** Deactivated (sign-in disabled). Listed for admins only, so they can reactivate. */
   deactivated?: boolean;
+  /** On the feedback tracker's access list. Admin-only, like `hasAuth`. */
+  feedbackAccess?: boolean;
 };
 
 function namePartsOf(
@@ -182,6 +186,15 @@ export const getDirectoryPeople = cache(
         access: accessOf(account.isAdmin, teams),
         ...(isAdmin ? { hasAuth: true, hasSignedIn: account.signedIn } : {}),
       });
+    }
+
+    // Tracker access (N73) rides with the other admin-only fields.
+    if (isAdmin) {
+      const feedbackEmails = new Set(await readFeedbackAccessList(db));
+      for (const p of people.values()) {
+        const email = normalizeAccessEmail(p.email);
+        p.feedbackAccess = !!email && feedbackEmails.has(email);
+      }
     }
 
     for (const p of people.values()) {

@@ -23,7 +23,7 @@ import { snippetOf } from "@/lib/notifications";
 import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { deleteIssueComment, postIssueComment } from "@/lib/firebase/issue-comment-count";
 
-export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
+export type CommentEntityType = "issue" | "rock" | "todo" | "headline" | "feedback";
 
 /**
  * Append a free-form comment on a rock, milestone, to-do, issue or headline.
@@ -44,6 +44,12 @@ export type CommentEntityType = "issue" | "rock" | "todo" | "headline";
  *
  * `teamId` is only the page the comment was posted from; the thread is filed
  * under the item's own team.
+ *
+ * A feedback tracker item (N73) goes through the same path: its access
+ * module is the tracker's access list (lib/access/feedback.ts), so only
+ * listed people can post, be mentioned or be notified, and it has no team
+ * (`team_id: ""`). Its thread is never read by a client (firestore.rules);
+ * the modal reads it with `loadThread`.
  */
 /**
  * What the composer gets back. A production build masks any error thrown
@@ -151,12 +157,15 @@ async function postComment(
     });
   }
 
-  revalidateThreadPages(teamId, threadTeamId);
+  // The tracker page shows nothing from the thread, and its modal reloads
+  // the thread itself, so a feedback comment re-renders no page.
+  if (entityType !== "feedback") revalidateThreadPages(teamId, threadTeamId);
   return { ok: true };
 }
 
 function revalidateThreadPages(teamId: string, threadTeamId: string) {
   for (const t of new Set([teamId, threadTeamId])) {
+    if (!t) continue;
     revalidatePath(`/teams/${t}/issues`);
     revalidatePath(`/teams/${t}/rocks`);
     revalidatePath(`/teams/${t}/todos`);
@@ -176,6 +185,60 @@ export async function loadThreadInfo(
 ): Promise<ThreadContext> {
   const gate = await requireThreadAccess(entityType, entityId);
   return loadThreadContext(gate);
+}
+
+/** One comment as `loadThread` returns it (serializable). */
+export type ThreadComment = {
+  id: string;
+  body: string;
+  author_id: string;
+  author_name: string;
+  mention_ids: string[];
+  /** Epoch ms, or null while the server timestamp is unreadable. */
+  created_ms: number | null;
+};
+
+/** A whole thread read on the server: its comments (oldest first) and its context. */
+export type LoadedThread = ThreadContext & { comments: ThreadComment[] };
+
+/**
+ * The thread and its context in one call, for a thread no client may read
+ * live (the feedback tracker's, which firestore.rules deny): the same
+ * `requireThreadAccess` gate as posting, then the comments with their
+ * authors' names. One action, because the client runs server actions one
+ * at a time.
+ */
+export async function loadThread(
+  entityType: CommentEntityType,
+  entityId: string,
+): Promise<LoadedThread> {
+  const gate = await requireThreadAccess(entityType, entityId);
+  const [context, snap] = await Promise.all([
+    loadThreadContext(gate),
+    gate.db
+      .collection("entity_comments")
+      .where("entity_type", "==", entityType)
+      .where("entity_id", "==", entityId)
+      .get(),
+  ]);
+  const rows = snap.docs.map((d) => {
+    const data = d.data() ?? {};
+    const at = data.created_at as { toMillis?: () => number } | null | undefined;
+    return {
+      id: d.id,
+      body: String(data.body ?? ""),
+      author_id: String(data.author_id ?? ""),
+      mention_ids: Array.isArray(data.mention_ids)
+        ? data.mention_ids.filter((x: unknown): x is string => typeof x === "string")
+        : [],
+      created_ms: typeof at?.toMillis === "function" ? at.toMillis() : null,
+    };
+  });
+  const names = await loadUserNames(gate.db, [...new Set(rows.map((r) => r.author_id).filter(Boolean))]);
+  const comments = rows
+    .map((r) => ({ ...r, author_name: names.get(r.author_id) ?? "—" }))
+    .sort((a, b) => (a.created_ms ?? Infinity) - (b.created_ms ?? Infinity));
+  return { ...context, comments };
 }
 
 /**
@@ -206,6 +269,12 @@ export async function deleteEntityComment(
   const snap = await ref.get();
   if (!snap.exists) throw new Error("Comment not found");
   const data = snap.data()!;
+  // A feedback thread is the tracker's: only listed people may touch it —
+  // an unlisted author or org admin gets the thread gate's 404 — and the
+  // author-or-admin rule then applies among them, as everywhere.
+  if (data.entity_type === "feedback") {
+    await requireThreadAccess("feedback", String(data.entity_id ?? ""));
+  }
   if (data.author_id !== uid && !isAdmin) {
     throw new Error("Only the author or an admin can delete this comment");
   }
@@ -237,5 +306,7 @@ export async function deleteEntityComment(
       detail: snippetOf(String(data.body ?? "")),
     });
   }
-  revalidateThreadPages(teamId, String(data.team_id ?? teamId));
+  if (data.entity_type !== "feedback") {
+    revalidateThreadPages(teamId, String(data.team_id ?? teamId));
+  }
 }

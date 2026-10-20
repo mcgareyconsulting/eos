@@ -48,6 +48,9 @@ export type MetricEvent = "value_posted" | "goal_changed" | "owner_changed";
 /** Headline: a comment; text changed; discussed or archived. */
 export type HeadlineEvent = "comment" | "text_changed" | "discussed" | "archived";
 
+/** Feedback tracker item (N73): a comment. Status and edits stay in its own activity log. */
+export type FeedbackEvent = "comment";
+
 export type ItemEventFor = {
   rock: RockEvent;
   milestone: TodoEvent;
@@ -55,6 +58,7 @@ export type ItemEventFor = {
   issue: IssueEvent;
   metric: MetricEvent;
   headline: HeadlineEvent;
+  feedback: FeedbackEvent;
 };
 
 export type ItemEvent = ItemEventFor[ItemType];
@@ -68,10 +72,11 @@ export type ItemCollection =
   | "todos"
   | "issues"
   | "scorecard_metrics"
-  | "headlines";
+  | "headlines"
+  | "feedback_items";
 
 /** `entity_comments.entity_type` values (CommentEntityType in entity-comments/actions.ts). */
-export type ThreadEntityType = "issue" | "rock" | "todo" | "headline";
+export type ThreadEntityType = "issue" | "rock" | "todo" | "headline" | "feedback";
 
 export type ItemRegistryEntry<T extends ItemType = ItemType> = {
   type: T;
@@ -82,8 +87,11 @@ export type ItemRegistryEntry<T extends ItemType = ItemType> = {
   shapes: readonly AccessShape[];
   /** Firestore collection. A milestone is a `todos` doc with `source_rock_id`. */
   collection: ItemCollection;
-  /** The field naming the owner (spec §5.0 "Owner"). */
-  ownerField: "owner_id" | "created_by";
+  /**
+   * The field naming the owner (spec §5.0 "Owner"), or null for a type with
+   * no owner (a feedback item — so no locked follower either).
+   */
+  ownerField: "owner_id" | "created_by" | null;
   /** Spec §5.0 "Assigner": does this type have one? */
   hasAssigner: boolean;
   /**
@@ -96,6 +104,15 @@ export type ItemRegistryEntry<T extends ItemType = ItemType> = {
   threadEntityType: ThreadEntityType | null;
   /** What followers are notified about (spec §5.3). */
   events: readonly ItemEventFor[T][];
+  /**
+   * Who the comment box's @ picker lists. "everyone": the whole Directory,
+   * the people who cannot see the item greyed (spec §5.2). "audience": only
+   * the people who can see it — for an item whose audience is itself
+   * restricted (the feedback tracker's access list), where the greyed rest
+   * of the org is noise. Either way the server resolves a typed name
+   * against everyone and refuses a mention of someone who cannot see it.
+   */
+  mentionPicker: "everyone" | "audience";
   /** Where a notification or mention about this item takes you. */
   link: (teamId: string, id: string) => string;
 };
@@ -109,6 +126,11 @@ const TODO_EVENTS: readonly TodoEvent[] = [
   "description_changed",
   "reassigned",
 ];
+
+/** The feedback tracker's deep link (app/(app)/admin/feedback/page.tsx `?item=`). */
+function feedbackPath(id: string): string {
+  return `/admin/feedback?item=${encodeURIComponent(id)}`;
+}
 
 function teamPath(teamId: string, page: string, param: string, id: string): string {
   // The team id is a Firestore doc id, used raw; the item id is encoded.
@@ -137,6 +159,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
       "owner_changed",
       "due_date_changed",
     ],
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "rocks", "rock", id),
   },
   milestone: {
@@ -153,6 +176,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     events: TODO_EVENTS,
     // "The milestone in its rock". The link builder only gets the
     // milestone's id; the Rocks page resolves its rock (P9).
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "rocks", "milestone", id),
   },
   todo: {
@@ -166,6 +190,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     assignerField: "assigned_by",
     threadEntityType: "todo",
     events: TODO_EVENTS,
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "todos", "todo", id),
   },
   issue: {
@@ -178,6 +203,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     assignerField: "assigned_by",
     threadEntityType: "issue",
     events: ["comment", "solved", "archived", "owner_changed"],
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "issues", "issue", id),
   },
   metric: {
@@ -191,6 +217,7 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     // A metric has no thread (spec §5.1).
     threadEntityType: null,
     events: ["value_posted", "goal_changed", "owner_changed"],
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "scorecard", "metric", id),
   },
   headline: {
@@ -205,7 +232,26 @@ export const ITEM_REGISTRY: { readonly [K in ItemType]: ItemRegistryEntry<K> } =
     // Headlines have a thread (spec §5.1), `entity_type: "headline"`.
     threadEntityType: "headline",
     events: ["comment", "text_changed", "discussed", "archived"],
+    mentionPicker: "everyone",
     link: (teamId, id) => teamPath(teamId, "headlines", "headline", id),
+  },
+  feedback: {
+    type: "feedback",
+    // Not a team shape: the tracker's access list (lib/access/feedback.ts).
+    shapes: [],
+    collection: "feedback_items",
+    ownerField: null,
+    hasAssigner: false,
+    assignerField: null,
+    // Comments live in `entity_comments` like every thread, but no client
+    // reads them (firestore.rules): the modal loads them from the server.
+    threadEntityType: "feedback",
+    // Mentioned people hear about a comment; nobody follows (canFollow is
+    // false), so there is no follower fan-out.
+    events: ["comment"],
+    mentionPicker: "audience",
+    // The tracker is one page, not a team's; `teamId` is ignored.
+    link: (_teamId, id) => feedbackPath(id),
   },
 };
 
@@ -216,6 +262,7 @@ export const ITEM_TYPES: readonly ItemType[] = [
   "issue",
   "metric",
   "headline",
+  "feedback",
 ];
 
 export function registryFor<T extends ItemType>(type: T): ItemRegistryEntry<T> {
@@ -240,7 +287,9 @@ export function ownerOf(
   type: ItemType,
   doc: Readonly<Record<string, unknown>>,
 ): string | null {
-  const v = doc[registryFor(type).ownerField];
+  const field = registryFor(type).ownerField;
+  if (!field) return null;
+  const v = doc[field];
   return typeof v === "string" && v !== "" ? v : null;
 }
 

@@ -25,6 +25,7 @@ export type AccessChangeKind =
   | "roster"
   | "leader_role"
   | "admin_role"
+  | "feedback_tracker"
   | "deactivation";
 
 export type AccessChangeInput = {

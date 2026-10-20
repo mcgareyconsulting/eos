@@ -112,6 +112,16 @@ beforeEach(async () => {
     await put("audit_log/e1", { x: 1 });
     await put("feedback_items/fb-001", { number: 1, status: "new", reviewer: "Steph Benes" });
     await put("feedback_items/fb-001/activity/a1", { kind: "created", actor_uid: "root", to: "new" });
+    await put("app_config/feedback_tracker", { emails: ["root@example.com"] });
+    // A feedback tracker comment: entity_comments, but server-only.
+    await put("entity_comments/c-fb", {
+      team_id: "",
+      entity_type: "feedback",
+      entity_id: "fb-001",
+      author_id: "root",
+      body: "@Alice see this",
+      mention_ids: ["alice"],
+    });
     // lee: a leader of T (no admin claim) — leadership grants nothing here.
     await put("users/lee", { team_ids: [T] });
     await put(`team_members/${T}__lee`, { team_id: T, user_id: "lee", role: "leader" });
@@ -285,19 +295,13 @@ describe("notifications: readable only by their user_id", () => {
   });
 });
 
-describe("feedback tracker: org admins read, nobody else", () => {
+describe("feedback tracker: no client reads, org admins included (server-only, access list)", () => {
   const item = (db: Firestore) => doc(db, "feedback_items/fb-001");
   const items = (db: Firestore) => query(collection(db, "feedback_items"), orderBy("number"));
   const trace = (db: Firestore) => collection(db, "feedback_items/fb-001/activity");
 
-  test("admin reads items, the list and the activity trace", async () => {
-    assert.equal((await assertSucceeds(getDoc(item(asAdmin())))).data()?.reviewer, "Steph Benes");
-    assert.equal((await assertSucceeds(getDocs(items(asAdmin())))).size, 1);
-    assert.equal((await assertSucceeds(getDocs(trace(asAdmin())))).size, 1);
-  });
-
-  test("member, leader, a user with no profile and anonymous are denied", async () => {
-    for (const db of [as("alice"), as("lee"), as("nobody"), anon()]) {
+  test("admin, member, leader, a user with no profile and anonymous are all denied", async () => {
+    for (const db of [asAdmin(), as("alice"), as("lee"), as("nobody"), anon()]) {
       await assertFails(getDoc(item(db)));
       await assertFails(getDocs(items(db)));
       await assertFails(getDocs(trace(db)));
@@ -305,9 +309,42 @@ describe("feedback tracker: org admins read, nobody else", () => {
     }
   });
 
-  test("a non-admin role claim is not admin", async () => {
-    const db = env.authenticatedContext("lee", { role: "leader" }).firestore() as unknown as Firestore;
-    await assertFails(getDoc(item(db)));
+  test("feedback comments (entity_comments, entity_type feedback): no client reads, author, mentioned person and admins included", async () => {
+    for (const db of [asAdmin(), as("root"), as("alice"), as("lee"), as("nobody"), anon()]) {
+      await assertFails(getDoc(doc(db, "entity_comments/c-fb")));
+      await assertFails(
+        getDocs(
+          query(collection(db, "entity_comments"), where("entity_type", "==", "feedback"), where("entity_id", "==", "fb-001")),
+        ),
+      );
+      await assertFails(
+        getDocs(
+          query(
+            collection(db, "entity_comments"),
+            where("team_id", "==", ""),
+            where("entity_type", "==", "feedback"),
+            where("entity_id", "==", "fb-001"),
+          ),
+        ),
+      );
+    }
+  });
+
+  test("an admin's thread listeners on other item types still work (the feedback guard is per type)", async () => {
+    const db = asAdmin();
+    await assertSucceeds(
+      getDocs(query(collection(db, "entity_comments"), where("entity_type", "==", "rock"), where("entity_id", "==", "r-own"))),
+    );
+    await assertSucceeds(getDoc(doc(db, "entity_comments/c-issue")));
+    // Not pinned to a type: could include feedback rows, so refused.
+    await assertFails(getDocs(query(collection(db, "entity_comments"), where("entity_id", "==", "fb-001"))));
+  });
+
+  test("the access list (app_config) is unreadable by every client", async () => {
+    for (const db of [asAdmin(), as("alice"), as("lee"), anon()]) {
+      await assertFails(getDoc(doc(db, "app_config/feedback_tracker")));
+      await assertFails(getDocs(collection(db, "app_config")));
+    }
   });
 });
 
@@ -327,6 +364,7 @@ describe("no client writes, on any collection, for anyone", () => {
     "issues/i1",
     "issue_votes/v1",
     "entity_comments/c-rock",
+    "entity_comments/c-fb",
     "notifications/n1",
     "headlines/h1",
     "agendas/a1",
@@ -337,6 +375,7 @@ describe("no client writes, on any collection, for anyone", () => {
     "audit_log/e1",
     "feedback_items/fb-001",
     "feedback_items/fb-001/activity/a1",
+    "app_config/feedback_tracker",
     "google_tasks_connections/alice",
     "oauth_csrf_states/s",
   ];

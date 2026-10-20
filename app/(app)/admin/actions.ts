@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
+import { setFeedbackAccess } from "@/lib/firebase/feedback-access";
 import { normalizeKey } from "@/lib/csv-import";
 import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
 import { deactivatePerson, reactivatePerson } from "@/lib/firebase/deactivate";
@@ -310,6 +311,28 @@ export async function updateOrgPerson(
 
     const changes = await applyTeams(db, actorUid, uid, teams);
     const adminChanged = await setOrgAdmin(db, actorUid, uid, orgAdmin);
+    // Feedback tracker access (N73) is keyed by email, like the list itself.
+    // null = unchanged; otherwise the new state.
+    let feedbackNow: boolean | null = null;
+    if (formData.get("feedback_tracker_shown") === "1") {
+      const want = formData.get("feedback_tracker") === "on";
+      const fresh = await db.collection("users").doc(uid).get();
+      const account = await getAdminAuth().getUser(uid).catch(() => null);
+      const email = ((fresh.data()?.email as string | undefined) ?? account?.email ?? "").trim();
+      if (!email) {
+        if (want) return { ok: false, error: "No email on file, so tracker access can't be granted." };
+      } else if (await setFeedbackAccess(db, actorUid, email, want)) {
+        feedbackNow = want;
+        await recordAccessChange(db, {
+          kind: "feedback_tracker",
+          actorUid,
+          entityId: uid,
+          targetUid: uid,
+          before: { feedback_tracker: !want },
+          after: { feedback_tracker: want },
+        });
+      }
+    }
 
     revalidateOrg();
     const parts: string[] = [];
@@ -317,6 +340,9 @@ export async function updateOrgPerson(
     if (changes.removed) parts.push(`removed from ${changes.removed}`);
     if (changes.reroled) parts.push(`role changed on ${changes.reroled}`);
     if (adminChanged) parts.push(orgAdmin ? "made org admin" : "org admin removed");
+    if (feedbackNow !== null) {
+      parts.push(feedbackNow ? "feedback tracker access granted" : "feedback tracker access removed");
+    }
     return {
       ok: true,
       message: parts.length ? `Saved: ${parts.join(", ")}.` : "No changes.",

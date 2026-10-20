@@ -103,7 +103,7 @@ export async function resolveEventRecipients(
   actorUid: string,
   opts: EmitOptions,
 ): Promise<{ ref: ItemRef; teamId: string; deliveries: Delivery[] } | null> {
-  const item = await loadItem(db, ref);
+  const item = await loadItem(db, ref, opts.viewerDeps);
   if (!item) return null;
   const plan = planRecipients({
     followers: event ? effectiveFollowers(item.ref.type, item.data) : [],

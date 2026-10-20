@@ -205,13 +205,13 @@ describe("concurrent edits", () => {
     const id = seed(db, 20, { status: "building", updated_at: OPENED });
     const form = formFor(db, id); // admin A opens the dialog
     await setFeedbackStatusCore(id, "follow_up", admin(db)); // admin B, on the board
-    const res = await saveFeedbackEditsCore(id, { ...form, resolution: "A's note" }, OPENED, admin(db));
+    const res = await saveFeedbackEditsCore(id, { ...form, client_note: "A's note" }, OPENED, admin(db));
     assert.deepEqual(res, {
       ok: false,
       error: "This item changed since you opened it. Reload to see the latest.",
     });
     assert.equal(item(db, id).status, "follow_up");
-    assert.equal(item(db, id).resolution ?? null, null);
+    assert.equal(item(db, id).client_note ?? null, null);
     assert.equal(activity(db, id).length, 1, "only B's change is logged");
   });
 
@@ -220,8 +220,8 @@ describe("concurrent edits", () => {
     const id = seed(db, 21, { status: "building", updated_at: OPENED });
     await setFeedbackStatusCore(id, "follow_up", admin(db));
     const reloaded = readFeedbackItem(id, item(db, id)).updated_at;
-    const res = await saveFeedbackEditsCore(id, { resolution: "A's note" }, reloaded, admin(db));
-    assert.deepEqual(res, { ok: true, changed: ["resolution"] });
+    const res = await saveFeedbackEditsCore(id, { client_note: "A's note" }, reloaded, admin(db));
+    assert.deepEqual(res, { ok: true, changed: ["client_note"] });
     assert.equal(item(db, id).status, "follow_up");
     assert.equal(activity(db, id).at(-1)?.kind, "edited");
   });
@@ -229,7 +229,7 @@ describe("concurrent edits", () => {
   test("an updated_at that is not a string or null is refused", async () => {
     const db = new FakeFirestore();
     const id = seed(db, 22, { updated_at: OPENED });
-    const res = await saveFeedbackEditsCore(id, { resolution: "x" }, 12345, admin(db));
+    const res = await saveFeedbackEditsCore(id, { client_note: "x" }, 12345, admin(db));
     assert.equal(res.ok, false);
     assert.deepEqual(activity(db, id), []);
   });

@@ -27,7 +27,8 @@ import { Field, Textarea } from "./form-fields";
  * modal, as Issues and Rocks do. Portalled after the detail, so it is the
  * topmost dialog: Escape and the backdrop answer it (through its discard
  * guard), and closing it lands back on the detail. The reporter's comment,
- * the number, the spreadsheet thread and the PRs are not here.
+ * the number, the spreadsheet thread, the PRs and the internal resolution
+ * note are not here.
  */
 export function EditFeedbackButton({
   id,
@@ -140,13 +141,6 @@ export function EditFeedbackButton({
               value={draft.client_resolution}
               onChange={set("client_resolution")}
             />
-          </Field>
-          <Field
-            label="Internal resolution"
-            htmlFor="fb-edit-resolution"
-            hint="Internal — never in the client report."
-          >
-            <Textarea id="fb-edit-resolution" rows={3} value={draft.resolution} onChange={set("resolution")} />
           </Field>
           <Field label="Client note" htmlFor="fb-edit-client-note">
             <Textarea id="fb-edit-client-note" rows={2} value={draft.client_note} onChange={set("client_note")} />

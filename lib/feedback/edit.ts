@@ -3,7 +3,10 @@
 // (app/(app)/admin/feedback/action-core.ts); the client only sends text.
 //
 // PR numbers stay in the model, the seed and the database, but the UI
-// neither shows nor edits them while the repository moves hosts.
+// neither shows nor edits them while the repository moves hosts. The same
+// goes for the internal resolution note (Daniel, 2026-10-19): kept in the
+// model, the seed and the database, gone from the UI — not shown, not
+// edited, so not a form field.
 //
 // Pure: no Firestore, no React — safe to import from client components.
 
@@ -26,7 +29,6 @@ export function parseLines(text: string): string[] {
 export type FeedbackEditForm = {
   status: string;
   client_resolution: string;
-  resolution: string;
   client_note: string;
   follow_up_with: string;
   follow_up_topic: string;
@@ -41,7 +43,6 @@ export type FeedbackEditForm = {
 export const FEEDBACK_EDIT_FORM_FIELDS = [
   "status",
   "client_resolution",
-  "resolution",
   "client_note",
   "follow_up_with",
   "follow_up_topic",
@@ -67,7 +68,6 @@ export function feedbackEditFormToPatch(form: Readonly<Record<string, unknown>>)
   const parse: Record<(typeof FEEDBACK_EDIT_FORM_FIELDS)[number], (t: string) => unknown> = {
     status: (t) => t,
     client_resolution: (t) => t,
-    resolution: (t) => t,
     client_note: (t) => t,
     follow_up_with: (t) => t,
     follow_up_topic: (t) => t,
@@ -98,7 +98,6 @@ export function feedbackEditFormFrom(item: FeedbackItem): FeedbackEditForm {
   return {
     status: item.status,
     client_resolution: item.client_resolution ?? "",
-    resolution: item.resolution ?? "",
     client_note: item.client_note ?? "",
     follow_up_with: item.follow_up_with ?? "",
     follow_up_topic: item.follow_up_topic ?? "",

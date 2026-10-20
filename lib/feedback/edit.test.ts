@@ -20,7 +20,8 @@ describe("form parsing", () => {
     const patch = feedbackEditFormToPatch({
       status: "building",
       client_resolution: " Fixed. ",
-      resolution: "",
+      resolution: "internal",
+      // ^ the internal note is not a form field (not in the UI): ignored.
       client_note: "",
       follow_up_with: "Steph",
       follow_up_topic: "",
@@ -35,7 +36,6 @@ describe("form parsing", () => {
     assert.deepEqual(patch, {
       status: "building",
       client_resolution: "Fixed.",
-      resolution: null,
       client_note: null,
       follow_up_with: "Steph",
       follow_up_topic: null,
@@ -46,7 +46,9 @@ describe("form parsing", () => {
   });
 
   test("absent keys are left out of the patch", () => {
-    assert.deepEqual(feedbackEditFormToPatch({ resolution: " x " }), { resolution: "x" });
+    assert.deepEqual(feedbackEditFormToPatch({ client_note: " x " }), { client_note: "x" });
+    // The internal resolution note stays in the data, but no form can set it.
+    assert.deepEqual(feedbackEditFormToPatch({ resolution: " x " }), {});
     assert.deepEqual(feedbackEditFormToPatch({ evidence: "a\nb", status: undefined }), { evidence: ["a", "b"] });
     assert.deepEqual(feedbackEditFormToPatch({}), {});
   });
@@ -54,14 +56,14 @@ describe("form parsing", () => {
   test("changedEditFields: only what differs from the opened values", () => {
     const opened = feedbackEditFormFrom(readFeedbackItem("fb-001", { number: 1, status: "new", prs: [4] }));
     assert.deepEqual(changedEditFields(opened, opened), {});
-    assert.deepEqual(changedEditFields({ ...opened, resolution: "r" }, opened), { resolution: "r" });
+    assert.deepEqual(changedEditFields({ ...opened, client_note: "r" }, opened), { client_note: "r" });
   });
 
   test("bad values are refused with readable text", () => {
     const ok = feedbackEditFormFrom(readFeedbackItem("fb-001", { number: 1, status: "new" }));
     assert.throws(() => feedbackEditFormToPatch({ ...ok, status: "closed" }), /Unknown status "closed"/);
     assert.throws(() => feedbackEditFormToPatch({ ...ok, shipped_at: "Oct 1" }), /Shipped date/);
-    assert.throws(() => feedbackEditFormToPatch({ ...ok, resolution: 7 }), /must be text/);
+    assert.throws(() => feedbackEditFormToPatch({ ...ok, client_note: 7 }), /must be text/);
   });
 
   test("feedbackEditFormFrom round-trips through the patch", () => {

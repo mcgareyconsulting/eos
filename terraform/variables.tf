@@ -132,12 +132,6 @@ variable "archive_iam_at_project_level" {
   default     = false
 }
 
-variable "functions_service_account_email" {
-  description = "Service account email running the (separately authored) weekly Firebase Auth export Cloud Function. Defaults to the Compute Engine default SA, which is what Cloud Functions/Cloud Build use today on this project (see iam.tf comments on the same default-SA behavior)."
-  type        = string
-  default     = "580850228782-compute@developer.gserviceaccount.com"
-}
-
 variable "alert_emails" {
   description = "Email addresses notified by the Phase 0 backup/DR monitoring alert policies (monitoring.tf)."
   type        = list(string)

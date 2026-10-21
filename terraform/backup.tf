@@ -60,9 +60,10 @@ resource "google_project_iam_member" "backup_datastore_export_admin" {
 #   1. The Firestore service agent — Firestore's exportDocuments operation
 #      writes directly to GCS as the *Firestore* service agent, not as the
 #      caller/OAuth principal that kicks off the export.
-#   2. The Cloud Functions runtime SA (var.functions_service_account_email)
-#      — a separately authored weekly Firebase Auth export function writes
-#      gs://<bucket>/auth/<date>.json under this identity.
+#   2. eos-backup (exportFirestore) and eos-functions (exportAuthUsers,
+#      gs://<bucket>/auth/<date>.json). eos-functions' grant lives in
+#      functions.tf. The Compute Engine default SA used to hold one here;
+#      it was retired once every function moved off it (I-10, PR #71).
 #
 # Bucket-level IAM (google_storage_bucket_iam_member) is least-privilege and
 # the default here. It can fail with a permission-denied error if the
@@ -88,14 +89,6 @@ resource "google_storage_bucket_iam_member" "backup_sa_writer" {
   member = "serviceAccount:${google_service_account.backup.email}"
 }
 
-resource "google_storage_bucket_iam_member" "functions_sa_writer" {
-  count = var.archive_iam_at_project_level ? 0 : 1
-
-  bucket = google_storage_bucket.archive.name
-  role   = "roles/storage.objectCreator"
-  member = "serviceAccount:${var.functions_service_account_email}"
-}
-
 # Project-level fallback (see comment above). Broader than the bucket-scoped
 # grants — only use if bucket-level IAM fails under the applying principal's
 # permissions.
@@ -113,14 +106,6 @@ resource "google_project_iam_member" "backup_sa_writer_project" {
   project = var.project_id
   role    = "roles/storage.objectCreator"
   member  = "serviceAccount:${google_service_account.backup.email}"
-}
-
-resource "google_project_iam_member" "functions_sa_writer_project" {
-  count = var.archive_iam_at_project_level ? 1 : 0
-
-  project = var.project_id
-  role    = "roles/storage.objectCreator"
-  member  = "serviceAccount:${var.functions_service_account_email}"
 }
 
 # --- Weekly Firestore export -------------------------------------------

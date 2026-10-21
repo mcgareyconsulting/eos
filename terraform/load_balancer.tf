@@ -104,6 +104,18 @@ resource "google_compute_target_https_proxy" "app" {
   name             = "${var.service_name}-https-proxy"
   url_map          = google_compute_url_map.https[0].id
   ssl_certificates = [google_compute_managed_ssl_certificate.app[0].id]
+  ssl_policy       = google_compute_ssl_policy.app[0].id
+}
+
+# TLS 1.2 minimum. Google's default policy still accepts TLS 1.0/1.1
+# (audit I-15, 2026-10-21). Every supported browser speaks 1.2+.
+resource "google_compute_ssl_policy" "app" {
+  count = var.enable_load_balancer ? 1 : 0
+
+  project         = var.project_id
+  name            = "${var.service_name}-tls12"
+  profile         = "MODERN"
+  min_tls_version = "TLS_1_2"
 }
 
 resource "google_compute_global_forwarding_rule" "https" {

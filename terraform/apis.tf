@@ -23,6 +23,9 @@ locals {
     # Load balancer (load_balancer.tf). Already on in any project with the
     # Compute Engine default SA; listed so the module does not rely on that.
     "compute.googleapis.com",
+    # Artifact Registry vulnerability scanning: on for every Docker repo once
+    # this API is enabled (audit I-05, 2026-10-21). Billed per image scanned.
+    "containerscanning.googleapis.com",
   ]
 }
 

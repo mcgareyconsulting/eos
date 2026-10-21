@@ -260,3 +260,71 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
 
   depends_on = [google_project_service.required]
 }
+
+# --- Security alerts (audit I-08, 2026-10-21) ----------------------------
+#
+# All three read Admin Activity audit logs, which are always on and free, so
+# they need no Data Access logging. Each fires once per matching change.
+
+locals {
+  security_alerts = {
+    public_binding = {
+      display_name = "Public IAM binding added"
+      filter       = <<-EOT
+        protoPayload.methodName:"SetIamPolicy"
+        AND protoPayload.serviceData.policyDelta.bindingDeltas.action="ADD"
+        AND (protoPayload.serviceData.policyDelta.bindingDeltas.member="allUsers"
+          OR protoPayload.serviceData.policyDelta.bindingDeltas.member="allAuthenticatedUsers")
+      EOT
+      doc          = "**What happened:** someone granted a role to `allUsers` or `allAuthenticatedUsers` on a resource in this project, making it reachable or readable by anyone on the internet.\n\n**What to do:** open the log entry (resource name and caller are in `protoPayload`). Unless the change is a planned one, remove the binding at once. The only expected public binding is `allUsers` → `roles/run.invoker` on the `eos` service, which already exists and does not re-fire on deploy."
+    }
+    project_iam = {
+      display_name = "Project IAM policy changed"
+      filter       = <<-EOT
+        protoPayload.methodName="SetIamPolicy"
+        AND resource.type="project"
+      EOT
+      doc          = "**What happened:** the project-level IAM policy of this project changed (a role was granted or removed).\n\n**What to do:** open the log entry and read `protoPayload.serviceData.policyDelta` for who changed what. Confirm it matches a planned change (Terraform apply, HPB access request); if not, revert it and review the caller's access."
+    }
+    sa_key_created = {
+      display_name = "Service account key created"
+      filter       = <<-EOT
+        protoPayload.methodName="google.iam.admin.v1.CreateServiceAccountKey"
+      EOT
+      doc          = "**What happened:** a user-managed key was created for a service account. This project uses no exported keys (deploys and runtime use attached identities), so a new key is an exportable long-lived credential.\n\n**What to do:** find the key in IAM → Service accounts → Keys and delete it unless HPB approved it. Then ask HPB to enforce the `iam.disableServiceAccountKeyCreation` org policy."
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "security" {
+  for_each = local.security_alerts
+
+  project      = var.project_id
+  display_name = each.value.display_name
+  combiner     = "OR"
+  severity     = "CRITICAL"
+
+  conditions {
+    display_name = each.value.display_name
+
+    condition_matched_log {
+      filter = each.value.filter
+    }
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = each.value.doc
+  }
+
+  notification_channels = local.notification_channels
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "300s"
+    }
+    auto_close = "1800s"
+  }
+
+  depends_on = [google_project_service.required]
+}

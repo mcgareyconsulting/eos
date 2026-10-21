@@ -152,11 +152,36 @@ not affect sign-in. Not a finding.
 
 ## Decisions
 
-- **Consultant temporarily gets `roles/secretmanager.admin` and
-  `roles/cloudkms.admin`** (requested 2026-09-29, granted 2026-10-06) so
-  Terraform can own the resource-level IAM bindings in Gate 2 instead of an
-  Owner creating them by hand outside state. Remove both with the rest of the
-  consultant IAM reduction (audit remediation step 5).
+- **Consultant (`daniel@mcgareyconsulting.com`) holds temporary elevated
+  access to `hpb-eos-prod`, retained deliberately during hardening.**
+  Last reviewed 2026-10-21 (security audit, Cloud Audit Logs checked for
+  who granted what). Held roles:
+  - `roles/editor`, `resourcemanager.projectIamAdmin`,
+    `iam.serviceAccountAdmin`, `run.admin`, `firebase.editor`: project
+    setup, `docs/HPB_IAM_REQUEST.md` Option A (grants older than the log
+    search returned).
+  - `cloudkms.admin`, `secretmanager.admin`: requested 2026-09-29, granted
+    2026-10-05 by jessica.teichman@highplainsbank.com (Owner), so Terraform
+    owns the resource-level IAM bindings of Gate 2 instead of an Owner
+    creating them by hand outside state.
+  - `datastore.restoreAdmin`: self-granted 2026-09-29 under
+    `projectIamAdmin`, for the restore drill. Recorded because a consultant
+    who can grant himself roles is exactly what a review looks for.
+  - `logging.configWriter`: self-granted 2026-10-21 under
+    `projectIamAdmin`, so Terraform can manage log retention
+    (`terraform/logging.tf`, 365 days) and the coming Data Access logs and
+    SIEM sink; Editor lacks `logging.buckets.update`. Self-granted rather
+    than HPB-granted by the consultant's choice while EOS is in beta.
+  - `iam.serviceAccountUser` on `eos-backup` and `eos-functions`: deploys
+    (`terraform/backup.tf` `backup_sa_deployers`, `terraform/functions.tf`
+    `functions_sa_deployers`).
+
+  Every change is in Cloud Audit Logs, and since 2026-10-21 any project IAM
+  change, public grant or service-account key creation alerts the HPB
+  recipients (`terraform/monitoring.tf` security alerts). Next review: when
+  IAP and the Bitbucket pipeline land, at which point access drops to a
+  time-boxed custom role per HPB's answer on the consultant access model
+  (audit 2026-10-21, Questions for HPB #10).
 
 - **Sandbox (`hpb-eos-sandbox-db`) is not backed up, by design.** It's a
   refreshable copy of prod (`pnpm db:copy`), not a source of truth — see

@@ -279,9 +279,16 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
       filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backup_freshness_heartbeat.name}\" AND resource.type=\"cloud_run_revision\""
       duration = "84600s"
 
+      # Fold every revision into one series per service. Without the reducer
+      # each Cloud Run revision is its own time series, so a redeploy (new
+      # revision) leaves the old revision's series silent and the absence
+      # condition fires 23.5h later although the new revision logged on
+      # time — the false alarm of 2026-10-14 after the 2026-10-13 deploy.
       aggregations {
-        alignment_period   = "3600s"
-        per_series_aligner = "ALIGN_SUM"
+        alignment_period     = "3600s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["resource.labels.service_name"]
       }
     }
   }
@@ -289,7 +296,7 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
   documentation {
     mime_type = "text/markdown"
     content   = <<-EOT
-      **What happened:** the daily `checkBackupFreshness` function has not logged its heartbeat in 23.5 hours. Either Cloud Scheduler did not fire it (this happened silently on 2026-09-28 for the Sunday export jobs) or the function is failing before it logs.
+      **What happened:** the daily `checkBackupFreshness` function has not logged its heartbeat in 23.5 hours. Either Cloud Scheduler did not fire it (this happened silently on 2026-09-28 for the Sunday export jobs) or the function is failing before it logs. First check whether the function logged on time under a newer revision: the alert is a false alarm if so (see the reducer note in terraform/monitoring.tf).
 
       **What to do:** Cloud Scheduler → `firebase-schedule-checkBackupFreshness-us-east1`: check Last run and State, then Force run. Cloud Run functions → `checkBackupFreshness` → Logs for errors. If Scheduler is skipping runs, that is the incident to chase, since the export jobs share the same mechanism.
     EOT
@@ -299,6 +306,74 @@ resource "google_monitoring_alert_policy" "backup_freshness_absent" {
 
   alert_strategy {
     auto_close = "604800s"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+# --- Security alerts (audit I-08, 2026-10-21) ----------------------------
+#
+# All three read Admin Activity audit logs, which are always on and free, so
+# they need no Data Access logging. Each fires once per matching change.
+
+locals {
+  security_alerts = {
+    public_binding = {
+      display_name = "Public IAM binding added"
+      filter       = <<-EOT
+        protoPayload.methodName:"SetIamPolicy"
+        AND protoPayload.serviceData.policyDelta.bindingDeltas.action="ADD"
+        AND (protoPayload.serviceData.policyDelta.bindingDeltas.member="allUsers"
+          OR protoPayload.serviceData.policyDelta.bindingDeltas.member="allAuthenticatedUsers")
+      EOT
+      doc          = "**What happened:** someone granted a role to `allUsers` or `allAuthenticatedUsers` on a resource in this project, making it reachable or readable by anyone on the internet.\n\n**What to do:** open the log entry (resource name and caller are in `protoPayload`). Unless the change is a planned one, remove the binding at once. The only expected public binding is `allUsers` → `roles/run.invoker` on the `eos` service, which already exists and does not re-fire on deploy."
+    }
+    project_iam = {
+      display_name = "Project IAM policy changed"
+      filter       = <<-EOT
+        protoPayload.methodName="SetIamPolicy"
+        AND resource.type="project"
+      EOT
+      doc          = "**What happened:** the project-level IAM policy of this project changed (a role was granted or removed).\n\n**What to do:** open the log entry and read `protoPayload.serviceData.policyDelta` for who changed what. Confirm it matches a planned change (Terraform apply, HPB access request); if not, revert it and review the caller's access."
+    }
+    sa_key_created = {
+      display_name = "Service account key created"
+      filter       = <<-EOT
+        protoPayload.methodName="google.iam.admin.v1.CreateServiceAccountKey"
+      EOT
+      doc          = "**What happened:** a user-managed key was created for a service account. This project uses no exported keys (deploys and runtime use attached identities), so a new key is an exportable long-lived credential.\n\n**What to do:** find the key in IAM → Service accounts → Keys and delete it unless HPB approved it. Then ask HPB to enforce the `iam.disableServiceAccountKeyCreation` org policy."
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "security" {
+  for_each = local.security_alerts
+
+  project      = var.project_id
+  display_name = each.value.display_name
+  combiner     = "OR"
+  severity     = "CRITICAL"
+
+  conditions {
+    display_name = each.value.display_name
+
+    condition_matched_log {
+      filter = each.value.filter
+    }
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = each.value.doc
+  }
+
+  notification_channels = local.notification_channels
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "300s"
+    }
+    auto_close = "1800s"
   }
 
   depends_on = [google_project_service.required]

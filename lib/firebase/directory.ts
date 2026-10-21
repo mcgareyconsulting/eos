@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { requireFirebaseUser } from "./auth";
 import { getAdminAuth } from "./admin";
+import { readFeedbackAccessList } from "./feedback-access";
+import { normalizeAccessEmail } from "@/lib/feedback/access";
 import { splitFullName } from "@/lib/user-import/normalize";
 
 // Test-only seam, same shape as lib/firebase/teams.ts: production call
@@ -26,10 +28,17 @@ export type DirectoryPerson = {
   email: string | null;
   teams: { id: string; name: string; role: string }[];
   access: "admin" | "leader" | "member";
-  /** Has an Identity Platform account, so could sign in. */
-  hasAuth: boolean;
-  /** Has signed in at least once. */
-  hasSignedIn: boolean;
+  /**
+   * Has an Identity Platform account, so could sign in. Admin-only: absent
+   * for everyone else so it never reaches a non-admin's browser.
+   */
+  hasAuth?: boolean;
+  /** Has signed in at least once. Admin-only, like `hasAuth`. */
+  hasSignedIn?: boolean;
+  /** Deactivated (sign-in disabled). Listed for admins only, so they can reactivate. */
+  deactivated?: boolean;
+  /** On the feedback tracker's access list. Admin-only, like `hasAuth`. */
+  feedbackAccess?: boolean;
 };
 
 function namePartsOf(
@@ -55,9 +64,16 @@ function namePartsOf(
  * were already org-visible on the Members → All teams tab this replaces).
  * Deactivated profiles are left out — they exist only so owned work keeps a
  * name, and are not people anyone can reach.
+ *
+ * Sign-in status (`hasAuth`, `hasSignedIn`) is only populated when `isAdmin`;
+ * hiding it in the UI is not enough, the fields would still ship in the page
+ * payload.
  */
 export const getDirectoryPeople = cache(
-  async (deps: DirectoryDeps = {}): Promise<DirectoryPerson[]> => {
+  async (
+    isAdmin: boolean,
+    deps: DirectoryDeps = {},
+  ): Promise<DirectoryPerson[]> => {
     const { db } = await (deps.user ?? requireFirebaseUser)();
 
     const [usersSnap, membersSnap, teamsSnap] = await Promise.all([
@@ -122,6 +138,21 @@ export const getDirectoryPeople = cache(
       const data = doc.data() ?? {};
       if (data.deactivated_at) {
         deactivated.add(doc.id);
+        if (isAdmin) {
+          const account = authByUid.get(doc.id);
+          const { first, last } = namePartsOf(data, account?.name ?? null);
+          people.set(doc.id, {
+            uid: doc.id,
+            firstName: first,
+            lastName: last,
+            email: (data.email as string) ?? account?.email ?? null,
+            teams: [],
+            access: "member",
+            hasAuth: !!account,
+            hasSignedIn: account?.signedIn ?? false,
+            deactivated: true,
+          });
+        }
         continue;
       }
       const account = authByUid.get(doc.id);
@@ -134,8 +165,9 @@ export const getDirectoryPeople = cache(
         email: (data.email as string) ?? account?.email ?? null,
         teams,
         access: accessOf(account?.isAdmin ?? false, teams),
-        hasAuth: !!account,
-        hasSignedIn: account?.signedIn ?? false,
+        ...(isAdmin
+          ? { hasAuth: !!account, hasSignedIn: account?.signedIn ?? false }
+          : {}),
       });
     }
 
@@ -152,9 +184,17 @@ export const getDirectoryPeople = cache(
         email: account.email,
         teams,
         access: accessOf(account.isAdmin, teams),
-        hasAuth: true,
-        hasSignedIn: account.signedIn,
+        ...(isAdmin ? { hasAuth: true, hasSignedIn: account.signedIn } : {}),
       });
+    }
+
+    // Tracker access (N73) rides with the other admin-only fields.
+    if (isAdmin) {
+      const feedbackEmails = new Set(await readFeedbackAccessList(db));
+      for (const p of people.values()) {
+        const email = normalizeAccessEmail(p.email);
+        p.feedbackAccess = !!email && feedbackEmails.has(email);
+      }
     }
 
     for (const p of people.values()) {

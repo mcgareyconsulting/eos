@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Settings, Shield } from "lucide-react";
+import { Home, MessageSquareText, Settings, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarCollapseBoot } from "@/components/sidebar-collapse-boot";
 import { SidebarCollapseToggle } from "@/components/sidebar-collapse-toggle";
@@ -22,6 +22,7 @@ export function AppShell({
   profile,
   teams,
   isAdmin = false,
+  showFeedback = false,
   membershipCount = 0,
   importTeamIds = [],
   unreadNotifications = 0,
@@ -33,6 +34,8 @@ export function AppShell({
   /** Teams the sidebar can open for data (memberships, or all teams if admin). */
   teams: ShellTeam[];
   isAdmin?: boolean;
+  /** An org admin or on the feedback tracker's access list (lib/firebase/feedback-access.ts). */
+  showFeedback?: boolean;
   /** Real membership count (may be 0 for admin with god-mode only). */
   membershipCount?: number;
   /** Teams whose Import page this user may open (leaders + admin god-mode). */
@@ -65,27 +68,18 @@ export function AppShell({
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="relative flex w-60 shrink-0 flex-col border-r border-zinc-300 bg-white transition-[width] duration-200 ease-in-out group-has-[[data-meeting-focus]]/shell:hidden group-data-[sidebar-collapsed]/shell:w-16 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="border-b border-zinc-300 px-4 py-5 group-data-[sidebar-collapsed]/shell:px-2 dark:border-zinc-800">
-            <div className="flex items-start justify-between gap-2 group-data-[sidebar-collapsed]/shell:justify-center">
-              <Link
-                href="/home"
-                className="block min-w-0 group-data-[sidebar-collapsed]/shell:hidden"
-              >
-                <span className="block text-base font-bold uppercase tracking-wide text-hpb-blue dark:text-hpb-gold">
-                  High Plains Bank
-                </span>
-                <span className="mt-0.5 block text-[10px] italic text-zinc-600 dark:text-zinc-400">
-                  Employee Owned • Community Driven
-                </span>
-              </Link>
-              <SidebarCollapseToggle />
-            </div>
+          <div className="border-b border-zinc-300 px-3 py-4 group-data-[sidebar-collapsed]/shell:px-2 dark:border-zinc-800">
+            <SidebarCollapseToggle />
           </div>
 
           <div className="flex-1 overflow-y-auto">
             <nav className="space-y-0.5 px-2 py-3">
               <NavLink href="/home" icon={Home} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
+              {/* The tracker's access list only (ROADMAP N73); the page 404s anyone else. */}
+              {showFeedback && (
+                <NavLink href="/admin/feedback" icon={MessageSquareText} label="Feedback" />
+              )}
             </nav>
 
             {membershipCount === 0 && !isAdmin && (
@@ -119,7 +113,7 @@ export function AppShell({
             )}
 
             {teams.length > 0 && (
-              <TeamNav teams={teams} importTeamIds={importTeamIds} />
+              <TeamNav teams={teams} importTeamIds={importTeamIds} searchable={isAdmin} />
             )}
           </div>
 
@@ -177,9 +171,9 @@ export function AppShell({
                 href="/settings"
                 title="Settings"
                 aria-label="Settings"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="h-5 w-5" />
               </Link>
               <ThemeToggle />
             </div>
@@ -207,9 +201,9 @@ function NavLink({
     <Link
       href={href}
       title={label}
-      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:justify-center dark:text-zinc-300 dark:hover:bg-zinc-800"
+      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 group-data-[sidebar-collapsed]/shell:justify-center group-data-[sidebar-collapsed]/shell:py-2 dark:text-zinc-300 dark:hover:bg-zinc-800"
     >
-      <Icon className="h-4 w-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
+      <Icon className="h-4 w-4 shrink-0 text-zinc-600 group-data-[sidebar-collapsed]/shell:size-5 dark:text-zinc-400" />
       <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
     </Link>
   );

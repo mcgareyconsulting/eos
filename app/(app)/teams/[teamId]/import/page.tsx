@@ -14,7 +14,7 @@ export default async function ImportPage({
 }) {
   const { teamId } = await params;
   // Import is a leader/admin surface (see importTeamFile) — members 404.
-  const { team } = await requireTeamLeader(teamId);
+  const { team, isAdmin } = await requireTeamLeader(teamId);
   const [members, orgTeams, importableTeams] = await Promise.all([
     getTeamMembers(teamId),
     // Department filter matches text in the *file*, so it offers every team
@@ -51,6 +51,7 @@ export default async function ImportPage({
       <ImportUploader
         teamId={teamId}
         teamName={team.name}
+        canCreateOwners={isAdmin}
         orgTeams={orgTeams}
         importableTeams={importableTeams}
         members={members.map((m) => ({

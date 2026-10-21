@@ -40,6 +40,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 Input.displayName = "Input";
 
 // Selects only ever use the compact (px-2) fill in this app.
+/** The `Select` fill, for custom triggers that stand in for one in a form. */
+export const SELECT_FIELD_CLASS = INPUT_SM;
+
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, ...props }, ref) => (
     <select ref={ref} className={cn(INPUT_SM, className)} {...props} />

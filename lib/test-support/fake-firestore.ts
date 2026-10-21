@@ -2,13 +2,16 @@
 //
 // Covers only the surface lib/google/tasks.ts, lib/firebase/teams.ts,
 // lib/firebase/queries.ts and lib/firebase/notifications.ts actually call:
-// single-doc get/set/update/delete, `where` (==, "in" and "array-contains"),
-// `orderBy` (single field, ascending), a bare `collection().get()`,
+// single-doc get/set/update/delete, `where` (==, "in", "array-contains" and
+// ">=" on same-typed values),
+// `orderBy` (single field, ascending or "desc"; numbers compare as numbers),
+// `limit(n)`, a bare `collection().get()`,
 // `collection().doc()` with no id (auto-id), `getAll(...refs)`, a
 // `batch()` of set/update/delete, one-level subcollections
-// (`doc().collection()`, with `.ref` on query results), and
-// `FieldValue.delete()` in set/update. It is not an emulator replacement — just
-// enough shape to drive these modules' logic without touching real Firebase.
+// (`doc().collection()`, with `.ref` on query results),
+// `FieldValue.delete()` in set/update, and a serialized `runTransaction`.
+// It is not an emulator replacement — just enough shape to drive these
+// modules' logic without touching real Firebase.
 
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -57,11 +60,25 @@ class FakeDocRef {
     const next = applyPatch(opts?.merge && existing ? existing : {}, data);
     this.store.write(this.path, next);
   }
+  async create(data: DocData) {
+    // Real create() fails with gRPC ALREADY_EXISTS (code 6) on an existing doc.
+    if (this.store.raw(this.path)) {
+      throw Object.assign(new Error(`fake-firestore: create() on existing doc ${this.path}`), {
+        code: 6,
+      });
+    }
+    this.store.write(this.path, applyPatch({}, data));
+  }
   async update(data: DocData) {
     // Real Firestore rejects update() on a missing doc (NOT_FOUND); mirror
     // that so a test can't pass on a path that would fail in production.
     const existing = this.store.raw(this.path);
-    if (!existing) throw new Error(`fake-firestore: update() on missing doc ${this.path}`);
+    // `code: 5` is gRPC NOT_FOUND, which is what callers branch on.
+    if (!existing) {
+      throw Object.assign(new Error(`fake-firestore: update() on missing doc ${this.path}`), {
+        code: 5,
+      });
+    }
     this.store.write(this.path, applyPatch(existing, data));
   }
   async delete() {
@@ -81,6 +98,8 @@ class FakeQuery {
     private collectionPath: string,
     private wheres: WhereClause[] = [],
     private order?: string,
+    private max?: number,
+    private desc = false,
   ) {}
 
   where(field: string, op: string, value: unknown): FakeQuery {
@@ -89,11 +108,29 @@ class FakeQuery {
       this.collectionPath,
       [...this.wheres, [field, op, value]],
       this.order,
+      this.max,
+      this.desc,
     );
   }
 
-  orderBy(field: string): FakeQuery {
-    return new FakeQuery(this.store, this.collectionPath, this.wheres, field);
+  orderBy(field: string, direction: "asc" | "desc" = "asc"): FakeQuery {
+    return new FakeQuery(
+      this.store,
+      this.collectionPath,
+      this.wheres,
+      field,
+      this.max,
+      direction === "desc",
+    );
+  }
+
+  limit(n: number): FakeQuery {
+    return new FakeQuery(this.store, this.collectionPath, this.wheres, this.order, n, this.desc);
+  }
+
+  /** Field projection is a read-cost optimisation; the fake returns full docs. */
+  select(): FakeQuery {
+    return this;
   }
 
   async get() {
@@ -114,17 +151,26 @@ class FakeQuery {
         // rocks.
         if (op === "array-contains")
           return Array.isArray(actual) && actual.includes(value);
+        // Same-type comparison only, as Firestore orders values by type
+        // first (scorecard entries: `week_start_date >= "YYYY-MM-DD"`).
+        if (op === ">=")
+          return typeof actual === typeof value && (actual as string) >= (value as string);
         throw new Error(`fake-firestore: unsupported where operator ${op}`);
       });
     }
     if (this.order) {
       const field = this.order;
       docs = [...docs].sort((a, b) => {
-        const av = String((a.data() ?? {})[field] ?? "");
-        const bv = String((b.data() ?? {})[field] ?? "");
-        return av.localeCompare(bv);
+        const ar = (a.data() ?? {})[field];
+        const br = (b.data() ?? {})[field];
+        const cmp =
+          typeof ar === "number" && typeof br === "number"
+            ? ar - br
+            : String(ar ?? "").localeCompare(String(br ?? ""));
+        return this.desc ? -cmp : cmp;
       });
     }
+    if (this.max !== undefined) docs = docs.slice(0, this.max);
     return { docs };
   }
 }
@@ -160,9 +206,16 @@ export class FakeFirestore {
     return {
       doc: (id?: string) =>
         new FakeDocRef(this, `${name}/${id ?? `auto-${++this.autoId}`}`),
+      add: async (data: DocData) => {
+        const ref = new FakeDocRef(this, `${name}/auto-${++this.autoId}`);
+        await ref.set(data);
+        return ref;
+      },
       where: (field: string, op: string, value: unknown) =>
         new FakeQuery(this, name).where(field, op, value),
-      orderBy: (field: string) => new FakeQuery(this, name).orderBy(field),
+      orderBy: (field: string, direction?: "asc" | "desc") =>
+        new FakeQuery(this, name).orderBy(field, direction),
+      limit: (n: number) => new FakeQuery(this, name).limit(n),
       get: () => new FakeQuery(this, name).get(),
     };
   }
@@ -192,6 +245,42 @@ export class FakeFirestore {
       },
     };
     return b;
+  }
+
+  private txTail: Promise<unknown> = Promise.resolve();
+
+  /**
+   * `runTransaction(fn)`: `tx.get` reads a doc ref or a query; writes are
+   * queued and applied after `fn` resolves (nothing on a throw). Transactions
+   * run one at a time, standing in for Firestore's serializable isolation —
+   * two racing transactions behave as if one retried after the other.
+   */
+  runTransaction<T>(
+    fn: (tx: {
+      get: (target: FakeDocRef | FakeQuery) => Promise<unknown>;
+      create: (ref: FakeDocRef, data: DocData) => unknown;
+      set: (ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) => unknown;
+      update: (ref: FakeDocRef, data: DocData) => unknown;
+      delete: (ref: FakeDocRef) => unknown;
+    }) => Promise<T>,
+  ): Promise<T> {
+    const run = async () => {
+      const ops: (() => Promise<void>)[] = [];
+      const tx = {
+        get: (target: FakeDocRef | FakeQuery) => target.get(),
+        create: (ref: FakeDocRef, data: DocData) => (ops.push(() => ref.create(data)), tx),
+        set: (ref: FakeDocRef, data: DocData, opts?: { merge?: boolean }) =>
+          (ops.push(() => ref.set(data, opts)), tx),
+        update: (ref: FakeDocRef, data: DocData) => (ops.push(() => ref.update(data)), tx),
+        delete: (ref: FakeDocRef) => (ops.push(() => ref.delete()), tx),
+      };
+      const result = await fn(tx);
+      for (const op of ops) await op();
+      return result;
+    };
+    const p = this.txTail.then(run, run);
+    this.txTail = p.catch(() => undefined);
+    return p;
   }
 
   /** Cast for passing to code typed against firebase-admin's `Firestore`. */

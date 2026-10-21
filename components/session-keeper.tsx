@@ -11,12 +11,12 @@ const ACTIVITY_EVENTS = ["pointerdown", "keydown", "focus", "visibilitychange"] 
 const RETRY_MS = 5 * 60 * 1000;
 
 /**
- * Sliding 12-hour session (C-05; lib/firebase/session.ts). Renders nothing.
+ * Sliding 25-hour session (C-05; lib/firebase/session.ts). Renders nothing.
  *
  * The server says how long until the session's half-life (`renewInMs`). After
  * that, the next interaction asks the client Firebase SDK for an ID token and
  * posts it to renewSessionAction, which re-mints the cookie. An idle tab does
- * nothing, so an unattended session still expires 12 hours after its last
+ * nothing, so an unattended session still expires 25 hours after its last
  * renewal. If client auth is gone (LiveAuthBanner's case) there is no token
  * to send; the cookie runs out and the user signs in again.
  */

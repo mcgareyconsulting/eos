@@ -4,15 +4,18 @@
 //   pnpm tsx scripts/set-member-role.ts \
 //     --team "Enterprise Systems & Data" \
 //     --name "Brian" \
-//     --role leader
+//     --role leader \
+//     --target prod
+//
+// `--target sandbox|prod` picks the database (scripts/lib/target.ts; prod
+// uses Application Default Credentials). Without it, .env.local (or
+// --project / --database) as before.
 //
 // Match is case-insensitive against display_name, "First Last", first_name,
 // email, or uid. Pass --email to pin a specific account. Dry-run by default;
 // add --apply to write.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { getAdminDb } from "../lib/firebase/admin";
 import { normalizePersonKey } from "../lib/csv-import";
 

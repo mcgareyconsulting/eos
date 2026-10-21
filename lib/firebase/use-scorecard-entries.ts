@@ -8,7 +8,7 @@ import {
   where,
   type QuerySnapshot,
 } from "firebase/firestore";
-import { chunkForInQuery } from "@/lib/firestore-in";
+import { chunkForInQuery, RULES_GET_IN_LIMIT } from "@/lib/firestore-in";
 import { getClientDb } from "./client";
 import { useAuthUid } from "./use-collection";
 
@@ -57,7 +57,7 @@ export function useScorecardEntries(
   useEffect(() => {
     if (!uid || sortedIds.length === 0 || !oldestWeek) return;
 
-    const chunks = chunkForInQuery(sortedIds);
+    const chunks = chunkForInQuery(sortedIds, RULES_GET_IN_LIMIT);
     // Per-chunk latest docs; merged into one list on every snapshot.
     const byChunk = new Map<number, EntryDoc[]>();
 

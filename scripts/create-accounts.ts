@@ -13,19 +13,19 @@
 // is set. It's an empty record waiting for the person to sign in with Google.
 //
 // Usage:
-//   pnpm accounts:create "Casey Nolan <casey@bank.com>" "Jane Doe <jane@bank.com>"
-//   pnpm accounts:create --dry-run "Casey Nolan <casey@bank.com>"
+//   pnpm accounts:create --target sandbox "Casey Nolan <casey@bank.com>" "Jane Doe <jane@bank.com>"
+//   pnpm accounts:create --target prod --dry-run "Casey Nolan <casey@bank.com>"
 //
 // Options:
 //   --dry-run        Report what would happen. Creates nothing.
-//   --project <id>   Firebase project, overriding .env.local.
+//   --target sandbox|prod  Named project (scripts/lib/target.ts; prod uses ADC).
+//   --project <id>   Firebase project, overriding .env.local (not with --target).
 //
 // Idempotent: an email that already has an account is reported and left
 // exactly as-is — never modified, never re-created.
 
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { pathToFileURL } from "node:url";
-import { config } from "dotenv";
-config({ path: ".env.local" });
 
 import { getAdminAuth } from "../lib/firebase/admin";
 

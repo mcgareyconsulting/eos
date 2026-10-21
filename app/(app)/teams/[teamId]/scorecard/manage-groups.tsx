@@ -14,7 +14,9 @@ import {
   moveScorecardGroup,
 } from "./actions";
 import { Button, IconButton } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
+import { PERIOD_OPTIONS } from "./metric-form-options";
 import { entityHeaderButtonClass } from "@/components/entity-page-header";
 import { ModalShell, ModalHeader } from "@/components/ui/modal";
 
@@ -131,20 +133,13 @@ export function ManageGroupsButton({
               placeholder="Group name (e.g. Compliance)"
               className="min-w-0 flex-1"
             />
-            <Select
+            <SelectMenu
+              options={PERIOD_OPTIONS}
               value={interval}
-              onChange={(e) =>
-                setInterval(e.target.value as ScorecardPeriod)
-              }
+              onChange={setInterval}
               aria-label="Period"
-              className="w-auto"
-            >
-              {SCORECARD_PERIODS.map((p) => (
-                <option key={p} value={p}>
-                  {PERIOD_LABELS[p]}
-                </option>
-              ))}
-            </Select>
+              className="w-32"
+            />
             <Button type="submit" disabled={pending}>
               Add
             </Button>

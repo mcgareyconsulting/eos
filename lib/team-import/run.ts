@@ -1,6 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { normalizeKey } from "../csv-import";
 import type { CsvTable } from "../csv-import";
+import { syncUsersTeamIds } from "../firebase/membership";
 import type { ImportReport } from "../team-import-types";
 import { importHeadlines } from "./headlines";
 import { importIssues } from "./issues";
@@ -14,6 +15,8 @@ import type { KindStats } from "../team-import-types";
 
 export type TeamImportOptions = {
   dryRun?: boolean;
+  /** Signed-in importer, stamped on every write (C-07). Omitted by the CLI. */
+  actorUid?: string | null;
   /** Create placeholder members for unmatched Owner names (default true for CLI). */
   createOwners?: boolean;
   /** Park unmatched owners on this existing member uid. */
@@ -78,7 +81,7 @@ export async function runTeamImport(
   members?: Member[],
 ): Promise<ImportReport> {
   const dryRun = options.dryRun ?? false;
-  const createOwners = options.createOwners ?? true;
+  const createOwners = options.createOwners ?? false;
   const includeArchived = options.includeArchived ?? false;
   const completedSince = options.completedSince ?? null;
   const asOf = options.asOf ?? new Date();
@@ -86,7 +89,7 @@ export async function runTeamImport(
   const unmatchedOwner = options.unmatchedOwner ?? "no-owner";
   const existingRows = options.existingRows ?? "keep";
 
-  const writer = new Writer(db, dryRun);
+  const writer = new Writer(db, dryRun, options.actorUid);
   const preview = new PreviewCollector();
   const teamMembers = members ?? (await loadMembers(db, teamId));
   const owners = new OwnerResolver(teamId, teamMembers, {
@@ -217,6 +220,12 @@ export async function runTeamImport(
   }
 
   await writer.flush();
+  // Placeholder owners got a team_members row in the batch just flushed.
+  if (!dryRun) await syncUsersTeamIds(
+      db,
+      owners.created.map((c) => c.user_id),
+      options.actorUid,
+    );
 
   return {
     dryRun,

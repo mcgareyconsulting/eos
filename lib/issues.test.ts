@@ -45,8 +45,8 @@ describe("splitIssuesByTerm", () => {
   });
 
   test("treats a missing type as short-term", () => {
-    // QuickAddIssue stamps "short" on everything dropped from a meeting
-    // stage, but older docs may predate the field entirely.
+    // addIssue defaults a missing type to "short", but older docs may
+    // predate the field entirely.
     const { short, long } = splitIssuesByTerm([
       issue({ id: "a", type: null }),
       issue({ id: "b", type: undefined }),

@@ -1,6 +1,11 @@
 /**
- * Monday ~3:00 America/Chicago — archive pure to-dos / issues / discussed
- * headlines / done rocks closed before this week's Monday 00:00.
+ * Monday ~3:00 Mountain (APP_TIME_ZONE, America/Denver — the bank's clock)
+ * — archive pure to-dos / issues / discussed headlines closed before this
+ * week's Monday 00:00 Mountain. The schedule and the cutoff read the same
+ * constant, so they cannot drift apart.
+ *
+ * Rocks are NOT swept: they are manual-archive only (client decision,
+ * feedback row 59) so Done rocks stay visible through the quarter.
  *
  * Deploy: firebase deploy --only functions:archiveStaleTodos
  */
@@ -13,12 +18,12 @@ import {
   mondayMidnightMsInTimeZone,
   selectHeadlinesDiscussedBeforeWeek,
   selectIssuesClosedBeforeWeek,
-  selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
 } from "../../lib/todos-archive";
 import { autoArchiveActivity } from "../../lib/activity";
+import { APP_TIME_ZONE } from "../../lib/time-zone";
 
-const TIME_ZONE = "America/Chicago";
+const TIME_ZONE = APP_TIME_ZONE;
 const BATCH_SIZE = 400;
 
 function adminDb() {
@@ -86,13 +91,11 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
     todos: number;
     issues: number;
     headlines: number;
-    rocks: number;
   };
   archived: {
     todos: number;
     issues: number;
     headlines: number;
-    rocks: number;
   };
 }> {
   const db = adminDb();
@@ -102,13 +105,11 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
   // growing archive. Every creation path (server actions, CSV import) should
   // write an explicit `archived_at: null`, which this equality
   // filter requires — Firestore `== null` does NOT match docs missing the
-  // field. Legacy rocks without `archived_at` need a one-time backfill to
-  // `archived_at: null` before they are covered by the sweep.
-  const [todosSnap, issuesSnap, headlinesSnap, rocksSnap] = await Promise.all([
+  // field.
+  const [todosSnap, issuesSnap, headlinesSnap] = await Promise.all([
     db.collection("todos").where("archived_at", "==", null).get(),
     db.collection("issues").where("archived_at", "==", null).get(),
     db.collection("headlines").where("archived_at", "==", null).get(),
-    db.collection("rocks").where("archived_at", "==", null).get(),
   ]);
 
   const todoIds = selectTodosCompletedBeforeWeek(
@@ -123,16 +124,11 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
     headlinesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     weekStartMs,
   );
-  const rockIds = selectRocksDoneBeforeWeek(
-    rocksSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    weekStartMs,
-  );
 
-  const [todos, issues, headlines, rocks] = await Promise.all([
+  const [todos, issues, headlines] = await Promise.all([
     archiveTodos(db, todosSnap.docs, new Set(todoIds)),
     archiveCollection(db, "issues", issueIds),
     archiveCollection(db, "headlines", headlineIds),
-    archiveCollection(db, "rocks", rockIds),
   ]);
 
   return {
@@ -141,9 +137,8 @@ export async function runArchiveStaleTodos(now: Date = new Date()): Promise<{
       todos: todosSnap.size,
       issues: issuesSnap.size,
       headlines: headlinesSnap.size,
-      rocks: rocksSnap.size,
     },
-    archived: { todos, issues, headlines, rocks },
+    archived: { todos, issues, headlines },
   };
 }
 

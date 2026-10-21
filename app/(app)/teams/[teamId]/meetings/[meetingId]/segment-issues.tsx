@@ -19,7 +19,9 @@ import {
 } from "firebase/firestore";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection, useDoc } from "@/lib/firebase/use-collection";
+import { CommentCountBadge } from "@/components/comment-count-badge";
 import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { EmptyState } from "@/components/empty-state";
 import {
   PRIORITY_BADGE,
@@ -50,9 +52,8 @@ import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import { MoveIssueTermButton } from "../../issues/move-term-button";
 import { deleteIssue } from "../../issues/actions";
 import { setDiscussingIssue, setVotingOpen } from "../actions";
-import { QuickAddIssue } from "@/components/quick-add-issue";
+import { CaptureButton } from "./meeting-capture-modal";
 import { Pill } from "@/components/ui/pill";
-import { AddTodoModal } from "../../todos/add-todo-modal";
 import { ownerLabel } from "@/lib/user-name";
 import {
   type IssueDoc as IssueDocRecord,
@@ -275,23 +276,9 @@ export function SegmentIssues({
             activeCount={issues.length}
             archivedCount={archivedIssues.length}
           />
-          {/*
-            Creating a to-do from the Issues segment is a plain segment-level
-            control, not a per-issue one: issues already carry an owner, and
-            the real use is assigning someone a piece of the work while the
-            issue itself stays open — which is a to-do about the discussion,
-            not a child record of one issue.
-          */}
-          <AddTodoModal
-            teamId={teamId}
-            members={members}
-            defaultOwnerId={userId}
-            currentUserId={userId}
-            meetingId={meetingId}
-            buttonLabel="Add to-do"
-            compact
-          />
-          <QuickAddIssue teamId={teamId} meetingId={meetingId} />
+          {/* The meeting's one capture (feedback rows 58/40) — on this
+              stage it opens on To-do, for the next step of an issue. */}
+          <CaptureButton />
         </div>
       </div>
 
@@ -383,9 +370,12 @@ export function SegmentIssues({
                 >
                   {i.title}
                 </IssueDetailTrigger>
-                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                  <User className="h-3 w-3" />
-                  {ownerName(i.owner_id)}
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <div className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    <User className="h-3 w-3" />
+                    {ownerName(i.owner_id)}
+                  </div>
+                  <CommentCountBadge count={commentCountOf(i)} />
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">

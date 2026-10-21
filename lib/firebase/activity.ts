@@ -7,6 +7,7 @@
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { ActivityDoc, ActivityKind } from "@/lib/activity";
+import { stamp } from "@/lib/audit-stamp";
 import { resolveActorName } from "./notifications";
 
 export type RecordActivityArgs = {
@@ -37,7 +38,12 @@ export async function writeActivity(args: RecordActivityArgs): Promise<void> {
     detail: args.detail?.trim() || null,
     created_at: FieldValue.serverTimestamp(),
   };
-  await args.db.collection("entity_activity").doc().set(row);
+  // Stamped like every server-action write so the audit log names the actor
+  // (C-07); actor_id above is the trace's own copy for the UI.
+  await args.db
+    .collection("entity_activity")
+    .doc()
+    .set({ ...row, ...stamp(args.actor.id) });
 }
 
 /** `writeActivity`, but never throws — see the header. */

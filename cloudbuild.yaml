@@ -84,12 +84,12 @@ steps:
         if [ -n "${_RUNTIME_SERVICE_ACCOUNT}" ]; then
           SA_FLAG=(--service-account="${_RUNTIME_SERVICE_ACCOUNT}")
         fi
-        # Ingress is public (--allow-unauthenticated): access control is enforced
-        # at the application layer by Firebase Auth (Google sign-in restricted to
-        # the highplainsbank.com hosted domain), not by Cloud Run IAM. To require
-        # GCP-level auth instead (e.g. behind IAP), flip this to
-        # --no-allow-unauthenticated — see the "security levers" section of
-        # docs/DEPLOY.md.
+        # --allow-unauthenticated keeps the allUsers invoker that the load
+        # balancer needs until IAP is on. It does not make the service public:
+        # ingress is owned by Terraform (terraform/cloud_run.tf, LB-only in
+        # prod) and `gcloud run deploy` leaves it alone when --ingress is not
+        # passed. Never add --ingress here. When IAP lands, flip this to
+        # --no-allow-unauthenticated in the same change as the IAM binding.
         gcloud run deploy "${_SERVICE}" \
           --image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${_TAG}" \
           --region="${_REGION}" \

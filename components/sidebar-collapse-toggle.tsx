@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import Image from "next/image";
 
 const STORAGE_KEY = "eos:sidebar-collapsed";
 const SHELL_ID = "app-shell";
@@ -48,6 +48,12 @@ export function useSidebarCollapsed(): boolean {
   return useSyncExternalStore(subscribe, readCollapsed, getServerCollapsed);
 }
 
+/**
+ * The sidebar's brand logo doubles as its collapse toggle: collapsed shows
+ * the circle mark, expanded shows the HPB Pulse lockup (light/dark variants
+ * swap on the theme class). Which logo shows is CSS-driven off the shell's
+ * data attribute, so the first paint is right before hydration.
+ */
 export function SidebarCollapseToggle() {
   const collapsed = useSidebarCollapsed();
 
@@ -57,15 +63,37 @@ export function SidebarCollapseToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      className="flex w-full items-center justify-center rounded-md p-1 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-hpb-blue dark:hover:bg-zinc-800 dark:focus-visible:outline-hpb-gold"
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-expanded={!collapsed}
       title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
     >
-      {collapsed ? (
-        <PanelLeftOpen className="h-4 w-4" />
-      ) : (
-        <PanelLeftClose className="h-4 w-4" />
-      )}
+      <Image
+        src="/brand/hpb-mark.svg"
+        alt=""
+        width={36}
+        height={36}
+        unoptimized
+        className="hidden h-9 w-9 group-data-[sidebar-collapsed]/shell:block"
+      />
+      <span className="block w-full group-data-[sidebar-collapsed]/shell:hidden">
+        <Image
+          src="/brand/hpb-pulse-lockup.svg"
+          alt=""
+          width={200}
+          height={46}
+          unoptimized
+          className="block h-auto w-full dark:hidden"
+        />
+        <Image
+          src="/brand/hpb-pulse-lockup-dark.svg"
+          alt=""
+          width={200}
+          height={46}
+          unoptimized
+          className="hidden h-auto w-full dark:block"
+        />
+      </span>
     </button>
   );
 }

@@ -69,6 +69,20 @@ variable "enable_cloud_armor" {
   default     = false
 }
 
+# Phase 1 front door (load_balancer.tf). See README.md "Load Balancer".
+
+variable "enable_load_balancer" {
+  description = "Provision the external HTTPS Load Balancer (global IP, serverless NEG, managed cert, HTTP->HTTPS redirect) in front of Cloud Run for var.custom_domain. Does not change Cloud Run ingress or the allUsers invoker. Ballpark ~$18-25/mo (forwarding rules) + data processing."
+  type        = bool
+  default     = false
+}
+
+variable "custom_domain" {
+  description = "Hostname served by the load balancer and covered by its Google-managed certificate. DNS (Hover, highplainsbank.com) needs an A record for it pointing at output lb_ip_address."
+  type        = string
+  default     = "pulse.highplainsbank.com"
+}
+
 variable "enable_cmek" {
   description = "Provision a Cloud KMS keyring/key for customer-managed encryption. Ballpark ~$0.06/key/mo + operations; see levers.tf for what it does and does not cover."
   type        = bool

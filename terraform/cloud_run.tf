@@ -7,9 +7,13 @@ resource "google_cloud_run_v2_service" "app" {
   name     = var.service_name
   location = var.region
 
-  # Public ingress; access control via Firebase Auth (var.allowed_domain).
-  # See README.md for GCP-level auth (IAP) alternative.
-  ingress = "INGRESS_TRAFFIC_ALL"
+  # With the load balancer on, only the LB (and in-project internal callers)
+  # can reach the service: the *.run.app URLs return 404, so the LB is the
+  # only front door and anything attached to it (IAP, Cloud Armor) can't be
+  # bypassed (audit I-01, 2026-10-21). Without the LB (trial projects) the
+  # service stays public. `allUsers` invoker (below) stays until IAP lands:
+  # without IAP the LB reaches Cloud Run with no credentials.
+  ingress = var.enable_load_balancer ? "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER" : "INGRESS_TRAFFIC_ALL"
 
   template {
     service_account = google_service_account.runtime.email
@@ -114,6 +118,9 @@ resource "google_cloud_run_v2_service" "app" {
 }
 
 # Public invoker binding (matches cloudbuild.yaml --allow-unauthenticated).
+# With the LB on, ingress (above) already limits who can send a request; this
+# binding lets the LB's unauthenticated requests through. Replace it with the
+# IAP service agent when IAP is enabled.
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   project  = google_cloud_run_v2_service.app.project
   location = google_cloud_run_v2_service.app.location

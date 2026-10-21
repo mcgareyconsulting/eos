@@ -10,6 +10,14 @@ export { tokenIsAdmin } from "./admin-claim";
 // One session verification per request, shared by everything below.
 const verifiedSession = cache(() => verifySession());
 
+/**
+ * The request's verified session token (revocation-checked, the same one
+ * requireFirebaseUser reads), or null. For gates that need a claim
+ * requireFirebaseUser doesn't surface — the feedback tracker's
+ * email_verified (lib/firebase/feedback-access.ts).
+ */
+export const getVerifiedSessionToken = verifiedSession;
+
 // Resolves the current Firebase session user. Per-request de-duped via
 // React cache() so layout + page share a single session verification.
 export const requireFirebaseUser = cache(async () => {
@@ -27,7 +35,7 @@ export const requireFirebaseUser = cache(async () => {
 
 // How long until the current session crosses its half-life — the moment the
 // app shell's <SessionKeeper> starts renewing it on the user's next
-// interaction (sliding 12-hour session; see lib/firebase/session.ts). Reuses
+// interaction (sliding 25-hour session; see lib/firebase/session.ts). Reuses
 // the request's verification, so it adds no Auth round trip.
 export const getSessionRenewInMs = cache(async (): Promise<number> => {
   const decoded = await verifiedSession();

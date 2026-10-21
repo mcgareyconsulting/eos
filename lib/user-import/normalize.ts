@@ -2,6 +2,7 @@
 // name-splitting rule is unit testable without Firestore.
 
 import { cell, normalizeKey, type CsvTable } from "../csv-import";
+import { TITLE_MAX, requireMaxLength } from "../text-limits";
 import type { SeedIssue, SeedPersonRow } from "../user-import-types";
 
 // Accepted spellings per column. `cell()` matches case- and
@@ -144,6 +145,25 @@ export function readSeedRows(table: CsvTable): {
       .split(TEAM_SPLIT)
       .map((t) => t.trim())
       .filter(Boolean);
+    const title = cell(row, headers, ...TITLE) || null;
+
+    // C-10 follow-up: same TITLE_MAX the server actions apply to names. A
+    // team name becomes a team doc and a person's name/title lands on every
+    // list render, so an over-length cell rejects the row (reported like any
+    // other bad line) instead of being stored or truncated.
+    try {
+      requireMaxLength(first, TITLE_MAX, "First name");
+      requireMaxLength(last, TITLE_MAX, "Last name");
+      requireMaxLength(title, TITLE_MAX, "Job title");
+      for (const t of teams) requireMaxLength(t, TITLE_MAX, "Team name");
+    } catch (e) {
+      issues.push({
+        line,
+        label: label.length > 80 ? `${label.slice(0, 80)}…` : label,
+        reason: `${e instanceof Error ? e.message : "Value too long"}.`,
+      });
+      return;
+    }
 
     const accessRaw = cell(row, headers, ...ACCESS);
     const access = readAccess(accessRaw);
@@ -157,7 +177,7 @@ export function readSeedRows(table: CsvTable): {
       orgAdmin: access.orgAdmin,
       accessRaw: accessRaw || null,
       unrecognizedAccess: access.recognized ? null : accessRaw,
-      title: cell(row, headers, ...TITLE) || null,
+      title,
     });
   });
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   UNKNOWN_OWNER_LABEL,
   groupByOwner,
+  headlineCreatorLabel,
   splitCascadingSection,
   type SectionableHeadline,
 } from "./headlines";
@@ -149,6 +150,29 @@ describe("groupByOwner", () => {
     assert.deepEqual(
       groups.map((g) => g.name),
       ["Alice"],
+    );
+  });
+});
+
+describe("headlineCreatorLabel", () => {
+  const nameOf = (id: string) => (id === "u2" ? "Bea" : undefined);
+  test("an unassigned headline reads Unassigned, not the creator", () => {
+    assert.equal(
+      headlineCreatorLabel({ created_by: "u2", owner_unassigned: true }, "u1", nameOf),
+      "Unassigned",
+    );
+    assert.equal(
+      headlineCreatorLabel({ created_by: "u1", owner_unassigned: true }, "u1", nameOf),
+      "Unassigned",
+    );
+  });
+  test("otherwise You, the member name, or the import fallback", () => {
+    assert.equal(headlineCreatorLabel({ created_by: "u1" }, "u1", nameOf), "You");
+    assert.equal(headlineCreatorLabel({ created_by: "u2" }, "u1", nameOf), "Bea");
+    assert.equal(headlineCreatorLabel({ created_by: "u3" }, "u1", nameOf), "—");
+    assert.equal(
+      headlineCreatorLabel({ created_by: null, source_owner_name: "Pat" }, "u1", nameOf),
+      "Pat",
     );
   });
 });

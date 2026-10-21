@@ -16,14 +16,18 @@ import {
   loadTeamRocks,
   loadUsersById,
 } from "@/lib/firebase/queries";
+import { isRecapTodoVisible } from "@/lib/recap-todos";
+import { outsideOwnerIds } from "@/lib/todo-lists";
 import { userDisplayName } from "@/lib/user-name";
 import { getUserTeamsFirebase } from "@/lib/firebase/auth";
+import { blockMilestones } from "@/lib/rocks-share";
 import {
-  carriersForViewer,
-  hasFullRockView,
-  isSharedIntoTeam,
-  rockAccessFor,
-} from "@/lib/rocks-share";
+  audienceTeamIdsOf,
+  audienceUserIdsOf,
+  isAudienceTeam,
+  isPrivateRock,
+  rockSubjectOf,
+} from "@/lib/access/rock";
 import {
   type Segment,
   isSegment,
@@ -45,6 +49,7 @@ import {
   metricGroupForTeam,
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
+import { commentCountOf } from "@/lib/issue-comment-count";
 import { loadUserNames } from "@/lib/firebase/user-names";
 import {
   oldestPeriodStart,
@@ -63,6 +68,7 @@ import { SegmentHeadlines } from "./segment-headlines";
 import { SegmentTodos } from "./segment-todos";
 import { SegmentIssues } from "./segment-issues";
 import { ConcludeReview, type MeetingRating } from "./conclude-review";
+import { MeetingCaptureProvider } from "./meeting-capture-modal";
 import {
   RecapModal,
   type RecapItem,
@@ -252,12 +258,15 @@ export default async function MeetingDetailPage({
       }));
 
     // Exclude milestone-style todos (those tied to a rock); recap should show
-    // standalone to-dos created during the meeting.
+    // standalone to-dos created during the meeting. Private to-dos are
+    // dropped for everyone (the L10 is the team's view; Admin SDK bypasses
+    // firestore.rules).
     newTodos = todosSnap.docs
       .map((d) => ({ id: d.id, x: d.data() }))
       .filter(
         ({ x }) =>
-          inWindow(x.created_at as Timestamp | null) && !x.source_rock_id,
+          inWindow(x.created_at as Timestamp | null) &&
+          isRecapTodoVisible(x),
       )
       .map(({ id, x }) => ({
         id,
@@ -378,132 +387,150 @@ export default async function MeetingDetailPage({
           bottom-6 and floats over this column, so the last row of a segment
           needs room to scroll clear of it instead of sitting underneath. */}
       <div className={cn("min-w-0 flex-1 space-y-6", live && "pb-24")}>
-        {/* Live: one compact header line — the stage is the headline, the
-            team L10 is context. Everything static (start time, back link)
-            lives in the rail, so content starts ~150px higher than when this
-            page stacked breadcrumb + h1 + started-at + stage + hint. */}
-        {live && (
-          <header className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {SEGMENT_LABELS[viewSegment]}
-                </h1>
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {team.name}
-                  {agenda.agenda_name ? ` · ${agenda.agenda_name}` : " · L10"}
-                </span>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              {/* Join the team's Google Meet room. DEMO: opens the standing
-                team Meet link a leader set in Members → Meeting settings. In
-                the real integration this href would be a per-meeting URL
-                minted by the Meet REST API (spaces.create) at meeting start. */}
-              {team.meetLink && (
-                <a
-                  href={team.meetLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
-                >
-                  <Video className="h-4 w-4" />
-                  Join Google Meet
-                </a>
-              )}
-            </div>
-          </header>
-        )}
-
-        {/* Completed: an ordinary page with the ordinary chrome. */}
-        {!live && (
-          <>
-            <div className="text-xs">
-              <Link
-                href={`/teams/${tid}/meetings`}
-                className="text-hpb-blue hover:underline"
-              >
-                ← Meetings
-              </Link>
-            </div>
-            <header className="flex items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {team.name}
-                  {agenda.agenda_name
-                    ? ` · ${agenda.agenda_name}`
-                    : " · Level 10"}
-                </h1>
-              </div>
-              <Link
-                href={`/teams/${tid}/meetings/${mid}?recap=1`}
-                className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
-              >
-                <FileText className="h-4 w-4" />
-                View recap
-              </Link>
-            </header>
-          </>
-        )}
-
-        {/* Segment content follows the locally-viewed stage (peek-aware). */}
-        {live && (
-          <section>
-            <SegmentContent
-              teamId={tid}
-              userId={uid}
-              meetingId={mid}
-              segment={viewSegment}
-              currentIssueId={m.current_issue_id ?? null}
-              votingOpen={votingOpen}
-              members={members}
-              absentUserIds={absentUserIds}
-              speakingOrder={speakingOrder}
-              speakerIndex={speakerIndex}
-              driverId={initialDriverId}
-              scorecardWeekRange={scorecardWeekRange}
-              scorecardPeriod={scorecardPeriod}
-              canFlagCompany={isAdmin}
-            />
-          </section>
-        )}
-
-        {/* Meeting review — notes + end-of-meeting meeting rating.
-          Only surfaced in the Conclude segment (live) or on the completed
-          meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
-        {showConclude && (
-          <ConcludeReview
-            teamId={tid}
-            meetingId={mid}
-            currentUserId={uid}
-            members={members}
-            absentUserIds={absentUserIds}
-            ratings={ratings}
-            notes={m.notes ?? null}
-            readOnly={!live}
-          />
-        )}
-
-        <RecapModal
+        {/* The meeting's one "Issue / To-do" capture (feedback rows 58/40):
+            each stage's toolbar carries the button (Segue excepted —
+            stageOffersCapture), and every button opens the ONE modal this
+            provider owns. Kept around the whole column and never keyed or
+            wrapped by stage: a follower's stage change is a same-URL
+            refresh, so this element staying put is what keeps an open draft
+            alive while the driver moves the room on (captureModalMounted).
+            A finished meeting passes "done", which mounts nothing. Gated by
+            nothing new — addIssue and addTodo re-check team access
+            server-side, the same check that let this page render. */}
+        <MeetingCaptureProvider
           teamId={tid}
           meetingId={mid}
-          myRating={myRating}
-          meetingMinutes={meetingMinutes}
-          notes={m.notes ?? null}
-          newRocks={newRocks}
-          newTodos={newTodos}
-          newIssues={newIssues}
-          issuesSolved={issuesSolved}
-          newHeadlines={newHeadlines}
-          stats={recapStats}
-          attendeeRatings={attendeeRatings}
-          overallAverageRating={overallAverageRating}
-          agendaName={agenda.agenda_name}
-          // Never auto-open on a live meeting: the data above is only
-          // fetched once ended_at exists, so a shared/stale ?recap=1 link
-          // would open an all-empty recap over a still-running meeting.
-          autoOpen={recap === "1" && !live}
-        />
+          members={members}
+          currentUserId={uid}
+          segment={live ? viewSegment : "done"}
+        >
+          {/* Live: one compact header line — the stage is the headline, the
+              team L10 is context. Everything static (start time, back link)
+              lives in the rail, so content starts ~150px higher than when this
+              page stacked breadcrumb + h1 + started-at + stage + hint. */}
+          {live && (
+            <header className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    {SEGMENT_LABELS[viewSegment]}
+                  </h1>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {team.name}
+                    {agenda.agenda_name ? ` · ${agenda.agenda_name}` : " · L10"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                {/* Join the team's Google Meet room. DEMO: opens the standing
+                  team Meet link a leader set in Members → Meeting settings. In
+                  the real integration this href would be a per-meeting URL
+                  minted by the Meet REST API (spaces.create) at meeting start. */}
+                {team.meetLink && (
+                  <a
+                    href={team.meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-hpb-green px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-green/40"
+                  >
+                    <Video className="h-4 w-4" />
+                    Join Google Meet
+                  </a>
+                )}
+              </div>
+            </header>
+          )}
+
+          {/* Completed: an ordinary page with the ordinary chrome. */}
+          {!live && (
+            <>
+              <div className="text-xs">
+                <Link
+                  href={`/teams/${tid}/meetings`}
+                  className="text-hpb-blue hover:underline"
+                >
+                  ← Meetings
+                </Link>
+              </div>
+              <header className="flex items-end justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    {team.name}
+                    {agenda.agenda_name
+                      ? ` · ${agenda.agenda_name}`
+                      : " · Level 10"}
+                  </h1>
+                </div>
+                <Link
+                  href={`/teams/${tid}/meetings/${mid}?recap=1`}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-hpb-blue px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40"
+                >
+                  <FileText className="h-4 w-4" />
+                  View recap
+                </Link>
+              </header>
+            </>
+          )}
+
+          {/* Segment content follows the locally-viewed stage (peek-aware). */}
+          {live && (
+            <section>
+              <SegmentContent
+                teamId={tid}
+                userId={uid}
+                meetingId={mid}
+                segment={viewSegment}
+                currentIssueId={m.current_issue_id ?? null}
+                votingOpen={votingOpen}
+                members={members}
+                absentUserIds={absentUserIds}
+                speakingOrder={speakingOrder}
+                speakerIndex={speakerIndex}
+                driverId={initialDriverId}
+                scorecardWeekRange={scorecardWeekRange}
+                scorecardPeriod={scorecardPeriod}
+                canFlagCompany={isAdmin}
+              />
+            </section>
+          )}
+
+          {/* Meeting review — notes + end-of-meeting meeting rating.
+            Only surfaced in the Conclude segment (live) or on the completed
+            meeting page. Hidden during Segue/Scorecard/Rocks/etc. */}
+          {showConclude && (
+            <ConcludeReview
+              teamId={tid}
+              meetingId={mid}
+              currentUserId={uid}
+              members={members}
+              absentUserIds={absentUserIds}
+              ratings={ratings}
+              notes={m.notes ?? null}
+              readOnly={!live}
+            />
+          )}
+
+          <RecapModal
+            teamId={tid}
+            meetingId={mid}
+            myRating={myRating}
+            meetingMinutes={meetingMinutes}
+            notes={m.notes ?? null}
+            newRocks={newRocks}
+            newTodos={newTodos}
+            newIssues={newIssues}
+            issuesSolved={issuesSolved}
+            newHeadlines={newHeadlines}
+            stats={recapStats}
+            attendeeRatings={attendeeRatings}
+            overallAverageRating={overallAverageRating}
+            agendaName={agenda.agenda_name}
+            // Never auto-open on a live meeting: the data above is only
+            // fetched once ended_at exists, so a shared/stale ?recap=1 link
+            // would open an all-empty recap over a still-running meeting.
+            autoOpen={recap === "1" && !live}
+          />
+        </MeetingCaptureProvider>
       </div>
     </div>
   );
@@ -618,6 +645,9 @@ async function SegmentContent({
         goal: x.goal ?? null,
         direction: x.direction,
         owner_id: x.owner_id ?? null,
+        is_public: x.is_public === true,
+        assigned_by: x.assigned_by ?? null,
+        follower_ids: x.follower_ids ?? [],
         group: metricGroupForTeam(shareable, teamId),
         interval,
         sort_order: x.sort_order ?? 0,
@@ -647,7 +677,6 @@ async function SegmentContent({
     return (
       <SegmentScorecard
         teamId={teamId}
-        meetingId={meetingId}
         initialGroups={scorecardGroups}
         weekRange={scorecardWeekRange}
         period={scorecardPeriod}
@@ -655,6 +684,9 @@ async function SegmentContent({
         initialEntries={initialEntries}
         members={members}
         isAdmin={isAdmin}
+        isLeader={
+          (await requireTeamAccess(teamId)).membershipRole === "leader"
+        }
         viewerId={uid}
         teamNameById={Object.fromEntries(teamNameById)}
         ownerNameById={Object.fromEntries(resolvedOwner)}
@@ -668,7 +700,7 @@ async function SegmentContent({
     // Milestones are team-visible todos only — matching the client
     // subscription's visibility filter, and keeping other members' private
     // todo titles out of the serialized page payload.
-    const [teamRocks, todosSnap, orgTeams, { membershipTeamIds }] =
+    const [teamRocks, todosSnap, orgTeams, { membershipTeamIds, leaderTeamIds }] =
       await Promise.all([
         loadTeamRocks(db, teamId),
         db
@@ -682,21 +714,25 @@ async function SegmentContent({
     const shareTeams = orgTeams
       .filter((t) => t.id !== teamId)
       .map((t) => ({ id: t.id, name: t.name }));
+    // A full rock (this team's, or one with this team in its audience).
+    // Audience and Private come out EFFECTIVE (legacy names folded in).
     const mapRock = (d: QueryDocumentSnapshot) => {
       const x = d.data();
+      const subject = rockSubjectOf(x);
       return {
         id: d.id,
-        team_id: x.team_id as string,
+        team_id: subject.team_id,
         title: x.title as string,
-        owner_id: (x.owner_id as string | null) ?? null,
+        owner_id: subject.owner_id,
         quarter: x.quarter as string,
         due_date: (x.due_date as string | null) ?? null,
         status: x.status as string,
         description: (x.description as string | null) ?? null,
         rock_type: (x.rock_type as string | null) ?? null,
         is_company_rock: x.is_company_rock === true,
-        shared_team_ids: (x.shared_team_ids as string[] | null) ?? [],
-        team_only: x.team_only === true,
+        audience_team_ids: audienceTeamIdsOf(subject),
+        audience_user_ids: audienceUserIdsOf(subject),
+        private: isPrivateRock(subject),
       };
     };
     const homeRocks = teamRocks.own
@@ -705,7 +741,7 @@ async function SegmentContent({
     const sharedRocks = teamRocks.shared
       .filter((d) => d.data().archived_at == null)
       .map(mapRock)
-      .filter((r) => isSharedIntoTeam(r, teamId));
+      .filter((r) => isAudienceTeam(r, teamId));
     const initialRocks = [...homeRocks, ...sharedRocks];
     const extraMilestones = await loadMilestonesForRocks(
       db,
@@ -722,13 +758,11 @@ async function SegmentContent({
         completed_at: x.completed_at ? true : null,
         source_rock_id: (x.source_rock_id as string | null) ?? null,
         description: (x.description as string | null) ?? null,
-        team_hidden: x.team_hidden === true,
       };
     };
-    // Shared-in rocks are full views (lib/rocks-share.ts): every milestone.
-    // Legacy "private" milestones stay off the L10 — the live subscription
+    // Audience rocks are full views: every milestone. Legacy "private"
+    // milestones stay off the L10 — the live subscription
     // (visibility == "team") could not keep them anyway.
-    const viewer = { uid: userId, isAdmin, teamIds: new Set(membershipTeamIds) };
     const rosterIds = new Set(members.map((m) => m.user_id));
     const initialTodos = [
       ...todosSnap.docs.map(mapTodo),
@@ -737,53 +771,38 @@ async function SegmentContent({
         .map(mapTodo),
     ];
 
-    // Rocks this room sees only through its people's milestones: one row
-    // per carrier, under that person's turn, with only their unlocked
-    // milestones (lib/rocks-share.ts assignmentCarriers). Static — the live
-    // subscriptions only cover this team's and shared-in rocks.
+    // Blocks (spec §4): each member's milestones on other teams'
+    // non-private rocks, under that person's turn — the rock's headline
+    // (title, owner, team) and the milestone, nothing else. Static — the
+    // live subscriptions only cover this team's and audience rocks.
     const assigned = await loadAssignedRocks(
       db,
       [...rosterIds],
-      new Set([...teamRocks.own, ...teamRocks.shared].map((d) => d.id)),
+      new Set(teamRocks.own.map((d) => d.id)),
     );
     const assignedTodos = assigned.milestones.map(mapTodo);
-    const initialAssigned = assigned.rocks.flatMap((d) => {
-      const rock = mapRock(d as QueryDocumentSnapshot);
+    const initialBlocks = assigned.rocks.flatMap((d) => {
+      const x = d.data() ?? {};
+      const subject = rockSubjectOf(x);
+      if (isPrivateRock(subject)) return [];
+      const headline = {
+        id: d.id,
+        title: String(x.title ?? "Rock"),
+        owner_id: subject.owner_id,
+        team_id: subject.team_id,
+      };
       const ms = assignedTodos.filter((t) => t.source_rock_id === d.id);
-      const full = hasFullRockView(rock, viewer, ms) ? ms : null;
-      // Viewer's own milestones join their turn, greyed where only they see
-      // them — the L10 matches the Rocks tab (carriersForViewer).
-      const { carriers, onlyViewerIds, viewerOnlyRow } = carriersForViewer(
-        rock,
-        teamId,
-        rosterIds,
-        ms,
-        assigned.parentMembers.get(d.id) ?? new Set(),
-        userId,
+      return [...blockMilestones(subject, teamId, rosterIds, ms)].map(
+        ([carrierId, list]) => ({ headline, carrierId, milestones: list }),
       );
-      return [...carriers].map(([carrierId, list]) => ({
-        rock,
-        carrierId,
-        milestones: list,
-        full,
-        onlyViewerIds: list
-          .filter((t) => onlyViewerIds.has(t.id))
-          .map((t) => t.id),
-        viewerOnly: carrierId === userId && viewerOnlyRow,
-      }));
     });
     const extraOwnerIds = [
       ...new Set(
         [
           ...sharedRocks.map((r) => r.owner_id),
-          // Guest-team members can own milestones on this team's rocks.
+          // Other teams' members can own milestones on this team's rocks.
           ...initialTodos.map((t) => t.owner_id),
-          // Assignment rows: the rock's real owner, and everyone on it for
-          // a viewer who has the rock in full.
-          ...initialAssigned.flatMap((a) => [
-            a.rock.owner_id,
-            ...(a.full ?? a.milestones).map((t) => t.owner_id),
-          ]),
+          ...initialBlocks.map((b) => b.headline.owner_id),
         ]
           .filter((id): id is string => !!id)
           .filter((id) => !members.some((m) => m.user_id === id)),
@@ -794,20 +813,11 @@ async function SegmentContent({
       const full_name = userDisplayName(data);
       if (full_name) extraOwnerNames.push({ user_id, full_name });
     }
-    // Rosters for shared-in rocks the viewer may edit as their parent team
-    // (lib/rocks-share.ts parent-team rule) — the in-meeting edit modal
-    // needs that team's people, not this one's. Bounded by the viewer's
-    // own memberships.
-    const editableParentIds = [
-      ...new Set(
-        sharedRocks
-          .filter((r) => rockAccessFor(r, viewer) === "edit")
-          .map((r) => r.team_id),
-      ),
-    ];
+    // Parent rosters for audience rocks — the in-meeting edit modal edits
+    // the rock against its parent team (the owner must be on it).
     const parentRosters = Object.fromEntries(
       await Promise.all(
-        editableParentIds.map(
+        [...new Set(sharedRocks.map((r) => r.team_id))].map(
           async (id) =>
             [
               id,
@@ -827,7 +837,7 @@ async function SegmentContent({
         defaultDue={toDateString(endOfQuarter())}
         initialRocks={initialRocks}
         initialTodos={initialTodos}
-        initialAssigned={initialAssigned}
+        initialBlocks={initialBlocks}
         members={members}
         initialAbsentUserIds={absentUserIds}
         initialSpeakingOrder={speakingOrder}
@@ -840,6 +850,7 @@ async function SegmentContent({
         canFlagCompany={canFlagCompany}
         isAdmin={isAdmin}
         viewerTeamIds={membershipTeamIds}
+        viewerLeaderTeamIds={leaderTeamIds}
         parentRosters={parentRosters}
       />
     );
@@ -854,6 +865,7 @@ async function SegmentContent({
       const x = d.data();
       const t = x.created_at as Timestamp | null;
       const archived = x.archived_at as Timestamp | null | undefined;
+      const discussedAt = x.discussed_at as Timestamp | null | undefined;
       return {
         id: d.id,
         team_id: x.team_id,
@@ -863,16 +875,17 @@ async function SegmentContent({
         created_by: x.created_by ?? null,
         created_at: t?.toMillis?.() ?? null,
         discussed: x.discussed === true,
+        discussed_at: discussedAt?.toMillis?.() ?? null,
         archived_at: archived?.toMillis?.() ?? null,
         broadcast: !!x.broadcast,
         from_label: x.from_label ?? null,
         source_owner_name: x.source_owner_name ?? null,
+        owner_unassigned: x.owner_unassigned === true,
       };
     });
     return (
       <SegmentHeadlines
         teamId={teamId}
-        meetingId={meetingId}
         userId={userId}
         initialHeadlines={initialHeadlines}
         members={members}
@@ -905,12 +918,24 @@ async function SegmentContent({
         source_rock_id: x.source_rock_id ?? null,
       };
     });
+    // Owners off the roster (a to-do assigned to another team, spec §3.1)
+    // get their own "Outside assignees" block; name them here.
+    const outsideNames = Object.fromEntries(
+      await loadUserNames(
+        db,
+        outsideOwnerIds(
+          initialTodos.filter((t) => !t.source_rock_id),
+          new Set(members.map((m) => m.user_id)),
+        ),
+      ),
+    );
     return (
       <SegmentTodos
         teamId={teamId}
         meetingId={meetingId}
         userId={userId}
         initialTodos={initialTodos}
+        outsideNames={outsideNames}
         members={members}
         initialSpeakingOrder={speakingOrder}
         initialAbsentUserIds={absentUserIds}
@@ -941,6 +966,7 @@ async function SegmentContent({
         type: x.type ?? "short",
         status: x.status ?? "open",
         archived_at: x.archived_at ? true : null,
+        comment_count: commentCountOf(x),
       };
     });
     const initialVotes = votesSnap.docs.map((d) => {

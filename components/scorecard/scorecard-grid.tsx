@@ -65,6 +65,10 @@ export type ScorecardMetric = {
   canManage?: boolean;
   /** Archived measurables render only in the archived view, where Restore replaces Archive. */
   isArchived?: boolean;
+  /** Follow state for the viewer, resolved by the caller (lib/scorecard-follow.ts). Absent = no control. */
+  follow?: { following: boolean; locked: boolean; count: number };
+  /** Public metrics are findable and trackable by other teams via "Add existing"; carried so the edit form can show and save it. */
+  is_public?: boolean | null;
   /**
    * Section to render under, resolved for the viewing team: its own choice for
    * a borrowed row, else the cadence default. Falls back to `group` when the
@@ -386,9 +390,9 @@ export function ScorecardGrid({
             {m.sharedFrom && (
               <div
                 className="mt-0.5 truncate text-[11px] italic text-zinc-400 dark:text-zinc-500"
-                title={`Shared from ${m.sharedFrom} — values are maintained by that team`}
+                title={`Tracked from ${m.sharedFrom} — values are maintained by that team`}
               >
-                Shared from {m.sharedFrom}
+                Tracked from {m.sharedFrom}
               </div>
             )}
             <div className="mt-1 flex items-center gap-2">
@@ -481,6 +485,11 @@ export function ScorecardGrid({
                   ownerName={owner}
                   columns={columns}
                   values={values}
+                  follow={
+                    m.follow && !m.isArchived
+                      ? { teamId, ...m.follow }
+                      : undefined
+                  }
                   manage={
                     showManage || showArchiveControl
                       ? {

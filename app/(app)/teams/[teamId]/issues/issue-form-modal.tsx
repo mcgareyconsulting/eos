@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { entityAddButtonClass } from "@/components/entity-page-header";
@@ -8,7 +8,16 @@ import { addIssue, updateIssueMeta } from "./actions";
 import type { IssueType } from "@/lib/issues";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { OwnerPicker } from "@/components/ui/owner-picker";
+import { SelectMenu } from "@/components/ui/select-menu";
+import {
+  ISSUE_PRIORITY_OPTIONS,
+  ISSUE_TERM_OPTIONS,
+  issueOwnerName,
+  toPriorityValue,
+  type IssuePriorityValue,
+} from "./issue-form-options";
 import {
   DiscardChangesDialog,
   draftChanged,
@@ -30,14 +39,18 @@ export type IssueFormValues = {
   type: IssueType | null | undefined;
 };
 
-const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+/** Owner picker props for a team-only list: the org directory is never
+ *  fetched, so these stay empty. Module-level so they keep their identity. */
+const NO_ORG_PEOPLE = null;
+const NO_TEAM_NAMES: ReadonlyMap<string, string> = new Map();
+function noOrgNeeded() {}
 
 /** Every field the form owns, in one shape, so "has this been touched?" is a
  *  comparison against the values it opened with rather than five of them. */
 type IssueDraft = {
   title: string;
   ownerId: string;
-  priority: string;
+  priority: IssuePriorityValue;
   type: IssueType;
   description: string;
 };
@@ -61,7 +74,7 @@ function draftFrom(
   return {
     title: issue.title,
     ownerId: issue.owner_id ?? "",
-    priority: issue.priority ?? "",
+    priority: toPriorityValue(issue.priority),
     type: issue.type === "long" ? "long" : "short",
     description: issue.description ?? "",
   };
@@ -84,6 +97,8 @@ export function IssueFormModal({
 }: {
   teamId: string;
   members: Member[];
+  /** The viewer (every caller passes their uid): the create default, and the
+   *  one off-roster owner the server accepts besides the one already set. */
   defaultOwnerId: string;
   /** Prefill when creating (from active Short/Long tab). */
   defaultType?: IssueType;
@@ -106,6 +121,11 @@ export function IssueFormModal({
 
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const ownerTeam = useMemo(
+    () => ({ id: teamId, name: "This team", people: members }),
+    [teamId, members],
+  );
 
   // Edit mounts already holding its issue (the parent renders this modal only
   // once a row is being edited), so seed from the issue rather than waiting for
@@ -202,7 +222,7 @@ export function IssueFormModal({
         // Escape belongs to the discard confirm while it is up.
         dismissible={!guard.asking}
         ariaLabel={isEdit ? "Edit issue" : "Add issue"}
-        size="lg"
+        size="3xl"
       >
         <ModalHeader
           title={isEdit ? "Edit issue" : "Add issue"}
@@ -223,54 +243,55 @@ export function IssueFormModal({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* A div, not a <label>: the picker is a button + popover, and a
+                wrapping label would re-click it. The trigger names itself
+                ("Owner: …"). */}
+            <div className="block space-y-1">
+              <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Owner
               </span>
-              <Select
+              {/* Team roster only: addIssue / updateIssueMeta reject an owner
+                  off the roster (requireRosterOwner), so no Whole org tab. */}
+              <OwnerPicker
+                variant="field"
+                label="Owner"
+                allowUnassigned
+                teamOnly
                 value={ownerId}
-                onChange={(e) => setOwnerId(e.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    {m.full_name}
-                  </option>
-                ))}
-              </Select>
+                valueName={issueOwnerName(ownerId, members, defaultOwnerId)}
+                onChange={setOwnerId}
+                team={ownerTeam}
+                orgPeople={NO_ORG_PEOPLE}
+                onNeedOrg={noOrgNeeded}
+                teamNameById={NO_TEAM_NAMES}
+              />
+            </div>
+
+            <label className="block space-y-1">
+              <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Priority
+              </span>
+              <SelectMenu<IssuePriorityValue>
+                variant="field"
+                options={ISSUE_PRIORITY_OPTIONS}
+                value={priority}
+                onChange={setPriority}
+              />
             </label>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Priority
+              <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Term
               </span>
-              <Select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-              >
-                <option value="">No priority</option>
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </option>
-                ))}
-              </Select>
+              <SelectMenu<IssueType>
+                variant="field"
+                options={ISSUE_TERM_OPTIONS}
+                value={type}
+                onChange={setType}
+              />
             </label>
           </div>
-
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Term
-            </span>
-            <Select
-              value={type}
-              onChange={(e) => setType(e.target.value as IssueType)}
-            >
-              <option value="short">Short-term</option>
-              <option value="long">Long-term</option>
-            </Select>
-          </label>
 
           <label className="block space-y-1">
             <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -281,8 +302,8 @@ export function IssueFormModal({
               value={description}
               onChange={setDescription}
               placeholder="Decision notes, context, links…"
-              rows={8}
-              textareaClassName="min-h-[10rem] leading-relaxed"
+              rows={10}
+              textareaClassName="min-h-[14rem] leading-relaxed"
               className="dark:bg-zinc-950"
             />
           </label>

@@ -11,6 +11,7 @@ import {
 } from "@/lib/rich-text-toolbar";
 import {
   applyMention,
+  CANNOT_SEE_NOTE,
   filterMentionCandidates,
   mentionQueryAt,
   type MentionCandidate,
@@ -147,7 +148,7 @@ export function RichTextEditor({
   const pickMention = useCallback(
     (candidate: MentionCandidate) => {
       const area = areaRef.current;
-      if (!area || !mentionQuery) return;
+      if (!area || !mentionQuery || candidate.disabled) return;
       const r = applyMention(
         text,
         mentionQuery,
@@ -311,6 +312,7 @@ export function RichTextEditor({
                 key={c.id}
                 role="option"
                 aria-selected={active}
+                aria-disabled={c.disabled || undefined}
                 // mousedown, not click: the textarea's blur fires first on
                 // click and would close the list before the choice landed.
                 onMouseDown={(e) => {
@@ -319,16 +321,23 @@ export function RichTextEditor({
                 }}
                 onMouseEnter={() => setMentionIdx(i)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm",
-                  active
-                    ? "bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
-                    : "text-zinc-800 dark:text-zinc-200",
+                  "flex items-center gap-2 px-2.5 py-1.5 text-sm",
+                  c.disabled
+                    ? "cursor-not-allowed text-zinc-400 dark:text-zinc-500"
+                    : active
+                      ? "cursor-pointer bg-hpb-blue/10 text-hpb-blue dark:bg-hpb-gold/15 dark:text-hpb-gold"
+                      : "cursor-pointer text-zinc-800 dark:text-zinc-200",
                 )}
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[9px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                   {initials(c.name) || "?"}
                 </span>
                 <span className="min-w-0 truncate">{c.name}</span>
+                {c.disabled && (
+                  <span className="ml-auto shrink-0 text-[11px] italic">
+                    {CANNOT_SEE_NOTE}
+                  </span>
+                )}
               </li>
             );
           })}

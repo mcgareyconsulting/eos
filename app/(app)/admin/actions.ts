@@ -4,8 +4,14 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/firebase/teams";
+import { setFeedbackAccess } from "@/lib/firebase/feedback-access";
 import { normalizeKey } from "@/lib/csv-import";
+import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
+import { deactivatePerson, reactivatePerson } from "@/lib/firebase/deactivate";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
+import { syncUserTeamIds } from "@/lib/firebase/membership";
+import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
+import { recordAccessChange, type AccessChangeInput } from "@/lib/access-audit";
 import type { AdminResult, DeleteResult } from "./action-types";
 
 function revalidateOrg() {
@@ -34,6 +40,8 @@ type PersonTeamInput = { id: string; role: TeamRole };
  */
 async function applyTeams(
   db: Awaited<ReturnType<typeof requireAdmin>>["db"],
+  /** The admin making the change - stamped and logged for the audit trail. */
+  actorUid: string,
   uid: string,
   wanted: PersonTeamInput[],
   /** Only add and re-role; keep teams the form doesn't mention. */
@@ -52,6 +60,7 @@ async function applyTeams(
   let added = 0;
   let removed = 0;
   let reroled = 0;
+  const accessLog: AccessChangeInput[] = [];
 
   for (const [teamId, role] of wantedByTeam) {
     const existing = currentByTeam.get(teamId);
@@ -61,18 +70,49 @@ async function applyTeams(
         user_id: uid,
         role,
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(actorUid),
       });
       added++;
+      accessLog.push({
+        kind: "roster",
+        actorUid,
+        entityId: `${teamId}__${uid}`,
+        teamId,
+        targetUid: uid,
+        before: { on_roster: false },
+        after: { on_roster: true, role },
+      });
     } else if (existing.data()?.role !== role) {
-      batch.update(existing.ref, { role });
+      const prev = (existing.data()?.role as string | undefined) ?? "member";
+      batch.update(existing.ref, { role, ...stamp(actorUid) });
       reroled++;
+      accessLog.push({
+        kind: "leader_role",
+        actorUid,
+        entityId: `${teamId}__${uid}`,
+        teamId,
+        targetUid: uid,
+        before: { role: prev },
+        after: { role },
+      });
     }
   }
 
   const droppedTeamIds: string[] = [];
+  const droppedRefs: (typeof current.docs)[number]["ref"][] = [];
   for (const [teamId, doc] of currentByTeam) {
     if (additive || wantedByTeam.has(teamId)) continue;
     batch.delete(doc.ref);
+    droppedRefs.push(doc.ref);
+    accessLog.push({
+      kind: "roster",
+      actorUid,
+      entityId: doc.id,
+      teamId,
+      targetUid: uid,
+      before: { on_roster: true, role: (doc.data()?.role as string) ?? "member" },
+      after: { on_roster: false },
+    });
     droppedTeamIds.push(teamId);
     removed++;
   }
@@ -88,11 +128,16 @@ async function applyTeams(
       const patch: Record<string, unknown> = {};
       if (order.includes(uid)) patch.speaking_order = order.filter((id) => id !== uid);
       if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-      if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
+      if (Object.keys(patch).length > 0) {
+        batch.update(team.ref, { ...patch, ...stamp(actorUid) });
+      }
     }
   }
 
+  await stampBeforeDelete(droppedRefs, actorUid);
   await batch.commit();
+  await syncUserTeamIds(db, uid, actorUid);
+  await Promise.all(accessLog.map((e) => recordAccessChange(db, e)));
   return { added, removed, reroled };
 }
 
@@ -101,7 +146,12 @@ async function applyTeams(
  * account's claims (same shape as scripts/set-admin-role.ts). Returns whether
  * anything changed; throws when there is no account to put a claim on.
  */
-async function setOrgAdmin(uid: string, orgAdmin: boolean): Promise<boolean> {
+async function setOrgAdmin(
+  db: Awaited<ReturnType<typeof requireAdmin>>["db"],
+  actorUid: string,
+  uid: string,
+  orgAdmin: boolean,
+): Promise<boolean> {
   const auth = getAdminAuth();
   const account = await auth.getUser(uid).catch(() => null);
   if (!account) {
@@ -114,8 +164,22 @@ async function setOrgAdmin(uid: string, orgAdmin: boolean): Promise<boolean> {
   if (isAdmin === orgAdmin) return false;
   const claims = { ...(account.customClaims ?? {}) };
   if (orgAdmin) claims.role = "admin";
-  else delete claims.role;
+  else {
+    await assertAnotherAdminRemains(auth, uid);
+    delete claims.role;
+  }
   await auth.setCustomUserClaims(uid, claims);
+  // Claims ride on the ID token; revoke so the change takes effect on the
+  // next request instead of when the old token/session cookie expires.
+  await auth.revokeRefreshTokens(uid);
+  await recordAccessChange(db, {
+    kind: "admin_role",
+    actorUid,
+    entityId: uid,
+    targetUid: uid,
+    before: { admin: isAdmin },
+    after: { admin: orgAdmin },
+  });
   return true;
 }
 
@@ -147,7 +211,7 @@ function readTeams(formData: FormData): PersonTeamInput[] | { error: string } {
  */
 export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
   // Outside try so Next's notFound() from requireAdmin isn't swallowed.
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
@@ -176,6 +240,7 @@ export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
         email,
         deactivated_at: null,
         deactivated_by: null,
+        ...stamp(actorUid),
       },
       { merge: true },
     );
@@ -186,8 +251,8 @@ export async function addOrgPerson(formData: FormData): Promise<AdminResult> {
     }
     // Additive: "Add person" on an address that already exists must not
     // strip the teams they are already on.
-    await applyTeams(db, uid, teams, true);
-    if (orgAdmin) await setOrgAdmin(uid, true);
+    await applyTeams(db, actorUid, uid, teams, true);
+    if (orgAdmin) await setOrgAdmin(db, actorUid, uid, true);
 
     revalidateOrg();
     const where =
@@ -238,13 +303,36 @@ export async function updateOrgPerson(
         {
           display_name: account.displayName ?? account.email ?? uid,
           email: account.email ?? null,
+          ...stamp(actorUid),
         },
         { merge: true },
       );
     }
 
-    const changes = await applyTeams(db, uid, teams);
-    const adminChanged = await setOrgAdmin(uid, orgAdmin);
+    const changes = await applyTeams(db, actorUid, uid, teams);
+    const adminChanged = await setOrgAdmin(db, actorUid, uid, orgAdmin);
+    // Feedback tracker access (N73) is keyed by email, like the list itself.
+    // null = unchanged; otherwise the new state.
+    let feedbackNow: boolean | null = null;
+    if (formData.get("feedback_tracker_shown") === "1") {
+      const want = formData.get("feedback_tracker") === "on";
+      const fresh = await db.collection("users").doc(uid).get();
+      const account = await getAdminAuth().getUser(uid).catch(() => null);
+      const email = ((fresh.data()?.email as string | undefined) ?? account?.email ?? "").trim();
+      if (!email) {
+        if (want) return { ok: false, error: "No email on file, so tracker access can't be granted." };
+      } else if (await setFeedbackAccess(db, actorUid, email, want)) {
+        feedbackNow = want;
+        await recordAccessChange(db, {
+          kind: "feedback_tracker",
+          actorUid,
+          entityId: uid,
+          targetUid: uid,
+          before: { feedback_tracker: !want },
+          after: { feedback_tracker: want },
+        });
+      }
+    }
 
     revalidateOrg();
     const parts: string[] = [];
@@ -252,6 +340,9 @@ export async function updateOrgPerson(
     if (changes.removed) parts.push(`removed from ${changes.removed}`);
     if (changes.reroled) parts.push(`role changed on ${changes.reroled}`);
     if (adminChanged) parts.push(orgAdmin ? "made org admin" : "org admin removed");
+    if (feedbackNow !== null) {
+      parts.push(feedbackNow ? "feedback tracker access granted" : "feedback tracker access removed");
+    }
     return {
       ok: true,
       message: parts.length ? `Saved: ${parts.join(", ")}.` : "No changes.",
@@ -262,90 +353,45 @@ export async function updateOrgPerson(
 }
 
 /**
- * Remove someone's access while keeping the record of their work.
- *
- * Deletes every roster row and the Identity Platform account (so they cannot
- * sign in), and drops them from any speaking order or meeting-driver slot
- * pointing at them. **Keeps the `/users` profile**, marked with
- * `deactivated_at`: every rock, to-do, issue and headline they owned still
- * renders their name instead of turning into an unattributed row. Their
- * owned items are left where they are — reassign them first if someone needs
- * to pick the work up (`pnpm user:reassign`).
+ * Deactivate a person (spec §2.6, decision D5): DISABLE the sign-in account
+ * (reversible - not deleted), revoke sessions, drop roster rows / speaking
+ * order / meeting driver, mark `users/{uid}.deactivated_at`, and unassign
+ * everything they owned, telling each parent team's leaders. The profile is
+ * kept so names on history still render. See lib/firebase/deactivate.ts.
  */
-export async function deleteOrgPerson(uid: string): Promise<DeleteResult> {
+export async function deactivateOrgPerson(uid: string): Promise<DeleteResult> {
   const { db, uid: actorUid } = await requireAdmin();
-
-  if (!uid) return { ok: false, error: "No user given" };
-  if (uid === actorUid) {
-    return {
-      ok: false,
-      error:
-        "You can't delete your own account — you would lose admin access with it.",
-    };
-  }
-
   try {
-    const auth = getAdminAuth();
-    const account = await auth.getUser(uid).catch(() => null);
-
-    const memberships = await db
-      .collection("team_members")
-      .where("user_id", "==", uid)
-      .get();
-    const teamIds = memberships.docs
-      .map((d) => d.data()?.team_id as string)
-      .filter(Boolean);
-
-    const batch = db.batch();
-    for (const doc of memberships.docs) batch.delete(doc.ref);
-
-    // Clear the uid out of anything on the team that points at it by id.
-    const teamDocs = teamIds.length
-      ? await db.getAll(...teamIds.map((id) => db.collection("teams").doc(id)))
-      : [];
-    for (const team of teamDocs) {
-      if (!team.exists) continue;
-      const data = team.data() ?? {};
-      const order = (data.speaking_order as string[]) ?? [];
-      const patch: Record<string, unknown> = {};
-      if (order.includes(uid)) {
-        patch.speaking_order = order.filter((id) => id !== uid);
-      }
-      if (data.meeting_driver_id === uid) patch.meeting_driver_id = null;
-      if (Object.keys(patch).length > 0) batch.update(team.ref, patch);
-    }
-
-    // Tombstone the profile rather than deleting it — see the doc comment.
-    // Carry the account's email/name over first: for someone who signed in
-    // without ever being invited, this is the only place the name survives.
-    batch.set(
-      db.collection("users").doc(uid),
-      {
-        ...(account?.email ? { email: account.email } : {}),
-        ...(account?.displayName ? { display_name: account.displayName } : {}),
-        deactivated_at: FieldValue.serverTimestamp(),
-        deactivated_by: actorUid,
-      },
-      { merge: true },
-    );
-
-    await batch.commit();
-
-    let signInRevoked = false;
-    if (account) {
-      await auth.deleteUser(uid);
-      signInRevoked = true;
-    }
-
+    const r = await deactivatePerson(db, getAdminAuth(), uid, actorUid);
+    if (!r.ok) return r;
     revalidateOrg();
-
+    const { teamsRemoved, itemsUnassigned, signInDisabled } = r.result;
     return {
       ok: true,
-      teamsRemoved: memberships.size,
-      signInRevoked,
-      message: signInRevoked
-        ? `Removed from ${memberships.size} team${memberships.size === 1 ? "" : "s"} and sign-in revoked. Their name still shows on work they owned.`
-        : `Removed from ${memberships.size} team${memberships.size === 1 ? "" : "s"}. There was no sign-in account to revoke.`,
+      teamsRemoved,
+      signInRevoked: signInDisabled,
+      message:
+        `Deactivated: removed from ${teamsRemoved} team${teamsRemoved === 1 ? "" : "s"}, ` +
+        `${itemsUnassigned} item${itemsUnassigned === 1 ? "" : "s"} unassigned` +
+        (signInDisabled ? ", sign-in disabled." : ". There was no sign-in account."),
+    };
+  } catch (err) {
+    return { ok: false, error: message(err) };
+  }
+}
+
+/** Undo a deactivation: re-enable sign-in. Items stay unassigned; re-add to teams by hand. */
+export async function reactivateOrgPerson(uid: string): Promise<AdminResult> {
+  const { db, uid: actorUid } = await requireAdmin();
+  try {
+    const r = await reactivatePerson(db, getAdminAuth(), uid, actorUid);
+    if (!r.ok) return r;
+    revalidateOrg();
+    return {
+      ok: true,
+      message: r.signInRestored
+        ? "Reactivated. Add them back to their teams and reassign their work."
+        : "Reactivated, but there is no sign-in account - invite them again to let them in.",
     };
   } catch (err) {
     return { ok: false, error: message(err) };
@@ -376,7 +422,7 @@ async function nameTaken(
  * Directory calls those out rather than blocking on it.
  */
 export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
   const leaderUid = String(formData.get("leader_uid") ?? "").trim();
@@ -401,6 +447,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
       meet_link: null,
       speaking_order: [],
       created_at: FieldValue.serverTimestamp(),
+      ...stamp(actorUid),
     });
     if (leaderUid) {
       batch.set(db.collection("team_members").doc(`${ref.id}__${leaderUid}`), {
@@ -408,9 +455,22 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
         user_id: leaderUid,
         role: "leader",
         created_at: FieldValue.serverTimestamp(),
+        ...stamp(actorUid),
       });
     }
     await batch.commit();
+    if (leaderUid) {
+      await syncUserTeamIds(db, leaderUid, actorUid);
+      await recordAccessChange(db, {
+        kind: "roster",
+        actorUid,
+        entityId: `${ref.id}__${leaderUid}`,
+        teamId: ref.id,
+        targetUid: leaderUid,
+        before: { on_roster: false },
+        after: { on_roster: true, role: "leader" },
+      });
+    }
 
     revalidateOrg();
     return {
@@ -430,7 +490,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
  * team beside it — hence the collision check and nothing more clever.
  */
 export async function renameOrgTeam(formData: FormData): Promise<AdminResult> {
-  const { db } = await requireAdmin();
+  const { db, uid: actorUid } = await requireAdmin();
 
   const teamId = String(formData.get("team_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -449,7 +509,7 @@ export async function renameOrgTeam(formData: FormData): Promise<AdminResult> {
       return { ok: false, error: `A team named “${name}” already exists.` };
     }
 
-    await ref.update({ name });
+    await ref.update({ name, ...stamp(actorUid) });
     revalidateOrg();
     return { ok: true, message: `Renamed to “${name}”.` };
   } catch (err) {

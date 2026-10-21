@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { chunkForInQuery, FIRESTORE_IN_LIMIT } from "./firestore-in";
+import { chunkForInQuery, FIRESTORE_IN_LIMIT, RULES_GET_IN_LIMIT } from "./firestore-in";
 
 describe("chunkForInQuery", () => {
   test("empty input yields no chunks", () => {
@@ -56,5 +56,20 @@ describe("chunkForInQuery", () => {
     const ids = Array.from({ length: 33 }, (_, i) => i);
     const chunks = chunkForInQuery(ids);
     assert.deepEqual(chunks.flat(), ids);
+  });
+
+  test("a smaller size (client listeners under a get()-per-value rule) chunks at that size", () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `id-${i}`);
+    const chunks = chunkForInQuery(ids, RULES_GET_IN_LIMIT);
+    assert.deepEqual(
+      chunks.map((c) => c.length),
+      [9, 9, 2],
+    );
+    assert.deepEqual(chunks.flat(), ids);
+  });
+
+  test("size is clamped to the Firestore limit", () => {
+    const ids = Array.from({ length: 31 }, (_, i) => i);
+    assert.equal(chunkForInQuery(ids, 100)[0].length, FIRESTORE_IN_LIMIT);
   });
 });

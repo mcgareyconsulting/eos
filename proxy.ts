@@ -38,7 +38,10 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all paths except static assets and image optimizer
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Match all paths except static assets, image optimizer, and public/brand/
+    // (logo + sign-in animation must load for signed-out users on /login),
+    // and the proxied Firebase Auth handler under /__/ (next.config.ts) —
+    // it runs before a session exists and serves its own pages.
+    "/((?!_next/static|_next/image|favicon.ico|brand/|__/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

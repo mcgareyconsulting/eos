@@ -6,13 +6,15 @@
 // file is large, the app isn't deployed yet, or the run wants to be scripted.
 //
 // Usage:
-//   pnpm users:seed ./people.csv                 # dry run — writes nothing
-//   pnpm users:seed ./people.csv --apply
+//   pnpm users:seed ./people.csv --target sandbox          # dry run — writes nothing
+//   pnpm users:seed ./people.csv --target prod --apply
 //
 // Options:
 //   --apply              Actually write. Without it this is a dry run.
-//   --database <id>      Firestore database (e.g. hpb-eos-sandbox-db).
-//   --project <id>       Firebase project, overriding .env.local.
+//   --target sandbox|prod  Named database (scripts/lib/target.ts; prod uses
+//                        ADC). SIGN_IN_ALLOWLIST still comes from .env.local.
+//   --database <id>      Firestore database (not with --target).
+//   --project <id>       Firebase project, overriding .env.local (not with --target).
 //   --no-allowlist       Skip the SIGN_IN_ALLOWLIST check (sandbox only —
 //                        it creates accounts that cannot sign in).
 //
@@ -20,9 +22,8 @@
 // the same file adds only what is new, and never removes anyone or changes an
 // existing member's role. See lib/user-import/run.ts.
 
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { readFileSync } from "node:fs";
-import { config } from "dotenv";
-config({ path: ".env.local" });
 
 import { parseAllowlist } from "../lib/auth-allowlist";
 import { getAdminAuth, getAdminDb } from "../lib/firebase/admin";

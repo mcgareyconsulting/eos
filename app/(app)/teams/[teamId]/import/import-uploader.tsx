@@ -68,12 +68,15 @@ const KINDS: {
 export function ImportUploader({
   teamId,
   teamName,
+  canCreateOwners,
   orgTeams,
   importableTeams,
   members,
 }: {
   teamId: string;
   teamName: string;
+  /** Admin-only: leaders' imports never create placeholder people. */
+  canCreateOwners: boolean;
   /** Every team name — used to match the file's Department column. */
   orgTeams: { id: string; name: string }[];
   /** Teams this user may import into: all for an admin, else teams they lead. */
@@ -132,7 +135,7 @@ export function ImportUploader({
     fd.set("kind", kind);
     fd.set("file", file);
     fd.set("dryRun", dryRun ? "1" : "0");
-    fd.set("createOwners", createOwners ? "1" : "0");
+    fd.set("createOwners", canCreateOwners && createOwners ? "1" : "0");
     fd.set("includeArchived", includeArchived ? "1" : "0");
     if (fallbackOwnerId) fd.set("fallbackOwnerId", fallbackOwnerId);
     if (rockTeam.trim()) fd.set("rockTeam", rockTeam.trim());
@@ -416,6 +419,7 @@ export function ImportUploader({
           </div>
         </div>
 
+        {canCreateOwners && (
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"
@@ -433,6 +437,7 @@ export function ImportUploader({
             </span>
           </span>
         </label>
+        )}
         <label className="flex items-start gap-2 text-sm">
           <input
             type="checkbox"

@@ -93,10 +93,10 @@ ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
 RUN pnpm build
 
 # Guarantee a public/ dir exists so the runner-stage COPY below never fails.
-# Next.js `output: "standalone"` does not emit public/, and this app ships no
-# static assets, so /app/public may not exist — an unconditional
-# `COPY /app/public` then aborts the build with "stat app/public: file does
-# not exist". mkdir -p is a no-op when the app *does* have a public/ dir.
+# Next.js `output: "standalone"` does not emit public/; the app now ships
+# public/brand/ (logo + sign-in animation), but if public/ were ever emptied an
+# unconditional `COPY /app/public` would abort the build with "stat app/public:
+# file does not exist". mkdir -p is a no-op when public/ exists.
 RUN mkdir -p public
 
 # ---- Runner ---------------------------------------------------------------

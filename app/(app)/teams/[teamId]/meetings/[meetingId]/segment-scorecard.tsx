@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
+import { metricFollowState } from "@/lib/scorecard-follow";
 import { useArchivedToggle } from "@/lib/l10/use-archived-toggle";
 import {
   canArchiveMetric,
@@ -14,12 +15,12 @@ import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { useScorecardEntries } from "@/lib/firebase/use-scorecard-entries";
 import { ScorecardPanel } from "@/components/scorecard/scorecard-panel";
+import { CaptureButton } from "./meeting-capture-modal";
 import {
   compareGroups,
   type ScorecardGroup,
   defaultGroupName,
 } from "@/lib/scorecard-groups";
-import { QuickAddIssue } from "@/components/quick-add-issue";
 import type { WeekRange } from "@/lib/scorecard";
 import {
   buildScorecardColumns,
@@ -49,7 +50,6 @@ type Member = { user_id: string; full_name: string };
 
 export function SegmentScorecard({
   teamId,
-  meetingId,
   weekRange,
   period = "weekly",
   initialMetrics,
@@ -59,12 +59,12 @@ export function SegmentScorecard({
   speakingOrder: speakingOrderProp,
   absentUserIds = [],
   isAdmin = false,
+  isLeader = false,
   viewerId,
   teamNameById = {},
   ownerNameById = {},
 }: {
   teamId: string;
-  meetingId: string;
   weekRange: WeekRange;
   /** Weekly / monthly / quarterly / annual — same as standalone scorecard. */
   period?: ScorecardPeriod;
@@ -78,6 +78,8 @@ export function SegmentScorecard({
   absentUserIds?: string[];
   /** Org admins may log values on a borrowed measurable; nobody else may. */
   isAdmin?: boolean;
+  /** Leader of this team: may archive its own measurables (spec 3.4). */
+  isLeader?: boolean;
   /** Archive / Restore in the room is owner-or-admin, as on the tab. */
   viewerId: string;
   /**
@@ -162,11 +164,23 @@ export function SegmentScorecard({
             teamId,
             uid: viewerId,
             isAdmin,
+            // Leaders of the home team only; a borrowed row is not theirs.
+            isLeader: !borrowed && isLeader,
           }),
+          follow: metricFollowState(m, viewerId),
           isArchived: isArchivedMetric(m),
         };
       });
-  }, [owned, sharedIn, teamId, teamNameById, ownerNameById, isAdmin, viewerId]);
+  }, [
+    owned,
+    sharedIn,
+    teamId,
+    teamNameById,
+    ownerNameById,
+    isAdmin,
+    isLeader,
+    viewerId,
+  ]);
 
   // Counted across both views so the toggle's numbers hold steady, the same
   // way the standalone tabs count regardless of the period tab.
@@ -232,53 +246,66 @@ export function SegmentScorecard({
     [period, weekRange],
   );
 
-  // An unconfigured team gets a plain pointer instead of the full filter
-  // shell wrapped around an empty table — metrics are set up on the
-  // Scorecard tab, not mid-meeting.
-  // Only bail out when the team has nothing at all. An empty *Archived* view
-  // must keep the toggle on screen, or the only way back to Active is to leave
-  // the segment.
-  if (allMetrics.length === 0) {
-    return (
-      <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-        No measurables yet — set up the scorecard on the Scorecard tab before
-        the meeting.
+  // The same segment-level toolbar row as Rocks / Headlines / To-Dos /
+  // Issues — count on the left; Active | Archived then the capture on the
+  // right — instead of riding inside ScorecardPanel's filter toolbar, which
+  // put the toggle on a different plane from every other stage.
+  const toolbar = (
+    <div className="flex items-center justify-between">
+      <div className="text-xs text-zinc-600 dark:text-zinc-400">
+        {metrics.length} measurable{metrics.length === 1 ? "" : "s"}
       </div>
-    );
-  }
-
-  return (
-    <ScorecardPanel
-      teamId={teamId}
-      period={period}
-      weekRange={weekRange}
-      columns={columns}
-      metrics={sorted}
-      entryByMetricWeek={entryRecord}
-      members={members}
-      showManage={false}
-      showArchiveControl
-      groups={groups}
-      compact
-      speakingOrder={speakingOrder}
-      absentUserIds={absentUserIds}
-      toolbarExtra={
-        <>
-          {/* Same control and same slot order as the other segments: the
-              view toggle sits left of the segment's add action. */}
+      <div className="flex items-center gap-2">
+        {/* Only when the team has measurables at all. An empty *Archived*
+            view keeps the toggle on screen, or the only way back to Active
+            is to leave the segment. */}
+        {allMetrics.length > 0 && (
           <EntityViewToggle
             showArchived={showArchived}
             onChange={setShowArchived}
             activeCount={activeCount}
             archivedCount={archivedCount}
           />
-          <QuickAddIssue
-            teamId={teamId}
-            prefill="Off-track metric: "
-            meetingId={meetingId}
-          />
-        </>
-      }
-    />
+        )}
+        {/* Off-track metrics drop to Issues (this stage opens on Issue). */}
+        <CaptureButton />
+      </div>
+    </div>
+  );
+
+  // An unconfigured team gets a plain pointer instead of the full filter
+  // shell wrapped around an empty table — metrics are set up on the
+  // Scorecard tab, not mid-meeting.
+  if (allMetrics.length === 0) {
+    return (
+      <div className="space-y-3">
+        {toolbar}
+        <div className="rounded-xl border border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          No measurables yet — set up the scorecard on the Scorecard tab
+          before the meeting.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {toolbar}
+      <ScorecardPanel
+        teamId={teamId}
+        period={period}
+        weekRange={weekRange}
+        columns={columns}
+        metrics={sorted}
+        entryByMetricWeek={entryRecord}
+        members={members}
+        showManage={false}
+        showArchiveControl
+        groups={groups}
+        compact
+        speakingOrder={speakingOrder}
+        absentUserIds={absentUserIds}
+      />
+    </div>
   );
 }

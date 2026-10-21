@@ -2,6 +2,9 @@
 
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { cell, parseDateOnly } from "../csv-import";
+import { requireMaxLength } from "../text-limits";
+import type { ImportKind } from "../team-import-types";
+import type { PreviewCollector } from "./owners";
 
 export function isArchived(row: Record<string, string>, headers: string[]): boolean {
   const archivedOn = cell(row, headers, "Archived Date", "Archived On", "Archived");
@@ -104,4 +107,51 @@ export function normalizeHeadlineKind(
   if (/customer|client|win/.test(s)) return "customer";
   if (/employee|people|hr|staff/.test(s)) return "employee";
   return "employee";
+}
+
+/** One field to length-check: [label shown to the operator, value, max chars]. */
+export type LengthCheck = readonly [label: string, value: string | null | undefined, max: number];
+
+/**
+ * C-10 follow-up: the same caps the create/update server actions enforce
+ * (lib/text-limits.ts) applied to an imported row. Returns the first
+ * "<label> too long (max N chars)" message, or null when every field fits.
+ * Nothing is truncated — an over-length row is rejected, not rewritten.
+ */
+export function overLengthReason(checks: readonly LengthCheck[]): string | null {
+  for (const [label, value, max] of checks) {
+    try {
+      requireMaxLength(value, max, label);
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }
+  return null;
+}
+
+/**
+ * Importers' shared over-length gate. When a row fails, records a skip in the
+ * preview (the importer's existing per-row reporting) and returns true so the
+ * caller counts it skipped and moves on. The echoed title is clipped: the
+ * whole point is that the value may be megabytes, and the preview rides back
+ * in the server-action response.
+ */
+export function rejectOverLength(
+  preview: PreviewCollector,
+  kind: ImportKind,
+  title: string,
+  checks: readonly LengthCheck[],
+  detail: string[] = [],
+): boolean {
+  const reason = overLengthReason(checks);
+  if (!reason) return false;
+  preview.add({
+    kind,
+    action: "skip",
+    title: title.length > 80 ? `${title.slice(0, 80)}…` : title,
+    owner: "—",
+    detail,
+    note: `Not imported — ${reason}`,
+  });
+  return true;
 }

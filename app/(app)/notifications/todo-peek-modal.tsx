@@ -6,14 +6,20 @@ import { doc } from "firebase/firestore";
 import { ExternalLink, X } from "lucide-react";
 import { getClientDb } from "@/lib/firebase/client";
 import { useDoc } from "@/lib/firebase/use-collection";
-import { notificationHref } from "@/lib/notifications";
-import { ModalHeader, ModalShell } from "@/components/ui/modal";
-import { EntityActivity } from "@/components/entity-activity";
+import { NO_ACCESS_TEXT, notificationHref } from "@/lib/notifications";
+import {
+  DiscardChangesDialog,
+  ModalHeader,
+  ModalShell,
+  useDiscardGuard,
+} from "@/components/ui/modal";
+import { ActivityFeed } from "@/components/activity-feed";
 import { IconButton } from "@/components/ui/button";
 import {
   TodoListRow,
   type TodoListItem,
 } from "@/app/(app)/teams/[teamId]/todos/todo-list-row";
+import { TodoDetails } from "@/app/(app)/teams/[teamId]/todos/todo-details";
 import {
   formatClosedOn,
   type TodoBoardDoc,
@@ -35,6 +41,8 @@ function toListItem(t: TodoBoardDoc): TodoListItem {
     archived: t.archived_at != null,
     closed_on: formatClosedOn(t.archived_at),
     follower_ids: t.follower_ids ?? null,
+    assigned_by: t.assigned_by ?? null,
+    created_by: t.created_by ?? null,
   };
 }
 
@@ -43,14 +51,14 @@ function toListItem(t: TodoBoardDoc): TodoListItem {
  *
  * The hub is one inbox across every team, so a click used to mean leaving
  * it for that team's To-Dos tab. This shows the row here instead — the
- * same `TodoListRow` the tab renders, expanded, with the checkbox, Follow
- * and comments all live — and keeps "Open in To-Dos" for when you do want
- * the full page. The server action paints the first frame; a doc listener
- * takes over so a check or comment made here shows without a refresh.
+ * same `TodoListRow` the tab renders, with its details and Follow under
+ * it, all live — and keeps "Open in To-Dos" for when you do want the full
+ * page. The server action paints the first frame; a doc listener takes over
+ * so a check made here shows without a refresh.
  *
- * Two columns: the to-do on the left (comment editor folded behind
- * + Comment, so a quiet to-do is not mostly toolbar), and its activity
- * trace on the right — every edit, follow, completion and comment, live.
+ * Two columns, like the to-do's own detail dialog (T4): the to-do on the
+ * left, its ActivityFeed on the right — comments and every edit, follow
+ * and completion in one newest-first timeline, + Comment folded at the top.
  */
 export function TodoPeekModal({
   n,
@@ -64,6 +72,9 @@ export function TodoPeekModal({
   const [state, setState] = useState<
     { status: "loading" } | { status: "gone" } | { status: "ready"; peek: TodoPeek }
   >({ status: "loading" });
+  // An unsent comment in the feed asks before the peek closes.
+  const [hasDraft, setHasDraft] = useState(false);
+  const guard = useDiscardGuard(hasDraft, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,26 +93,39 @@ export function TodoPeekModal({
   }, [n.team_id, n.entity_id]);
 
   return (
-    <ModalShell open onClose={onClose} ariaLabel="To-do" size="5xl" portal>
+    <>
+    <ModalShell
+      open
+      onClose={guard.requestClose}
+      ariaLabel="To-do"
+      size="5xl"
+      portal
+      // The comment composer claims Escape to fold itself, and the edit
+      // dialog can open on top: only the topmost dialog answers it.
+      escape="topmost"
+      dismissible={!guard.asking}
+    >
       <ModalHeader
         title={
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold tracking-tight">
-              {n.entity_title || "To-do"}
+              {state.status === "ready" ? state.peek.todo.title || "To-do" : "To-do"}
             </h2>
-            <p className="text-[11px] text-zinc-500">{n.team_name}</p>
+            {state.status === "ready" && (
+              <p className="text-[11px] text-zinc-500">{state.peek.teamName}</p>
+            )}
           </div>
         }
         right={
           <div className="flex items-center gap-1">
             <Link
-              href={notificationHref(n)}
+              href={notificationHref({ ...n, entity_type: "todo" })}
               className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               Open in To-Dos
             </Link>
-            <IconButton onClick={onClose} aria-label="Close">
+            <IconButton onClick={guard.requestClose} aria-label="Close">
               <X className="h-4 w-4" />
             </IconButton>
           </div>
@@ -118,8 +142,7 @@ export function TodoPeekModal({
         )}
         {state.status === "gone" && (
           <p className="px-5 py-8 text-center text-sm text-zinc-500 lg:col-span-2">
-            This to-do is no longer available — it may have been deleted, or
-            you may no longer be on its team.
+            {NO_ACCESS_TEXT}
           </p>
         )}
         {state.status === "ready" && (
@@ -128,10 +151,21 @@ export function TodoPeekModal({
             userId={userId}
             initial={state.peek.todo}
             members={state.peek.members}
+            access={state.peek.access}
+            onDraftChange={setHasDraft}
           />
         )}
       </div>
     </ModalShell>
+    <DiscardChangesDialog
+      open={guard.asking}
+      onKeepEditing={guard.keepEditing}
+      onDiscard={guard.discard}
+      title="Discard your comment?"
+      discardLabel="Discard comment"
+      message="Your comment hasn't been posted. Close now and it's gone."
+    />
+    </>
   );
 }
 
@@ -140,18 +174,24 @@ function LiveRow({
   userId,
   initial,
   members,
+  access,
+  onDraftChange,
 }: {
   teamId: string;
   userId: string;
   initial: TodoBoardDoc;
   members: TodoPeek["members"];
+  access: TodoPeek["access"];
+  onDraftChange: (hasDraft: boolean) => void;
 }) {
   const db = getClientDb();
   const ref = useMemo(() => doc(db, "todos", initial.id), [db, initial.id]);
   const live = useDoc<TodoBoardDoc>(ref, initial, "todo-peek");
   const todo = useMemo(() => toListItem(live), [live]);
   const ownerName =
-    members.find((m) => m.user_id === todo.owner_id)?.full_name ?? "—";
+    todo.owner_id === userId
+      ? "You"
+      : (members.find((m) => m.user_id === todo.owner_id)?.full_name ?? "—");
 
   return (
     <>
@@ -162,18 +202,26 @@ function LiveRow({
           ownerName={ownerName}
           members={members}
           userId={userId}
-          defaultExpanded
-          showActivity={false}
+          // Already the to-do's detail: the title doesn't open another.
+          opensDetail={false}
+          access={access}
+        />
+        <TodoDetails
+          teamId={teamId}
+          todo={todo}
+          ownerName={ownerName}
+          userId={userId}
+          className="mb-4 ml-11 mr-4 border-l border-zinc-200 pl-4 dark:border-zinc-800"
         />
       </div>
       <aside className="min-h-0 overflow-y-auto border-t border-zinc-200 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/30 lg:border-l lg:border-t-0">
-        <EntityActivity
+        <ActivityFeed
           teamId={teamId}
           entityType="todo"
           entityId={todo.id}
-          visibility={todo.visibility}
-          ownerId={todo.owner_id}
           userId={userId}
+          members={members}
+          onDraftChange={onDraftChange}
         />
       </aside>
     </>

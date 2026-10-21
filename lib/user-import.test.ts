@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { parseDelimited, toTable } from "./csv-import";
 import { parseAllowlist } from "./auth-allowlist";
+import { TITLE_MAX } from "./text-limits";
 import { FakeFirestore } from "./test-support/fake-firestore";
 import {
   buildSeedPlan,
@@ -293,6 +294,38 @@ const SEED_CSV =
   "Ann\tRoe\tLeadership\tMember\tann@bank.com\n" +
   "Bob\tLoe\tLending\t\tbob@bank.com\n";
 
+describe("readSeedRows length caps", () => {
+  const long = "x".repeat(TITLE_MAX + 1);
+
+  test("rejects a row with an over-length name, team or title; keeps the rest", () => {
+    const { rows, issues } = readSeedRows(
+      table(
+        "First Name,Last Name,Team,Job Title,Email\n" +
+          `${long},Doe,Ops,,a@bank.com\n` +
+          `Ann,${long},Ops,,b@bank.com\n` +
+          `Cy,Roe,${long},,c@bank.com\n` +
+          `Di,Poe,Ops,${long},d@bank.com\n` +
+          "Ed,Moe,Ops,Teller,e@bank.com\n",
+      ),
+    );
+    assert.deepEqual(rows.map((r) => r.email), ["e@bank.com"]);
+    assert.deepEqual(issues.map((i) => i.line), [1, 2, 3, 4]);
+    assert.match(issues[0].reason, /First name too long/);
+    assert.match(issues[1].reason, /Last name too long/);
+    assert.match(issues[2].reason, /Team name too long/);
+    assert.match(issues[3].reason, /Job title too long/);
+    assert.ok(issues.every((i) => i.label.length <= 81));
+  });
+
+  test("values exactly at the cap are accepted", () => {
+    const { rows, issues } = readSeedRows(
+      table(`First Name,Last Name,Email\n${"x".repeat(TITLE_MAX)},Doe,a@bank.com\n`),
+    );
+    assert.equal(issues.length, 0);
+    assert.equal(rows.length, 1);
+  });
+});
+
 describe("runUserImport", () => {
   test("a dry run previews every person and writes nothing", async () => {
     const db = new FakeFirestore();
@@ -339,6 +372,11 @@ describe("runUserImport", () => {
     const jane = db.raw("users/uid-jane");
     assert.equal(jane?.display_name, "Jane Doe");
     assert.equal(jane?.email, "jane@bank.com");
+    // P14: the profile carries the team list the rules check with hasAny().
+    const leadershipId = db
+      .docsIn("teams")
+      .find((t) => t.data.name === "Leadership")?.id;
+    assert.deepEqual(jane?.team_ids, [leadershipId]);
 
     // Role access never becomes a *team* role — admin or not, every seeded
     // membership is a plain member. Leadership stays a manual promotion.

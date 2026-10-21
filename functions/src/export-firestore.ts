@@ -29,6 +29,7 @@
  * Deploy: firebase deploy --only functions:exportFirestore
  * Run now: Cloud Scheduler → firebase-schedule-exportFirestore-us-east1 → Force run
  */
+import "./global-options"; // first: global region/ingress/SA (I-10)
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { archiveBucketName, firestoreDatabaseId } from "./config";

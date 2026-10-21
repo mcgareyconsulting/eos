@@ -21,9 +21,11 @@
  *   Firebase project.
  * - Never log user emails or the export body itself. Only counts and the
  *   object path are logged (see the structured log line below).
- * - No alerting is wired up yet for a failed run; this function throws on
- *   any failure so it shows up as a Cloud Functions error in logs, and an
- *   alert policy on function errors is a follow-up (see docs/ROADMAP.md).
+ * - A failed run alerts: this function throws on any failure, which logs
+ *   at ERROR on the `exportauthusers` Cloud Run service, and the
+ *   "Auth user export failed" policy in terraform/monitoring.tf matches
+ *   that, plus an ERROR from its Cloud Scheduler job (e.g. the invoke
+ *   itself was rejected).
  *
  * FORMAT: top-level `{ "users": [...] }`, one object per user, restricted
  * to the fields `firebase auth:import` actually accepts. The public docs
@@ -43,6 +45,7 @@
  *
  * Deploy: firebase deploy --only functions:exportAuthUsers
  */
+import "./global-options"; // first: global region/ingress/SA (I-10)
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type UserRecord } from "firebase-admin/auth";
 import { getStorage } from "firebase-admin/storage";
@@ -195,8 +198,9 @@ export const exportAuthUsers = onSchedule(
   {
     schedule: "0 4 * * 0",
     timeZone: TIME_ZONE,
-    // Pinned explicitly: setGlobalOptions in index.ts runs after this module
-    // is evaluated (imports are hoisted), so the global region never applied
+    // Pinned explicitly as well as via ./global-options: before that module
+    // existed, setGlobalOptions in index.ts ran after this module was
+    // evaluated (imports are hoisted), so the global region never applied
     // and the first deploy (2026-09-27) landed in us-central1.
     region: "us-east1",
     memory: "256MiB",

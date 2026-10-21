@@ -167,6 +167,11 @@ not affect sign-in. Not a finding.
   - `datastore.restoreAdmin`: self-granted 2026-09-29 under
     `projectIamAdmin`, for the restore drill. Recorded because a consultant
     who can grant himself roles is exactly what a review looks for.
+  - `logging.configWriter`: self-granted 2026-10-21 under
+    `projectIamAdmin`, so Terraform can manage log retention
+    (`terraform/logging.tf`, 365 days) and the coming Data Access logs and
+    SIEM sink; Editor lacks `logging.buckets.update`. Self-granted rather
+    than HPB-granted by the consultant's choice while EOS is in beta.
   - `iam.serviceAccountUser` on `eos-backup` and `eos-functions`: deploys
     (`terraform/backup.tf` `backup_sa_deployers`, `terraform/functions.tf`
     `functions_sa_deployers`).

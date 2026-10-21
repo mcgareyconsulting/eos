@@ -203,3 +203,9 @@ variable "runtime_extra_env" {
     error_message = "runtime_extra_env is for non-secret config only. Add a secret to local.runtime_secrets in secrets.tf instead."
   }
 }
+
+variable "log_retention_days" {
+  description = "Retention of the _Default log bucket (logging.tf). 365 = the usual bank baseline for security-relevant logs; HPB may require longer under its records policy."
+  type        = number
+  default     = 365
+}

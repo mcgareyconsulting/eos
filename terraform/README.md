@@ -60,7 +60,7 @@ All inputs are defined in `variables.tf`. Key variables:
 - `min_instances`, `max_instances`: Cloud Run scaling. Not yet specified by the client; verify against expected traffic/cost before applying in production.
 - `grant_cloudbuild_deploy_permissions` (default: OFF): Grant Cloud Build the roles it needs to deploy (see Cloud Build Deploy Service Account section below).
 - Security lever toggles: `enable_cloud_armor`, `enable_cmek`, `enable_data_access_logs` (all default OFF).
-- Phase 0 backup variables: `prod_database_id`, `sandbox_database_id`, `archive_bucket_name`, `archive_iam_at_project_level` (default OFF), `functions_service_account_email`, `alert_emails`. See "Backups and recovery (Phase 0)" below.
+- Phase 0 backup variables: `prod_database_id`, `sandbox_database_id`, `archive_bucket_name`, `archive_iam_at_project_level` (default OFF), `alert_emails`. See "Backups and recovery (Phase 0)" below.
 - Gate 2 runtime env: `google_oauth_client_id` and `google_oauth_redirect_uri` (**required**, no defaults, non-secret, set in the committed `terraform/terraform.tfvars`, which Terraform auto-loads — there is no `prod.tfvars`), `runtime_extra_env` (default `{}`, optional non-secret extras such as `ENV_LABEL`). Secret *values* are never variables. See "Secrets (Gate 2)".
 
 ### Outputs

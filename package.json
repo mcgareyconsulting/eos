@@ -18,6 +18,7 @@
     "team:delete": "tsx scripts/delete-team.ts",
     "accounts:create": "tsx scripts/create-accounts.ts",
     "admin:set-role": "tsx scripts/set-admin-role.ts",
+    "operator:set-claim": "tsx scripts/set-operator-claim.ts",
     "member:set-role": "tsx scripts/set-member-role.ts",
     "user:reassign": "tsx scripts/reassign-user.ts",
     "user:merge": "tsx scripts/merge-import-user.ts",

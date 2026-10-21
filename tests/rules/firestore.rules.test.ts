@@ -76,6 +76,10 @@ beforeEach(async () => {
     await put("scorecard_groups/g1", { team_id: T });
     await put(`scorecard_entries/mt-own__${WEEK}`, { metric_id: "mt-own", week_start_date: WEEK });
     await put(`scorecard_entries/mt-shared__${WEEK}`, { metric_id: "mt-shared", week_start_date: WEEK });
+    // Public metric on a team no fixture user is on: readable by any account
+    // inside the perimeter, by no one outside it.
+    await put("scorecard_metrics/mt-public", { team_id: "team-Z", shared_team_ids: [], is_public: true });
+    await put(`scorecard_entries/mt-public__${WEEK}`, { metric_id: "mt-public", week_start_date: WEEK });
     await put(`scorecard_entries/mt-12__${WEEK}`, { metric_id: "mt-12", week_start_date: WEEK });
 
     await put("rocks/r-own", { team_id: T, owner_id: "carl", shared_team_ids: [] });
@@ -130,7 +134,13 @@ beforeEach(async () => {
   });
 });
 
-const as = (uid: string): Firestore => env.authenticatedContext(uid).firestore() as unknown as Firestore;
+// Every fixture user is an HPB account: firestore.rules `authed()` requires a
+// verified @highplainsbank.com email (or the operator claim). The "sign-in
+// perimeter" block below covers everyone else.
+const hpb = (uid: string) => ({ email: `${uid}@highplainsbank.com`, email_verified: true });
+const as = (uid: string): Firestore => env.authenticatedContext(uid, hpb(uid)).firestore() as unknown as Firestore;
+const asClaims = (uid: string, claims: Record<string, unknown>): Firestore =>
+  env.authenticatedContext(uid, claims).firestore() as unknown as Firestore;
 const anon = (): Firestore => env.unauthenticatedContext().firestore() as unknown as Firestore;
 const asAdmin = (): Firestore =>
   env
@@ -271,6 +281,45 @@ describe("shared lists: no 8-share cap (hasAny on users.team_ids)", () => {
 
   test("user with no profile / no team_ids is denied", async () => {
     await assertFails(getDoc(doc(as("nobody"), "rocks/r-shared")));
+  });
+});
+
+describe("sign-in perimeter: authed() needs a verified HPB email or the operator claim", () => {
+  const publicMetric = (db: Firestore) => getDoc(doc(db, "scorecard_metrics/mt-public"));
+  const publicEntries = (db: Firestore) =>
+    getDocs(query(collection(db, "scorecard_entries"), where("metric_id", "in", ["mt-public"])));
+
+  test("an HPB account on no team reads a public metric and its entries", async () => {
+    await assertSucceeds(publicMetric(as("bob")));
+    await assertSucceeds(publicEntries(as("bob")));
+  });
+
+  test("an outside Google account is denied, even with a verified email", async () => {
+    const outsider = asClaims("mallory", { email: "mallory@gmail.com", email_verified: true });
+    await assertFails(publicMetric(outsider));
+    await assertFails(publicEntries(outsider));
+  });
+
+  test("an unverified HPB address is denied", async () => {
+    const db = asClaims("eve", { email: "eve@highplainsbank.com", email_verified: false });
+    await assertFails(publicMetric(db));
+  });
+
+  test("a look-alike domain is denied", async () => {
+    const db = asClaims("eve", { email: "eve@highplainsbank.com.evil.test", email_verified: true });
+    await assertFails(publicMetric(db));
+  });
+
+  test("an outside account with the operator claim is admitted", async () => {
+    const db = asClaims("op", { email: "op@example.com", email_verified: true, eos_operator: true });
+    await assertSucceeds(publicMetric(db));
+  });
+
+  test("an outside account cannot reach team data through its own users doc", async () => {
+    // alice's teams via a forged identity: same uid, outside email.
+    await assertSucceeds(getDoc(doc(as("alice"), "rocks/r-shared")));
+    const db = asClaims("alice", { email: "alice@gmail.com", email_verified: true });
+    await assertFails(getDoc(doc(db, "rocks/r-shared")));
   });
 });
 

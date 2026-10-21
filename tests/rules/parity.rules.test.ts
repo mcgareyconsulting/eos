@@ -292,7 +292,10 @@ after(async () => {
 });
 
 function dbFor(w: Who): Firestore {
-  const claims = w.viewer.isAdmin ? { role: "admin" } : {};
+  // Inside the sign-in perimeter (firestore.rules authed()); the perimeter
+  // itself is tested in firestore.rules.test.ts.
+  const perimeter = { email: `${w.viewer.uid}@highplainsbank.com`, email_verified: true };
+  const claims = w.viewer.isAdmin ? { ...perimeter, role: "admin" } : perimeter;
   return env.authenticatedContext(w.viewer.uid, claims).firestore() as unknown as Firestore;
 }
 

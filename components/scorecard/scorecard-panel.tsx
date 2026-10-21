@@ -8,8 +8,6 @@ import {
   type ScorecardMetric,
 } from "./scorecard-grid";
 import {
-  average,
-  statusSortRank,
   trendStatus,
   type SortOption,
   type StatusFilter,
@@ -17,12 +15,17 @@ import {
 } from "@/lib/scorecard";
 import {
   PERIOD_LABELS,
-  normalizeMetricInterval,
   type ScorecardColumn,
   type ScorecardPeriod,
 } from "@/lib/scorecard-periods";
-import { compareBySpeakingOrder } from "@/lib/l10/speaking-order";
 import type { ScorecardGroup } from "@/lib/scorecard-groups";
+import {
+  filterAndSortScorecard,
+  metricsForPeriod,
+  scorecardFlatList,
+} from "@/lib/scorecard-view";
+import { ExportControl } from "@/components/export/export-control";
+import { scorecardExportParams } from "@/lib/export/urls";
 
 /**
  * Client shell for the standalone scorecard: filter state + metric filter by
@@ -47,6 +50,7 @@ export function ScorecardPanel({
   absentUserIds,
   toolbarExtra,
   viewerId,
+  exportView,
 }: {
   teamId: string;
   teamLabel?: string;
@@ -82,6 +86,13 @@ export function ScorecardPanel({
    * whoever is meant to be talking.
    */
   viewerId?: string;
+  /**
+   * Standalone scorecard (every viewer): show the Export control for exactly
+   * this view — the URL state plus the toolbar filters (docs/EXPORT.md).
+   * Left unset where the page isn't the Scorecard (the L10 segment). The
+   * server re-checks team access.
+   */
+  exportView?: { showArchived: boolean };
 }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [ownerId, setOwnerId] = useState("");
@@ -104,123 +115,37 @@ export function ScorecardPanel({
 
   // Tab = interval of the metric, not a rollup of another interval.
   const intervalMetrics = useMemo(
-    () => metrics.filter((m) => normalizeMetricInterval(m.interval) === period),
+    () => metricsForPeriod(metrics, period),
     [metrics, period],
   );
 
   const valuesFor = (metricId: string) =>
     columns.map((c) => entryMap.get(`${metricId}__${c.id}`) ?? null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let rows = intervalMetrics.filter((m) => {
-      if (ownerId && m.owner_id !== ownerId) return false;
-      if (group && (m.sectionName ?? m.group ?? "") !== group) return false;
-
-      const values = valuesFor(m.id);
-      const st = trendStatus(values, m.goal, m.direction);
-      if (status !== "all" && st !== status) return false;
-
-      if (q) {
-        const owner =
-          members.find((x) => x.user_id === m.owner_id)?.full_name ?? "";
-        const group = m.group ?? "";
-        if (
-          !m.name.toLowerCase().includes(q) &&
-          !owner.toLowerCase().includes(q) &&
-          !group.toLowerCase().includes(q)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const ownerName = (id: string | null) =>
-      id ? (members.find((x) => x.user_id === id)?.full_name ?? "") : "";
-
-    const inL10 = !!speakingOrder && speakingOrder.length > 0;
-
-    rows = [...rows].sort((a, b) => {
-      // **Your rows lead, whatever the sort.** Applied before the sort choice
-      // rather than inside Default order, because the ask is "top of my
-      // subsection" and the subsection is whatever grouping is in effect —
-      // a real group under Default/Name, and the flat list under Status,
-      // Average or Owner, which collapse the groups anyway. Bucketing
-      // preserves this order, so one comparison here puts you first inside
-      // *every* group you own a measurable in without lifting you out of any.
-      //
-      // Never in the L10: there the sequence is whose turn it is to speak,
-      // and putting whoever happens to be driving the screen at the top would
-      // reorder the room.
-      if (viewerId && !inL10) {
-        const mine = (m: { owner_id: string | null }) =>
-          m.owner_id === viewerId ? 0 : 1;
-        const byMine = mine(a) - mine(b);
-        if (byMine !== 0) return byMine;
-      }
-
-      if (sort === "order") {
-        // L10: participant/speaking order (not status reshuffle). Standalone
-        // keeps configured sort_order only.
-        if (speakingOrder && speakingOrder.length > 0) {
-          return compareBySpeakingOrder(
-            a,
-            b,
-            speakingOrder,
-            absentUserIds ?? [],
-          );
-        }
-        return a.sort_order - b.sort_order || a.name.localeCompare(b.name);
-      }
-      if (sort === "name") return a.name.localeCompare(b.name);
-      if (sort === "owner") {
-        // Prefer speaking order when available (same as L10 default).
-        if (speakingOrder && speakingOrder.length > 0) {
-          return compareBySpeakingOrder(
-            a,
-            b,
-            speakingOrder,
-            absentUserIds ?? [],
-          );
-        }
-        return (
-          ownerName(a.owner_id).localeCompare(ownerName(b.owner_id)) ||
-          a.name.localeCompare(b.name)
-        );
-      }
-      if (sort === "average-asc" || sort === "average-desc") {
-        const av = average(valuesFor(a.id));
-        const bv = average(valuesFor(b.id));
-        if (av == null && bv == null) return a.name.localeCompare(b.name);
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        const cmp = av - bv;
-        return sort === "average-asc" ? cmp : -cmp;
-      }
-      const as = trendStatus(valuesFor(a.id), a.goal, a.direction);
-      const bs = trendStatus(valuesFor(b.id), b.goal, b.direction);
-      return (
-        statusSortRank(as) - statusSortRank(bs) || a.name.localeCompare(b.name)
-      );
-    });
-
-    return rows;
+  // The toolbar's rules live in lib/scorecard-view.ts, shared with the export.
+  const filtered = useMemo(
+    () =>
+      filterAndSortScorecard(
+        intervalMetrics,
+        { status, ownerId, group, sort, search },
+        { valuesFor, members, speakingOrder, absentUserIds, viewerId },
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    intervalMetrics,
-    members,
-    entryMap,
-    columns,
-    status,
-    ownerId,
-    sort,
-    search,
-    speakingOrder,
-    absentUserIds,
-    viewerId,
-    group,
-  ]);
+    [
+      intervalMetrics,
+      members,
+      entryMap,
+      columns,
+      status,
+      ownerId,
+      sort,
+      search,
+      speakingOrder,
+      absentUserIds,
+      viewerId,
+      group,
+    ],
+  );
 
   // Built from the interval's rows, not from `filtered` — deriving them after
   // the group filter applied would leave the select holding only the option
@@ -268,7 +193,29 @@ export function ScorecardPanel({
             ? "Speaking order"
             : "Default order"
         }
-        extra={toolbarExtra}
+        extra={
+          exportView ? (
+            <div className="flex items-center gap-2">
+              {toolbarExtra}
+              <ExportControl
+                exportId="scorecard"
+                params={scorecardExportParams({
+                  teamId,
+                  period,
+                  weeks: weekRange,
+                  showArchived: exportView.showArchived,
+                  status,
+                  ownerId,
+                  group,
+                  sort,
+                  search,
+                })}
+              />
+            </div>
+          ) : (
+            toolbarExtra
+          )
+        }
       />
 
       {!compact && (
@@ -323,11 +270,7 @@ export function ScorecardPanel({
          * hold while reading one person's measurables. Status and search still
          * flatten on the old rule.
          */
-        flatList={
-          (sort !== "name" && sort !== "order") ||
-          status !== "all" ||
-          !!search.trim()
-        }
+        flatList={scorecardFlatList({ sort, status, search })}
         emptyHint={
           intervalMetrics.length === 0
             ? compact

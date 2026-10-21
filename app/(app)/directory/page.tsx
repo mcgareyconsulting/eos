@@ -9,8 +9,12 @@ import { DirectoryTable } from "./directory-table";
  * which were three views of the same roster.
  */
 export default async function DirectoryPage() {
-  const [{ teams: openableTeams, isAdmin, user }, people, teams] =
-    await Promise.all([getUserTeamsFirebase(), getDirectoryPeople(), getOrgTeams()]);
+  // isAdmin gates which fields the loader returns, so resolve it first.
+  const { teams: openableTeams, leaderTeamIds, isAdmin, user } = await getUserTeamsFirebase();
+  const [people, teams] = await Promise.all([
+    getDirectoryPeople(isAdmin),
+    getOrgTeams(),
+  ]);
 
   return (
     // Wide: five columns, and the Team cell wraps chips for people on several
@@ -29,6 +33,7 @@ export default async function DirectoryPage() {
         teams={teams}
         openableTeamIds={openableTeams.map((t) => t.id)}
         currentUserId={user.id}
+        leaderTeamIds={leaderTeamIds}
         isAdmin={isAdmin}
       />
     </div>

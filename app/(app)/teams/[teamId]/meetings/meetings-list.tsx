@@ -8,24 +8,14 @@ import { EmptyState } from "@/components/empty-state";
 import { getClientDb } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/firebase/use-collection";
 import { LocalTime } from "@/components/local-time";
+import type { AgendaItem } from "@/lib/l10/agenda";
 import {
-  agendaSegmentList,
-  defaultL10Items,
-  type AgendaItem,
-} from "@/lib/l10/agenda";
-import { SEGMENT_LABELS, normalizeSegment } from "@/lib/l10/segments";
+  meetingSummary,
+  sortMeetingsNewestFirst,
+  type TsLike,
+} from "@/lib/l10/meeting-summary";
 import { deleteMeeting } from "./actions";
 import { Card } from "@/components/ui/card";
-
-// Timestamps arrive two ways: serialized to millis by the server render
-// (initial), and as Firestore Timestamps from onSnapshot. Normalize both.
-type TsLike = { toMillis?: () => number } | number | null | undefined;
-
-function toMs(v: TsLike): number | null {
-  if (v == null) return null;
-  if (typeof v === "number") return v;
-  return v.toMillis?.() ?? null;
-}
 
 export type MeetingListDoc = {
   id: string;
@@ -73,9 +63,7 @@ export function MeetingsList({
     "meetings-list",
   );
 
-  const sorted = [...meetings].sort(
-    (a, b) => (toMs(b.started_at) ?? 0) - (toMs(a.started_at) ?? 0),
-  );
+  const sorted = sortMeetingsNewestFirst(meetings);
 
   return (
     <Card divided>
@@ -87,43 +75,10 @@ export function MeetingsList({
         />
       )}
       {sorted.map((m) => {
-        const startedMs = toMs(m.started_at);
-        const endedMs = toMs(m.ended_at);
-        const live = endedMs == null;
+        // Live / duration / agenda / progress: lib/l10/meeting-summary.ts,
+        // shared with the export.
+        const { startedMs, live, progressLabel } = meetingSummary(m);
         const avg = ratingsByMeeting[m.id] ?? null;
-        // Floor at 1 to match the detail page/recap — a 30-second test run
-        // should read "1 min" in both places, not "0 min" here.
-        const duration =
-          startedMs != null && endedMs != null
-            ? Math.max(1, Math.round((endedMs - startedMs) / 60000))
-            : null;
-
-        const agendaOrder = agendaSegmentList(
-          m.agenda_items?.length ? m.agenda_items : defaultL10Items(),
-        );
-        const segmentCount = agendaOrder.length;
-        const segment = normalizeSegment(m.current_segment as string);
-        const segIdx =
-          segment && segment !== "done"
-            ? agendaOrder.indexOf(segment)
-            : -1;
-        const stepNumber =
-          live && segIdx >= 0 ? Math.min(segIdx + 1, segmentCount) : null;
-        const agendaName =
-          typeof m.agenda_name === "string" && m.agenda_name.trim()
-            ? m.agenda_name.trim()
-            : null;
-        const progressLabel = live
-          ? stepNumber != null && segment
-            ? `In progress · Step ${stepNumber} of ${segmentCount} · ${SEGMENT_LABELS[segment]}${
-                agendaName ? ` · ${agendaName}` : ""
-              }`
-            : agendaName
-              ? `In progress · ${agendaName}`
-              : "In progress"
-          : `Completed · ${duration ?? "—"} min${
-              agendaName ? ` · ${agendaName}` : ""
-            }`;
 
         return (
           <div

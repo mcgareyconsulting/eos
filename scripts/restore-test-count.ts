@@ -8,22 +8,27 @@
 // (a server-side count, not a full document read).
 //
 // Usage:
+//   pnpm tsx scripts/restore-test-count.ts --target prod \
+//     --collections organizations,users,teams
 //   pnpm tsx scripts/restore-test-count.ts --project hpb-eos-prod \
-//     --database hpb-eos-prod-db --collections organizations,users,teams
+//     --database hpb-eos-restore-test-123 --collections organizations,users,teams
 //
 // Flags:
-//   --project <id>       GCP project (required)
-//   --database <id>      Firestore database id (required)
-//   --collections <csv>  Comma-separated top-level collection names (required)
+//   --target sandbox|prod  Named database (scripts/lib/target.ts); replaces
+//                          --project/--database
+//   --project <id>         GCP project (required without --target)
+//   --database <id>        Firestore database id (required without --target)
+//   --collections <csv>    Comma-separated top-level collection names (required)
+//
+// restore-test.sh calls this with --project/--database (its throwaway restore
+// database has no named target).
 //
 // Touches nothing — every call is `.count()`, never a write. Output is a
 // single JSON object so callers (restore-test.sh) can parse it without
 // scraping text:
 //   {"project":"...","database":"...","counts":{"col":123,...}}
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import { target } from "./lib/load-target"; // first: sets up env before anything reads it
 import { getAdminDb } from "../lib/firebase/admin";
 
 function arg(name: string): string | undefined {
@@ -32,13 +37,14 @@ function arg(name: string): string | undefined {
 }
 
 async function main() {
-  const project = arg("project");
-  const database = arg("database");
+  // --target already set both env vars (and refuses --project/--database).
+  const project = target.target ? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID : arg("project");
+  const database = target.target ? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID : arg("database");
   const collectionsCsv = arg("collections");
 
   if (!project || !database || !collectionsCsv) {
     console.error(
-      "Usage: pnpm tsx scripts/restore-test-count.ts --project <id> --database <id> --collections <csv>",
+      "Usage: pnpm tsx scripts/restore-test-count.ts (--target sandbox|prod | --project <id> --database <id>) --collections <csv>",
     );
     process.exit(1);
   }

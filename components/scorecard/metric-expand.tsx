@@ -26,6 +26,7 @@ import {
   type ScorecardColumn,
 } from "@/lib/scorecard-periods";
 import { TrendChart } from "./trend-chart";
+import { MetricFollowButton } from "./metric-follow-button";
 
 /**
  * The drop-down panel under an expanded grid row: five facts, the Trends
@@ -53,6 +54,7 @@ export function MetricExpand({
   values,
   panelWidth,
   manage,
+  follow,
 }: {
   metric: {
     id: string;
@@ -79,6 +81,8 @@ export function MetricExpand({
    * passes `showManage={false}` — a meeting reads the scorecard, it does not
    * restructure it.
    */
+  /** Follow control for the row (spec 3.4). Absent = none. */
+  follow?: { teamId: string; following: boolean; locked: boolean; count: number };
   manage?: {
     teamId: string;
     group: string | null;
@@ -92,12 +96,13 @@ export function MetricExpand({
       owner_id: string | null;
       group?: string | null;
       interval?: string | null;
+      is_public?: boolean | null;
     };
     members: { user_id: string; full_name: string }[];
     /** Period owned by this metric's group, when it sits in a defined one. */
     groupInterval?: MetricInterval | null;
     /**
-     * May the viewer archive or delete — owner or org admin, home team. One
+     * May the viewer archive or delete — owner, home-team leader or org admin. One
      * flag for both; they share one permission gate. Absent means no, so a
      * caller that has not thought about it renders no destructive control.
      */
@@ -190,6 +195,18 @@ export function MetricExpand({
           />
         </div>
 
+        {follow && (
+          <div className="flex items-center border-t border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+            <MetricFollowButton
+              teamId={follow.teamId}
+              metricId={metric.id}
+              following={follow.following}
+              locked={follow.locked}
+              followerCount={follow.count}
+            />
+          </div>
+        )}
+
         {manage?.archiveOnly ? (
           // The L10's bar: Archive / Restore and nothing else. Edit, Group and
           // Delete are set-up work and stay on the Scorecard tab.
@@ -235,20 +252,20 @@ export function MetricExpand({
               {isShared ? (
                 <ConfirmSubmitForm
                   action={removeSharedMetric.bind(null, manage.teamId, metric.id)}
-                  title="Remove measurable"
-                  confirmLabel="Remove measurable"
+                  title="Stop tracking"
+                  confirmLabel="Stop tracking"
                   // Not red. The dialog's job here is to say this is a removal
                   // from a view rather than a deletion, and a red button would
                   // argue with the sentence above it.
                   destructive={false}
-                  confirmMessage={`Remove "${metric.name}" from this scorecard? It stays on ${metric.sharedFrom ?? "its own team"}'s scorecard with all of its history, and you can add it back at any time.`}
+                  confirmMessage={`Stop tracking "${metric.name}" on this scorecard? It stays on ${metric.sharedFrom ?? "its own team"}'s scorecard with all of its history, and you can track it again at any time.`}
                 >
                   <button
                     type="submit"
                     className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-hpb-blue/40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
                     <CircleMinus className="h-3.5 w-3.5" aria-hidden />
-                    Remove Metric
+                    Stop tracking
                   </button>
                 </ConfirmSubmitForm>
               ) : (

@@ -21,6 +21,7 @@ import {
   Upload,
   ChevronDown,
   Check,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/user-name";
@@ -36,6 +37,8 @@ const PREFERRED_TEAM_KEY = "eos:active-team-id";
 
 /** Matches the anchored menu's max-h-64; used to keep the flyout on screen. */
 const FLYOUT_MAX_H = 256;
+/** The search row above the list, when the menu has one. */
+const SEARCH_H = 41;
 
 const TEAM_SECTIONS = [
   "scorecard",
@@ -132,11 +135,15 @@ function notifyPreferred() {
 export function TeamNav({
   teams,
   importTeamIds = [],
+  searchable = false,
 }: {
   teams: ShellTeam[];
   /** Teams whose Import page this user may open (leaders + admin god-mode);
    *  the Import link hides for other teams — the page itself 404s regardless. */
   importTeamIds?: string[];
+  /** A search box above the team list. Admins see every team, so their list
+   *  is the long one. */
+  searchable?: boolean;
 }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
@@ -185,6 +192,13 @@ export function TeamNav({
   }, [pathTeamId, preferredId, membershipKey]);
 
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  // A fresh search each time the menu opens.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setQuery("");
+  }
   const rootRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -216,7 +230,10 @@ export function TeamNav({
       // Keep the menu on screen — the team block sits near the sidebar's foot.
       const top = Math.max(
         8,
-        Math.min(rect.top, window.innerHeight - FLYOUT_MAX_H - 8),
+        Math.min(
+          rect.top,
+          window.innerHeight - FLYOUT_MAX_H - (searchable ? SEARCH_H : 0) - 8,
+        ),
       );
       setFlyout({ top, left: rect.right + 8 });
     };
@@ -229,7 +246,7 @@ export function TeamNav({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [flyoutActive]);
+  }, [flyoutActive, searchable]);
 
   useDismissOnEscape(() => setOpen(false), open);
 
@@ -259,6 +276,9 @@ export function TeamNav({
 
   if (!activeTeam) return null;
 
+  const q = query.trim().toLowerCase();
+  const shown = q ? sorted.filter((t) => t.name.toLowerCase().includes(q)) : sorted;
+
   const teamPath = `/teams/${activeTeam.id}`;
 
   return (
@@ -278,8 +298,8 @@ export function TeamNav({
               }
             : {})}
           className={cn(
-            "mx-auto hidden h-8 w-8 items-center justify-center rounded-md",
-            "text-xs font-semibold text-hpb-blue dark:text-hpb-gold",
+            "mx-auto hidden h-9 w-9 items-center justify-center rounded-md",
+            "text-sm font-semibold text-hpb-blue dark:text-hpb-gold",
             "bg-hpb-blue/10 hover:bg-hpb-blue/20 dark:bg-hpb-gold/10 dark:hover:bg-hpb-gold/20",
             "group-data-[sidebar-collapsed]/shell:flex",
           )}
@@ -320,61 +340,89 @@ export function TeamNav({
               />
             </button>
             {open && (
-              <ul
-                id={listId}
-                role="listbox"
-                aria-label="Switch team"
-                style={
-                  flyout
-                    ? {
-                        top: flyout.top,
-                        left: flyout.left,
-                        maxHeight: FLYOUT_MAX_H,
-                      }
-                    : undefined
-                }
+              <div
+                style={flyout ? { top: flyout.top, left: flyout.left } : undefined}
                 className={cn(
-                  "z-50 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg",
+                  "z-50 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg",
                   "dark:border-zinc-700 dark:bg-zinc-900",
-                  flyout
-                    ? "fixed w-56"
-                    : "absolute left-0 right-0 mt-1 max-h-64",
+                  flyout ? "fixed w-56" : "absolute left-0 right-0 mt-1",
                   // One frame can land with the menu open and collapsed but
                   // unmeasured; don't flash it inside the 16-wide rail.
                   collapsed && !flyout && "hidden",
                 )}
               >
-                {sorted.map((t) => {
-                  const selected = t.id === activeTeam.id;
-                  return (
-                    <li key={t.id} role="option" aria-selected={selected}>
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm",
-                          "text-zinc-800 dark:text-zinc-200",
-                          "hover:bg-zinc-100 dark:hover:bg-zinc-800",
-                          selected && "font-medium",
-                        )}
-                        onClick={() => selectTeam(t.id)}
-                      >
-                        <Check
+                {searchable && (
+                  <div className="relative border-b border-zinc-200 p-1.5 dark:border-zinc-700">
+                    <Search
+                      className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+                      aria-hidden
+                    />
+                    <input
+                      type="search"
+                      autoFocus
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter takes the first match, so "fin⏎" switches teams.
+                        if (e.key === "Enter" && shown[0]) {
+                          e.preventDefault();
+                          selectTeam(shown[0].id);
+                        }
+                      }}
+                      placeholder="Search teams"
+                      aria-label="Search teams"
+                      aria-controls={listId}
+                      className={cn(
+                        "h-7 w-full rounded border border-zinc-200 bg-white pl-7 pr-2 text-sm",
+                        "text-zinc-800 placeholder:text-zinc-400",
+                        "focus:border-hpb-blue/50 focus:outline-none focus:ring-2 focus:ring-hpb-blue/20",
+                        "dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200",
+                      )}
+                    />
+                  </div>
+                )}
+                <ul
+                  id={listId}
+                  role="listbox"
+                  aria-label="Switch team"
+                  style={{ maxHeight: FLYOUT_MAX_H }}
+                  className="overflow-y-auto py-1"
+                >
+                  {shown.length === 0 && (
+                    <li role="presentation" className="px-2.5 py-1.5 text-sm text-zinc-500">No teams match.</li>
+                  )}
+                  {shown.map((t) => {
+                    const selected = t.id === activeTeam.id;
+                    return (
+                      <li key={t.id} role="option" aria-selected={selected}>
+                        <button
+                          type="button"
                           className={cn(
-                            "h-3.5 w-3.5 shrink-0",
-                            selected
-                              ? "text-hpb-blue dark:text-hpb-gold"
-                              : "opacity-0",
+                            "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm",
+                            "text-zinc-800 dark:text-zinc-200",
+                            "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                            selected && "font-medium",
                           )}
-                          aria-hidden
-                        />
-                        <span className="min-w-0 truncate normal-case tracking-normal">
-                          {t.name}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                          onClick={() => selectTeam(t.id)}
+                        >
+                          <Check
+                            className={cn(
+                              "h-3.5 w-3.5 shrink-0",
+                              selected
+                                ? "text-hpb-blue dark:text-hpb-gold"
+                                : "opacity-0",
+                            )}
+                            aria-hidden
+                          />
+                          <span className="min-w-0 truncate normal-case tracking-normal">
+                            {t.name}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
           </>
         ) : (
@@ -414,9 +462,9 @@ function NavLink({
     <Link
       href={href}
       title={label}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center"
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center group-data-[sidebar-collapsed]/shell:py-2"
     >
-      <Icon className="w-4 h-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
+      <Icon className="w-4 h-4 shrink-0 text-zinc-600 group-data-[sidebar-collapsed]/shell:size-5 dark:text-zinc-400" />
       <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
     </Link>
   );

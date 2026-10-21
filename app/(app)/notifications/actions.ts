@@ -4,6 +4,15 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireFirebaseUser } from "@/lib/firebase/auth";
 import { getTeamMembers } from "@/lib/firebase/teams";
+import { canSeeItem, loadItem, loadViewer } from "@/lib/firebase/items";
+import { todoCan } from "@/lib/firebase/todo-gate";
+import {
+  labelNotifications,
+  peekItem,
+  type ItemPeek,
+  type NotificationLabel,
+} from "@/lib/firebase/item-peek";
+import type { ItemRef } from "@/lib/item-registry";
 import type { TodoBoardDoc } from "@/app/(app)/teams/[teamId]/todos/todos-board";
 
 /** Admin-SDK Timestamp → millis, so the value can cross the RSC boundary. */
@@ -15,42 +24,40 @@ function toMillis(v: unknown): number | null {
 /** What the hub's peek modal needs to render one to-do row in place. */
 export type TodoPeek = {
   todo: TodoBoardDoc;
+  teamName: string;
   members: { user_id: string; full_name: string }[];
+  /** "assignee" for an off-team assignee: complete + comment only (P8a). */
+  access: "full" | "assignee";
 };
 
 /**
- * The to-do behind a notification, for opening it in place rather than
- * leaving the hub. Same visibility contract as the To-Dos page's `?todo=`
- * deep link: a row on another team, or someone else's private to-do, is
- * "not found" rather than forbidden. Membership is enforced by
- * requireTeamAccess, which throws for a team the caller has left — the
- * modal treats that as gone too.
+ * The to-do (or milestone) behind a notification, for opening it in place
+ * rather than leaving the hub. Gated by `accessFor(type).canSee` at open
+ * time (spec §5.3) — a to-do on another team than the row says, or one the
+ * caller can no longer see, is null, which the modal renders as
+ * NO_ACCESS_TEXT. A milestone's off-team assignee passes through the rock
+ * rule (`hasFullRockView` counts milestone owners).
  */
 export async function loadTodoPeek(
   teamId: string,
   todoId: string,
 ): Promise<TodoPeek | null> {
-  // Membership is the normal gate, but a milestone can be assigned to
-  // someone off the rock's team (docs/ROCK_SHARING_RULES.md) and its
-  // "assigned" notification must open for them: the owner may peek at
-  // their own row on any team.
   const { uid, db, isAdmin } = await requireFirebaseUser();
-  const snap = await db.collection("todos").doc(todoId).get();
-  const d = snap.data();
-  if (!snap.exists || !d || d.team_id !== teamId) return null;
-  const isOwner = String(d.owner_id ?? "") === String(uid);
-  const member =
-    isAdmin ||
-    (await db.collection("team_members").doc(`${teamId}__${uid}`).get()).exists;
-  if (!member && !isOwner) return null;
-  if (d.visibility === "private" && !isOwner) return null;
-  const members = (await getTeamMembers(teamId)).map((m) => ({
-    user_id: m.user_id,
-    full_name: m.full_name,
-  }));
+  const item = await loadItem(db, { type: "todo", id: todoId });
+  if (!item || item.teamId !== teamId) return null;
+  const viewer = await loadViewer(db, uid, isAdmin);
+  if (!canSeeItem(item, viewer)) return null;
+  const d = item.data;
+  const [members, teamSnap] = await Promise.all([
+    getTeamMembers(teamId),
+    db.collection("teams").doc(teamId).get(),
+  ]);
   return {
+    access: todoCan(item, viewer, "edit") ? "full" : "assignee",
+    teamName: String(teamSnap.data()?.name ?? "Team"),
+    members: members.map((m) => ({ user_id: m.user_id, full_name: m.full_name })),
     todo: {
-      id: snap.id,
+      id: todoId,
       title: String(d.title ?? ""),
       description: (d.description as string | null) ?? null,
       owner_id: (d.owner_id as string | null) ?? null,
@@ -60,10 +67,41 @@ export async function loadTodoPeek(
       visibility: d.visibility === "private" ? "private" : "team",
       weekly_focus: d.weekly_focus === true,
       source_rock_id: (d.source_rock_id as string | null) ?? null,
-      follower_ids: Array.isArray(d.follower_ids) ? d.follower_ids : null,
+      follower_ids: Array.isArray(d.follower_ids)
+        ? (d.follower_ids as string[])
+        : null,
+      assigned_by: (d.assigned_by as string | null) ?? null,
+      created_by: (d.created_by as string | null) ?? null,
     },
-    members,
   };
+}
+
+/**
+ * Title + snippet of any item, rendered at open time through `canSee`
+ * (spec §5.3). Denied and missing both return `{ access: "none" }`, which
+ * the hub shows as NO_ACCESS_TEXT.
+ */
+export async function loadItemPeek(ref: ItemRef): Promise<ItemPeek> {
+  const { uid, db, isAdmin } = await requireFirebaseUser();
+  const viewer = await loadViewer(db, uid, isAdmin);
+  return peekItem(db, ref, viewer);
+}
+
+/**
+ * Labels (actor name + access-checked peek) for rows of the caller's that
+ * arrived over the live listener after the server's first paint.
+ */
+export async function loadNotificationLabels(
+  rowIds: string[],
+): Promise<Record<string, NotificationLabel>> {
+  if (!Array.isArray(rowIds)) return {};
+  const { uid, db, isAdmin } = await requireFirebaseUser();
+  const viewer = await loadViewer(db, uid, isAdmin);
+  return labelNotifications(
+    db,
+    viewer,
+    rowIds.filter((x): x is string => typeof x === "string"),
+  );
 }
 
 /**

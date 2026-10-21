@@ -13,6 +13,7 @@ import {
   metricGroupForTeam,
 } from "@/lib/scorecard-share";
 import { defaultGroupName } from "@/lib/scorecard-groups";
+import { metricFollowState } from "@/lib/scorecard-follow";
 import { normalizeMetricInterval } from "@/lib/scorecard-periods";
 import { EntityViewTabs } from "@/components/entity-view-tabs";
 import { EntityPageHeader } from "@/components/entity-page-header";
@@ -43,7 +44,8 @@ export default async function ScorecardPage({
   const weekRange = parseWeekRange(sp.weeks);
   const period = parseScorecardPeriod(sp.period);
   const showArchived = sp.archived === "1";
-  const { uid, db, team, isAdmin } = await requireTeamAccess(tid);
+  const { uid, db, team, isAdmin, membershipRole } =
+    await requireTeamAccess(tid);
   const members = await getTeamMembers(tid);
 
   // Two queries, not one: Firestore cannot OR `team_id == tid` with
@@ -105,6 +107,8 @@ export default async function ScorecardPage({
         goal: x.goal ?? null,
         direction: x.direction,
         owner_id: x.owner_id ?? null,
+        is_public: x.is_public === true,
+        follow: metricFollowState({ ...x, team_id: home }, uid),
         // The group as *this* team stores it — its own for a borrowed row —
         // which is what the inline editor edits. `sectionName` below is the
         // one that decides which header the row renders under.
@@ -132,6 +136,8 @@ export default async function ScorecardPage({
           teamId: tid,
           uid,
           isAdmin,
+          // Leaders of the home team may archive/delete too (spec 3.4).
+          isLeader: !borrowed && membershipRole === "leader",
         }),
         isArchived: isArchivedMetric(x),
       };
@@ -227,6 +233,7 @@ export default async function ScorecardPage({
           members={members}
           showManage
           groups={groups}
+          exportView={{ showArchived }}
         />
       </Suspense>
     </div>

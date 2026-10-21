@@ -20,7 +20,7 @@ export type WithId<T> = T & { id: string };
 // rocks
 // ---------------------------------------------------------------------------
 
-export type RockDoc = {
+export type RockDoc = FollowFields & {
   team_id: string;
   title: string;
   owner_id: string | null;
@@ -35,16 +35,19 @@ export type RockDoc = {
   // Non-admin edits must leave this key out of the patch entirely so the
   // stored value survives (see updateRockWithMilestones).
   is_company_rock?: boolean;
-  // Teams this rock is shared with. Must flow through to RockRow — the edit
-  // modal seeds its share picker from it, and saving without it wipes the
-  // field on the rock doc.
+  // The audience (docs/PERMISSIONS_SPEC.md §3.3, lib/access/rock.ts): teams
+  // and persons who see and edit the whole rock. Only leaders of the parent
+  // team and admins change them; any other save preserves them. No cap.
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  // Private: parent team only — no audience, no blocks on other teams.
+  // Leader/admin-only; every milestone assignee must be on the parent team.
+  private?: boolean;
+  // LEGACY, read-only fallbacks until the P13 migration. A save writes the
+  // fields above and deletes these. `shared_team_ids` = audience teams,
+  // `team_only` = private. `milestone_owner_ids` grants nothing any more.
   shared_team_ids?: string[] | null;
-  // "Keep on this team" (lib/rocks-share.ts): every milestone treated as
-  // locked, and no team shares. Absent reads as off.
   team_only?: boolean;
-  // Owners of every milestone on the rock, rewritten on each save. Lets
-  // firestore.rules grant assignees what lib/rocks-share.ts hasFullRockView
-  // grants server-side (the rock doc, its comments, its status history).
   milestone_owner_ids?: string[];
   // Timestamp from onSnapshot, absent from the server prefetch (which
   // filters archived rocks out entirely) or on legacy docs created before the
@@ -54,7 +57,7 @@ export type RockDoc = {
 
 // ---------------------------------------------------------------------------
 // todos (also used for rock milestones, which are todos with source_rock_id
-// set; a milestone's sharing lock is `team_hidden`, not visibility)
+// set; a milestone's reach is its rock's — lib/access/rock.ts)
 // ---------------------------------------------------------------------------
 
 export type TodoDoc = {
@@ -74,9 +77,6 @@ export type TodoDoc = {
   // (treat as active either way).
   archived_at?: { toDate: () => Date; toMillis: () => number } | null;
   visibility: "team" | "private";
-  // Milestones only: locked — not passed on to the assignee's teams
-  // (lib/rocks-share.ts). Absent reads as unlocked.
-  team_hidden?: boolean;
   weekly_focus?: boolean;
   source_issue_id: string | null;
   source_meeting_id: string | null;
@@ -89,13 +89,27 @@ export type TodoDoc = {
   // each reassignment, and toggled by the Follow control on the row. Absent
   // on docs that predate the feature (treated as nobody following).
   follower_ids?: string[] | null;
+  // Who made the current assignment — a follower who cannot unfollow
+  // (lib/follow.ts). Written by addTodo / updateTodoMeta; absent on older
+  // docs, where `created_by` stands in (spec §8 migration).
+  assigned_by?: string | null;
+};
+
+/**
+ * The follow fields every followable item carries (docs/PERMISSIONS_SPEC.md
+ * §5.3, lib/follow.ts). Optional everywhere: legacy docs predate them.
+ */
+export type FollowFields = {
+  follower_ids?: string[] | null;
+  /** Types with an assigner only (not headlines). */
+  assigned_by?: string | null;
 };
 
 // ---------------------------------------------------------------------------
 // issues
 // ---------------------------------------------------------------------------
 
-export type IssueDoc = {
+export type IssueDoc = FollowFields & {
   team_id: string;
   title: string;
   description: string | null;
@@ -110,13 +124,19 @@ export type IssueDoc = {
   archived?: boolean;
   // Live client docs may carry a Firestore Timestamp.
   archived_at?: unknown;
+  // Size of the issue's comment thread, kept by the comment actions
+  // (lib/issue-comment-count.ts). Missing on docs never commented on since
+  // the counter shipped, until the backfill runs or the thread next changes
+  // (which recounts it) — read through
+  // commentCountOf.
+  comment_count?: number;
 };
 
 // ---------------------------------------------------------------------------
 // headlines
 // ---------------------------------------------------------------------------
 
-export type HeadlineDoc = {
+export type HeadlineDoc = Omit<FollowFields, "assigned_by"> & {
   team_id: string;
   title: string;
   body: string | null;
@@ -129,18 +149,23 @@ export type HeadlineDoc = {
   target_team_ids?: string[];
   created_at: Timestamp | null;
   discussed?: boolean;
+  // Written alongside `discussed` by setHeadlineDiscussed (null when cleared);
+  // the headline detail feed reads it for its "Marked discussed" row.
+  discussed_at?: Timestamp | null;
   archived_at?: Timestamp | null;
   // Org-wide cascade from outside this team — show, don't delete.
   broadcast?: boolean;
   from_label?: string | null;
   source_owner_name?: string | null;
+  // Set when the creator was deactivated (spec 2.6): shown as Unassigned.
+  owner_unassigned?: boolean;
 };
 
 // ---------------------------------------------------------------------------
 // scorecard_metrics
 // ---------------------------------------------------------------------------
 
-export type ScorecardMetricDoc = {
+export type ScorecardMetricDoc = FollowFields & {
   team_id: string;
   name: string;
   unit: ScorecardUnit;
@@ -153,11 +178,13 @@ export type ScorecardMetricDoc = {
   // `initialMetrics` until the realtime listener replaces it.
   group?: string | null;
   interval?: string | null;
-  // Teams that pulled this measurable onto their scorecard from the org-wide
-  // "Add existing" picker. The measurable still belongs to `team_id`; these
-  // teams read it and its history. Capped at 8 — `firestore.rules` unrolls
-  // the membership check index by index and cannot see past that. See
-  // `lib/scorecard-share.ts`.
+  // Public metrics are visible to every person (other teams find them in the
+  // scorecard's "Add existing" picker) and can be tracked by other teams.
+  // Missing/false = private. Default false.
+  is_public?: boolean | null;
+  // Teams tracking this measurable ("track" in the UI; field name kept until a
+  // migration). Only a public metric can be tracked; becoming private clears
+  // this. No cap — rules use hasAny(team_ids). See `lib/scorecard-share.ts`.
   shared_team_ids?: string[] | null;
   // Soft archive, same convention as rocks / issues / headlines: a timestamp
   // means archived, null or missing means active. Archived measurables drop

@@ -7,7 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
+import { isLeaderOf, type Viewer } from "@/lib/access/types";
 import { AddPersonButton, NewTeamButton, PersonRowMenu } from "./directory-admin";
+import { LeaderAddButton, RemoveFromTeamButton } from "./directory-leader";
 
 const ACCESS_LABEL: Record<DirectoryPerson["access"], string> = {
   admin: "Admin",
@@ -19,6 +21,11 @@ const ACCESS_OPTIONS = (Object.keys(ACCESS_LABEL) as DirectoryPerson["access"][]
   (value) => ({ value, label: ACCESS_LABEL[value] }),
 );
 
+/** The Team and Role access cells stack one line per team; both use these
+ *  so each role pill sits level with its team. */
+const ROWS_CLASS = "flex flex-col gap-1";
+const ROW_CLASS = "flex h-5 min-w-0 items-center";
+
 /** Team-filter value for people on no roster. Not a real team id. */
 const NO_TEAM = "__none__";
 
@@ -27,6 +34,7 @@ export function DirectoryTable({
   teams,
   openableTeamIds,
   currentUserId,
+  leaderTeamIds,
   isAdmin,
 }: {
   people: DirectoryPerson[];
@@ -34,6 +42,8 @@ export function DirectoryTable({
   /** Teams the viewer can open for data — chips for these link to the team. */
   openableTeamIds: string[];
   currentUserId: string;
+  /** Teams the viewer leads (admins manage rosters through the row menu). */
+  leaderTeamIds: string[];
   isAdmin: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -45,6 +55,21 @@ export function DirectoryTable({
   const [notice, setNotice] = useState<string | null>(null);
 
   const openable = useMemo(() => new Set(openableTeamIds), [openableTeamIds]);
+  const viewer: Viewer = useMemo(
+    () => ({
+      uid: currentUserId,
+      isAdmin,
+      teamIds: new Set(openableTeamIds),
+      leaderOf: new Set(leaderTeamIds),
+    }),
+    [currentUserId, isAdmin, openableTeamIds, leaderTeamIds],
+  );
+  const ledTeams = useMemo(
+    () => teams.filter((t) => isLeaderOf(viewer, t.id)),
+    [teams, viewer],
+  );
+  // Admins use the row menu; the leader controls are for non-admin leaders.
+  const showLeaderTools = !isAdmin && ledTeams.length > 0;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -83,6 +108,12 @@ export function DirectoryTable({
           </Link>
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
+        </div>
+      )}
+
+      {showLeaderTools && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <LeaderAddButton ledTeams={ledTeams} people={people} onDone={setNotice} />
         </div>
       )}
 
@@ -178,30 +209,73 @@ export function DirectoryTable({
                   {p.teams.length === 0 ? (
                     <span className="text-xs text-zinc-400">No team</span>
                   ) : (
-                    <div className="flex flex-wrap gap-1">
+                    // One team per line; the Role access cell lines up a
+                    // pill beside each (same ROW_CLASS height and gap).
+                    <div className={ROWS_CLASS}>
                       {p.teams.map((t) => (
-                        <TeamChip
+                        <TeamRow
                           key={t.id}
                           name={t.name}
                           href={openable.has(t.id) ? `/teams/${t.id}/scorecard` : null}
+                          remove={
+                            showLeaderTools && isLeaderOf(viewer, t.id) && t.role !== "leader" ? (
+                              <RemoveFromTeamButton
+                                teamId={t.id}
+                                teamName={t.name}
+                                userId={p.uid}
+                                personName={`${p.firstName} ${p.lastName}`.trim() || "Person"}
+                                onDone={setNotice}
+                              />
+                            ) : null
+                          }
                         />
                       ))}
                     </div>
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <AccessChip access={p.access} />
-                  {/* Account state is an admin concern — it's what the old
-                      People tab existed to show, and means nothing to
-                      anyone who can't fix it. */}
-                  {isAdmin && !p.hasAuth && (
-                    <Chip tone="amber" title="No sign-in account — a placeholder left by a data import.">
-                      No account
-                    </Chip>
-                  )}
-                  {isAdmin && p.hasAuth && !p.hasSignedIn && (
-                    <Chip tone="zinc">Never signed in</Chip>
-                  )}
+                  {/* One pill per team line: Admin everywhere for an admin,
+                      otherwise that team's role. No team (or deactivated)
+                      → a single pill. Account state rides the first line. */}
+                  <div className={ROWS_CLASS}>
+                    {(p.deactivated || p.teams.length === 0
+                      ? [null]
+                      : p.teams
+                    ).map((t, i) => (
+                      <div key={t?.id ?? "none"} className={ROW_CLASS}>
+                        {p.deactivated ? (
+                          <Chip tone="amber">Deactivated</Chip>
+                        ) : (
+                          <AccessChip
+                            access={
+                              p.access === "admin" || !t
+                                ? p.access
+                                : t.role === "leader"
+                                  ? "leader"
+                                  : "member"
+                            }
+                          />
+                        )}
+                        {/* Account state is an admin concern — it's what the
+                            old People tab existed to show, and means nothing
+                            to anyone who can't fix it. */}
+                        {i === 0 && isAdmin && p.hasAuth === false && (
+                          <Chip tone="amber" title="No sign-in account — a placeholder left by a data import.">
+                            No account
+                          </Chip>
+                        )}
+                        {i === 0 && isAdmin && p.hasAuth && p.hasSignedIn === false && (
+                          <Chip tone="zinc">Never signed in</Chip>
+                        )}
+                        {/* Admins have the tracker already; the chip marks list grants. */}
+                        {i === 0 && isAdmin && p.feedbackAccess && p.access !== "admin" && !p.deactivated && (
+                          <Chip tone="blue" title="On the feedback tracker's access list.">
+                            Feedback
+                          </Chip>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </td>
                 <td className="break-all px-3 py-2 text-zinc-600 dark:text-zinc-400">
                   {p.email ?? <Blank />}
@@ -229,24 +303,39 @@ function Blank() {
   return <span className="text-zinc-400">—</span>;
 }
 
-function TeamChip({ name, href }: { name: string; href: string | null }) {
-  const label = name;
+/** One line of the Team cell: the team chip, plus the leader's remove
+ *  control. Its role shows on the same line of the Role access cell. */
+function TeamRow({
+  name,
+  href,
+  remove,
+}: {
+  name: string;
+  href: string | null;
+  remove: React.ReactNode;
+}) {
   const cls =
-    "rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
-  if (!href) {
-    return (
-      <span
-        className={cls}
-        title="You can see who is on this team, but not its data, until a leader adds you."
-      >
-        {label}
-      </span>
-    );
-  }
+    "block min-w-0 max-w-full truncate rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] leading-4 text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700";
   return (
-    <Link href={href} className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}>
-      {label}
-    </Link>
+    <div className={ROW_CLASS}>
+      {href ? (
+        <Link
+          href={href}
+          title={name}
+          className={`${cls} hover:bg-zinc-200 dark:hover:bg-zinc-700`}
+        >
+          {name}
+        </Link>
+      ) : (
+        <span
+          className={cls}
+          title={`${name} — you can see who is on this team, but not its data, until a leader adds you.`}
+        >
+          {name}
+        </span>
+      )}
+      {remove}
+    </div>
   );
 }
 

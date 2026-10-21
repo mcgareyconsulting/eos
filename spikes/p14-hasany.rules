@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// P14 spike (PERMISSIONS_BUILD_GRAPH D2). Standalone — NOT the app's
+// firestore.rules. Proves (or disproves) that ONE get() of the caller's
+// profile + hasAny() on users/{uid}.team_ids authorizes the live client query
+// shapes, with no per-team exists() unroll and so no 8-team cap.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // team_ids is an access grant now, so the owner may still write their own
+    // profile but never this field. (The app's rules today allow
+    // `write: if uid == request.auth.uid` -- that must be tightened like this
+    // in the same change that starts trusting team_ids.)
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && !('team_ids' in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['team_ids']);
+    }
+
+    // The exact rule text from the P14 brief.
+    match /rocks/{id} {
+      allow read: if resource.data.shared_team_ids.hasAny(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team_ids)
+        || resource.data.team_id in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team_ids;
+    }
+
+    // Defensive variant proposed for P2/P11: a helper (one get(), cached per
+    // request), .get() defaults so a doc without shared_team_ids or a profile
+    // without team_ids evaluates false instead of erroring.
+    function myTeamIds() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('team_ids', []);
+    }
+
+    match /rocks_safe/{id} {
+      allow read: if request.auth != null && (
+        resource.data.get('shared_team_ids', []).hasAny(myTeamIds())
+        || resource.data.team_id in myTeamIds()
+      );
+    }
+  }
+}

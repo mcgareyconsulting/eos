@@ -286,9 +286,21 @@ Three of the four levers originally declared here are optional and default OFF; 
 - Reserved IP
 - Managed SSL certificate
 
-This is a meaningfully larger, separate footprint beyond "flip a flag" and is deliberately out of scope for this pass. The policy resource is created standalone and ready to attach once an LB exists; it has no effect on traffic until then.
+The LB chain now lives in `load_balancer.tf` (`enable_load_balancer`); when both flags are on, this policy is attached to the LB's backend service automatically.
 
-**TODO:** Build `load_balancer.tf` (serverless NEG + LB chain) if/when the bank confirms they want Cloud Armor, then attach this policy to the LB's backend service.
+### Load Balancer (load_balancer.tf)
+
+- **Variables:** `enable_load_balancer` (default OFF), `custom_domain` (default `pulse.highplainsbank.com`).
+- **Cost:** ~$18–25/mo for the forwarding rules + per-GB data processing.
+- **Creates:** global static IP (`prevent_destroy`), serverless NEG → Cloud Run, backend service (request logging on), URL map, Google-managed cert, HTTPS proxy + :443 rule, and an :80 rule that only redirects to HTTPS.
+- **Does not change access:** Cloud Run ingress stays `INGRESS_TRAFFIC_ALL` and `allUsers` stays, so the `*.run.app` URL keeps working. Locking ingress to the LB, dropping `allUsers` and IAP are a separate step.
+
+Order of operations:
+
+1. Set `enable_load_balancer = true` in `terraform.tfvars`, `terraform apply`, read `terraform output lb_ip_address`.
+2. DNS admin (Hover) adds `A <host> → <ip>`. No Search Console / domain verification is needed for a managed cert.
+3. Wait for the cert: `gcloud compute ssl-certificates describe $(terraform output -raw lb_certificate_name) --global --format='value(managed.status,managed.domainStatus)'` → `ACTIVE`. Usually 15–60 min after DNS resolves.
+4. Cut the app over to the new host: add it to Firebase Auth authorized domains and the sign-in OAuth client's JavaScript origins; register `https://<host>/api/google/tasks/callback` on the Tasks OAuth client **first**, then set `google_oauth_redirect_uri` to it and apply.
 
 ### Lever 2: CMEK (Customer-Managed Encryption Keys)
 

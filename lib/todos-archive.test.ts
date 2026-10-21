@@ -6,13 +6,12 @@ import {
   selectHeadlinesDiscussedDuringMeeting,
   selectIssuesClosedBeforeWeek,
   selectIssuesClosedDuringMeeting,
-  selectRocksDoneBeforeWeek,
   selectTodosCompletedBeforeWeek,
   selectTodosClosedByMeetingEnd,
   pendingArchiveLabel,
-  type RockArchiveCandidate,
   type TodoArchiveCandidate,
 } from "./todos-archive";
+import { APP_TIME_ZONE } from "./time-zone";
 
 function ts(ms: number) {
   return { toMillis: () => ms };
@@ -327,57 +326,6 @@ describe("selectHeadlinesDiscussedBeforeWeek", () => {
   });
 });
 
-describe("selectRocksDoneBeforeWeek", () => {
-  const weekStart = Date.UTC(2026, 7, 3); // 2026-08-03
-
-  function rock(
-    over: Partial<RockArchiveCandidate> & { id: string },
-  ): RockArchiveCandidate {
-    return {
-      archived_at: null,
-      status: "done",
-      completed_at: null,
-      ...over,
-    };
-  }
-
-  test("archives done rocks completed before this week's Monday", () => {
-    const ids = selectRocksDoneBeforeWeek(
-      [
-        rock({ id: "last-week", completed_at: ts(weekStart - 86_400_000) }),
-        rock({ id: "this-week", completed_at: ts(weekStart + 3_600_000) }),
-        rock({ id: "open", status: "on_track", completed_at: null }),
-        rock({ id: "cancelled", status: "cancelled", completed_at: ts(weekStart - 1) }),
-      ],
-      weekStart,
-    );
-    assert.deepEqual(ids, ["last-week"]);
-  });
-
-  test("skips already-archived and done-without-completed_at", () => {
-    const ids = selectRocksDoneBeforeWeek(
-      [
-        rock({
-          id: "arch",
-          completed_at: ts(weekStart - 1),
-          archived_at: ts(weekStart - 1),
-        }),
-        rock({ id: "no-stamp", completed_at: null }),
-      ],
-      weekStart,
-    );
-    assert.deepEqual(ids, []);
-  });
-
-  test("returns nothing for a non-finite boundary", () => {
-    const ids = selectRocksDoneBeforeWeek(
-      [rock({ id: "x", completed_at: ts(0) })],
-      Number.NaN,
-    );
-    assert.deepEqual(ids, []);
-  });
-});
-
 describe("selectHeadlinesDiscussedDuringMeeting", () => {
   test("windowed discuss only", () => {
     const start = 10;
@@ -494,6 +442,106 @@ describe("mondayMidnightMsInTimeZone", () => {
     const ms = mondayMidnightMsInTimeZone("America/Chicago", now);
     assert.equal(ms, Date.UTC(2026, 9, 26, 5, 0, 0));
     const wall = chicagoWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /10\/26\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+});
+
+// The Monday sweep (functions/src/archive-stale-todos.ts) runs on the bank's
+// clock, APP_TIME_ZONE (Mountain). Same DST checks as above, one hour west.
+// Spring forward: Sun 2026-03-08 02:00 MST → 03:00 MDT (UTC-7 → UTC-6).
+// Fall back:      Sun 2026-11-01 02:00 MDT → 01:00 MST (UTC-6 → UTC-7).
+describe("mondayMidnightMsInTimeZone on the bank clock (APP_TIME_ZONE)", () => {
+  function denverWall(ms: number) {
+    return new Date(ms).toLocaleString("en-US", {
+      timeZone: "America/Denver",
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  }
+
+  test("the bank clock is Mountain time", () => {
+    assert.equal(APP_TIME_ZONE, "America/Denver");
+  });
+
+  test("mid-week instant → that week's Monday 00:00 MDT (06:00 UTC)", () => {
+    // Wednesday 2026-08-05 15:00 UTC = 09:00 MDT
+    const ms = mondayMidnightMsInTimeZone(
+      APP_TIME_ZONE,
+      new Date("2026-08-05T15:00:00.000Z"),
+    );
+    assert.equal(ms, Date.UTC(2026, 7, 3, 6, 0, 0));
+  });
+
+  test("Sunday 23:30 Mountain is still the prior week (Central is already Monday)", () => {
+    // Sun 2026-08-09 23:30 MDT = 2026-08-10T05:30Z = Mon 00:30 CDT.
+    const now = new Date("2026-08-10T05:30:00.000Z");
+    assert.equal(
+      mondayMidnightMsInTimeZone(APP_TIME_ZONE, now),
+      Date.UTC(2026, 7, 3, 6, 0, 0),
+    );
+    assert.equal(
+      mondayMidnightMsInTimeZone("America/Chicago", now),
+      Date.UTC(2026, 7, 10, 5, 0, 0),
+    );
+  });
+
+  test("spring-forward Monday: 00:00 Mountain is 06:00 UTC (MDT)", () => {
+    // Sweep fires Mon 2026-03-09 03:00 MDT = 09:00 UTC — first Monday on MDT.
+    const ms = mondayMidnightMsInTimeZone(
+      APP_TIME_ZONE,
+      new Date("2026-03-09T09:00:00.000Z"),
+    );
+    assert.equal(ms, Date.UTC(2026, 2, 9, 6, 0, 0));
+    const wall = denverWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /03\/09\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("walking back across spring-forward keeps Monday 00:00 MST (07:00 UTC)", () => {
+    // Sun 2026-03-08 20:00 MDT (after the jump) = 2026-03-09T02:00Z; its
+    // week's Monday (Mar 2) was still on MST.
+    const ms = mondayMidnightMsInTimeZone(
+      APP_TIME_ZONE,
+      new Date("2026-03-09T02:00:00.000Z"),
+    );
+    assert.equal(ms, Date.UTC(2026, 2, 2, 7, 0, 0));
+    const wall = denverWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /03\/02\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("fall-back Monday: 00:00 Mountain is 07:00 UTC (MST)", () => {
+    // Sweep fires Mon 2026-11-02 03:00 MST = 10:00 UTC — first Monday on MST.
+    const ms = mondayMidnightMsInTimeZone(
+      APP_TIME_ZONE,
+      new Date("2026-11-02T10:00:00.000Z"),
+    );
+    assert.equal(ms, Date.UTC(2026, 10, 2, 7, 0, 0));
+    const wall = denverWall(ms);
+    assert.match(wall, /Mon/);
+    assert.match(wall, /11\/02\/2026/);
+    assert.match(wall, /00:00:00/);
+  });
+
+  test("walking back across fall-back keeps Monday 00:00 MDT (06:00 UTC)", () => {
+    // Sun 2026-11-01 22:00 MST (after the fall-back) = 2026-11-02T05:00Z;
+    // its week's Monday (Oct 26) was still on MDT.
+    const ms = mondayMidnightMsInTimeZone(
+      APP_TIME_ZONE,
+      new Date("2026-11-02T05:00:00.000Z"),
+    );
+    assert.equal(ms, Date.UTC(2026, 9, 26, 6, 0, 0));
+    const wall = denverWall(ms);
     assert.match(wall, /Mon/);
     assert.match(wall, /10\/26\/2026/);
     assert.match(wall, /00:00:00/);

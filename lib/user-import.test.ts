@@ -372,6 +372,11 @@ describe("runUserImport", () => {
     const jane = db.raw("users/uid-jane");
     assert.equal(jane?.display_name, "Jane Doe");
     assert.equal(jane?.email, "jane@bank.com");
+    // P14: the profile carries the team list the rules check with hasAny().
+    const leadershipId = db
+      .docsIn("teams")
+      .find((t) => t.data.name === "Leadership")?.id;
+    assert.deepEqual(jane?.team_ids, [leadershipId]);
 
     // Role access never becomes a *team* role — admin or not, every seeded
     // membership is a plain member. Leadership stays a manual promotion.

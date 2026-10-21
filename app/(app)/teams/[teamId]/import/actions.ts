@@ -129,8 +129,8 @@ export async function importTeamFile(
 ): Promise<ImportActionResult> {
   try {
     // Leader-or-admin, matching getImportableTeams: imports bulk-write team
-    // data and (via createOwners) roster rows, which members must not do.
-    const { db } = await requireTeamLeader(teamId);
+    // data and (admin-only createOwners) roster rows.
+    const { db, isAdmin, uid: actorUid } = await requireTeamLeader(teamId);
     const members = await getTeamMembers(teamId);
 
     const kindRaw = String(formData.get("kind") ?? "");
@@ -149,7 +149,9 @@ export async function importTeamFile(
     validateFilename(file.name);
 
     const dryRun = formData.get("dryRun") !== "0";
-    const createOwners = formData.get("createOwners") === "1";
+    // Placeholder people are an admin-only act (spec 2.1/2.4): a leader's
+    // flag is ignored, never trusted.
+    const createOwners = isAdmin && formData.get("createOwners") === "1";
     const includeArchived = formData.get("includeArchived") === "1";
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
     const rockTeam = String(formData.get("rockTeam") ?? "").trim() || undefined;
@@ -237,6 +239,7 @@ export async function importTeamFile(
 
     const report = await runTeamImport(db, teamId, inputs, {
       dryRun,
+      actorUid,
       createOwners,
       fallbackOwnerId,
       includeArchived,

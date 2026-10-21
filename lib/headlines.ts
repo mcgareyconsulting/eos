@@ -61,6 +61,27 @@ export function isArchivedHeadline(h: { archived_at?: unknown }): boolean {
   return h.archived_at != null;
 }
 
+/**
+ * Who a headline is shown as belonging to. A deactivated person's headlines
+ * are flagged `owner_unassigned` (spec 2.6) while `created_by` stays put for
+ * history, so the flag wins over the creator's name.
+ */
+export function headlineCreatorLabel(
+  h: {
+    created_by?: string | null;
+    owner_unassigned?: boolean | null;
+    source_owner_name?: string | null;
+    from_label?: string | null;
+  },
+  viewerUid: string,
+  nameOf: (uid: string) => string | null | undefined,
+): string {
+  if (h.owner_unassigned === true) return "Unassigned";
+  if (h.created_by === viewerUid) return "You";
+  if (h.created_by) return nameOf(h.created_by) ?? "—";
+  return h.source_owner_name || h.from_label || "—";
+}
+
 export function groupByOwner<T>(
   headlines: T[],
   getOwnerName: (h: T) => string,

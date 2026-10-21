@@ -1,15 +1,18 @@
 export function AdminHeader({
   title,
   blurb,
+  eyebrow = "Org admin",
 }: {
   title: string;
   blurb: string;
+  /** The small label above the title; "Org admin" unless the page is gated otherwise. */
+  eyebrow?: string;
 }) {
   return (
     <header>
       <div className="flex items-center gap-2 text-hpb-blue dark:text-hpb-gold">
         <span className="text-xs font-semibold uppercase tracking-wide">
-          Org admin
+          {eyebrow}
         </span>
       </div>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">

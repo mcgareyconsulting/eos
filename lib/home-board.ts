@@ -3,6 +3,11 @@
 
 import { isMilestoneHiddenByRock } from "@/lib/milestone-visibility";
 import { rockBucket, type BucketableRock } from "@/lib/rock-bucket";
+import {
+  audienceTeamIdsOf,
+  audienceUserIdsOf,
+  type RockView,
+} from "@/lib/access/rock";
 
 /** Shared (non-owner) rock: Company or Team. Same rule as Rocks / L10. */
 function isSharedRock(r: BucketableRock): boolean {
@@ -25,8 +30,13 @@ export type HomeRockLike = {
   is_company_rock?: boolean | null;
   status?: string | null;
   archived_at?: unknown | null;
-  /** Guest teams this rock is shared into (may be missing on older docs). */
+  /** Audience (lib/access/rock.ts); legacy `shared_team_ids` / `team_only`
+   *  are read as fallbacks. */
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  private?: boolean | null;
   shared_team_ids?: string[] | null;
+  team_only?: boolean | null;
 };
 
 export type HomeMilestoneLike = {
@@ -93,18 +103,18 @@ export function rockHasMyOpenMilestone(
 }
 
 /**
- * Whether a rock belongs on My Home Rocks column.
+ * Whether a rock belongs on My Home Rocks column (spec §4: Home shows the
+ * full rocks the person can see that concern them, and every item they own).
  *
- * Include if:
- *  - team/department rock on a team I'm on, or
+ * With the full rock (`fullAccess`, lib/access/rock.ts — parent team,
+ * audience, admin), include if:
  *  - I own it, or
- *  - shared into one of my teams, or
- *  - I have an open milestone on it (even if someone else owns the rock)
- *
- * Active statuses only when the rock is "listed" as a normal active rock;
- * milestone-driven inclusion may still surface a rock that was fetched by id
- * — callers should only pass candidates they want considered, and hide
- * done/cancelled/archived via `isHomeRockActive` first.
+ *  - team/department rock on a team I'm on, or
+ *  - one of my teams, or I myself, is in its audience.
+ * Without it, only an open milestone of mine brings it in — and then Home
+ * shows just the headline and my milestones (`homeMilestonesFor`).
+ * A private rock has no audience, and its assignees are all on the parent
+ * team, so it never reaches the Home of anyone off that team.
  */
 export function shouldShowHomeRock(
   rock: HomeRockLike,
@@ -112,21 +122,37 @@ export function shouldShowHomeRock(
     uid: string;
     myTeamIds: Set<string>;
     hasMyOpenMilestone: boolean;
+    fullAccess: boolean;
   },
 ): boolean {
   if (!isHomeRockActive(rock)) return false;
+  if (opts.hasMyOpenMilestone) return true;
+  if (!opts.fullAccess) return false;
 
   if (rock.owner_id === opts.uid) return true;
 
   const onMyTeam = opts.myTeamIds.has(rock.team_id);
   if (onMyTeam && isSharedRock(rock)) return true;
 
-  const shared = rock.shared_team_ids ?? [];
-  if (shared.some((id) => opts.myTeamIds.has(id))) return true;
+  const subject = { ...rock, owner_id: rock.owner_id ?? null };
+  if (audienceTeamIdsOf(subject).some((id) => opts.myTeamIds.has(id))) {
+    return true;
+  }
+  return audienceUserIdsOf(subject).includes(opts.uid);
+}
 
-  if (opts.hasMyOpenMilestone) return true;
-
-  return false;
+/**
+ * The milestones Home lists under a rock: all of them for the full rock,
+ * only the viewer's own for a headline view (spec §3.3), none otherwise.
+ */
+export function homeMilestonesFor<T extends { owner_id: string | null }>(
+  view: RockView,
+  milestones: T[],
+  uid: string,
+): T[] {
+  if (view === "full") return milestones;
+  if (view === "headline") return milestones.filter((m) => m.owner_id === uid);
+  return [];
 }
 
 /** Active rocks only — no done / cancelled / archived. */

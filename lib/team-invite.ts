@@ -7,6 +7,8 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
 import { isEmailAllowed, parseAllowlist } from "@/lib/auth-allowlist";
+import { stamp } from "@/lib/audit-stamp";
+import { syncUserTeamIds } from "@/lib/firebase/membership";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -40,6 +42,19 @@ export async function ensureAuthUser(
   return created.uid;
 }
 
+function profileFillFields(
+  existing: Record<string, unknown>,
+  incoming: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    const cur = existing[k];
+    const blank = typeof cur !== "string" || cur.trim() === "";
+    if (blank && v) out[k] = v;
+  }
+  return out;
+}
+
 export async function writeMembership(
   db: Firestore,
   opts: {
@@ -49,6 +64,8 @@ export async function writeMembership(
     firstName: string;
     lastName: string;
     email: string;
+    /** Who is adding them - stamped for the audit log (C-07). */
+    actorUid: string;
   },
 ): Promise<void> {
   const fullName = `${opts.firstName} ${opts.lastName}`.trim();
@@ -60,25 +77,31 @@ export async function writeMembership(
     throw new Error("That person is already on this team");
   }
 
+  // Never overwrite an existing profile: a leader/admin adding someone to a
+  // team must not rename them org-wide. Only fill fields that are blank.
+  const userRef = db.collection("users").doc(opts.userId);
+  const existing = (await userRef.get()).data() ?? {};
+  const profile = profileFillFields(existing, {
+    display_name: fullName,
+    first_name: opts.firstName,
+    last_name: opts.lastName,
+    email: opts.email,
+  });
+
   const batch = db.batch();
 
-  batch.set(
-    db.collection("users").doc(opts.userId),
-    {
-      display_name: fullName,
-      first_name: opts.firstName,
-      last_name: opts.lastName,
-      email: opts.email,
-    },
-    { merge: true },
-  );
+  if (Object.keys(profile).length > 0) {
+    batch.set(userRef, { ...profile, ...stamp(opts.actorUid) }, { merge: true });
+  }
 
   batch.set(memberRef, {
     team_id: opts.teamId,
     user_id: opts.userId,
     role: opts.role,
     created_at: FieldValue.serverTimestamp(),
+    ...stamp(opts.actorUid),
   });
 
   await batch.commit();
+  await syncUserTeamIds(db, opts.userId, opts.actorUid);
 }

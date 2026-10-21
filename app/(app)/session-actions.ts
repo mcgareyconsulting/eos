@@ -4,7 +4,7 @@ import { renewSession } from "@/lib/firebase/session";
 
 /**
  * Sliding-session renewal (C-05): the browser posts a fresh Firebase ID token
- * once the session is past its half-life, and gets a new 12-hour cookie. See
+ * once the session is past its half-life, and gets a new 25-hour cookie. See
  * lib/firebase/session.ts. `renewed: false` means nothing needed doing.
  */
 export async function renewSessionAction(

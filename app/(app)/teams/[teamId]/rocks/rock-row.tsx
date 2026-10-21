@@ -6,13 +6,18 @@ import { ConfirmSubmitForm } from "@/components/confirm-submit-form";
 import { cn } from "@/lib/utils";
 import { RichText } from "@/components/rich-text";
 import { hasRichMarkup } from "@/lib/rich-text";
-import { formatDateOnly, relativeDueLabel } from "@/lib/dates";
+import {
+  dueDateShort,
+  formatDateOnly,
+  relativeDueLabel,
+} from "@/lib/dates";
+import type { RockHeadline } from "@/lib/access/rock";
 import { StatusPill, StatusPopover } from "./status-popover";
-import { canSetRockStatus, type RockAccess } from "@/lib/rocks-share";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
 import { deleteRock, setRockArchived } from "./actions";
 import { dueToneClass } from "@/lib/due";
+import { useTimeZone } from "@/components/time-zone-provider";
 import { Fact } from "./fact";
 import {
   isCompanyRock,
@@ -25,9 +30,9 @@ import { STATUS_BAR, isRockStatus, type RockStatus } from "./status";
 import {
   MilestoneChecklist,
   MilestoneProgress,
-  OnlyYouTag,
   type MilestoneSerialized,
 } from "./milestone-checklist";
+import { TodoCheckbox } from "../todos/todo-row";
 import { type StatusUpdateSerialized } from "./status-history";
 
 type Rock = {
@@ -41,20 +46,27 @@ type Rock = {
   description: string | null;
   rock_type: string | null;
   is_company_rock?: boolean | null;
-  shared_team_ids?: string[] | null;
-  team_only?: boolean | null;
+  audience_team_ids?: string[] | null;
+  audience_user_ids?: string[] | null;
+  private?: boolean | null;
   archived_at?: unknown | null;
+  assigned_by?: string | null;
+  created_by?: string | null;
+  follower_ids?: string[] | null;
 };
 
 type Member = { user_id: string; full_name: string };
 type ShareTeam = { id: string; name: string };
 
 /**
- * Collapsed row: status rail + pill, owner · quarter · milestone progress,
- * due date with relative label. Expanded panel indented under the title.
+ * A full rock (spec §3.3): the parent team's own, or one with this team in
+ * its audience. Collapsed row: status rail + pill, owner · quarter ·
+ * milestone progress, due date with relative label. Expanded panel
+ * indented under the title.
  */
 export function RockRow({
   teamId,
+  viewTeamId,
   userId,
   rock,
   ownerName,
@@ -66,16 +78,20 @@ export function RockRow({
   teamName,
   shareTeams = [],
   canFlagCompany = false,
-  access = "edit",
+  canEdit = true,
+  canDelete = canEdit,
+  canManageAudience = false,
   fromTeamName,
-  carrierView = false,
-  viewerOnly = false,
-  fullMilestones,
 }: {
+  /** The rock's PARENT team — every rock action runs against it. */
   teamId: string;
+  /** The page's team, which the viewer is on: ticks and the thread run
+   *  from here (an audience member may not be on the parent team). */
+  viewTeamId?: string;
   userId: string;
   rock: Rock;
   ownerName: string;
+  /** The parent team's roster (the rock owner must be on it). */
   members: Member[];
   milestones: MilestoneSerialized[];
   defaultDue: string;
@@ -85,62 +101,32 @@ export function RockRow({
   shareTeams?: ShareTeam[];
   /** Org admin — may set the Company flag in the edit modal. */
   canFlagCompany?: boolean;
+  /** Edit, status, milestones (rockAccess.canEdit): parent team + audience. */
+  canEdit?: boolean;
+  /** Archive and delete (rockAccess.canDelete): parent team only. */
+  canDelete?: boolean;
+  /** Audience and Private (rockAccess.canChangeAudience): leaders + admins. */
+  canManageAudience?: boolean;
   /**
-   * What the viewer may do with this rock (lib/rocks-share.ts
-   * `rockAccessFor`). At "edit" on a shared-in rock the caller passes the
-   * PARENT team as `teamId` / `members` / `teamName` / `shareTeams`, so every
-   * action and the modal run against the team the rock lives on.
-   */
-  access?: RockAccess;
-  /**
-   * Parent team name when the rock is rendering on a team it was shared
-   * into. Shown as a chip at every access tier — a parent-team member
-   * presenting a guest team's L10 sees more than the room does, and the chip
-   * is what says so.
+   * Parent team name when the rock is rendering on a team in its audience.
+   * Shown as a chip — the rock lives elsewhere.
    */
   fromTeamName?: string;
-  /**
-   * An assignment row (lib/rocks-share.ts assignmentCarriers): the team sees
-   * the rock only through one of its people's milestones. `milestones` is
-   * that person's; progress is hidden — it belongs to full views.
-   */
-  carrierView?: boolean;
-  /** An assignment row that exists only for the viewer — their locked
-   *  milestones; the rest of the team doesn't see it. Greyed. */
-  viewerOnly?: boolean;
-  /** The whole rock's milestones, when the viewer has it in full — used by
-   *  the detail and edit views of an assignment row. */
-  fullMilestones?: MilestoneSerialized[];
 }) {
   const [expanded, setExpanded] = useState(false);
-
-  const canEdit = access === "edit";
-  // Status: full access, or the rock's own person owner moving it from a
-  // guest team (server gate: requireStatusWritableRock in actions.ts). The
-  // single-team check is kept as a floor for callers that render without a
-  // viewer membership list.
-  const canSetStatus =
-    access !== "read" ||
-    canSetRockStatus(
-      {
-        team_id: rock.team_id ?? teamId,
-        owner_id: rock.owner_id,
-        shared_team_ids: rock.shared_team_ids,
-      },
-      teamId,
-      currentUserId,
-    );
+  const timeZone = useTimeZone();
+  const now = new Date();
+  const actTeamId = viewTeamId ?? teamId;
 
   const status: RockStatus = isRockStatus(rock.status) ? rock.status : "on_track";
   // Kind pills are a set, not one-of: a rock can be Company and Team at once
-  // (lib/rock-bucket.ts). Individual is the absence of both and gets its own
-  // quiet pill so every row still carries exactly one-or-more kind marks.
+  // (lib/rock-bucket.ts). Individual is the absence of both and carries no
+  // pill — the owner's name already says it (Daniel, 2026-10-14).
   const pills: RockType[] = [];
   if (isCompanyRock(rock)) pills.push("company");
   if (isTeamRock(rock)) pills.push("department");
-  if (pills.length === 0) pills.push("individual");
-  // Always prefer person name; legacy null owner shows as em dash.
-  const displayOwner = ownerName || "—";
+  // Always prefer person name; a null owner (deactivated person) reads Unassigned.
+  const displayOwner = ownerName || "Unassigned";
   const doneCount = milestones.filter((m) => m.completed).length;
   const hasDescription = !!rock.description?.trim();
   const latestNote = statusHistory.find((u) => u.comment?.trim());
@@ -148,13 +134,12 @@ export function RockRow({
   const archivedRow = rock.archived_at != null;
   const toggleArchive = setRockArchived.bind(null, teamId, rock.id, !archivedRow);
 
-  // Detail and edit show the whole rock to anyone who has it in full.
-  const wholeRock = fullMilestones ?? milestones;
-  const detailMilestones = wholeRock.map((m) => ({
+  const detailMilestones = milestones.map((m) => ({
     id: m.id,
     title: m.title,
     due_date: m.due_date,
     completed: m.completed,
+    description: m.description,
     owner_name: m.owner_id
       ? (m.owner_label ??
         members.find((x) => x.user_id === m.owner_id)?.full_name ??
@@ -162,15 +147,24 @@ export function RockRow({
       : null,
   }));
 
+  const modalProps = {
+    teamId,
+    rock,
+    members,
+    milestones,
+    defaultDue,
+    currentUserId,
+    teamName,
+    shareTeams,
+    canFlagCompany,
+    canManageAudience,
+  };
+
   return (
-    <div
-      className={cn("group flex items-stretch", viewerOnly && "bg-zinc-50/70 dark:bg-zinc-900/40")}
-    >
+    <div className="group flex items-stretch">
       <div className={cn("w-[3px] shrink-0", STATUS_BAR[status])} aria-hidden />
 
-      <div
-        className={cn("min-w-0 flex-1 py-2.5 pl-3 pr-4", viewerOnly && "opacity-70")}
-      >
+      <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -187,7 +181,8 @@ export function RockRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <RockDetailTrigger
-                teamId={teamId}
+                deepLink
+                teamId={actTeamId}
                 userId={userId}
                 members={members}
                 rock={rock}
@@ -211,19 +206,14 @@ export function RockRow({
                   {ROCK_TYPE_LABELS[p]}
                 </span>
               ))}
-              {fromTeamName ? (
-                <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
-                  from {fromTeamName}
-                </span>
-              ) : null}
-              {viewerOnly ? <OnlyYouTag /> : null}
+              {fromTeamName ? <FromTeamChip name={fromTeamName} /> : null}
             </div>
 
             <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
               <span className="truncate">{displayOwner}</span>
               <span className="text-zinc-300 dark:text-zinc-600">·</span>
               <span className="tabular-nums">{rock.quarter || "—"}</span>
-              {milestones.length > 0 && !carrierView ? (
+              {milestones.length > 0 ? (
                 <>
                   <span className="text-zinc-300 dark:text-zinc-600">·</span>
                   <MilestoneProgress
@@ -245,19 +235,23 @@ export function RockRow({
                 dueToneClass(
                   rock.due_date,
                   status === "done" || status === "cancelled",
+                  now,
+                  undefined,
+                  timeZone,
                 ),
               )}
             >
               {relativeDueLabel(
                 rock.due_date,
-                new Date(),
+                now,
                 status === "done" || status === "cancelled",
+                timeZone,
               )}
             </div>
           </div>
 
           <div className="flex w-28 shrink-0 justify-end">
-            {canSetStatus ? (
+            {canEdit ? (
               <StatusPopover teamId={teamId} rockId={rock.id} status={rock.status} />
             ) : (
               <StatusPill status={rock.status} />
@@ -269,44 +263,38 @@ export function RockRow({
               otherwise the status pill slides right into this space. Three
               23px icon buttons (a 15px icon + p-1) with gap-0.5 between. */}
           <div className="flex w-[73px] shrink-0 items-center justify-end gap-0.5">
-            {!canEdit ? null : (
-              <>
-            <EditRockButton
-              teamId={teamId}
-              rock={rock}
-              members={members}
-              milestones={wholeRock}
-              defaultDue={defaultDue}
-              currentUserId={currentUserId}
-              teamName={teamName}
-              shareTeams={shareTeams}
-              canFlagCompany={canFlagCompany}
-              className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
-            />
-            <form action={toggleArchive}>
-              <button
-                type="submit"
-                aria-label={archivedRow ? "Restore rock" : "Archive rock"}
-                title={archivedRow ? "Restore" : "Archive now"}
-                className="rounded p-1 text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
-              >
-                <Archive className="h-[15px] w-[15px]" />
-              </button>
-            </form>
-            {!archivedRow && (
-              <ConfirmSubmitForm
-                action={remove}
-                confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
-              >
-                <button
-                  type="submit"
-                  aria-label="Delete rock"
-                  className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
-                >
-                  <Trash2 className="h-[15px] w-[15px]" />
-                </button>
-              </ConfirmSubmitForm>
+            {canEdit && (
+              <EditRockButton
+                {...modalProps}
+                className="text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
+              />
             )}
+            {canDelete && (
+              <>
+                <form action={toggleArchive}>
+                  <button
+                    type="submit"
+                    aria-label={archivedRow ? "Restore rock" : "Archive rock"}
+                    title={archivedRow ? "Restore" : "Archive now"}
+                    className="rounded p-1 text-zinc-300 opacity-0 hover:text-zinc-700 group-hover:opacity-100 dark:text-zinc-600 dark:hover:text-zinc-200"
+                  >
+                    <Archive className="h-[15px] w-[15px]" />
+                  </button>
+                </form>
+                {!archivedRow && (
+                  <ConfirmSubmitForm
+                    action={remove}
+                    confirmMessage="Delete this rock? This will also delete its milestones and comments. This can't be undone."
+                  >
+                    <button
+                      type="submit"
+                      aria-label="Delete rock"
+                      className="rounded p-1 text-zinc-300 opacity-0 hover:text-red-600 group-hover:opacity-100 dark:text-zinc-600"
+                    >
+                      <Trash2 className="h-[15px] w-[15px]" />
+                    </button>
+                  </ConfirmSubmitForm>
+                )}
               </>
             )}
           </div>
@@ -324,22 +312,27 @@ export function RockRow({
                 <span
                   className={cn(
                     "font-normal",
-                    dueToneClass(rock.due_date, status === "done"),
+                    dueToneClass(
+                      rock.due_date,
+                      status === "done",
+                      now,
+                      undefined,
+                      timeZone,
+                    ),
                   )}
                 >
                   {relativeDueLabel(
                     rock.due_date,
-                    new Date(),
+                    now,
                     status === "done",
+                    timeZone,
                   )}
                 </span>
               </Fact>
               <Fact label="Milestones" last>
-                {carrierView
-                  ? `${milestones.length} assigned here`
-                  : milestones.length === 0
-                    ? "None"
-                    : `${doneCount} of ${milestones.length} done`}
+                {milestones.length === 0
+                  ? "None"
+                  : `${doneCount} of ${milestones.length} done`}
               </Fact>
             </dl>
 
@@ -373,30 +366,18 @@ export function RockRow({
               )}
 
               <MilestoneChecklist
-                teamId={teamId}
+                teamId={actTeamId}
                 members={members}
                 milestones={milestones}
                 readOnly={!canEdit}
                 currentUserId={currentUserId}
-                rockOwnerId={rock.owner_id}
+                userId={userId}
               />
 
               <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
-                {!canEdit ? null : (
-                <AddMilestoneLink
-                  teamId={teamId}
-                  rock={rock}
-                  members={members}
-                  milestones={wholeRock}
-                  defaultDue={defaultDue}
-                  currentUserId={currentUserId}
-                  teamName={teamName}
-                  shareTeams={shareTeams}
-                  canFlagCompany={canFlagCompany}
-                />
-                )}
+                {canEdit && <AddMilestoneLink {...modalProps} />}
                 <RockDetailTrigger
-                  teamId={teamId}
+                  teamId={actTeamId}
                   userId={userId}
                   members={members}
                   rock={rock}
@@ -407,10 +388,169 @@ export function RockRow({
                   sourceTeamName={fromTeamName}
                   className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                 >
-                  Full detail &amp; status history →
+                  Full detail &amp; activity →
                 </RockDetailTrigger>
               </div>
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FromTeamChip({ name }: { name: string }) {
+  return (
+    <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+      from {name}
+    </span>
+  );
+}
+
+/**
+ * One entry in a member's block (spec §4): a milestone they own on another
+ * team's rock. Shows ONLY the rock's headline (title, owner, team) and the
+ * milestone(s) — no status, due date, description or thread, and no way in
+ * to the rock. Read-only; the milestone's own assignee may tick it.
+ *
+ * Same shell as RockRow (rail, chevron, title line, owner line, fixed-width
+ * columns) so a block sits in a section without looking like a different
+ * kind of thing; what differs is behaviour, not style. The rail is neutral
+ * and the due/status/actions slots stay empty because the headline carries
+ * none of that. Collapsed by default, like every other row.
+ */
+export function RockBlockRow({
+  viewTeamId,
+  headline,
+  ownerName,
+  fromTeamName,
+  milestones,
+  currentUserId,
+}: {
+  /** The page's team — the assignee's tick runs from here. */
+  viewTeamId: string;
+  headline: RockHeadline;
+  ownerName: string;
+  fromTeamName: string;
+  milestones: MilestoneSerialized[];
+  currentUserId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const timeZone = useTimeZone();
+  const now = new Date();
+  const displayOwner = ownerName || "Unassigned";
+
+  return (
+    <div className="group flex items-stretch">
+      <div className="w-[3px] shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
+
+      <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse milestones" : "Expand milestones"}
+            className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <ChevronRight
+              className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")}
+            />
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold">
+                {headline.title}
+              </span>
+              <FromTeamChip name={fromTeamName} />
+            </div>
+
+            <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+              <span className="truncate">{displayOwner}</span>
+              {milestones.length > 0 ? (
+                <>
+                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                  <MilestoneProgress
+                    milestones={milestones}
+                    barClass="bg-zinc-400 dark:bg-zinc-500"
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Empty twins of RockRow's due, status and action slots: the
+              headline has none of these, but the title and owner columns
+              must line up with the full rocks around it. */}
+          <div className="w-24 shrink-0" aria-hidden />
+          <div className="w-28 shrink-0" aria-hidden />
+          <div className="w-[73px] shrink-0" aria-hidden />
+        </div>
+
+        {expanded && (
+          <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
+            <ul className="px-1.5 py-1.5">
+              {milestones.map((m) => {
+                const mine = m.owner_id === currentUserId;
+                return (
+                  <li key={m.id}>
+                    <label
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
+                        mine && "cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-800",
+                      )}
+                    >
+                      {mine ? (
+                        <TodoCheckbox
+                          teamId={viewTeamId}
+                          todoId={m.id}
+                          completed={m.completed}
+                          appearance="milestone"
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 shrink-0 rounded-sm border",
+                            m.completed
+                              ? "border-hpb-green bg-hpb-green"
+                              : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+                          )}
+                          aria-hidden
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[13px]",
+                          m.completed
+                            ? "text-zinc-400 dark:text-zinc-500"
+                            : "font-medium text-zinc-800 dark:text-zinc-200",
+                        )}
+                      >
+                        {m.title}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-zinc-400">
+                        {m.owner_label ?? (m.owner_id ? "—" : "Unassigned")}
+                      </span>
+                      <span
+                        className={cn(
+                          "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
+                          dueToneClass(
+                            m.due_date,
+                            m.completed,
+                            now,
+                            undefined,
+                            timeZone,
+                          ),
+                        )}
+                      >
+                        {dueDateShort(m.due_date, m.completed, now, timeZone)}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>
@@ -429,6 +569,7 @@ function AddMilestoneLink(props: {
   teamName?: string;
   shareTeams?: ShareTeam[];
   canFlagCompany?: boolean;
+  canManageAudience?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (

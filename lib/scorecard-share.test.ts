@@ -1,8 +1,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
-  MAX_METRIC_SHARES,
   addShare,
+  inCatalogFor,
+  isPublicMetric,
+  privateTransition,
   canArchiveMetric,
   canDeleteMetric,
   canEditMetricValues,
@@ -161,42 +163,53 @@ describe("canArchiveMetric / canDeleteMetric", () => {
   }
 });
 
-describe("addShare", () => {
-  test("appends a new team", () => {
-    const r = addShare({ team_id: "leadership", shared_team_ids: ["it"] }, "ops");
+describe("addShare (track)", () => {
+  const pub = { team_id: "leadership", is_public: true, shared_team_ids: ["it", "esd"] };
+
+  test("appends a new team to a public metric", () => {
+    const r = addShare({ team_id: "leadership", is_public: true, shared_team_ids: ["it"] }, "ops");
     assert.deepEqual(r, { ok: true, shared_team_ids: ["it", "ops"] });
   });
 
-  test("idempotent for a team already sharing", () => {
-    const r = addShare(home, "it");
-    assert.deepEqual(r, { ok: true, shared_team_ids: ["it", "esd"] });
+  test("idempotent for a team already tracking", () => {
+    assert.deepEqual(addShare(pub, "it"), { ok: true, shared_team_ids: ["it", "esd"] });
   });
 
   test("refuses the home team", () => {
-    const r = addShare(home, "leadership");
-    assert.equal(r.ok, false);
+    assert.equal(addShare(pub, "leadership").ok, false);
   });
 
-  test("treats a missing list as empty", () => {
+  test("refuses a private metric (missing flag counts as private)", () => {
     const r = addShare({ team_id: "leadership" }, "it");
-    assert.deepEqual(r, { ok: true, shared_team_ids: ["it"] });
-  });
-
-  // firestore.rules unrolls the membership check index by index. A ninth share
-  // would be written happily by the Admin SDK and then be invisible to the
-  // client listener, so the cap is refused here rather than half-applied.
-  test("refuses past the rules cap", () => {
-    const full = Array.from({ length: MAX_METRIC_SHARES }, (_, i) => `t${i}`);
-    const r = addShare({ team_id: "leadership", shared_team_ids: full }, "one-too-many");
     assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.error, /at most/);
+    if (!r.ok) assert.match(r.error, /private/);
+    assert.equal(addShare({ team_id: "leadership", is_public: false }, "it").ok, false);
   });
 
-  test("a team already in a full list is still accepted", () => {
-    const full = Array.from({ length: MAX_METRIC_SHARES }, (_, i) => `t${i}`);
-    const r = addShare({ team_id: "leadership", shared_team_ids: full }, "t0");
+  test("no cap on tracking teams", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `t${i}`);
+    const r = addShare({ team_id: "leadership", is_public: true, shared_team_ids: many }, "extra");
     assert.equal(r.ok, true);
+    if (r.ok) assert.equal(r.shared_team_ids.length, 21);
   });
+});
+
+describe("canArchiveMetric / canDeleteMetric — home leader", () => {
+  const owned = { ...home, owner_id: "brian" };
+  for (const fn of [canArchiveMetric, canDeleteMetric]) {
+    test("a leader of the home team may even when not the owner", () => {
+      assert.equal(
+        fn({ metric: owned, teamId: "leadership", uid: "jenna", isAdmin: false, isLeader: true }),
+        true,
+      );
+    });
+    test("a leader does not carry over to a tracking team", () => {
+      assert.equal(
+        fn({ metric: owned, teamId: "it", uid: "jenna", isAdmin: false, isLeader: true }),
+        false,
+      );
+    });
+  }
 });
 
 describe("removeShare", () => {
@@ -272,5 +285,47 @@ describe("canEditMetricValues — archived", () => {
       }),
       false,
     );
+  });
+});
+
+describe("inCatalogFor (catalog filter)", () => {
+  const priv = { team_id: "leadership" };
+  const pub = { team_id: "leadership", is_public: true };
+
+  test("public metrics are listed for any team", () => {
+    assert.equal(inCatalogFor(pub, "it", false), true);
+  });
+  test("another team's private metric is hidden", () => {
+    assert.equal(inCatalogFor(priv, "it", false), false);
+    assert.equal(inCatalogFor({ ...priv, is_public: false }, "it", false), false);
+  });
+  test("the asking team's own private metric is listed", () => {
+    assert.equal(inCatalogFor(priv, "leadership", false), true);
+  });
+  test("admins see everything", () => {
+    assert.equal(inCatalogFor(priv, "it", true), true);
+  });
+  test("isPublicMetric is strictly true", () => {
+    assert.equal(isPublicMetric({ team_id: "x", is_public: null }), false);
+    assert.equal(isPublicMetric(pub), true);
+  });
+});
+
+describe("privateTransition", () => {
+  test("clears tracking and returns the teams that lost it", () => {
+    const r = privateTransition({
+      team_id: "leadership",
+      is_public: true,
+      shared_team_ids: ["it", "esd", "leadership"],
+    });
+    assert.deepEqual(r.removedTeamIds, ["it", "esd"]);
+    assert.deepEqual(r.patch, {
+      is_public: false,
+      shared_team_ids: [],
+      shared_groups: {},
+    });
+  });
+  test("nothing tracking means nothing removed", () => {
+    assert.deepEqual(privateTransition({ team_id: "a" }).removedTeamIds, []);
   });
 });

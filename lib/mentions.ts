@@ -12,7 +12,78 @@
 // Everything here is pure so the caret arithmetic and the matching rule can
 // be unit-tested without a textarea or a Firestore.
 
-export type MentionCandidate = { id: string; name: string };
+export type MentionCandidate = {
+  id: string;
+  name: string;
+  /**
+   * Shown greyed and not pickable: the person cannot see the item, and a
+   * mention never grants access (spec §5.2).
+   */
+  disabled?: boolean;
+};
+
+/** The note shown beside a person who cannot see the item. */
+export const CANNOT_SEE_NOTE = "Cannot see this item.";
+
+/** A person who might be mentioned, and whether they can see the item. */
+export type MentionPerson = { id: string; name: string; canSee: boolean };
+
+/** Picker candidates for a thread: everyone, the people who cannot see it greyed. */
+export function candidatesFromPeople(
+  people: readonly MentionPerson[],
+): MentionCandidate[] {
+  // One row per name: the server resolves a shared name to whoever can see
+  // the item (resolveMentions), so the picker shows it once, greyed only
+  // when nobody behind it can.
+  const byName = new Map<string, MentionCandidate>();
+  for (const p of people) {
+    const key = p.name.trim().toLowerCase();
+    const prev = byName.get(key);
+    if (!prev) byName.set(key, { id: p.id, name: p.name, disabled: !p.canSee });
+    else if (prev.disabled && p.canSee) byName.set(key, { id: p.id, name: p.name, disabled: false });
+  }
+  return [...byName.values()];
+}
+
+/**
+ * Splits the mentions in `body` into who may be mentioned and who may not
+ * (spec §5.2). The server refuses a comment whose `blocked` list is not
+ * empty rather than dropping the names silently.
+ */
+export function resolveMentions(
+  body: string,
+  people: readonly MentionPerson[],
+): { ids: string[]; blocked: MentionPerson[] } {
+  const all = new Set(mentionedIds(body, people));
+  // A name can belong to more than one directory entry: a seed-import
+  // placeholder beside the real account, or an account that signed in
+  // before it was invited beside its profile. The text names a person, not
+  // a uid, so a name resolves to the entries that can see the item and is
+  // refused only when none of them can (2026-10-14: "@Joe Creighton" on his
+  // own to-do was refused because a second, teamless Joe matched too).
+  const byName = new Map<string, MentionPerson[]>();
+  for (const p of people) {
+    if (!all.has(p.id)) continue;
+    const key = p.name.trim().toLowerCase();
+    const list = byName.get(key) ?? [];
+    list.push(p);
+    byName.set(key, list);
+  }
+  const ids: string[] = [];
+  const blocked: MentionPerson[] = [];
+  for (const group of byName.values()) {
+    const seeing = group.filter((p) => p.canSee);
+    if (seeing.length > 0) ids.push(...seeing.map((p) => p.id));
+    else blocked.push(group[0]);
+  }
+  return { ids, blocked };
+}
+
+/** The error shown when a comment mentions someone who cannot see the item. */
+export function blockedMentionMessage(blocked: readonly MentionPerson[]): string {
+  const names = [...new Set(blocked.map((p) => p.name))].join(", ");
+  return `${names} cannot see this item, so cannot be mentioned. Remove the mention and post again.`;
+}
 
 export type MentionMatch = {
   /** Index of the `@`. */
@@ -162,7 +233,7 @@ export function filterMentionCandidates<T extends MentionCandidate>(
   ) {
     return [];
   }
-  const out: T[] = [];
+  const hits: T[] = [];
   for (const c of candidates) {
     const name = c.name.trim();
     if (!name) continue;
@@ -171,10 +242,14 @@ export function filterMentionCandidates<T extends MentionCandidate>(
       q === "" ||
       lower.startsWith(q) ||
       lower.split(/\s+/).some((w) => w.startsWith(q));
-    if (hit) out.push(c);
-    if (out.length >= limit) break;
+    if (hit) hits.push(c);
   }
-  return out;
+  // People who cannot see the item sort after those who can, so the limit
+  // never hides a pickable person behind greyed ones.
+  return [
+    ...hits.filter((c) => !c.disabled),
+    ...hits.filter((c) => c.disabled),
+  ].slice(0, limit);
 }
 
 /**

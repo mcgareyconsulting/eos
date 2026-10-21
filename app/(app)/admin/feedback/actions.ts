@@ -1,0 +1,45 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import {
+  createFeedbackCore,
+  saveFeedbackEditsCore,
+  setFeedbackStatusCore,
+  type FeedbackCreateResult,
+  type FeedbackSaveResult,
+} from "./action-core";
+
+// Feedback tracker actions (ROADMAP N73). Access-list only: the logic and the
+// gate are ./action-core.ts → lib/firebase/feedback.ts
+// (requireFeedbackTrackerAccess). This file
+// only refreshes the pages after a write.
+
+// One page: the detail is a modal on it (?item=).
+function revalidateFeedback() {
+  revalidatePath("/admin/feedback");
+}
+
+/** Save the detail page's Edit form: the changed fields + updated_at as opened. */
+export async function saveFeedbackEdits(
+  id: string,
+  form: unknown,
+  openedUpdatedAt: string | null,
+): Promise<FeedbackSaveResult> {
+  const result = await saveFeedbackEditsCore(id, form, openedUpdatedAt);
+  if (result.ok && result.changed.length > 0) revalidateFeedback();
+  return result;
+}
+
+/** Change one item's status (the board's select). */
+export async function setFeedbackStatus(id: string, status: unknown): Promise<FeedbackSaveResult> {
+  const result = await setFeedbackStatusCore(id, status);
+  if (result.ok && result.changed.length > 0) revalidateFeedback();
+  return result;
+}
+
+/** Log a new item. */
+export async function createFeedback(input: unknown): Promise<FeedbackCreateResult> {
+  const result = await createFeedbackCore(input);
+  if (result.ok) revalidateFeedback();
+  return result;
+}

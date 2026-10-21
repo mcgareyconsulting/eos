@@ -16,13 +16,15 @@
 //   pnpm tsx scripts/reassign-user.ts \
 //     --from-uid OLD_UID_FROM_FIRESTORE \
 //     --to-email NEW_EMAIL \
-//     --database hpb-eos-sandbox-db
+//     --target sandbox
 //
 // Usage (both still in Auth):
 //   pnpm tsx scripts/reassign-user.ts \
-//     --from-email old@… --to-email new@… --database hpb-eos-sandbox-db
+//     --from-email old@… --to-email new@… --target prod
 //
 // Optional:
+//   --target sandbox|prod  named database (scripts/lib/target.ts; prod uses
+//                       ADC). `--database <id>` still works without it.
 //   --team <teamId>     only one team (default: every team `from` is on)
 //   --keep-from-membership  leave old roster rows (default: remove after merge)
 //
@@ -30,9 +32,7 @@
 // account; re-grant admin claim on the new email if needed; reconnect Google
 // Tasks under Settings if the connection did not move.
 
-import { config } from "dotenv";
-config({ path: ".env.local" });
-
+import "./lib/load-target"; // first: sets up env before anything reads it
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import {
@@ -42,6 +42,7 @@ import {
 } from "firebase-admin/firestore";
 
 import { clampSpeakerIndex } from "../lib/l10/speaking-order";
+import { syncUsersTeamIds } from "../lib/firebase/membership";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -124,8 +125,7 @@ async function main() {
   ) {
     console.warn(
       `\n⚠ projectId looks wrong for prod ops: ${projectId}\n` +
-        "  Set NEXT_PUBLIC_FIREBASE_PROJECT_ID=hpb-eos-prod in .env.local (or export it)\n" +
-        "  for this shell before re-running.\n",
+        "  Re-run with --target sandbox or --target prod.\n",
     );
   }
 
@@ -704,6 +704,9 @@ async function main() {
     if (++n >= 400) await commit();
   }
   await commit();
+  // Memberships moved, and step 9 may have copied `from`'s stale team_ids
+  // onto a freshly seeded `to` profile — recompute both from the roster.
+  await syncUsersTeamIds(db, [fromUid, toUid]);
 
   console.log("\nApplied successfully.");
   console.log("Next:");

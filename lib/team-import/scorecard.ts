@@ -145,6 +145,8 @@ export async function importScorecard(
       // and has to be corrected on the Scorecard tab. Called out on the
       // Import page rather than guessed at.
       interval: "weekly",
+      // Imported metrics start private (a re-import must not flip a public one back).
+      ...(isNew ? { is_public: false } : {}),
       description,
       sort_order: i,
       import_source: "csv",

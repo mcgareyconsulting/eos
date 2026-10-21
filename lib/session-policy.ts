@@ -1,18 +1,21 @@
 // Session lifetime policy (C-05, docs/SECURITY_AUDIT_2026-09-08.md).
 //
-// A session cookie lives at most 12 hours. While the user is active it
+// A session cookie lives at most 25 hours. While the user is active it
 // slides: once a cookie has used up half its life, the next activity in the
-// app re-mints a fresh 12-hour cookie. Someone who walks away for more than
-// 12 hours — overnight, in practice — signs in again. See
+// app re-mints a fresh 25-hour cookie. Someone who walks away for more than
+// 25 hours — a weekend or a day off, in practice — signs in again. 25 rather
+// than 24 so a daily user who starts a little later than yesterday is still
+// signed in. Length set at HPB's request (2026-10-13); it was 12 hours from
+// the C-05 fix until then. See
 // lib/firebase/session.ts for where the re-mint happens and why.
 //
 // Every limit is measured from the cookie's own `iat`, not trusted from its
-// `exp`, so the 5-day cookies minted before this policy stop working 12 hours
+// `exp`, so the 5-day cookies minted before this policy stop working 25 hours
 // after they were issued rather than lingering for days.
 //
 // Pure (no Firebase, no cookies) so the arithmetic is unit-tested.
 
-export const SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+export const SESSION_MAX_AGE_MS = 25 * 60 * 60 * 1000;
 
 /** The `iat`/`exp` claims (seconds) of a decoded Firebase session cookie. */
 export type SessionClaims = { iat: number; exp: number };

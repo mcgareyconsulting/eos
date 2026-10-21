@@ -89,6 +89,16 @@ describe("loadTeamRocks", () => {
       shared_team_ids: ["team-a"],
     });
     fake.seed("rocks", "other-team", { team_id: "team-b" });
+    fake.seed("rocks", "audience-in", {
+      team_id: "team-c",
+      audience_team_ids: ["team-a"],
+    });
+    // Saved under both names (mid-migration): listed once.
+    fake.seed("rocks", "both-fields", {
+      team_id: "team-c",
+      audience_team_ids: ["team-a"],
+      shared_team_ids: ["team-a"],
+    });
 
     const { own, shared } = await loadTeamRocks(fake.asFirestore(), "team-a");
 
@@ -97,8 +107,8 @@ describe("loadTeamRocks", () => {
       "own-only",
     ]);
     assert.deepEqual(
-      shared.map((d) => d.id),
-      ["shared-in"],
+      shared.map((d) => d.id).sort(),
+      ["audience-in", "both-fields", "shared-in"],
     );
   });
 });

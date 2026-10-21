@@ -33,7 +33,7 @@
 // Tasks under Settings if the connection did not move.
 
 import "./lib/load-target"; // first: sets up env before anything reads it
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import {
   FieldValue,
@@ -41,6 +41,7 @@ import {
   type Firestore,
 } from "firebase-admin/firestore";
 
+import { assertNoServiceAccountKey } from "../lib/firebase/admin";
 import { clampSpeakerIndex } from "../lib/l10/speaking-order";
 import { syncUsersTeamIds } from "../lib/firebase/membership";
 
@@ -115,9 +116,7 @@ async function main() {
   console.log(`  projectId              : ${projectId}`);
   console.log(`  NEXT_PUBLIC_FIREBASE_DATABASE_ID (env default): ${process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || "(unset)"}`);
   console.log(`  --database             : ${databaseId || "(default / env)"}`);
-  console.log(
-    `  credentials            : ${process.env.FIREBASE_SERVICE_ACCOUNT_JSON ? "FIREBASE_SERVICE_ACCOUNT_JSON" : "Application Default Credentials"}`,
-  );
+  console.log(`  credentials            : Application Default Credentials`);
 
   if (
     typeof projectId === "string" &&
@@ -131,13 +130,11 @@ async function main() {
 
   let app: App = getApps()[0]!;
   if (!app) {
-    const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    app = json
-      ? initializeApp({ credential: cert(JSON.parse(json)) })
-      : initializeApp({
-          projectId:
-            process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || undefined,
-        });
+    assertNoServiceAccountKey();
+    app = initializeApp({
+      projectId:
+        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || undefined,
+    });
   }
   const auth = getAuth(app);
   const db: Firestore = databaseId

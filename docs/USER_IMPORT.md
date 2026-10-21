@@ -170,8 +170,8 @@ pnpm users:seed ./people.csv --database hpb-eos-sandbox-db --apply
 | `--project <id>` | Firebase project, overriding `.env.local` |
 | `--no-allowlist` | Skip the allowlist check. **Sandbox only** — it creates accounts that cannot sign in |
 
-Credentials work the same way as every other script here (ADC, or
-`FIREBASE_SERVICE_ACCOUNT_JSON`). If you hit `rapt_required`, see
+Credentials work the same way as every other script here (Application
+Default Credentials only). If you hit `rapt_required`, see
 `docs/TEAM_MGMT_OPS.md` §0.
 
 ---

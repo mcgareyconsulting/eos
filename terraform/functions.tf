@@ -44,10 +44,9 @@ resource "google_project_iam_member" "functions_firebaseauth_viewer" {
   member  = "serviceAccount:${google_service_account.functions.email}"
 }
 
-# exportAuthUsers writes gs://<archive>/auth/<date>.json. Create-only, the
-# same grant var.functions_service_account_email holds in backup.tf (which
-# keeps pointing at the compute default SA until the cutover is verified —
-# retiring that grant is a follow-up, not part of this additions-only apply).
+# exportAuthUsers writes gs://<archive>/auth/<date>.json. Create-only. This
+# replaced the Compute Engine default SA's grant in backup.tf, retired after
+# the eos-functions cutover was verified (2026-10-21).
 resource "google_storage_bucket_iam_member" "functions_eos_sa_writer" {
   count = var.archive_iam_at_project_level ? 0 : 1
 

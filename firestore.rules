@@ -18,7 +18,19 @@ service cloud.firestore {
   match /databases/{db}/documents {
 
     // ---------- helpers ----------
-    function authed() { return request.auth != null; }
+    // Signed in AND inside the sign-in perimeter (N-1, security audit
+    // 2026-10-21). Identity Platform issues an ID token to any Google account,
+    // so `request.auth != null` alone let an outside account read what needs
+    // no team (public metrics and their entries). Mirrors signInRefusal in
+    // lib/auth-allowlist.ts: a verified email that is an HPB address, or an
+    // `eos_operator` claim (scripts/set-operator-claim.ts) standing in for the
+    // allowlist's exact-email entries, which rules cannot read.
+    function authed() {
+      return request.auth != null
+        && request.auth.token.get('email_verified', false) == true
+        && (request.auth.token.get('email', '').lower().matches('.*@highplainsbank[.]com')
+            || request.auth.token.get('eos_operator', false) == true);
+    }
 
     // Admin = Identity Platform custom claim (role: "admin"), granted by HPB to
     // their own admin accounts. Consultant / operator administration happens
@@ -62,7 +74,8 @@ service cloud.firestore {
     function rockFull(r) {
       return admin()
         || onTeam(r.team_id)
-        || (!rockPrivate(r)
+        || (authed()
+            && !rockPrivate(r)
             && (rockAudienceTeams(r).hasAny(myTeamIds())
                 || r.get('audience_user_ids', []).hasAny([request.auth.uid])));
     }

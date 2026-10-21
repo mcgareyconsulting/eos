@@ -40,4 +40,8 @@ export {
 } from "./owners";
 export type { Member } from "./owners";
 
-export { normalizeHeadlineKind } from "./normalize";
+export {
+  normalizeHeadlineKind,
+  overLengthReason,
+  rejectOverLength,
+} from "./normalize";

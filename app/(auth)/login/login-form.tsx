@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signInWithPopup } from "firebase/auth";
 import {
@@ -13,6 +13,14 @@ export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Warm Auth on mount. On mobile, Firebase loads its /__/auth iframe during
+    // init; initialising on tap instead makes signInWithPopup await that load
+    // before window.open, the tap's user activation expires, and the first
+    // attempt fails with auth/popup-blocked (the second works: iframe cached).
+    getClientAuth();
+  }, []);
 
   async function handleSignIn() {
     setError(null);

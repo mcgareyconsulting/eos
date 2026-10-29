@@ -11,7 +11,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   isRecurring,
@@ -22,7 +23,7 @@ import {
   rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importTodos(
   table: CsvTable,
@@ -32,9 +33,13 @@ export async function importTodos(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
     /** Department filter — see TeamImportOptions.rockTeam. */
     rockTeam?: string;
@@ -46,8 +51,11 @@ export async function importTodos(
   let stale = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
-  const recurring: string[] = [];
+  // "Title (Monthly)" → rows imported. Grouped: one live export can list a
+  // repeating to-do more than once.
+  const recurring = new Map<string, number>();
   const details: string[] = [];
   const warnings: string[] = [];
   const teamValues = new Set<string>();
@@ -82,7 +90,7 @@ export async function importTodos(
       continue;
     }
 
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "todos",
@@ -95,15 +103,11 @@ export async function importTodos(
       continue;
     }
 
-    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
-    if (repeat && isRecurring(repeat)) {
-      recurring.push(`${title} (${repeat})`);
-    }
-
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
+    // Blank (ninety "Unassigned") or unmatched: No Owner unless asked to skip.
+    if (ownerId === null && ctx.unmatchedOwner !== "no-owner") {
       skipped++;
       ctx.preview.add({
         kind: "todos",
@@ -137,9 +141,17 @@ export async function importTodos(
       ? "private"
       : "team";
 
-    const todoId = importDocId("todo", ctx.teamId, title);
+    const todoId = importDocId("todo", ctx.teamId, ctx.archive ? `${title}|${archiveKey(row, table.headers)}` : title);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "todos", collection: "todos", docId: todoId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -185,7 +197,7 @@ export async function importTodos(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
@@ -205,6 +217,16 @@ export async function importTodos(
           : undefined,
     });
     imported++;
+
+    // The app has no recurring to-dos, so a repeating one lands once — worth
+    // a warning for live rows only. Rows that weren't imported don't count,
+    // and an archived export lists each past occurrence as its own row
+    // (still marked Monthly): those are history, not schedules to recreate.
+    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
+    if (!ctx.archive && repeat && isRecurring(repeat)) {
+      const key = `${title} (${repeat})`;
+      recurring.set(key, (recurring.get(key) ?? 0) + 1);
+    }
   }
 
   if (otherTeam) details.push(`${otherTeam} for other departments, not imported`);
@@ -218,9 +240,11 @@ export async function importTodos(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
-  if (recurring.length > 0) {
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
+  if (recurring.size > 0) {
+    const list = [...recurring].map(([key, n]) => (n > 1 ? `${key} ×${n}` : key));
     warnings.push(
-      `${recurring.length} to-do(s) repeat on a schedule, imported as one-offs: ${recurring.slice(0, 5).join("; ")}${recurring.length > 5 ? "…" : ""}`,
+      `${recurring.size} to-do(s) repeat on a schedule in ninety — the app has no recurring to-dos, so each was imported once and needs re-creating when due: ${list.slice(0, 5).join("; ")}${list.length > 5 ? "…" : ""}`,
     );
   }
 

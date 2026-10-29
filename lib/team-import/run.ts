@@ -6,7 +6,7 @@ import type { ImportReport } from "../team-import-types";
 import { importHeadlines } from "./headlines";
 import { importIssues } from "./issues";
 import { importMilestones } from "./milestones";
-import { loadExistingIds, loadMembers, OwnerResolver, PreviewCollector, Writer } from "./owners";
+import { loadExistingIds, loadMembers, loadOwnerless, OwnerResolver, PreviewCollector, Writer } from "./owners";
 import type { Member } from "./owners";
 import { importRocks } from "./rocks";
 import { importScorecard } from "./scorecard";
@@ -73,6 +73,13 @@ export type TeamImportInputs = {
   /** Issues may be multi-sheet. */
   issues?: { tables: (CsvTable & { sheetName?: string })[] };
   headlines?: { tables: (CsvTable & { sheetName?: string })[] };
+  /**
+   * Tables from ninety's archived exports (separate files from the live
+   * ones). Every row lands archived — "Include archived rows" doesn't gate
+   * them — and their ids include the row's dates so repeated titles in the
+   * history stay separate records (normalize.ts archiveKey).
+   */
+  archive?: Omit<TeamImportInputs, "archive" | "scorecard">;
 };
 
 /**
@@ -114,6 +121,9 @@ export async function runTeamImport(
     "headlines",
   ]);
 
+  // Imported rows still without an owner: a re-import fills those in.
+  const ownerless = await loadOwnerless(db, teamId);
+
   const kinds: KindStats[] = [];
 
   if (inputs.scorecard) {
@@ -131,98 +141,149 @@ export async function runTeamImport(
     );
   }
 
-  let rockIdByTitle = new Map<string, string>();
-  if (inputs.rocks) {
-    const { stats, rockIdByTitle: map } = await importRocks(inputs.rocks.table, {
-      teamId,
-      writer,
-      owners,
-      existingIds,
-      rockTeam: options.rockTeam,
-      existingRows,
-      unmatchedOwner,
-      includeArchived,
-      preview,
-    });
-    rockIdByTitle = map;
-    kinds.push(stats);
-  }
-
-  if (inputs.milestones) {
-    // Fold in existing team rocks so milestones can link without a rocks
-    // file in the same run (or to rocks created in-app).
-    const existingRocks = await db.collection("rocks").where("team_id", "==", teamId).get();
-    for (const d of existingRocks.docs) {
-      const key = normalizeKey((d.data().title as string) ?? "");
-      if (key && !rockIdByTitle.has(key)) rockIdByTitle.set(key, d.id);
+  // Live rows first, then the archived exports (TeamImportInputs.archive).
+  // The archived pass gets its own rock map: archived milestones belong to
+  // archived rocks, and a live rock of the same title must not catch them.
+  let existingRocks: Map<string, string> | null = null;
+  const teamRocks = async () => {
+    if (!existingRocks) {
+      existingRocks = new Map();
+      const snap = await db.collection("rocks").where("team_id", "==", teamId).get();
+      for (const d of snap.docs) {
+        const key = normalizeKey((d.data().title as string) ?? "");
+        if (key && !existingRocks.has(key)) existingRocks.set(key, d.id);
+      }
     }
-    kinds.push(
-      await importMilestones(inputs.milestones.table, {
+    return existingRocks;
+  };
+
+  let liveRockIds = new Map<string, string>();
+  for (const [pass, archive] of [
+    [inputs, false],
+    [inputs.archive, true],
+  ] as const) {
+    if (!pass) continue;
+    const label = (stats: KindStats) =>
+      archive ? { ...stats, label: `${stats.label} (archived)` } : stats;
+
+    let rockIdByTitle = new Map<string, string>();
+    // Rocks in this pass's file that didn't import, and why — so a milestone
+    // pointing at one says so instead of "No rock named".
+    const rocksNotImported = new Map<string, string>();
+    if (pass.rocks) {
+      const stop = preview.observe((r) => {
+        if (r.kind === "rocks" && r.action === "skip" && r.note) {
+          rocksNotImported.set(normalizeKey(r.title), r.note);
+        }
+      });
+      const { stats, rockIdByTitle: map } = await importRocks(pass.rocks.table, {
         teamId,
         writer,
         owners,
         existingIds,
-        rockIdByTitle,
         rockTeam: options.rockTeam,
-        includeArchived,
-        completedSince,
-        unmatchedOwner,
-        preview,
         existingRows,
-      }),
-    );
-  }
-
-  if (inputs.todos) {
-    kinds.push(
-      await importTodos(inputs.todos.table, {
-        teamId,
-        writer,
-        owners,
-        existingIds,
-        includeArchived,
-        completedSince,
         unmatchedOwner,
+        includeArchived,
+        archive,
         preview,
-        existingRows,
-        rockTeam: options.rockTeam,
-      }),
-    );
-  }
+        ownerless,
+      });
+      stop();
+      rockIdByTitle = map;
+      kinds.push(label(stats));
+    }
+    if (!archive) liveRockIds = rockIdByTitle;
 
-  if (inputs.issues) {
-    for (const table of inputs.issues.tables) {
+    if (pass.milestones) {
+      // Rocks from this pass win; then (archived pass) this upload's live
+      // rocks; then rocks already on the team, so milestones can link without
+      // a rocks file in the same run (or to rocks created in-app).
+      const linkable = new Map(rockIdByTitle);
+      for (const source of [archive ? liveRockIds : new Map<string, string>(), await teamRocks()]) {
+        for (const [key, id] of source) if (!linkable.has(key)) linkable.set(key, id);
+      }
       kinds.push(
-        await importIssues(table, {
-          teamId,
-          writer,
-          owners,
-          existingIds,
-          includeArchived,
-          completedSince,
-          sheetName: table.sheetName,
-          unmatchedOwner,
-          preview,
-          existingRows,
-          rockTeam: options.rockTeam,
-        }),
+        label(
+          await importMilestones(pass.milestones.table, {
+            teamId,
+            writer,
+            owners,
+            existingIds,
+            rockIdByTitle: linkable,
+            rocksNotImported,
+            rockTeam: options.rockTeam,
+            includeArchived,
+            archive,
+            completedSince,
+            unmatchedOwner,
+            preview,
+            ownerless,
+            existingRows,
+          }),
+        ),
       );
     }
-  }
 
-  if (inputs.headlines) {
-    for (const table of inputs.headlines.tables) {
+    if (pass.todos) {
       kinds.push(
-        await importHeadlines(table, {
-          teamId,
-          writer,
-          owners,
-          existingIds,
-          includeArchived,
-          rockTeam: options.rockTeam,
-          preview,
-          existingRows,
-        }),
+        label(
+          await importTodos(pass.todos.table, {
+            teamId,
+            writer,
+            owners,
+            existingIds,
+            includeArchived,
+            archive,
+            completedSince,
+            unmatchedOwner,
+            preview,
+            ownerless,
+            existingRows,
+            rockTeam: options.rockTeam,
+          }),
+        ),
+      );
+    }
+
+    for (const table of pass.issues?.tables ?? []) {
+      kinds.push(
+        label(
+          await importIssues(table, {
+            teamId,
+            writer,
+            owners,
+            existingIds,
+            includeArchived,
+            archive,
+            completedSince,
+            sheetName: table.sheetName,
+            unmatchedOwner,
+            preview,
+            ownerless,
+            existingRows,
+            rockTeam: options.rockTeam,
+          }),
+        ),
+      );
+    }
+
+    for (const table of pass.headlines?.tables ?? []) {
+      kinds.push(
+        label(
+          await importHeadlines(table, {
+            teamId,
+            writer,
+            owners,
+            existingIds,
+            includeArchived,
+            archive,
+            rockTeam: options.rockTeam,
+            preview,
+            ownerless,
+            existingRows,
+          }),
+        ),
       );
     }
   }
@@ -243,5 +304,6 @@ export async function runTeamImport(
     unresolvedOwners: [...owners.unresolved],
     rows: preview.rows,
     previewTruncated: preview.truncated,
+    collisions: writer.collisions,
   };
 }

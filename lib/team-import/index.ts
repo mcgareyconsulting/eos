@@ -29,6 +29,7 @@ export {
   classifyTable,
   expandUploads,
   GRID_ROW_CAP,
+  isArchiveTable,
   readBulkTables,
   rowKey,
   teamFilterFor,

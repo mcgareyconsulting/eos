@@ -12,14 +12,15 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   isStaleCompletion,
   rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importMilestones(
   table: CsvTable,
@@ -29,11 +30,17 @@ export async function importMilestones(
     owners: OwnerResolver;
     existingIds: Set<string>;
     rockIdByTitle: Map<string, string>;
+    /** Rock titles (normalizeKey) in this upload that were skipped → why. */
+    rocksNotImported?: Map<string, string>;
     rockTeam?: string;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
@@ -43,6 +50,7 @@ export async function importMilestones(
   let stale = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   const missingRocks = new Set<string>();
   const details: string[] = [];
@@ -69,7 +77,7 @@ export async function importMilestones(
       continue;
     }
 
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "milestones",
@@ -92,9 +100,11 @@ export async function importMilestones(
         title,
         owner: "—",
         detail: [`rock: ${rockName || "—"}`],
-        note: rockName
-          ? `No rock named "${rockName}" on this team`
-          : "No Rock Name column value — nothing to attach it to",
+        note: !rockName
+          ? "No Rock Name column value — nothing to attach it to"
+          : ctx.rocksNotImported?.has(normalizeKey(rockName))
+            ? `Its rock "${rockName}" is in the file but wasn't imported: ${ctx.rocksNotImported.get(normalizeKey(rockName))}`
+            : `No rock named "${rockName}" on this team`,
       });
       continue;
     }
@@ -102,7 +112,8 @@ export async function importMilestones(
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
+    // Blank (ninety "Unassigned") or unmatched: No Owner unless asked to skip.
+    if (ownerId === null && ctx.unmatchedOwner !== "no-owner") {
       skipped++;
       ctx.preview.add({
         kind: "milestones",
@@ -150,9 +161,21 @@ export async function importMilestones(
     }
 
     const dueDate = parseDateOnly(cell(row, table.headers, "Due Date", "Due"));
-    const todoId = importDocId("milestone", ctx.teamId, `${rockName}|${title}`);
+    const todoId = importDocId(
+      "milestone",
+      ctx.teamId,
+      ctx.archive ? `${rockName}|${title}|${archiveKey(row, table.headers)}` : `${rockName}|${title}`,
+    );
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "milestones", collection: "todos", docId: todoId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -180,7 +203,7 @@ export async function importMilestones(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
@@ -207,6 +230,7 @@ export async function importMilestones(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
   if (missingRocks.size > 0) {
     warnings.push(
       `${missingRocks.size} milestone(s) reference a rock that isn't on the team: ${[...missingRocks].slice(0, 8).join(", ")}${missingRocks.size > 8 ? "…" : ""}`,

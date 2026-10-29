@@ -9,6 +9,7 @@ import {
   readBulkTables,
   rowKey,
   finishImportRun,
+  isArchiveTable,
   runTeamImport,
   sha256,
   startImportRun,
@@ -16,6 +17,7 @@ import {
   toGridTables,
 } from "./team-import";
 import { readZip } from "./xlsx";
+import { importDocId } from "./csv-import";
 
 // A team's ninety export, column for column (client sample, 2026-10-29).
 const EXPORT_HEADERS = {
@@ -440,5 +442,309 @@ describe("import_runs record", () => {
     await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true }, []);
     assert.equal(db.docsIn("todos").length, 0);
     assert.equal(db.docsIn("import_runs").length, 0);
+  });
+});
+
+// ninety exports archived items as separate files with the live columns
+// (+ Archived Date; milestones have none). Client sample, 2026-10-29.
+describe("archived exports", () => {
+  const ARCHIVED_ROCKS = `${EXPORT_HEADERS.rocks}|Archived Date`.split("|");
+  const arow = (cells: Record<string, string>) => ARCHIVED_ROCKS.map((h) => cells[h] ?? "");
+  const csv = (rows: string[][]) => rows.map((r) => r.join(",")).join("\n");
+
+  test("spotted by file or sheet name, or by every row having an Archived Date", () => {
+    const t = (rows: string[][]) => ({ headers: rows[0], rows: rows.slice(1).map((r) => Object.fromEntries(rows[0].map((h, i) => [h, r[i]]))) });
+    const plain = t([["Title", "Archived Date"], ["a", "2026-01-02"], ["b", ""]]);
+    assert.equal(isArchiveTable(plain, null, "To-Dos.csv"), false, "only some rows archived = a live export");
+    assert.equal(isArchiveTable(plain, null, "Archived To-Dos.csv"), true);
+    assert.equal(isArchiveTable(plain, "Archived Milestones", "x.xlsx"), true);
+    assert.equal(isArchiveTable(t([["Title", "Archived Date"], ["a", "2026-01-02"]]), null, "x.csv"), true);
+  });
+
+  function zip() {
+    const live = makeXlsx([
+      { name: "Rocks", rows: [hdr("rocks"), rowOf("rocks", { Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q4 2026" })] },
+      { name: "Milestones", rows: [hdr("milestones"), rowOf("milestones", { Owner: "Sarah Chen", Title: "Post job", "Rock Name": "Hire analyst" })] },
+    ]);
+    const archived = makeXlsx([
+      {
+        name: "Rocks",
+        rows: [
+          ARCHIVED_ROCKS,
+          // The same rock carried over two earlier quarters.
+          arow({ Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q2 2026", "Due Date": "2026-06-30", "Created Date": "2026-04-01", "Archived Date": "2026-07-02" }),
+          arow({ Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q3 2026", "Due Date": "2026-09-30", "Created Date": "2026-07-01", "Archived Date": "2026-10-01" }),
+        ],
+      },
+      {
+        name: "Milestones",
+        rows: [hdr("milestones"), rowOf("milestones", { Owner: "Sarah Chen", Title: "Screen resumes", "Rock Name": "Hire analyst", "Completed On": "2026-05-15" })],
+      },
+    ]);
+    const todoHdr = `${EXPORT_HEADERS.todos}`.split("|");
+    const todo = (cells: Record<string, string>) => todoHdr.map((h) => cells[h] ?? "");
+    return makeZip([
+      { name: "Rocks.xlsx", data: live },
+      { name: "Archived Rocks.xlsx", data: archived },
+      { name: "To-Dos.csv", data: csv([todoHdr, todo({ Owner: "Sarah Chen", Title: "Send weekly report" })]) },
+      {
+        name: "Archived To-Dos.csv",
+        data: csv([
+          todoHdr,
+          todo({ Owner: "Sarah Chen", Title: "Send weekly report", "Created Date": "2026-09-01", "Archived Date": "2026-09-08" }),
+          todo({ Owner: "Sarah Chen", Title: "Send weekly report", "Created Date": "2026-09-08", "Archived Date": "2026-09-15" }),
+        ]),
+      },
+    ]);
+  }
+
+  async function run() {
+    const { files } = expandUploads([{ name: "ninety.zip", bytes: zip() }]);
+    const { tables } = readBulkTables(files, AS_OF);
+    const { inputs } = assembleBulkInputs(tables, new Map());
+    const db = new FakeFirestore();
+    // includeArchived stays off: archived *files* don't need the checkbox.
+    const report = await runTeamImport(db.asFirestore(), "t1", inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    return { tables, report, db };
+  }
+
+  test("tabs are flagged archived by file name — milestones included", async () => {
+    const { tables } = await run();
+    assert.deepEqual(
+      tables.map((t) => [t.id, t.archived]),
+      [
+        ["Rocks.xlsx › Rocks", false],
+        ["Rocks.xlsx › Milestones", false],
+        ["Archived Rocks.xlsx › Rocks", true],
+        ["Archived Rocks.xlsx › Milestones", true],
+        ["To-Dos.csv", false],
+        ["Archived To-Dos.csv", true],
+      ],
+    );
+  });
+
+  test("repeated titles stay separate records; live and archived never share one", async () => {
+    const { db, report } = await run();
+    const rocks = db.docsIn("rocks");
+    assert.equal(rocks.length, 3, "live + two archived quarters");
+    assert.equal(rocks.filter((d) => d.data.archived_at).length, 2);
+    const todos = db.docsIn("todos").filter((d) => !d.data.source_rock_id);
+    assert.equal(todos.length, 3, "live + two archived weeks");
+    assert.equal(todos.filter((d) => d.data.archived_at).length, 2);
+    assert.equal(report.collisions, 0);
+    assert.ok(report.kinds.some((k) => k.label === "rocks (archived)"));
+  });
+
+  test("archived milestones land archived, on an archived rock — not the live one", async () => {
+    const { db } = await run();
+    const liveRock = db.docsIn("rocks").find((d) => !d.data.archived_at)!;
+    const archivedRockIds = new Set(db.docsIn("rocks").filter((d) => d.data.archived_at).map((d) => d.id));
+    const ms = Object.fromEntries(
+      db.docsIn("todos").filter((d) => d.data.source_rock_id).map((d) => [d.data.title, d.data]),
+    );
+    assert.equal(ms["Post job"].source_rock_id, liveRock.id);
+    assert.equal(ms["Post job"].archived_at, null);
+    assert.ok(archivedRockIds.has(String(ms["Screen resumes"].source_rock_id)));
+    assert.ok(ms["Screen resumes"].archived_at, "dated from Completed On — the export has no Archived Date");
+  });
+
+  test("re-importing the same archive adds nothing", async () => {
+    const { db } = await run();
+    const { files } = expandUploads([{ name: "ninety.zip", bytes: zip() }]);
+    const { tables } = readBulkTables(files, AS_OF);
+    const again = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    assert.equal(again.writes, 0);
+  });
+
+  test("rows that would still share a record are counted", async () => {
+    const todoHdr = `${EXPORT_HEADERS.todos}`.split("|");
+    const same = todoHdr.map((h) => ({ Owner: "Sarah Chen", Title: "Dup", "Archived Date": "2026-09-08" } as Record<string, string>)[h] ?? "");
+    const { tables } = readBulkTables([{ name: "Archived To-Dos.csv", bytes: Buffer.from(csv([todoHdr, same, same])) }], AS_OF);
+    const report = await runTeamImport(new FakeFirestore().asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    assert.equal(report.collisions, 1);
+  });
+
+  test("an archived scorecard is left out until its columns are mapped", () => {
+    const sc = [hdr("scorecard"), rowOf("scorecard", { Title: "Loans", Goal: "5", "Oct 26 - Nov 1": "4" })];
+    const { tables } = readBulkTables([{ name: "Archived Scorecard.csv", bytes: Buffer.from(csv(sc)) }], AS_OF);
+    assert.deepEqual(assembleBulkInputs(tables, new Map()).inputs, {});
+    assert.equal(toGridTables(tables, new Map(), AS_OF)[0].kind, null);
+  });
+});
+
+describe("repeating to-dos warning", () => {
+  const todoHdr = EXPORT_HEADERS.todos.split("|");
+  const todo = (cells: Record<string, string>) => todoHdr.map((h) => cells[h] ?? "").join(",");
+  async function warnings(file: string, rows: Record<string, string>[], seed?: (db: FakeFirestore) => void) {
+    const { tables } = readBulkTables([{ name: file, bytes: Buffer.from([todoHdr.join(","), ...rows.map(todo)].join("\n")) }], AS_OF);
+    const db = new FakeFirestore();
+    seed?.(db);
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    return report.kinds.flatMap((k) => k.warnings).filter((w) => /repeat/.test(w));
+  }
+  const monthly = { Owner: "Sarah Chen", Title: "OptimaFi Data Upload", Repeat: "Monthly" };
+
+  test("a live repeating to-do is named once", async () => {
+    const w = await warnings("To-Dos.csv", [monthly, { Owner: "Sarah Chen", Title: "One-off", Repeat: "Does not repeat" }]);
+    assert.equal(w.length, 1);
+    assert.match(w[0], /^1 to-do\(s\) repeat.*: OptimaFi Data Upload \(Monthly\)$/);
+  });
+
+  test("archived occurrences don't warn — they're history, one row per month", async () => {
+    const rows = ["2026-07-01", "2026-08-01", "2026-09-01"].map((d) => ({ ...monthly, "Created Date": d, "Archived Date": d }));
+    assert.deepEqual(await warnings("Archived To-Dos.csv", rows), []);
+  });
+
+  test("rows that aren't imported don't count", async () => {
+    const w = await warnings("To-Dos.csv", [monthly], (db) =>
+      // Already on the team from an earlier import: kept as is, not re-imported.
+      db.seed("todos", importDocId("todo", "t1", "OptimaFi Data Upload"), { team_id: "t1", title: "OptimaFi Data Upload" }),
+    );
+    assert.deepEqual(w, []);
+  });
+});
+
+describe("Cascading Messages tab (regular + archived headline workbooks)", () => {
+  const H = `${EXPORT_HEADERS.headlines}`.split("|");
+  const hl = (cells: Record<string, string>) => H.map((h) => cells[h] ?? "");
+  const book = () =>
+    makeXlsx([
+      { name: "Headlines", rows: [H, hl({ Type: "Customer", From: "Ops", Owner: "Sarah Chen", Title: "Big win" })] },
+      // Type says Employee; the tab is the authority.
+      { name: "Cascading Messages", rows: [H, hl({ Type: "Employee", From: "Leadership", Owner: "Sarah Chen", Title: "Policy update" })] },
+    ]);
+
+  test("cascading tab lands cascading; the archived workbook's copy lands archived and separate", async () => {
+    const { files } = expandUploads([
+      {
+        name: "ninety.zip",
+        bytes: makeZip([
+          { name: "Headlines.xlsx", data: book() },
+          { name: "Archived Headlines.xlsx", data: book() },
+        ]),
+      },
+    ]);
+    const { tables } = readBulkTables(files, AS_OF);
+    assert.deepEqual(
+      tables.map((t) => [t.sheet, t.detected, t.archived]),
+      [
+        ["Headlines", "headlines", false],
+        ["Cascading Messages", "headlines", false],
+        ["Headlines", "headlines", true],
+        ["Cascading Messages", "headlines", true],
+      ],
+    );
+    const db = new FakeFirestore();
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    const rows = db
+      .docsIn("headlines")
+      .map((d) => [d.data.title, d.data.kind ?? d.data.type, d.data.archived_at ? "archived" : "live"])
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    assert.deepEqual(rows, [
+      ["Big win", "customer", "archived"],
+      ["Big win", "customer", "live"],
+      ["Policy update", "cascading", "archived"],
+      ["Policy update", "cascading", "live"],
+    ]);
+    assert.equal(report.collisions, 0);
+  });
+});
+
+// Team/Department-level rocks always allowed a blank owner; an Individual
+// rock with a blank Owner was skipped, taking its milestones' link with it.
+describe("unassigned rocks (blank Owner) and their milestones", () => {
+  function load() {
+    const book = makeXlsx([
+      { name: "Rocks", rows: [hdr("rocks"), rowOf("rocks", { Owner: "", Title: "SBA", Level: "Individual", Quarter: "Q4 2026" })] },
+      { name: "Milestones", rows: [hdr("milestones"), rowOf("milestones", { Owner: "", Title: "Draft SOP", "Rock Name": "SBA" })] },
+    ]);
+    return readBulkTables([{ name: "Rocks.xlsx", bytes: book }], AS_OF).tables;
+  }
+  const run = (unmatchedOwner: "no-owner" | "skip") => {
+    const db = new FakeFirestore();
+    return runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(load(), new Map()).inputs, { unmatchedOwner, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]).then((report) => ({ db, report }));
+  };
+
+  test("default: the rock imports with No Owner and its milestone links to it", async () => {
+    const { db } = await run("no-owner");
+    const rock = db.docsIn("rocks")[0];
+    assert.equal(rock?.data.owner_id, null);
+    const ms = db.docsIn("todos")[0];
+    assert.equal(ms?.data.title, "Draft SOP");
+    assert.equal(ms?.data.source_rock_id, rock.id);
+    assert.equal(ms?.data.owner_id, null);
+  });
+
+  test("skip mode: the milestone says its rock is in the file but wasn't imported, and why", async () => {
+    const { db, report } = await run("skip");
+    assert.equal(db.docsIn("rocks").length, 0);
+    const note = report.rows.find((r) => r.kind === "milestones")?.note ?? "";
+    assert.match(note, /Its rock "SBA" is in the file but wasn't imported: No Owner in the file/);
+  });
+});
+
+describe("re-import fills in an owner that was missing — and nothing else", () => {
+  const H = EXPORT_HEADERS.rocks.split("|");
+  const rocksCsv = (owner: string) =>
+    [H.join(","), H.map((h) => ({ Owner: owner, Title: "SBA", Level: "Individual", Description: "Grow SBA lending" } as Record<string, string>)[h] ?? "").join(",")].join("\n");
+  const tablesFor = (csv: string) => readBulkTables([{ name: "Rocks.csv", bytes: Buffer.from(csv) }], AS_OF).tables;
+  const importInto = (db: FakeFirestore, members: { user_id: string; names: string[] }[]) =>
+    runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tablesFor(rocksCsv("Pat Lee")), new Map()).inputs, { asOf: AS_OF }, members);
+
+  test("Pat wasn't on the team; after joining, a re-import assigns the rock and drops the note", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    let rock = db.docsIn("rocks")[0];
+    assert.equal(rock.data.owner_id, null);
+    assert.match(String(rock.data.description), /Imported owner: Pat Lee/);
+
+    // Edited in the app meanwhile — must survive the re-import.
+    db.write(`rocks/${rock.id}`, { ...rock.data, status: "off_track" });
+
+    const report = await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    rock = db.docsIn("rocks")[0];
+    assert.equal(rock.data.owner_id, "pat");
+    assert.equal(rock.data.description, "Grow SBA lending");
+    assert.equal(rock.data.status, "off_track", "nothing else rewritten");
+    assert.equal(report.rows.find((r) => r.kind === "rocks")?.action, "update");
+    assert.ok(report.kinds[0].details.some((d) => /owner filled in/.test(d)));
+  });
+
+  test("an owner set in the app is never overwritten", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    const rock = db.docsIn("rocks")[0];
+    db.write(`rocks/${rock.id}`, { ...rock.data, owner_id: "sam" });
+    await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, "sam");
+  });
+
+  test("a rock created (or unassigned) in the app isn't touched", async () => {
+    const db = new FakeFirestore();
+    db.seed("rocks", importDocId("rock", "t1", "SBA"), { team_id: "t1", title: "SBA", owner_id: null });
+    await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, null);
+  });
+
+  test("a dry run previews the fill without writing it", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tablesFor(rocksCsv("Pat Lee")), new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "pat", names: ["Pat Lee"] },
+    ]);
+    assert.match(report.rows[0].note ?? "", /owner filled in/);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, null);
   });
 });

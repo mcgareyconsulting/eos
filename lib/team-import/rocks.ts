@@ -14,9 +14,9 @@ import {
 } from "../csv-import";
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFrom, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
+import { archivedAtFor, archiveKey, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importRocks(
   table: CsvTable,
@@ -29,7 +29,11 @@ export async function importRocks(
     existingRows: "keep" | "update";
     unmatchedOwner: "skip" | "no-owner";
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
@@ -37,6 +41,7 @@ export async function importRocks(
   let imported = 0;
   let skipped = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let noOwner = 0;
   let archived = 0;
@@ -91,7 +96,7 @@ export async function importRocks(
     // Rocks had no archived filter at all, while the Import page told users
     // archived rows are skipped by default — true for every other kind but
     // not this one.
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "rocks",
@@ -125,9 +130,9 @@ export async function importRocks(
     // A department rock always tolerates a null owner (shared ownership); any
     // rock does when the Owner name simply matched nobody and the caller asked
     // for No Owner rather than a dropped row.
-    const allowNullOwner =
-      rockType === "department" ||
-      (unmatchedName !== null && ctx.unmatchedOwner === "no-owner");
+    // A blank Owner is ninety's "Unassigned" rock — No Owner as well, or its
+    // milestones would find no rock to attach to.
+    const allowNullOwner = rockType === "department" || ctx.unmatchedOwner === "no-owner";
     if (ownerId === null && !allowNullOwner) {
       skipped++;
       ctx.preview.add({
@@ -163,11 +168,20 @@ export async function importRocks(
 
     if (cell(row, table.headers, "Attachment Names", "Attachments")) attachments++;
 
-    const rockId = importDocId("rock", ctx.teamId, title);
+    const rockId = importDocId("rock", ctx.teamId, ctx.archive ? `${title}|${archiveKey(row, table.headers)}` : title);
     const isNew = !ctx.existingIds.has(rockId);
 
     // Leave the stored rock alone, but still map it so this file's
     // milestones can attach to it.
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "rocks", collection: "rocks", docId: rockId, ownerId: ownerId, title }))
+    ) {
+      rockIdByTitle.set(normalizeKey(title), rockId);
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       rockIdByTitle.set(normalizeKey(title), rockId);
       unchanged++;
@@ -206,7 +220,7 @@ export async function importRocks(
       import_source: "csv",
       ...(isNew
         ? {
-            archived_at: archivedAtFrom(row, table.headers),
+            archived_at: archivedAtFor(row, table.headers, !!ctx.archive),
             created_at: createdDate
               ? Timestamp.fromDate(new Date(`${createdDate}T00:00:00`))
               : FieldValue.serverTimestamp(),
@@ -241,6 +255,7 @@ export async function importRocks(
   if (unchanged) {
     details.push(`${unchanged} existing rock(s) left untouched`);
   }
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
   if (noOwner) {
     details.push(`${noOwner} imported as No Owner`);
   }

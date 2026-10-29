@@ -103,7 +103,8 @@ export async function importTodos(
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
+    // Blank (ninety "Unassigned") or unmatched: No Owner unless asked to skip.
+    if (ownerId === null && ctx.unmatchedOwner !== "no-owner") {
       skipped++;
       ctx.preview.add({
         kind: "todos",

@@ -164,7 +164,15 @@ export async function runTeamImport(
       archive ? { ...stats, label: `${stats.label} (archived)` } : stats;
 
     let rockIdByTitle = new Map<string, string>();
+    // Rocks in this pass's file that didn't import, and why — so a milestone
+    // pointing at one says so instead of "No rock named".
+    const rocksNotImported = new Map<string, string>();
     if (pass.rocks) {
+      const stop = preview.observe((r) => {
+        if (r.kind === "rocks" && r.action === "skip" && r.note) {
+          rocksNotImported.set(normalizeKey(r.title), r.note);
+        }
+      });
       const { stats, rockIdByTitle: map } = await importRocks(pass.rocks.table, {
         teamId,
         writer,
@@ -177,6 +185,7 @@ export async function runTeamImport(
         archive,
         preview,
       });
+      stop();
       rockIdByTitle = map;
       kinds.push(label(stats));
     }
@@ -198,6 +207,7 @@ export async function runTeamImport(
             owners,
             existingIds,
             rockIdByTitle: linkable,
+            rocksNotImported,
             rockTeam: options.rockTeam,
             includeArchived,
             archive,

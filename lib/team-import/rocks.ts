@@ -127,9 +127,9 @@ export async function importRocks(
     // A department rock always tolerates a null owner (shared ownership); any
     // rock does when the Owner name simply matched nobody and the caller asked
     // for No Owner rather than a dropped row.
-    const allowNullOwner =
-      rockType === "department" ||
-      (unmatchedName !== null && ctx.unmatchedOwner === "no-owner");
+    // A blank Owner is ninety's "Unassigned" rock — No Owner as well, or its
+    // milestones would find no rock to attach to.
+    const allowNullOwner = rockType === "department" || ctx.unmatchedOwner === "no-owner";
     if (ownerId === null && !allowNullOwner) {
       skipped++;
       ctx.preview.add({

@@ -659,3 +659,38 @@ describe("Cascading Messages tab (regular + archived headline workbooks)", () =>
     assert.equal(report.collisions, 0);
   });
 });
+
+// Team/Department-level rocks always allowed a blank owner; an Individual
+// rock with a blank Owner was skipped, taking its milestones' link with it.
+describe("unassigned rocks (blank Owner) and their milestones", () => {
+  function load() {
+    const book = makeXlsx([
+      { name: "Rocks", rows: [hdr("rocks"), rowOf("rocks", { Owner: "", Title: "SBA", Level: "Individual", Quarter: "Q4 2026" })] },
+      { name: "Milestones", rows: [hdr("milestones"), rowOf("milestones", { Owner: "", Title: "Draft SOP", "Rock Name": "SBA" })] },
+    ]);
+    return readBulkTables([{ name: "Rocks.xlsx", bytes: book }], AS_OF).tables;
+  }
+  const run = (unmatchedOwner: "no-owner" | "skip") => {
+    const db = new FakeFirestore();
+    return runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(load(), new Map()).inputs, { unmatchedOwner, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]).then((report) => ({ db, report }));
+  };
+
+  test("default: the rock imports with No Owner and its milestone links to it", async () => {
+    const { db } = await run("no-owner");
+    const rock = db.docsIn("rocks")[0];
+    assert.equal(rock?.data.owner_id, null);
+    const ms = db.docsIn("todos")[0];
+    assert.equal(ms?.data.title, "Draft SOP");
+    assert.equal(ms?.data.source_rock_id, rock.id);
+    assert.equal(ms?.data.owner_id, null);
+  });
+
+  test("skip mode: the milestone says its rock is in the file but wasn't imported, and why", async () => {
+    const { db, report } = await run("skip");
+    assert.equal(db.docsIn("rocks").length, 0);
+    const note = report.rows.find((r) => r.kind === "milestones")?.note ?? "";
+    assert.match(note, /Its rock "SBA" is in the file but wasn't imported: No Owner in the file/);
+  });
+});

@@ -86,7 +86,16 @@ export class PreviewCollector {
     this.current = this.refs?.get(row);
   }
 
+  private listeners = new Set<(row: PreviewRow) => void>();
+
+  /** See every row as it is added — including rows past the cap. */
+  observe(fn: (row: PreviewRow) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
   add(row: PreviewRow): void {
+    for (const fn of this.listeners) fn(row);
     const stamped = this.current && !row.ref ? { ...row, ref: this.current } : row;
     if (this.rows.length < this.limit) this.rows.push(stamped);
     else this.truncated++;

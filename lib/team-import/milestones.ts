@@ -30,6 +30,8 @@ export async function importMilestones(
     owners: OwnerResolver;
     existingIds: Set<string>;
     rockIdByTitle: Map<string, string>;
+    /** Rock titles (normalizeKey) in this upload that were skipped → why. */
+    rocksNotImported?: Map<string, string>;
     rockTeam?: string;
     includeArchived: boolean;
     /** Rows come from an archived export — see TeamImportInputs.archive. */
@@ -95,9 +97,11 @@ export async function importMilestones(
         title,
         owner: "—",
         detail: [`rock: ${rockName || "—"}`],
-        note: rockName
-          ? `No rock named "${rockName}" on this team`
-          : "No Rock Name column value — nothing to attach it to",
+        note: !rockName
+          ? "No Rock Name column value — nothing to attach it to"
+          : ctx.rocksNotImported?.has(normalizeKey(rockName))
+            ? `Its rock "${rockName}" is in the file but wasn't imported: ${ctx.rocksNotImported.get(normalizeKey(rockName))}`
+            : `No rock named "${rockName}" on this team`,
       });
       continue;
     }
@@ -105,7 +109,8 @@ export async function importMilestones(
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
+    // Blank (ninety "Unassigned") or unmatched: No Owner unless asked to skip.
+    if (ownerId === null && ctx.unmatchedOwner !== "no-owner") {
       skipped++;
       ctx.preview.add({
         kind: "milestones",

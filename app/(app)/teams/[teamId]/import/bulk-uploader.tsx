@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { SelectMenu } from "@/components/ui/select-menu";
 import type {
   BulkGridTable,
   ImportKind,
@@ -35,7 +36,7 @@ const ACCEPT = /\.(zip|xlsx|csv|tsv)$/i;
 // here too: past the limit Next rejects the request before the action runs,
 // with an error that means nothing to the person importing.
 const MAX_BYTES = 950 * 1024;
-// Re-preview this long after the last change (option, override, untick).
+// Re-preview this long after the last change (option, untick).
 const PREVIEW_DEBOUNCE_MS = 500;
 
 /**
@@ -60,7 +61,6 @@ const KIND_LABELS: Record<ImportKind, string> = {
   headlines: "Headlines",
   scorecard: "Scorecard",
 };
-const KIND_ORDER: ImportKind[] = ["rocks", "milestones", "todos", "issues", "headlines", "scorecard"];
 
 /** Same shape as rowKey() in lib/team-import/bulk.ts (server-only module). */
 const rowKey = (tableId: string, row: number) => `${tableId}#${row}`;
@@ -96,8 +96,6 @@ export function BulkUploader({
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
     { csvName: "", memberId: "" },
   ]);
-  // Per-tab type override; "" = leave the tab out.
-  const [kindOverrides, setKindOverrides] = useState<Record<string, ImportKind | "">>({});
   const [exclude, setExclude] = useState<Set<string>>(() => new Set());
   const [result, setResult] = useState<BulkImportResult | null>(null);
   // The buildForm (i.e. the exact files + options) the current result came
@@ -120,11 +118,10 @@ export function BulkUploader({
         const mid = a.memberId.trim();
         if (csv && mid) fd.append("ownerAlias", `${csv}=${mid}`);
       }
-      fd.set("kinds", JSON.stringify(kindOverrides));
       fd.set("exclude", JSON.stringify([...exclude]));
       return fd;
     },
-    [files, canCreateOwners, createOwners, includeArchived, fallbackOwnerId, aliases, kindOverrides, exclude],
+    [files, canCreateOwners, createOwners, includeArchived, fallbackOwnerId, aliases, exclude],
   );
 
   const run = useCallback(
@@ -172,9 +169,8 @@ export function BulkUploader({
       return;
     }
     setFiles(next);
-    // New files mean new sheets: old row ticks and overrides no longer line up.
+    // New files mean new sheets: old row ticks no longer line up.
     setExclude(new Set());
-    setKindOverrides({});
   }, [files]);
 
   const clearAll = () => {
@@ -182,10 +178,14 @@ export function BulkUploader({
     setFiles([]);
     setResult(null);
     setExclude(new Set());
-    setKindOverrides({});
     setResultFor(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  const memberOptions = useMemo(
+    () => members.map((m) => ({ value: m.user_id, label: m.full_name || m.user_id })),
+    [members],
+  );
 
   const preview = result?.ok ? result : null;
   const stale = files.length > 0 && resultFor !== buildForm;
@@ -198,21 +198,17 @@ export function BulkUploader({
         <div className="space-y-4 rounded-xl border border-zinc-300 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-zinc-900 dark:text-zinc-100">Team</span>
-            <select
+            <SelectMenu
+              variant="field"
+              options={importableTeams.map((t) => ({ value: t.id, label: t.name }))}
               value={teamId}
-              onChange={(e) => {
+              onChange={(id) => {
+                if (id === teamId) return;
                 carry.current = files.length > 0 ? { files, includeArchived, createOwners } : null;
-                router.push(`/teams/${e.target.value}/import`);
+                router.push(`/teams/${id}/import`);
               }}
               disabled={importableTeams.length < 2}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              {importableTeams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+            />
           </label>
 
           <div className="space-y-2">
@@ -243,21 +239,17 @@ export function BulkUploader({
                     className="w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <span className="text-xs text-zinc-400">→</span>
-                  <select
-                    value={row.memberId}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setAliases((prev) => prev.map((a, j) => (j === i ? { ...a, memberId: v } : a)));
-                    }}
-                    className="w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  >
-                    <option value="">Choose member…</option>
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.full_name || m.user_id}
-                      </option>
-                    ))}
-                  </select>
+                  <SelectMenu
+                    variant="field"
+                    options={memberOptions}
+                    value={row.memberId || undefined}
+                    placeholder="Choose member…"
+                    aria-label={`Team member for ${row.csvName || "this name"}`}
+                    onChange={(v) =>
+                      setAliases((prev) => prev.map((a, j) => (j === i ? { ...a, memberId: v } : a)))
+                    }
+                    className="w-full min-w-0"
+                  />
                   <button
                     type="button"
                     aria-label="Remove alias"
@@ -310,19 +302,28 @@ export function BulkUploader({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-zinc-900 dark:text-zinc-100">Unmatched owner</span>
-              <select
+              <SelectMenu
+                variant="field"
+                options={[
+                  {
+                    value: "",
+                    label: "Import with No Owner",
+                    description: "Blank or unknown owners land unassigned; an unknown name is kept in the description",
+                  },
+                  {
+                    value: SKIP_ROWS,
+                    label: "Skip those rows",
+                    description: "Rows whose owner is blank or not on the team aren't imported",
+                  },
+                  ...members.map((m) => ({
+                    value: m.user_id,
+                    label: `Park them on ${m.full_name || m.user_id}`,
+                  })),
+                ]}
                 value={fallbackOwnerId}
-                onChange={(e) => setFallbackOwnerId(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-              >
-                <option value="">Import with No Owner (keeps the name in the description)</option>
-                <option value={SKIP_ROWS}>Skip rows with unknown owners</option>
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    Park them on {m.full_name || m.user_id}
-                  </option>
-                ))}
-              </select>
+                onChange={setFallbackOwnerId}
+                className="w-full"
+              />
             </label>
           </div>
         </div>
@@ -461,8 +462,6 @@ export function BulkUploader({
           result={preview}
           exclude={exclude}
           setExclude={setExclude}
-          kindOverrides={kindOverrides}
-          setKindOverride={(id, kind) => setKindOverrides((prev) => ({ ...prev, [id]: kind }))}
           updating={stale}
         />
       )}
@@ -491,15 +490,11 @@ function ResultView({
   result,
   exclude,
   setExclude,
-  kindOverrides,
-  setKindOverride,
   updating,
 }: {
   result: Extract<BulkImportResult, { ok: true }>;
   exclude: Set<string>;
   setExclude: (fn: (prev: Set<string>) => Set<string>) => void;
-  kindOverrides: Record<string, ImportKind | "">;
-  setKindOverride: (tableId: string, kind: ImportKind | "") => void;
   /** A newer preview is on its way — say so, but keep the grid usable. */
   updating: boolean;
 }) {
@@ -578,8 +573,6 @@ function ResultView({
           verdicts={verdicts}
           exclude={exclude}
           setExclude={setExclude}
-          override={kindOverrides[table.id]}
-          setOverride={(k) => setKindOverride(table.id, k)}
           applied={!report.dryRun}
           updating={updating}
         />
@@ -676,8 +669,6 @@ function SheetGrid({
   verdicts,
   exclude,
   setExclude,
-  override,
-  setOverride,
   applied,
   updating,
 }: {
@@ -685,8 +676,6 @@ function SheetGrid({
   verdicts: Map<string, PreviewRow>;
   exclude: Set<string>;
   setExclude: (fn: (prev: Set<string>) => Set<string>) => void;
-  override: ImportKind | "" | undefined;
-  setOverride: (kind: ImportKind | "") => void;
   applied: boolean;
   updating: boolean;
 }) {
@@ -702,26 +691,10 @@ function SheetGrid({
   });
   const shown = onlyProblems ? rows.filter((x) => x.problem) : rows;
   const allTicked = shown.every((x) => !x.excluded);
-  const selectValue = override ?? table.kind ?? "";
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        <label className="flex items-center gap-1.5">
-          <span className="font-medium text-zinc-800 dark:text-zinc-200">Import as</span>
-          <select
-            value={selectValue}
-            onChange={(e) => setOverride(e.target.value as ImportKind | "")}
-            className="rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-950"
-          >
-            {KIND_ORDER.map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABELS[k]}
-              </option>
-            ))}
-            <option value="">Leave out</option>
-          </select>
-        </label>
         <span className="text-zinc-500">
           {table.detected
             ? `Detected ${KIND_LABELS[table.detected]} — ${table.reason}`

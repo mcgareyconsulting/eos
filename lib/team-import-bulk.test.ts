@@ -128,7 +128,7 @@ describe("classifyTable", () => {
   test("unknown columns and names → null, with a reason to show", () => {
     const got = classifyTable(["Foo", "Bar"], "Sheet1", "data.csv", AS_OF);
     assert.equal(got.kind, null);
-    assert.match(got.reason, /pick a type/);
+    assert.match(got.reason, /not imported/);
   });
 });
 

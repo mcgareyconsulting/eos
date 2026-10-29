@@ -182,6 +182,11 @@ export function BulkUploader({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const memberOptions = useMemo(
+    () => members.map((m) => ({ value: m.user_id, label: m.full_name || m.user_id })),
+    [members],
+  );
+
   const preview = result?.ok ? result : null;
   const stale = files.length > 0 && resultFor !== buildForm;
   const canImport = !!preview && preview.report.dryRun && !stale && !pending;
@@ -234,21 +239,17 @@ export function BulkUploader({
                     className="w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <span className="text-xs text-zinc-400">→</span>
-                  <select
-                    value={row.memberId}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setAliases((prev) => prev.map((a, j) => (j === i ? { ...a, memberId: v } : a)));
-                    }}
-                    className="w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  >
-                    <option value="">Choose member…</option>
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.full_name || m.user_id}
-                      </option>
-                    ))}
-                  </select>
+                  <SelectMenu
+                    variant="field"
+                    options={memberOptions}
+                    value={row.memberId || undefined}
+                    placeholder="Choose member…"
+                    aria-label={`Team member for ${row.csvName || "this name"}`}
+                    onChange={(v) =>
+                      setAliases((prev) => prev.map((a, j) => (j === i ? { ...a, memberId: v } : a)))
+                    }
+                    className="w-full min-w-0"
+                  />
                   <button
                     type="button"
                     aria-label="Remove alias"

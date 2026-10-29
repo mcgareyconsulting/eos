@@ -8,7 +8,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import Link from "next/link";
+import { SidebarLink } from "@/components/sidebar-link";
+import { SIDEBAR_ICON } from "@/components/sidebar-icon";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
@@ -437,35 +438,14 @@ export function TeamNav({
           (item) =>
             item.section !== "import" || importTeamIds.includes(activeTeam.id),
         ).map((item) => (
-          <NavLink
+          <SidebarLink
             key={item.section}
             href={item.section === "directory" ? "/directory" : `${teamPath}/${item.section}`}
-            icon={item.icon}
+            icon={<item.icon className={SIDEBAR_ICON} />}
             label={item.label}
           />
         ))}
       </div>
     </div>
-  );
-}
-
-function NavLink({
-  href,
-  icon: Icon,
-  label,
-}: {
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      title={label}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 group-data-[sidebar-collapsed]/shell:justify-center group-data-[sidebar-collapsed]/shell:py-2"
-    >
-      <Icon className="w-4 h-4 shrink-0 text-zinc-600 group-data-[sidebar-collapsed]/shell:size-5 dark:text-zinc-400" />
-      <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
-    </Link>
   );
 }

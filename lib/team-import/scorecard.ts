@@ -94,8 +94,8 @@ export async function importScorecard(
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable"),
     );
-    const allowNullOwner =
-      unmatchedName !== null && ctx.unmatchedOwner === "no-owner";
+    // A blank Owner (ninety "Unassigned") is No Owner too.
+    const allowNullOwner = ctx.unmatchedOwner === "no-owner";
     if (ownerId === null && !allowNullOwner) {
       skipped++;
       ctx.preview.add({

@@ -17,6 +17,7 @@ import {
   toGridTables,
 } from "./team-import";
 import { readZip } from "./xlsx";
+import { importDocId } from "./csv-import";
 
 // A team's ninety export, column for column (client sample, 2026-10-29).
 const EXPORT_HEADERS = {
@@ -574,5 +575,39 @@ describe("archived exports", () => {
     const { tables } = readBulkTables([{ name: "Archived Scorecard.csv", bytes: Buffer.from(csv(sc)) }], AS_OF);
     assert.deepEqual(assembleBulkInputs(tables, new Map()).inputs, {});
     assert.equal(toGridTables(tables, new Map(), AS_OF)[0].kind, null);
+  });
+});
+
+describe("repeating to-dos warning", () => {
+  const todoHdr = EXPORT_HEADERS.todos.split("|");
+  const todo = (cells: Record<string, string>) => todoHdr.map((h) => cells[h] ?? "").join(",");
+  async function warnings(file: string, rows: Record<string, string>[], seed?: (db: FakeFirestore) => void) {
+    const { tables } = readBulkTables([{ name: file, bytes: Buffer.from([todoHdr.join(","), ...rows.map(todo)].join("\n")) }], AS_OF);
+    const db = new FakeFirestore();
+    seed?.(db);
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    return report.kinds.flatMap((k) => k.warnings).filter((w) => /repeat/.test(w));
+  }
+  const monthly = { Owner: "Sarah Chen", Title: "OptimaFi Data Upload", Repeat: "Monthly" };
+
+  test("a live repeating to-do is named once", async () => {
+    const w = await warnings("To-Dos.csv", [monthly, { Owner: "Sarah Chen", Title: "One-off", Repeat: "Does not repeat" }]);
+    assert.equal(w.length, 1);
+    assert.match(w[0], /^1 to-do\(s\) repeat.*: OptimaFi Data Upload \(Monthly\)$/);
+  });
+
+  test("archived occurrences don't warn — they're history, one row per month", async () => {
+    const rows = ["2026-07-01", "2026-08-01", "2026-09-01"].map((d) => ({ ...monthly, "Created Date": d, "Archived Date": d }));
+    assert.deepEqual(await warnings("Archived To-Dos.csv", rows), []);
+  });
+
+  test("rows that aren't imported don't count", async () => {
+    const w = await warnings("To-Dos.csv", [monthly], (db) =>
+      // Already on the team from an earlier import: kept as is, not re-imported.
+      db.seed("todos", importDocId("todo", "t1", "OptimaFi Data Upload"), { team_id: "t1", title: "OptimaFi Data Upload" }),
+    );
+    assert.deepEqual(w, []);
   });
 });

@@ -50,7 +50,9 @@ export async function importTodos(
   let noOwner = 0;
   let unchanged = 0;
   let tooLong = 0;
-  const recurring: string[] = [];
+  // "Title (Monthly)" → rows imported. Grouped: one live export can list a
+  // repeating to-do more than once.
+  const recurring = new Map<string, number>();
   const details: string[] = [];
   const warnings: string[] = [];
   const teamValues = new Set<string>();
@@ -96,11 +98,6 @@ export async function importTodos(
         note: "Archived in the file — tick Include archived rows to import it",
       });
       continue;
-    }
-
-    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
-    if (repeat && isRecurring(repeat)) {
-      recurring.push(`${title} (${repeat})`);
     }
 
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
@@ -208,6 +205,16 @@ export async function importTodos(
           : undefined,
     });
     imported++;
+
+    // The app has no recurring to-dos, so a repeating one lands once — worth
+    // a warning for live rows only. Rows that weren't imported don't count,
+    // and an archived export lists each past occurrence as its own row
+    // (still marked Monthly): those are history, not schedules to recreate.
+    const repeat = cell(row, table.headers, "Repeat", "Recurrence", "Repeats");
+    if (!ctx.archive && repeat && isRecurring(repeat)) {
+      const key = `${title} (${repeat})`;
+      recurring.set(key, (recurring.get(key) ?? 0) + 1);
+    }
   }
 
   if (otherTeam) details.push(`${otherTeam} for other departments, not imported`);
@@ -221,9 +228,10 @@ export async function importTodos(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
-  if (recurring.length > 0) {
+  if (recurring.size > 0) {
+    const list = [...recurring].map(([key, n]) => (n > 1 ? `${key} ×${n}` : key));
     warnings.push(
-      `${recurring.length} to-do(s) repeat on a schedule, imported as one-offs: ${recurring.slice(0, 5).join("; ")}${recurring.length > 5 ? "…" : ""}`,
+      `${recurring.size} to-do(s) repeat on a schedule in ninety — the app has no recurring to-dos, so each was imported once and needs re-creating when due: ${list.slice(0, 5).join("; ")}${list.length > 5 ? "…" : ""}`,
     );
   }
 

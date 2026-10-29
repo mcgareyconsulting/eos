@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import {
   cell,
+  importedLink,
   importDocId,
   normalizeDescription,
   parseDateOnly,
@@ -12,14 +13,17 @@ import {
   archivedAtFrom,
   createdAtFrom,
   isArchived,
+  isOtherTeam,
   isStaleCompletion,
+  otherTeamNote,
   normalizeIssuePriority,
   normalizeIssueStatus,
   normalizeIssueType,
   rejectOverLength,
+  rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { withUnmatchedOwnerNote, withWhoNote } from "./owners";
 
 export async function importIssues(
   table: CsvTable,
@@ -34,6 +38,8 @@ export async function importIssues(
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
     existingRows: "keep" | "update";
+    /** Department filter — see TeamImportOptions.rockTeam. */
+    rockTeam?: string;
   },
 ): Promise<KindStats> {
   let imported = 0;
@@ -47,11 +53,24 @@ export async function importIssues(
   let longCount = 0;
   const details: string[] = [];
   const warnings: string[] = [];
+  const teamValues = new Set<string>();
+  let otherTeam = 0;
+  let withWho = 0;
 
   for (const row of table.rows) {
+    ctx.preview.begin(row);
     const title = cell(row, table.headers, "Title", "Name", "Issue");
     if (!title) {
       skipped++;
+      continue;
+    }
+
+    const rowTeam = rowTeamOf(row, table.headers);
+    if (rowTeam) teamValues.add(rowTeam);
+    if (isOtherTeam(rowTeam, ctx.rockTeam)) {
+      skipped++;
+      otherTeam++;
+      ctx.preview.add({ kind: "issues", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
       continue;
     }
 
@@ -140,6 +159,23 @@ export async function importIssues(
 
     let description =
       normalizeDescription(cell(row, table.headers, "Description", "Notes")) || null;
+    // ninety's Who column: blank in every export seen so far, and its meaning
+    // (assignee? raised-by?) is unconfirmed. Keep a value as text rather than
+    // guess at assigned_by, which carries follow/notification semantics.
+    const who = cell(row, table.headers, "Who");
+    if (who) {
+      description = withWhoNote(description, who);
+      withWho++;
+      if (
+        rejectOverLength(ctx.preview, "issues", title, [
+          ["Description (with the Who note)", description, LONG_TEXT_MAX],
+        ])
+      ) {
+        skipped++;
+        tooLong++;
+        continue;
+      }
+    }
     if (ownerId === null && unmatchedName) {
       description = withUnmatchedOwnerNote(description, unmatchedName);
       // The owner note can push an in-limit description over the cap; check
@@ -172,7 +208,7 @@ export async function importIssues(
         : null,
       resolution_todo_id: null,
       source_meeting_id: null,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
+      source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
         ? { archived_at: archivedAtFrom(row, table.headers) }
@@ -200,7 +236,18 @@ export async function importIssues(
   }
 
   details.push(`${shortCount} short-term, ${longCount} long-term`);
+  if (withWho) {
+    warnings.push(
+      `${withWho} issue(s) have a Who value — kept as a "Who:" line in the description. Tell us what this column means for your team and we can map it.`,
+    );
+  }
+  if (otherTeam) details.push(`${otherTeam} for other departments, not imported`);
   if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
+  if (!ctx.rockTeam && teamValues.size > 1) {
+    warnings.push(
+      `Issues span ${teamValues.size} departments in the file (${[...teamValues].join(", ")}). All landed on this app team — set a Department filter to import only one.`,
+    );
+  }
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);

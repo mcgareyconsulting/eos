@@ -463,6 +463,26 @@ export function normalizePersonKey(raw: string): string {
     .trim();
 }
 
+// HPB is retiring ninety.io, so a link back into it (app.ninety.io/…) would
+// be dead on arrival. Anything else — a SharePoint doc, a vendor page — is
+// the team's own reference and is kept.
+export function isNinetyLink(raw: string): boolean {
+  const s = (raw ?? "").trim();
+  if (!s) return false;
+  try {
+    const host = new URL(/^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`).hostname.toLowerCase();
+    return host === "ninety.io" || host.endsWith(".ninety.io");
+  } catch {
+    return false;
+  }
+}
+
+/** The Link column as stored: null when blank or a ninety.io link. */
+export function importedLink(raw: string): string | null {
+  const s = (raw ?? "").trim();
+  return s && !isNinetyLink(s) ? s : null;
+}
+
 // Case/punctuation/whitespace-insensitive key for matching titles between
 // files (a milestone's "Rock Name" against a rock's "Title") and for building
 // stable doc ids.

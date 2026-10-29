@@ -56,6 +56,7 @@ export async function importScorecard(
   const groupOrder = new Map<string, { name: string; order: number }>();
 
   for (const [i, row] of table.rows.entries()) {
+    ctx.preview.begin(row);
     const name = cell(row, table.headers, "Title", "Name", "Metric", "Measurable");
     if (!name) {
       skipped++;

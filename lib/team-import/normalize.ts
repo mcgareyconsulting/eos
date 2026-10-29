@@ -1,7 +1,7 @@
 // Small per-row normalizers shared by the kind importers.
 
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { cell, parseDateOnly } from "../csv-import";
+import { cell, normalizeKey, parseDateOnly } from "../csv-import";
 import { requireMaxLength } from "../text-limits";
 import type { ImportKind } from "../team-import-types";
 import type { PreviewCollector } from "./owners";
@@ -154,4 +154,21 @@ export function rejectOverLength(
     note: `Not imported — ${reason}`,
   });
   return true;
+}
+
+/** The export's Team/Department column (ninety: Team = department name). */
+export function rowTeamOf(row: Record<string, string>, headers: string[]): string {
+  return cell(row, headers, "Team", "Department", "Dept", "Department Name");
+}
+
+/**
+ * True when the Department filter is set and this row names another
+ * department. A blank Team cell passes: team-scoped exports leave it empty.
+ */
+export function isOtherTeam(rowTeam: string, filter: string | undefined): boolean {
+  return !!filter && !!rowTeam && normalizeKey(rowTeam) !== normalizeKey(filter);
+}
+
+export function otherTeamNote(rowTeam: string): string {
+  return `Team "${rowTeam}" — not the department being imported`;
 }

@@ -57,6 +57,12 @@ export type TeamImportOptions = {
    */
   unmatchedOwner?: "skip" | "no-owner";
   asOf?: Date;
+  /** Preview rows to keep (default 250 — the single-file preview list). */
+  previewLimit?: number;
+  /** Source position per row object, stamped on preview rows (bulk import). */
+  rowRefs?: WeakMap<object, { table: string; row: number }>;
+  /** import_runs doc id, stamped as `import_run_id` on every doc written. */
+  importRunId?: string | null;
 };
 
 export type TeamImportInputs = {
@@ -89,8 +95,8 @@ export async function runTeamImport(
   const unmatchedOwner = options.unmatchedOwner ?? "no-owner";
   const existingRows = options.existingRows ?? "keep";
 
-  const writer = new Writer(db, dryRun, options.actorUid);
-  const preview = new PreviewCollector();
+  const writer = new Writer(db, dryRun, options.actorUid, options.importRunId);
+  const preview = new PreviewCollector(options.previewLimit, options.rowRefs);
   const teamMembers = members ?? (await loadMembers(db, teamId));
   const owners = new OwnerResolver(teamId, teamMembers, {
     createOwners,
@@ -179,6 +185,7 @@ export async function runTeamImport(
         unmatchedOwner,
         preview,
         existingRows,
+        rockTeam: options.rockTeam,
       }),
     );
   }
@@ -197,6 +204,7 @@ export async function runTeamImport(
           unmatchedOwner,
           preview,
           existingRows,
+          rockTeam: options.rockTeam,
         }),
       );
     }

@@ -2,10 +2,9 @@ import { Upload } from "lucide-react";
 import {
   requireTeamLeader,
   getTeamMembers,
-  getOrgTeams,
   getImportableTeams,
 } from "@/lib/firebase/teams";
-import { ImportUploader } from "./import-uploader";
+import { BulkUploader } from "./bulk-uploader";
 
 export default async function ImportPage({
   params,
@@ -13,22 +12,19 @@ export default async function ImportPage({
   params: Promise<{ teamId: string }>;
 }) {
   const { teamId } = await params;
-  // Import is a leader/admin surface (see importTeamFile) — members 404.
+  // Import is a leader/admin surface (see importTeamBundle) — members 404.
   const { team, isAdmin } = await requireTeamLeader(teamId);
-  const [members, orgTeams, importableTeams] = await Promise.all([
+  const [members, importableTeams] = await Promise.all([
     getTeamMembers(teamId),
-    // Department filter matches text in the *file*, so it offers every team
-    // name (already a soft-directory read) plus an "Other…" escape hatch.
-    getOrgTeams(),
-    // "Import into" is a write surface: admins get every team, everyone else
+    // The Team picker is a write surface: admins get every team, everyone else
     // only the teams they lead.
     getImportableTeams(teamId),
   ]);
 
   return (
-    // Wide on purpose: the dry-run preview is a four-column table of real
-    // rows, and 2xl squeezed titles into two clamped lines (client, 8/26).
-    <div className="mx-auto max-w-6xl space-y-6">
+    // Wide on purpose: the dry-run preview is a spreadsheet grid of the
+    // file's own columns; it scrolls sideways inside its box past this.
+    <div className="mx-auto max-w-7xl space-y-6">
       <header>
         <div className="flex items-center gap-2 text-hpb-blue dark:text-hpb-gold">
           <Upload className="h-5 w-5" />
@@ -39,20 +35,12 @@ export default async function ImportPage({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Import into {team.name}
         </h1>
-        <p className="mt-1 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
-          Drop a CSV or Excel file to add <strong>Rocks</strong>,{" "}
-          <strong>To-Dos</strong>, <strong>Issues</strong>, or{" "}
-          <strong>Headlines</strong>. Re-importing the
-          same file is safe: rows already on the team are matched by title and
-          left alone, so only what&rsquo;s new is added.
-        </p>
       </header>
 
-      <ImportUploader
+      <BulkUploader
         teamId={teamId}
         teamName={team.name}
         canCreateOwners={isAdmin}
-        orgTeams={orgTeams}
         importableTeams={importableTeams}
         members={members.map((m) => ({
           user_id: m.user_id,

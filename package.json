@@ -40,7 +40,7 @@
     "firebase": "^12.19.0",
     "firebase-admin": "^14.5.0",
     "lucide-react": "^1.14.0",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0"
@@ -53,7 +53,7 @@
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.3",
     "firebase-tools": "^15.23.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",

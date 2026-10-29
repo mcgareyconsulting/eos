@@ -13,6 +13,8 @@
 // surface so `@/lib/team-import` keeps resolving for existing callers.
 
 export type {
+  BulkGridTable,
+  BulkNotice,
   ImportKind,
   ImportReport,
   KindStats,
@@ -21,6 +23,21 @@ export type {
 
 export type { TeamImportOptions, TeamImportInputs } from "./run";
 export { runTeamImport } from "./run";
+
+export {
+  assembleBulkInputs,
+  classifyTable,
+  expandUploads,
+  GRID_ROW_CAP,
+  readBulkTables,
+  rowKey,
+  teamFilterFor,
+  toGridTables,
+} from "./bulk";
+export type { SourceTable, UploadFile } from "./bulk";
+
+export { finishImportRun, sha256, startImportRun } from "./import-run";
+export type { ImportRunStart } from "./import-run";
 
 export {
   headlineTablesFromBytes,

@@ -3,30 +3,35 @@
 import { revalidatePath } from "next/cache";
 import { requireTeamLeader, getTeamMembers } from "@/lib/firebase/teams";
 import { normalizePersonKey } from "@/lib/csv-import";
-import { EXPECTED_HEADERS, type WebImportKind } from "@/lib/import-headers";
 import {
-  headlineTablesFromBytes,
-  issueTablesFromBytes,
-  preferRegexForKind,
-  rocksWorkbookFromBytes,
+  assembleBulkInputs,
+  expandUploads,
+  finishImportRun,
+  readBulkTables,
+  rowKey,
   runTeamImport,
-  tableFromBytes,
-  type TeamImportInputs,
+  startImportRun,
+  teamFilterFor,
+  toGridTables,
+  type ImportKind,
 } from "@/lib/team-import";
-import { SKIP_ROWS, type ImportActionResult } from "./import-types";
+import { SKIP_ROWS, type BulkImportResult } from "./import-types";
 
-const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_KINDS = [
+// Whole upload, not per file. Server Actions cap the request body at 1 MB
+// (left at the Next default on purpose — raising it widens every action), so
+// this stays under it with room for the multipart overhead. A team's whole
+// ninety export zipped is ~70 KB.
+const MAX_BYTES = 950 * 1024;
+const MAX_EXCLUDED = 50_000;
+
+const KINDS: readonly ImportKind[] = [
+  "scorecard",
   "rocks",
+  "milestones",
   "todos",
   "issues",
   "headlines",
-  "scorecard",
-] as const;
-
-function isKind(v: string): v is WebImportKind {
-  return (ALLOWED_KINDS as readonly string[]).includes(v);
-}
+];
 
 function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/rocks`);
@@ -39,114 +44,101 @@ function revalidateTeam(teamId: string) {
   revalidatePath("/home");
 }
 
-async function fileToBuffer(file: File): Promise<Buffer> {
-  if (file.size > MAX_BYTES) {
+function parseJson(raw: FormDataEntryValue | null): unknown {
+  if (raw === null || raw === "") return undefined;
+  try {
+    return JSON.parse(String(raw));
+  } catch {
     throw new Error(
-      `File is too large (${Math.round(file.size / 1024 / 1024)} MB). Max is ${MAX_BYTES / 1024 / 1024} MB.`,
+      "Malformed import request — reload the page and try again.",
     );
   }
-  const ab = await file.arrayBuffer();
-  return Buffer.from(ab);
 }
 
-function validateFilename(name: string) {
-  if (!/\.(csv|tsv|xlsx)$/i.test(name)) {
-    throw new Error("Upload a .csv, .tsv, or .xlsx file.");
+/** `kinds` field: { [tableId]: ImportKind | "" } — "" leaves the tab out. */
+function parseKinds(
+  raw: FormDataEntryValue | null,
+): Map<string, ImportKind | null> {
+  const out = new Map<string, ImportKind | null>();
+  const obj = parseJson(raw);
+  if (obj === undefined) return out;
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+    throw new Error(
+      "Malformed import request — reload the page and try again.",
+    );
   }
+  for (const [id, v] of Object.entries(obj)) {
+    if (v === "") out.set(id, null);
+    else if (
+      typeof v === "string" &&
+      (KINDS as readonly string[]).includes(v)
+    ) {
+      out.set(id, v as ImportKind);
+    }
+  }
+  return out;
 }
 
-function buildInputs(
-  kind: WebImportKind,
-  buf: Buffer,
-  filename: string,
-): { inputs: TeamImportInputs; headers: string[]; rowCount: number; sheets: string[] } {
-  if (kind === "issues" || kind === "headlines") {
-    const tables =
-      kind === "issues"
-        ? issueTablesFromBytes(buf, filename)
-        : headlineTablesFromBytes(buf, filename);
-    const headers = tables[0]?.headers ?? [];
-    const rowCount = tables.reduce((n, t) => n + t.rows.length, 0);
-    const sheets = tables.map((t) => t.sheetName).filter((s): s is string => !!s);
-    return {
-      inputs: kind === "issues" ? { issues: { tables } } : { headlines: { tables } },
-      headers,
-      rowCount,
-      sheets,
-    };
+function parseExclude(raw: FormDataEntryValue | null): Set<string> {
+  const arr = parseJson(raw);
+  if (arr === undefined) return new Set();
+  if (!Array.isArray(arr) || arr.length > MAX_EXCLUDED) {
+    throw new Error(
+      "Malformed import request — reload the page and try again.",
+    );
   }
-
-  if (kind === "rocks") {
-    // Ninety ships rocks + milestones as one workbook; take both.
-    const { rocks, milestones, sheets } = rocksWorkbookFromBytes(buf, filename);
-    return {
-      inputs: {
-        rocks: { table: rocks },
-        ...(milestones ? { milestones: { table: milestones } } : {}),
-      },
-      headers: rocks.headers,
-      rowCount: rocks.rows.length + (milestones?.rows.length ?? 0),
-      sheets,
-    };
-  }
-
-  const table = tableFromBytes(buf, filename, preferRegexForKind(kind));
-
-  if (kind === "scorecard") {
-    return {
-      inputs: { scorecard: { table } },
-      headers: table.headers,
-      rowCount: table.rows.length,
-      sheets: [],
-    };
-  }
-
-  return {
-    inputs: { todos: { table } },
-    headers: table.headers,
-    rowCount: table.rows.length,
-    sheets: [],
-  };
+  return new Set(arr.filter((v): v is string => typeof v === "string"));
 }
 
 /**
- * Preview (dry-run) or apply an import of Rocks, To-Dos, Issues, Headlines
- * or Scorecard measurables for a team.
+ * Preview (dry-run) or apply a bulk import: a .zip of a team's ninety export
+ * and/or loose .xlsx/.csv/.tsv files. Every sheet is classified by its
+ * headers; all of them run through one runTeamImport, so milestones link to
+ * rocks from the same drop.
+ *
  * Form fields:
- *   - kind: rocks | todos | issues | headlines | scorecard
- *   - file: File
+ *   - file: File (repeatable) — .zip / .xlsx / .csv / .tsv
  *   - dryRun: "1" | "0"
- *   - createOwners: "1" | "0"
+ *   - kinds: JSON { [tableId]: kind | "" } — per-tab type overrides
+ *   - exclude: JSON string[] of `${tableId}#${row}` — rows the user unticked
+ *   - createOwners: "1" | "0"   (admin only)
  *   - includeArchived: "1" | "0"
  *   - fallbackOwnerId: "" / absent = No Owner (owner_id null + the unmatched
  *     name in the description), SKIP_ROWS = drop the row, or a team member uid
- *   - rockTeam: optional Department/Team-column filter (e.g. "Enterprise Systems & Data")
- *   - ownerAlias: repeatable "CSV Name=memberUid" (or member display name)
+ *   (The file's Team column is matched against this team — teamFilterFor.)
+ *   - ownerAlias: repeatable "File Name=memberUid" (or member display name)
  */
-export async function importTeamFile(
+export async function importTeamBundle(
   teamId: string,
   formData: FormData,
-): Promise<ImportActionResult> {
+): Promise<BulkImportResult> {
   try {
     // Leader-or-admin, matching getImportableTeams: imports bulk-write team
     // data and (admin-only createOwners) roster rows.
-    const { db, isAdmin, uid: actorUid } = await requireTeamLeader(teamId);
+    const {
+      db,
+      isAdmin,
+      uid: actorUid,
+      team,
+    } = await requireTeamLeader(teamId);
     const members = await getTeamMembers(teamId);
 
-    const kindRaw = String(formData.get("kind") ?? "");
-    if (!isKind(kindRaw)) {
+    const uploads = formData
+      .getAll("file")
+      .filter((f): f is File => f instanceof File && f.size > 0);
+    if (uploads.length === 0) {
       return {
         ok: false,
-        error: "Choose Rocks, To-Dos, Issues, or Headlines.",
+        error: "Drop a .zip of the export, or the .xlsx / .csv files.",
       };
     }
-    const kind = kindRaw;
-
-    const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      return { ok: false, error: "Drop or choose a .csv / .xlsx file." };
+    const total = uploads.reduce((n, f) => n + f.size, 0);
+    if (total > MAX_BYTES) {
+      return {
+        ok: false,
+        error: `Upload is ${Math.round(total / 1024)} KB. Max is ${MAX_BYTES / 1024} KB — zip the files, or import them in two goes.`,
+      };
     }
-    validateFilename(file.name);
 
     const dryRun = formData.get("dryRun") !== "0";
     // Placeholder people are an admin-only act (spec 2.1/2.4): a leader's
@@ -154,7 +146,8 @@ export async function importTeamFile(
     const createOwners = isAdmin && formData.get("createOwners") === "1";
     const includeArchived = formData.get("includeArchived") === "1";
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
-    const rockTeam = String(formData.get("rockTeam") ?? "").trim() || undefined;
+    const kinds = parseKinds(formData.get("kinds"));
+    const exclude = parseExclude(formData.get("exclude"));
 
     // Unmatched owners import as No Owner by default — losing rows silently is
     // worse than importing them unassigned. SKIP_ROWS opts back out; picking a
@@ -164,36 +157,32 @@ export async function importTeamFile(
     let fallbackOwnerId: string | null = null;
     if (fallbackRaw && fallbackRaw !== SKIP_ROWS) {
       if (!members.some((m) => m.user_id === fallbackRaw)) {
-        return { ok: false, error: "Owner fallback is not a member of this team." };
+        return {
+          ok: false,
+          error: "Owner fallback is not a member of this team.",
+        };
       }
       fallbackOwnerId = fallbackRaw;
     }
 
-    // Resolve aliases: each entry is "CSV Name=uid-or-display-name"
+    // Resolve aliases: each entry is "File Name=uid-or-display-name"
     const ownerAliases = new Map<string, string>();
     for (const raw of formData.getAll("ownerAlias")) {
       const s = String(raw).trim();
       if (!s) continue;
       const eq = s.indexOf("=");
-      if (eq <= 0) {
-        return {
-          ok: false,
-          error: `Owner alias must look like "CSV Name=member" (got "${s}").`,
-        };
-      }
-      const csvName = s.slice(0, eq).trim();
-      const target = s.slice(eq + 1).trim();
+      const csvName = eq > 0 ? s.slice(0, eq).trim() : "";
+      const target = eq > 0 ? s.slice(eq + 1).trim() : "";
       if (!csvName || !target) {
         return {
           ok: false,
-          error: `Owner alias must look like "CSV Name=member" (got "${s}").`,
+          error: `Owner alias must look like "Name in file=member" (got "${s}").`,
         };
       }
       const targetKey = normalizePersonKey(target);
       const match = members.find(
         (m) =>
-          m.user_id === target ||
-          normalizePersonKey(m.full_name) === targetKey,
+          m.user_id === target || normalizePersonKey(m.full_name) === targetKey,
       );
       if (!match) {
         return {
@@ -204,61 +193,93 @@ export async function importTeamFile(
       ownerAliases.set(normalizePersonKey(csvName), match.user_id);
     }
 
-    const buf = await fileToBuffer(file);
-    const { inputs, headers, rowCount, sheets } = buildInputs(kind, buf, file.name);
+    const received = await Promise.all(
+      uploads.map(async (f) => ({
+        name: f.name,
+        bytes: Buffer.from(await f.arrayBuffer()),
+      })),
+    );
+    const { files, notices: unpackNotices } = expandUploads(received);
+    const asOf = new Date();
+    const { tables, notices: readNotices } = readBulkTables(files, asOf);
+    const notices = [...unpackNotices, ...readNotices];
 
-    if (rowCount === 0) {
+    if (tables.length === 0) {
       return {
         ok: false,
         error:
-          "No data rows found. Check that the first row is headers and there is at least one data row.",
+          notices.length > 0
+            ? `Nothing to import. ${notices.map((n) => `${n.file}: ${n.message}`).join(" · ")}`
+            : "No data rows found. Check that the first row is headers and there is at least one data row.",
       };
     }
 
-    // What this kind's title column can also be called. A chained ternary
-    // here silently fell through to "headline" for any kind added later, so
-    // it is a lookup — scorecard's column is Metric / Measurable.
-    const TITLE_ALIASES: Record<WebImportKind, string[]> = {
-      rocks: ["rock"],
-      todos: ["to-do"],
-      issues: ["issue"],
-      headlines: ["headline"],
-      scorecard: ["metric", "measurable"],
-    };
-    const headerKeys = headers.map((h) => h.trim().toLowerCase());
-    const hasTitle = headerKeys.some((h) =>
-      ["title", "name", ...TITLE_ALIASES[kind], "todo", "task"].includes(h),
-    );
-    if (!hasTitle) {
-      const expected = EXPECTED_HEADERS[kind].required.join(", ");
-      return {
-        ok: false,
-        error: `Could not find a Title/Name column. Expected headers include: ${expected}. Found: ${headers.filter(Boolean).join(", ") || "(none)"}`,
-      };
-    }
+    const { rockTeam, notice } = teamFilterFor(tables, kinds, team.name);
+    if (notice) notices.push(notice);
+    const { inputs, refs } = assembleBulkInputs(tables, kinds, exclude);
 
-    const report = await runTeamImport(db, teamId, inputs, {
-      dryRun,
-      actorUid,
-      createOwners,
-      fallbackOwnerId,
-      includeArchived,
-      rockTeam,
-      unmatchedOwner,
-      ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
-    });
+    // An applied import is recorded before it writes anything; if the record
+    // can't be written, startImportRun throws and nothing is imported.
+    const runRef = dryRun
+      ? null
+      : await startImportRun(db, {
+          teamId,
+          actorUid,
+          files: received,
+          tables: tables.map((t) => ({
+            id: t.id,
+            kind: kinds.has(t.id) ? kinds.get(t.id)! : t.detected,
+            rows: t.table.rows.length,
+            excluded: t.table.rows.filter((_, i) =>
+              exclude.has(rowKey(t.id, i)),
+            ).length,
+          })),
+          options: {
+            includeArchived,
+            createOwners,
+            unmatchedOwner,
+            fallbackOwnerId,
+            teamFilter: rockTeam ?? null,
+            ownerAliases: Object.fromEntries(ownerAliases),
+          },
+        });
+
+    let report;
+    try {
+      report = await runTeamImport(db, teamId, inputs, {
+        dryRun,
+        actorUid,
+        createOwners,
+        fallbackOwnerId,
+        includeArchived,
+        rockTeam,
+        unmatchedOwner,
+        ownerAliases: ownerAliases.size > 0 ? ownerAliases : undefined,
+        asOf,
+        // The grid shows every row's verdict; GRID_ROW_CAP bounds the cells.
+        previewLimit: 20_000,
+        rowRefs: refs,
+        importRunId: runRef?.id ?? null,
+      });
+    } catch (err) {
+      // Batches of 400 commit as they fill, so a failure can leave a partial
+      // import — the record says so, and import_run_id finds what landed.
+      if (runRef) {
+        await finishImportRun(runRef, actorUid, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      throw err;
+    }
+    if (runRef) await finishImportRun(runRef, actorUid, { report });
 
     if (!dryRun) revalidateTeam(teamId);
 
     return {
       ok: true,
       report,
-      preview: {
-        filename: file.name,
-        rowCount,
-        headers: headers.filter(Boolean),
-        sheets,
-      },
+      tables: toGridTables(tables, kinds, asOf),
+      notices,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Import failed.";

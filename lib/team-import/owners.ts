@@ -25,6 +25,8 @@ export class Writer {
      * user is behind them - and their writes stay unattributed.
      */
     private actorUid?: string | null,
+    /** The import_runs doc this run is recorded under (in-app imports). */
+    private importRunId?: string | null,
   ) {
     this.batch = db.batch();
   }
@@ -32,7 +34,8 @@ export class Writer {
   async set(path: [string, string], data: DocumentData) {
     this.written++;
     if (this.dryRun) return;
-    const row = this.actorUid ? { ...data, ...stamp(this.actorUid) } : data;
+    let row = this.actorUid ? { ...data, ...stamp(this.actorUid) } : data;
+    if (this.importRunId) row = { ...row, import_run_id: this.importRunId };
     this.batch.set(this.db.collection(path[0]).doc(path[1]), row, { merge: true });
     if (++this.pending >= 400) await this.flush();
   }
@@ -57,11 +60,25 @@ export class Writer {
 export class PreviewCollector {
   readonly rows: PreviewRow[] = [];
   truncated = 0;
+  private current: PreviewRow["ref"];
 
-  constructor(private limit = 250) {}
+  constructor(
+    private limit = 250,
+    /**
+     * Source position of each file row (bulk import). Importers call
+     * `begin(row)` at the top of their loop and every preview row added for
+     * it carries the ref, so the grid can line verdicts up with file rows.
+     */
+    private refs?: WeakMap<object, NonNullable<PreviewRow["ref"]>>,
+  ) {}
+
+  begin(row: object): void {
+    this.current = this.refs?.get(row);
+  }
 
   add(row: PreviewRow): void {
-    if (this.rows.length < this.limit) this.rows.push(row);
+    const stamped = this.current && !row.ref ? { ...row, ref: this.current } : row;
+    if (this.rows.length < this.limit) this.rows.push(stamped);
     else this.truncated++;
   }
 }
@@ -204,6 +221,13 @@ export function withUnmatchedOwnerNote(
   const note = `Imported owner: ${name.trim()}`;
   const body = (description ?? "").trim();
   if (!note.endsWith(":") && body.includes(note)) return body; // re-import
+  return body ? `${body}\n\n${note}` : note;
+}
+
+export function withWhoNote(description: string | null | undefined, who: string): string {
+  const note = `Who: ${who.trim()}`;
+  const body = (description ?? "").trim();
+  if (body.includes(note)) return body; // re-import
   return body ? `${body}\n\n${note}` : note;
 }
 

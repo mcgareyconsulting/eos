@@ -37,6 +37,8 @@ export type PreviewRow = {
   detail: string[];
   /** Why it was skipped, or what is notable about it. */
   note?: string;
+  /** Which file row this came from — set on bulk imports only. */
+  ref?: { table: string; row: number };
 };
 
 export type ImportReport = {
@@ -50,3 +52,33 @@ export type ImportReport = {
   /** Rows beyond the cap, not listed. */
   previewTruncated: number;
 };
+
+/**
+ * One sheet of a bulk upload as the preview grid shows it: the file's own
+ * cells, which columns the importer reads, and which date cells it can't.
+ * The per-row verdict comes from ImportReport.rows (joined on `ref`).
+ */
+export type BulkGridTable = {
+  /** `file` or `file › sheet`. */
+  id: string;
+  file: string;
+  sheet: string | null;
+  /** What the headers say it is (null = couldn't tell). */
+  detected: ImportKind | null;
+  /** Why — "has “Rock Name”", "sheet name “Short Term Issues”"… */
+  reason: string;
+  /** What it is being imported as (override, or detected). null = left out. */
+  kind: ImportKind | null;
+  /** The file's headers, minus Link (ninety.io links — nothing to check). */
+  headers: string[];
+  /** Per header: does the importer read this column? */
+  used: boolean[];
+  /** Cell values by header, capped at GRID_ROW_CAP rows. */
+  rows: string[][];
+  totalRows: number;
+  /** [row, col] of non-empty date cells that don't parse. */
+  badCells: [number, number][];
+};
+
+/** A file or sheet a bulk upload left out, and why. Shown above the grid. */
+export type BulkNotice = { file: string; message: string };

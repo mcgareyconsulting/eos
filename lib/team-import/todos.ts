@@ -2,6 +2,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { endOfQuarter, toDateString } from "../dates";
 import {
   cell,
+  importedLink,
   importDocId,
   normalizeDescription,
   parseDateOnly,
@@ -14,8 +15,11 @@ import {
   createdAtFrom,
   isArchived,
   isRecurring,
+  isOtherTeam,
   isStaleCompletion,
+  otherTeamNote,
   rejectOverLength,
+  rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
@@ -32,6 +36,8 @@ export async function importTodos(
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
     existingRows: "keep" | "update";
+    /** Department filter — see TeamImportOptions.rockTeam. */
+    rockTeam?: string;
   },
 ): Promise<KindStats> {
   let imported = 0;
@@ -44,11 +50,23 @@ export async function importTodos(
   const recurring: string[] = [];
   const details: string[] = [];
   const warnings: string[] = [];
+  const teamValues = new Set<string>();
+  let otherTeam = 0;
 
   for (const row of table.rows) {
+    ctx.preview.begin(row);
     const title = cell(row, table.headers, "Title", "Name", "To-Do", "Todo", "Task");
     if (!title) {
       skipped++;
+      continue;
+    }
+
+    const rowTeam = rowTeamOf(row, table.headers);
+    if (rowTeam) teamValues.add(rowTeam);
+    if (isOtherTeam(rowTeam, ctx.rockTeam)) {
+      skipped++;
+      otherTeam++;
+      ctx.preview.add({ kind: "todos", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
       continue;
     }
 
@@ -164,7 +182,7 @@ export async function importTodos(
       source_issue_id: null,
       source_meeting_id: null,
       source_rock_id: null,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
+      source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
         ? { archived_at: archivedAtFrom(row, table.headers) }
@@ -189,7 +207,13 @@ export async function importTodos(
     imported++;
   }
 
+  if (otherTeam) details.push(`${otherTeam} for other departments, not imported`);
   if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
+  if (!ctx.rockTeam && teamValues.size > 1) {
+    warnings.push(
+      `To-dos span ${teamValues.size} departments in the file (${[...teamValues].join(", ")}). All landed on this app team — set a Department filter to import only one.`,
+    );
+  }
   if (archived) details.push(`${archived} archived held back`);
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);

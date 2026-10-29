@@ -23,7 +23,7 @@ type ZipEntry = { name: string; offset: number; method: number; size: number };
 // Walks the central directory rather than scanning for local headers — the
 // central directory is the authoritative index and avoids false positives on
 // signature bytes inside compressed data.
-function readZipIndex(buf: Buffer): Map<string, ZipEntry> {
+function readZipIndex(buf: Buffer, label = ".xlsx"): Map<string, ZipEntry> {
   const EOCD_SIG = 0x06054b50;
   let eocd = -1;
   // The EOCD is at the end, followed only by an optional ≤64KB comment.
@@ -33,11 +33,11 @@ function readZipIndex(buf: Buffer): Map<string, ZipEntry> {
       break;
     }
   }
-  if (eocd < 0) throw new Error("Not a .xlsx file (no ZIP end-of-central-directory record).");
+  if (eocd < 0) throw new Error(`Not a ${label} file (no ZIP end-of-central-directory record).`);
 
   const count = buf.readUInt16LE(eocd + 10);
   let ptr = buf.readUInt32LE(eocd + 16);
-  if (ptr === 0xffffffff) throw new Error("zip64 .xlsx files aren't supported — re-export as CSV.");
+  if (ptr === 0xffffffff) throw new Error(`zip64 ${label} files aren't supported — re-export as CSV.`);
 
   const entries = new Map<string, ZipEntry>();
   for (let i = 0; i < count; i++) {
@@ -55,15 +55,15 @@ function readZipIndex(buf: Buffer): Map<string, ZipEntry> {
   return entries;
 }
 
-function readZipFile(buf: Buffer, entry: ZipEntry): string {
+function readZipBytes(buf: Buffer, entry: ZipEntry, label = ".xlsx"): Buffer {
   if (buf.readUInt32LE(entry.offset) !== 0x04034b50) {
-    throw new Error(`Corrupt .xlsx: bad local header for ${entry.name}`);
+    throw new Error(`Corrupt ${label}: bad local header for ${entry.name}`);
   }
   const nameLen = buf.readUInt16LE(entry.offset + 26);
   const extraLen = buf.readUInt16LE(entry.offset + 28);
   const start = entry.offset + 30 + nameLen + extraLen;
 
-  if (entry.method === 0) return buf.toString("utf8", start, start + entry.size);
+  if (entry.method === 0) return buf.subarray(start, start + entry.size);
   if (entry.method === 8) {
     // Cap decompressed size: DEFLATE can expand ~1000:1, so an 8 MB upload
     // could otherwise inflate to gigabytes and OOM the instance (zip bomb,
@@ -71,17 +71,45 @@ function readZipFile(buf: Buffer, entry: ZipEntry): string {
     try {
       return inflateRawSync(buf.subarray(start), {
         maxOutputLength: MAX_INFLATED_BYTES,
-      }).toString("utf8");
+      });
     } catch (e) {
       if ((e as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE") {
         throw new Error(
-          `.xlsx entry ${entry.name} decompresses past ${MAX_INFLATED_BYTES / 1024 / 1024} MB — re-export a smaller file (or CSV).`,
+          `${label} entry ${entry.name} decompresses past ${MAX_INFLATED_BYTES / 1024 / 1024} MB — re-export a smaller file (or CSV).`,
         );
       }
       throw e;
     }
   }
   throw new Error(`Unsupported ZIP compression method ${entry.method} in ${entry.name}`);
+}
+
+function readZipFile(buf: Buffer, entry: ZipEntry): string {
+  return readZipBytes(buf, entry).toString("utf8");
+}
+
+export type ZipFile = { name: string; bytes: Buffer };
+
+/**
+ * Every file in a plain .zip (the bulk-import upload), directories left out.
+ * Same reader as the .xlsx path — an .xlsx is itself a zip — so the same
+ * per-entry inflate cap applies; `maxTotalBytes` bounds the archive as a whole.
+ */
+export function readZip(buf: Buffer, maxTotalBytes = MAX_INFLATED_BYTES): ZipFile[] {
+  const out: ZipFile[] = [];
+  let total = 0;
+  for (const entry of readZipIndex(buf, ".zip").values()) {
+    if (entry.name.endsWith("/")) continue;
+    const bytes = readZipBytes(buf, entry, ".zip");
+    total += bytes.length;
+    if (total > maxTotalBytes) {
+      throw new Error(
+        `.zip unpacks past ${maxTotalBytes / 1024 / 1024} MB — split the export into smaller zips.`,
+      );
+    }
+    out.push({ name: entry.name, bytes });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

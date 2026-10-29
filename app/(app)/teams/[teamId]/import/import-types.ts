@@ -1,8 +1,6 @@
 // Client-safe types for the Import UI (not a "use server" module).
 
-import type { ImportReport } from "@/lib/team-import-types";
-
-export type { WebImportKind } from "@/lib/import-headers";
+import type { BulkGridTable, BulkNotice, ImportReport } from "@/lib/team-import-types";
 
 /**
  * Sentinel for the "Unmatched owner" dropdown: drop the row entirely. The
@@ -11,15 +9,13 @@ export type { WebImportKind } from "@/lib/import-headers";
  */
 export const SKIP_ROWS = "__skip_rows__";
 
-export type ImportActionResult =
+export type BulkImportResult =
   | {
       ok: true;
       report: ImportReport;
-      preview: {
-        filename: string;
-        rowCount: number;
-        headers: string[];
-        sheets: string[];
-      };
+      /** Every sheet read, with its cells, for the preview grid. */
+      tables: BulkGridTable[];
+      /** Files / sheets left out, and why. */
+      notices: BulkNotice[];
     }
   | { ok: false; error: string };

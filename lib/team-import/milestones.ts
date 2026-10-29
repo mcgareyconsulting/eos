@@ -2,6 +2,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { endOfQuarter, toDateString } from "../dates";
 import {
   cell,
+  importedLink,
   importDocId,
   normalizeDescription,
   normalizeKey,
@@ -48,6 +49,7 @@ export async function importMilestones(
   const warnings: string[] = [];
 
   for (const row of table.rows) {
+    ctx.preview.begin(row);
     const title = cell(row, table.headers, "Title", "Name", "Milestone");
     const rockName = cell(row, table.headers, "Rock Name", "Rock", "Parent Rock");
     if (!title) {
@@ -175,7 +177,7 @@ export async function importMilestones(
       source_issue_id: null,
       source_meeting_id: null,
       source_rock_id: rockId,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
+      source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
         ? { archived_at: archivedAtFrom(row, table.headers) }

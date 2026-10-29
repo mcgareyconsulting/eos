@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { currentQuarter, endOfQuarter, toDateString } from "../dates";
 import {
   cell,
+  importedLink,
   importDocId,
   normalizeDescription,
   normalizeKey,
@@ -13,7 +14,7 @@ import {
 } from "../csv-import";
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFrom, isArchived, rejectOverLength, rockTypeLabel } from "./normalize";
+import { archivedAtFrom, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
 
@@ -44,6 +45,7 @@ export async function importRocks(
   const details: string[] = [];
 
   for (const row of table.rows) {
+    ctx.preview.begin(row);
     const title = cell(row, table.headers, "Title", "Name", "Rock", "Rock Name");
     if (!title) {
       skipped++;
@@ -62,6 +64,14 @@ export async function importRocks(
     if (rowTeam) teamValues.add(rowTeam);
     if (ctx.rockTeam && normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)) {
       skipped++;
+      ctx.preview.add({
+        kind: "rocks",
+        action: "skip",
+        title,
+        owner: "—",
+        detail: [],
+        note: rowTeam ? otherTeamNote(rowTeam) : "No Team value — the Department filter needs one",
+      });
       continue;
     }
 
@@ -192,7 +202,7 @@ export async function importRocks(
       owner_id: ownerId,
       due_date: dueDate ?? toDateString(endOfQuarter()),
       completed_at: completedAt,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
+      source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
         ? {

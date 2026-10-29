@@ -1,5 +1,6 @@
 import {
   cell,
+  importedLink,
   importDocId,
   normalizeDescription,
   normalizeKey,
@@ -12,6 +13,7 @@ import {
   createdAtFrom,
   isArchived,
   normalizeHeadlineKind,
+  otherTeamNote,
   rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
@@ -40,6 +42,7 @@ export async function importHeadlines(
   const warnings: string[] = [];
 
   for (const row of table.rows) {
+    ctx.preview.begin(row);
     const title = cell(row, table.headers, "Title", "Name", "Headline");
     if (!title) {
       skipped++;
@@ -72,6 +75,7 @@ export async function importHeadlines(
       normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)
     ) {
       skipped++;
+      ctx.preview.add({ kind: "headlines", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
       continue;
     }
 
@@ -159,7 +163,7 @@ export async function importHeadlines(
       from_label: cleanFrom,
       source_owner_name: createdBy ? null : ownerRaw || null,
       broadcast: isBroadcast,
-      source_link: cell(row, table.headers, "Link", "URL") || null,
+      source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
         ? { archived_at: archivedAtFrom(row, table.headers) }

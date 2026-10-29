@@ -39,6 +39,7 @@ import {
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import {
   describeLeftBehind,
+  STRANDED_LIST_CAP,
   type TeamDataSummary,
 } from "@/lib/firebase/team-delete";
 
@@ -695,7 +696,7 @@ function DeleteTeamModal({
     summary && summary !== "loading" ? describeLeftBehind(summary.data) : "";
 
   return (
-    <ModalShell open onClose={onClose} ariaLabel="Delete team" size="md" portal>
+    <ModalShell open onClose={onClose} ariaLabel="Delete team" size="lg" portal>
       <ModalHeader title="Delete team" onClose={onClose} />
       <ModalBody className="space-y-4">
         {sorted.length > 1 && (
@@ -729,11 +730,7 @@ function DeleteTeamModal({
               their accounts and their other teams.
             </p>
             {leftBehind ? (
-              <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900">
-                Its data is <strong>not</strong> deleted: {leftBehind} stay in the
-                database under this team and are no longer reachable in the app.
-                Reassign or archive anything still needed first.
-              </p>
+              <StrandedRecordsWarning summary={summary} leftBehind={leftBehind} />
             ) : (
               <p className="text-zinc-500">The team holds no rocks, to-dos, issues, headlines, measurables or meetings.</p>
             )}
@@ -766,5 +763,68 @@ function DeleteTeamModal({
         </Button>
       </ModalFooter>
     </ModalShell>
+  );
+}
+
+/**
+ * The warning that names what deleting the team strands: every rock,
+ * to-do, issue, headline, measurable and meeting still filed under it, by
+ * title, open work first. Counts come from the full query; the list shows
+ * the first STRANDED_LIST_CAP per kind and says how many more there are.
+ */
+function StrandedRecordsWarning({
+  summary,
+  leftBehind,
+}: {
+  summary: TeamDataSummary;
+  leftBehind: string;
+}) {
+  const kinds = summary.data.filter((d) => d.count > 0);
+  const total = kinds.reduce((n, d) => n + d.count, 0);
+  return (
+    <div
+      role="alert"
+      className="rounded-md bg-amber-50 px-3 py-2.5 text-amber-900 ring-1 ring-inset ring-amber-200 dark:bg-amber-950 dark:text-amber-100 dark:ring-amber-900"
+    >
+      <p className="flex items-start gap-2 text-sm">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <span>
+          <strong>
+            {total} record{total === 1 ? "" : "s"} will be stranded
+          </strong>{" "}
+          ({leftBehind}). They are <strong>not</strong> deleted: they stay in the
+          database under this team and nobody can reach them in the app
+          afterwards. Reassign or archive anything still needed first.
+        </span>
+      </p>
+      <div className="mt-2 max-h-56 space-y-2.5 overflow-y-auto rounded-md bg-white/70 px-3 py-2 dark:bg-zinc-950/40">
+        {kinds.map((d) => (
+          <section key={d.collection}>
+            <h4 className="text-[10.5px] font-extrabold uppercase tracking-[0.07em] text-amber-800 dark:text-amber-300">
+              {d.count} {d.label}
+            </h4>
+            <ul className="mt-1 space-y-0.5 text-[12.5px] text-zinc-800 dark:text-zinc-200">
+              {d.records.map((r) => (
+                <li key={r.id} className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate" title={r.label}>
+                    {r.label}
+                  </span>
+                  {r.note && (
+                    <span className="shrink-0 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {r.note}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {d.count > d.records.length && (
+                <li className="text-[11.5px] italic text-zinc-500 dark:text-zinc-400">
+                  and {d.count - d.records.length} more (showing the first {STRANDED_LIST_CAP})
+                </li>
+              )}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </div>
   );
 }

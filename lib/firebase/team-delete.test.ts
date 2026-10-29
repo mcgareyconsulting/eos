@@ -1,7 +1,13 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirestore } from "@/lib/test-support/fake-firestore";
-import { deleteTeamCore, describeLeftBehind, teamDataSummary } from "./team-delete";
+import {
+  deleteTeamCore,
+  describeLeftBehind,
+  sortStranded,
+  strandedRecordOf,
+  teamDataSummary,
+} from "./team-delete";
 
 function seed() {
   const db = new FakeFirestore();
@@ -15,7 +21,9 @@ function seed() {
   db.seed("rocks", "r1", { team_id: "t1", title: "Rock" });
   db.seed("rocks", "r2", { team_id: "t2", title: "Elsewhere" });
   db.seed("todos", "m1", { team_id: "t1", title: "Milestone", source_rock_id: "r1" });
+  db.seed("todos", "d1", { team_id: "t1", title: "Done to-do", completed_at: "x", archived_at: "y" });
   db.seed("issues", "i1", { team_id: "t1", title: "Issue" });
+  db.seed("meetings", "mt1", { team_id: "t1", started_at: "2026-10-20T15:00:00Z", ended_at: "z" });
   return db;
 }
 
@@ -27,14 +35,59 @@ describe("teamDataSummary", () => {
     assert.equal(s.memberCount, 2);
     const by = Object.fromEntries(s.data.map((d) => [d.collection, d.count]));
     assert.equal(by.rocks, 1);
-    assert.equal(by.todos, 1);
+    assert.equal(by.todos, 2);
     assert.equal(by.issues, 1);
-    assert.equal(by.meetings, 0);
-    assert.equal(describeLeftBehind(s.data), "1 rocks, 1 to-dos and milestones, 1 issues");
+    assert.equal(by.meetings, 1);
+    assert.equal(by.headlines, 0);
+    assert.equal(
+      describeLeftBehind(s.data),
+      "1 rocks, 2 to-dos and milestones, 1 issues, 1 meetings",
+    );
+  });
+
+  test("names each stranded record, open work first, closed work tagged", async () => {
+    const s = await teamDataSummary(seed().asFirestore(), "t1");
+    assert.ok(s);
+    const todos = s.data.find((d) => d.collection === "todos")!;
+    assert.deepEqual(todos.records, [
+      { id: "m1", label: "Milestone", note: "milestone" },
+      { id: "d1", label: "Done to-do", note: "done · archived" },
+    ]);
+    const meetings = s.data.find((d) => d.collection === "meetings")!;
+    assert.deepEqual(meetings.records, [{ id: "mt1", label: "Meeting on 2026-10-20" }]);
+    const rocks = s.data.find((d) => d.collection === "rocks")!;
+    assert.deepEqual(rocks.records, [{ id: "r1", label: "Rock" }]);
   });
 
   test("null for an unknown team", async () => {
     assert.equal(await teamDataSummary(seed().asFirestore(), "nope"), null);
+  });
+});
+
+describe("strandedRecordOf / sortStranded", () => {
+  test("measurables read their name; nameless rows fall back to the id", () => {
+    assert.deepEqual(strandedRecordOf("scorecard_metrics", "x", { name: "Calls" }), {
+      id: "x",
+      label: "Calls",
+    });
+    assert.deepEqual(strandedRecordOf("rocks", "r9", {}), { id: "r9", label: "r9" });
+  });
+
+  test("a done rock and an unended meeting are tagged", () => {
+    assert.equal(strandedRecordOf("rocks", "r", { title: "R", status: "done" }).note, "done");
+    assert.equal(
+      strandedRecordOf("meetings", "m", { started_at: "2026-01-02T09:00:00Z" }).note,
+      "not ended",
+    );
+  });
+
+  test("open work sorts ahead of done or archived work, then A–Z", () => {
+    const out = sortStranded([
+      { id: "1", label: "Zed" },
+      { id: "2", label: "Able", note: "archived" },
+      { id: "3", label: "Mid" },
+    ]);
+    assert.deepEqual(out.map((r) => r.id), ["3", "1", "2"]);
   });
 });
 

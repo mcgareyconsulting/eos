@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { SelectMenu } from "@/components/ui/select-menu";
 import type {
   BulkGridTable,
   ImportKind,
@@ -192,21 +193,17 @@ export function BulkUploader({
         <div className="space-y-4 rounded-xl border border-zinc-300 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-zinc-900 dark:text-zinc-100">Team</span>
-            <select
+            <SelectMenu
+              variant="field"
+              options={importableTeams.map((t) => ({ value: t.id, label: t.name }))}
               value={teamId}
-              onChange={(e) => {
+              onChange={(id) => {
+                if (id === teamId) return;
                 carry.current = files.length > 0 ? { files, includeArchived, createOwners } : null;
-                router.push(`/teams/${e.target.value}/import`);
+                router.push(`/teams/${id}/import`);
               }}
               disabled={importableTeams.length < 2}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              {importableTeams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+            />
           </label>
 
           <div className="space-y-2">
@@ -304,19 +301,28 @@ export function BulkUploader({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-zinc-900 dark:text-zinc-100">Unmatched owner</span>
-              <select
+              <SelectMenu
+                variant="field"
+                options={[
+                  {
+                    value: "",
+                    label: "Import with No Owner",
+                    description: "Blank or unknown owners land unassigned; an unknown name is kept in the description",
+                  },
+                  {
+                    value: SKIP_ROWS,
+                    label: "Skip those rows",
+                    description: "Rows whose owner is blank or not on the team aren't imported",
+                  },
+                  ...members.map((m) => ({
+                    value: m.user_id,
+                    label: `Park them on ${m.full_name || m.user_id}`,
+                  })),
+                ]}
                 value={fallbackOwnerId}
-                onChange={(e) => setFallbackOwnerId(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-              >
-                <option value="">Import with No Owner (keeps the name in the description)</option>
-                <option value={SKIP_ROWS}>Skip rows with unknown owners</option>
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    Park them on {m.full_name || m.user_id}
-                  </option>
-                ))}
-              </select>
+                onChange={setFallbackOwnerId}
+                className="w-full"
+              />
             </label>
           </div>
         </div>

@@ -10,7 +10,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   isOtherTeam,
@@ -23,7 +24,7 @@ import {
   rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote, withWhoNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, withWhoNote, type Ownerless } from "./owners";
 
 export async function importIssues(
   table: CsvTable,
@@ -33,10 +34,14 @@ export async function importIssues(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     completedSince: string | null;
     sheetName?: string;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
     /** Department filter — see TeamImportOptions.rockTeam. */
     rockTeam?: string;
@@ -46,6 +51,7 @@ export async function importIssues(
   let skipped = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let archived = 0;
   let stale = 0;
@@ -86,7 +92,7 @@ export async function importIssues(
       continue;
     }
 
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "issues",
@@ -118,7 +124,8 @@ export async function importIssues(
     const { uid: ownerId, unmatchedName } = await ctx.owners.resolveOwner(
       cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee"),
     );
-    if (ownerId === null && !(unmatchedName && ctx.unmatchedOwner === "no-owner")) {
+    // Blank (ninety "Unassigned") or unmatched: No Owner unless asked to skip.
+    if (ownerId === null && ctx.unmatchedOwner !== "no-owner") {
       skipped++;
       ctx.preview.add({
         kind: "issues",
@@ -141,9 +148,21 @@ export async function importIssues(
     const priority = normalizeIssuePriority(cell(row, table.headers, "Priority"));
     const resolved = status === "solved" || status === "dropped";
 
-    const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
+    const issueId = importDocId(
+      "issue",
+      ctx.teamId,
+      ctx.archive ? `${type}|${title}|${archiveKey(row, table.headers)}` : `${type}|${title}`,
+    );
     const isNew = !ctx.existingIds.has(issueId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "issues", collection: "issues", docId: issueId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -211,7 +230,7 @@ export async function importIssues(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
@@ -252,6 +271,7 @@ export async function importIssues(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
 
   return {
     kind: "issues",

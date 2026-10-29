@@ -9,7 +9,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   normalizeHeadlineKind,
@@ -17,6 +18,7 @@ import {
   rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
+import { fillImportedOwner, type Ownerless } from "./owners";
 
 export async function importHeadlines(
   table: CsvTable & { sheetName?: string },
@@ -26,13 +28,18 @@ export async function importHeadlines(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     rockTeam?: string;
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let skipped = 0;
   let archived = 0;
@@ -48,7 +55,7 @@ export async function importHeadlines(
       skipped++;
       continue;
     }
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "headlines",
@@ -137,9 +144,21 @@ export async function importHeadlines(
       }
     }
 
-    const headlineId = importDocId("headline", ctx.teamId, `${kind}|${title}`);
+    const headlineId = importDocId(
+      "headline",
+      ctx.teamId,
+      ctx.archive ? `${kind}|${title}|${archiveKey(row, table.headers)}` : `${kind}|${title}`,
+    );
     const isNew = !ctx.existingIds.has(headlineId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "headlines", collection: "headlines", docId: headlineId, ownerId: createdBy, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -166,7 +185,7 @@ export async function importHeadlines(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });
@@ -190,6 +209,8 @@ export async function importHeadlines(
   if (broadcast) details.push(`${broadcast} broadcast / read-only`);
   if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
   if (archived) details.push(`${archived} archived held back`);
+
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
 
   return {
     kind: "headlines",

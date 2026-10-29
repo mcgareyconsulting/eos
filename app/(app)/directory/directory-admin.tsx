@@ -41,7 +41,7 @@ import {
   describeLeftBehind,
   STRANDED_LIST_CAP,
   type TeamDataSummary,
-} from "@/lib/firebase/team-delete";
+} from "@/lib/team-delete";
 
 type Team = { id: string; name: string };
 type Result = { ok: true; message: string } | { ok: false; error: string };

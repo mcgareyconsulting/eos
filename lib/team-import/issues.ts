@@ -24,7 +24,7 @@ import {
   rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote, withWhoNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, withWhoNote, type Ownerless } from "./owners";
 
 export async function importIssues(
   table: CsvTable,
@@ -40,6 +40,8 @@ export async function importIssues(
     sheetName?: string;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
     /** Department filter — see TeamImportOptions.rockTeam. */
     rockTeam?: string;
@@ -49,6 +51,7 @@ export async function importIssues(
   let skipped = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let archived = 0;
   let stale = 0;
@@ -152,6 +155,14 @@ export async function importIssues(
     );
     const isNew = !ctx.existingIds.has(issueId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "issues", collection: "issues", docId: issueId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -260,6 +271,7 @@ export async function importIssues(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
 
   return {
     kind: "issues",

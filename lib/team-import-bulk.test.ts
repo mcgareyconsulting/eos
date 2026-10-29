@@ -694,3 +694,57 @@ describe("unassigned rocks (blank Owner) and their milestones", () => {
     assert.match(note, /Its rock "SBA" is in the file but wasn't imported: No Owner in the file/);
   });
 });
+
+describe("re-import fills in an owner that was missing — and nothing else", () => {
+  const H = EXPORT_HEADERS.rocks.split("|");
+  const rocksCsv = (owner: string) =>
+    [H.join(","), H.map((h) => ({ Owner: owner, Title: "SBA", Level: "Individual", Description: "Grow SBA lending" } as Record<string, string>)[h] ?? "").join(",")].join("\n");
+  const tablesFor = (csv: string) => readBulkTables([{ name: "Rocks.csv", bytes: Buffer.from(csv) }], AS_OF).tables;
+  const importInto = (db: FakeFirestore, members: { user_id: string; names: string[] }[]) =>
+    runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tablesFor(rocksCsv("Pat Lee")), new Map()).inputs, { asOf: AS_OF }, members);
+
+  test("Pat wasn't on the team; after joining, a re-import assigns the rock and drops the note", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    let rock = db.docsIn("rocks")[0];
+    assert.equal(rock.data.owner_id, null);
+    assert.match(String(rock.data.description), /Imported owner: Pat Lee/);
+
+    // Edited in the app meanwhile — must survive the re-import.
+    db.write(`rocks/${rock.id}`, { ...rock.data, status: "off_track" });
+
+    const report = await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    rock = db.docsIn("rocks")[0];
+    assert.equal(rock.data.owner_id, "pat");
+    assert.equal(rock.data.description, "Grow SBA lending");
+    assert.equal(rock.data.status, "off_track", "nothing else rewritten");
+    assert.equal(report.rows.find((r) => r.kind === "rocks")?.action, "update");
+    assert.ok(report.kinds[0].details.some((d) => /owner filled in/.test(d)));
+  });
+
+  test("an owner set in the app is never overwritten", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    const rock = db.docsIn("rocks")[0];
+    db.write(`rocks/${rock.id}`, { ...rock.data, owner_id: "sam" });
+    await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, "sam");
+  });
+
+  test("a rock created (or unassigned) in the app isn't touched", async () => {
+    const db = new FakeFirestore();
+    db.seed("rocks", importDocId("rock", "t1", "SBA"), { team_id: "t1", title: "SBA", owner_id: null });
+    await importInto(db, [{ user_id: "pat", names: ["Pat Lee"] }]);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, null);
+  });
+
+  test("a dry run previews the fill without writing it", async () => {
+    const db = new FakeFirestore();
+    await importInto(db, []);
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tablesFor(rocksCsv("Pat Lee")), new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "pat", names: ["Pat Lee"] },
+    ]);
+    assert.match(report.rows[0].note ?? "", /owner filled in/);
+    assert.equal(db.docsIn("rocks")[0].data.owner_id, null);
+  });
+});

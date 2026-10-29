@@ -250,6 +250,73 @@ export function withWhoNote(description: string | null | undefined, who: string)
   return body ? `${body}\n\n${note}` : note;
 }
 
+/** Undo withUnmatchedOwnerNote once the owner is known. */
+export function withoutUnmatchedOwnerNote(description: string | null | undefined): string | null {
+  const body = (description ?? "").replace(/(?:\n\n)?Imported owner: [^\n]*$/, "").trim();
+  return body || null;
+}
+
+/**
+ * Imported docs on the team still waiting for an owner — `path` → stored
+ * description. A re-import fills these in (fillImportedOwner) but leaves every
+ * other "already here" row alone. Only docs an import created count: an item
+ * someone unassigned in the app stays unassigned.
+ */
+export type Ownerless = Map<string, string | null>;
+
+const OWNER_FIELD: Record<string, string> = {
+  rocks: "owner_id",
+  todos: "owner_id",
+  issues: "owner_id",
+  headlines: "created_by",
+};
+
+export async function loadOwnerless(db: Firestore, teamId: string): Promise<Ownerless> {
+  const out: Ownerless = new Map();
+  await Promise.all(
+    Object.entries(OWNER_FIELD).map(async ([collection, field]) => {
+      const snap = await db.collection(collection).where("team_id", "==", teamId).get();
+      for (const d of snap.docs) {
+        const data = d.data();
+        if (data.import_source === "csv" && data[field] == null) {
+          out.set(`${collection}/${d.id}`, (data.description as string | null | undefined) ?? null);
+        }
+      }
+    }),
+  );
+  return out;
+}
+
+/**
+ * On a re-import, give an imported doc that has no owner the one this row
+ * now resolves to (the person joined the team, or an alias was added) — and
+ * nothing else. Returns false when there's nothing to fill.
+ */
+export async function fillImportedOwner(
+  ctx: { writer: Writer; owners: OwnerResolver; preview: PreviewCollector; ownerless?: Ownerless },
+  row: { kind: PreviewRow["kind"]; collection: string; docId: string; ownerId: string | null; title: string },
+): Promise<boolean> {
+  const key = `${row.collection}/${row.docId}`;
+  if (!row.ownerId || !ctx.ownerless?.has(key)) return false;
+  const description = ctx.ownerless.get(key) ?? null;
+  ctx.ownerless.delete(key);
+  await ctx.writer.set(
+    [row.collection, row.docId],
+    row.collection === "headlines"
+      ? { created_by: row.ownerId, source_owner_name: null }
+      : { owner_id: row.ownerId, description: withoutUnmatchedOwnerNote(description) },
+  );
+  ctx.preview.add({
+    kind: row.kind,
+    action: "update",
+    title: row.title,
+    owner: ctx.owners.nameFor(row.ownerId),
+    detail: [],
+    note: "Already here with no owner — owner filled in, nothing else changed",
+  });
+  return true;
+}
+
 // Not part of the public `@/lib/team-import` surface — only runTeamImport
 // (in ./run) uses this, to seed which docs already exist before importing.
 export async function loadExistingIds(

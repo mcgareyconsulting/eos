@@ -18,6 +18,7 @@ import {
   rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
+import { fillImportedOwner, type Ownerless } from "./owners";
 
 export async function importHeadlines(
   table: CsvTable & { sheetName?: string },
@@ -31,11 +32,14 @@ export async function importHeadlines(
     archive?: boolean;
     rockTeam?: string;
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
   let imported = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let skipped = 0;
   let archived = 0;
@@ -147,6 +151,14 @@ export async function importHeadlines(
     );
     const isNew = !ctx.existingIds.has(headlineId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "headlines", collection: "headlines", docId: headlineId, ownerId: createdBy, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -197,6 +209,8 @@ export async function importHeadlines(
   if (broadcast) details.push(`${broadcast} broadcast / read-only`);
   if (tooLong) details.push(`${tooLong} over the length limit, not imported`);
   if (archived) details.push(`${archived} archived held back`);
+
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
 
   return {
     kind: "headlines",

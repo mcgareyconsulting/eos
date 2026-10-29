@@ -6,7 +6,7 @@ import type { ImportReport } from "../team-import-types";
 import { importHeadlines } from "./headlines";
 import { importIssues } from "./issues";
 import { importMilestones } from "./milestones";
-import { loadExistingIds, loadMembers, OwnerResolver, PreviewCollector, Writer } from "./owners";
+import { loadExistingIds, loadMembers, loadOwnerless, OwnerResolver, PreviewCollector, Writer } from "./owners";
 import type { Member } from "./owners";
 import { importRocks } from "./rocks";
 import { importScorecard } from "./scorecard";
@@ -121,6 +121,9 @@ export async function runTeamImport(
     "headlines",
   ]);
 
+  // Imported rows still without an owner: a re-import fills those in.
+  const ownerless = await loadOwnerless(db, teamId);
+
   const kinds: KindStats[] = [];
 
   if (inputs.scorecard) {
@@ -184,6 +187,7 @@ export async function runTeamImport(
         includeArchived,
         archive,
         preview,
+        ownerless,
       });
       stop();
       rockIdByTitle = map;
@@ -214,6 +218,7 @@ export async function runTeamImport(
             completedSince,
             unmatchedOwner,
             preview,
+            ownerless,
             existingRows,
           }),
         ),
@@ -233,6 +238,7 @@ export async function runTeamImport(
             completedSince,
             unmatchedOwner,
             preview,
+            ownerless,
             existingRows,
             rockTeam: options.rockTeam,
           }),
@@ -254,6 +260,7 @@ export async function runTeamImport(
             sheetName: table.sheetName,
             unmatchedOwner,
             preview,
+            ownerless,
             existingRows,
             rockTeam: options.rockTeam,
           }),
@@ -273,6 +280,7 @@ export async function runTeamImport(
             archive,
             rockTeam: options.rockTeam,
             preview,
+            ownerless,
             existingRows,
           }),
         ),

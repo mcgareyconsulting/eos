@@ -16,7 +16,7 @@ import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import { archivedAtFor, archiveKey, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importRocks(
   table: CsvTable,
@@ -32,6 +32,8 @@ export async function importRocks(
     /** Rows come from an archived export — see TeamImportInputs.archive. */
     archive?: boolean;
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
   const rockIdByTitle = new Map<string, string>();
@@ -39,6 +41,7 @@ export async function importRocks(
   let imported = 0;
   let skipped = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   let noOwner = 0;
   let archived = 0;
@@ -170,6 +173,15 @@ export async function importRocks(
 
     // Leave the stored rock alone, but still map it so this file's
     // milestones can attach to it.
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "rocks", collection: "rocks", docId: rockId, ownerId: ownerId, title }))
+    ) {
+      rockIdByTitle.set(normalizeKey(title), rockId);
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       rockIdByTitle.set(normalizeKey(title), rockId);
       unchanged++;
@@ -243,6 +255,7 @@ export async function importRocks(
   if (unchanged) {
     details.push(`${unchanged} existing rock(s) left untouched`);
   }
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
   if (noOwner) {
     details.push(`${noOwner} imported as No Owner`);
   }

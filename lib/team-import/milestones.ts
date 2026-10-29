@@ -20,7 +20,7 @@ import {
   rejectOverLength,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importMilestones(
   table: CsvTable,
@@ -39,6 +39,8 @@ export async function importMilestones(
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
   },
 ): Promise<KindStats> {
@@ -48,6 +50,7 @@ export async function importMilestones(
   let stale = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   const missingRocks = new Set<string>();
   const details: string[] = [];
@@ -165,6 +168,14 @@ export async function importMilestones(
     );
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "milestones", collection: "todos", docId: todoId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -219,6 +230,7 @@ export async function importMilestones(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
   if (missingRocks.size > 0) {
     warnings.push(
       `${missingRocks.size} milestone(s) reference a rock that isn't on the team: ${[...missingRocks].slice(0, 8).join(", ")}${missingRocks.size > 8 ? "…" : ""}`,

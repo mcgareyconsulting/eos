@@ -23,7 +23,7 @@ import {
   rowTeamOf,
 } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
-import { withUnmatchedOwnerNote } from "./owners";
+import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
 export async function importTodos(
   table: CsvTable,
@@ -38,6 +38,8 @@ export async function importTodos(
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
+    /** Imported docs still without an owner — see loadOwnerless. */
+    ownerless?: Ownerless;
     existingRows: "keep" | "update";
     /** Department filter — see TeamImportOptions.rockTeam. */
     rockTeam?: string;
@@ -49,6 +51,7 @@ export async function importTodos(
   let stale = 0;
   let noOwner = 0;
   let unchanged = 0;
+  let ownersFilled = 0;
   let tooLong = 0;
   // "Title (Monthly)" → rows imported. Grouped: one live export can list a
   // repeating to-do more than once.
@@ -141,6 +144,14 @@ export async function importTodos(
     const todoId = importDocId("todo", ctx.teamId, ctx.archive ? `${title}|${archiveKey(row, table.headers)}` : title);
     const isNew = !ctx.existingIds.has(todoId);
 
+    if (
+      !isNew &&
+      ctx.existingRows === "keep" &&
+      (await fillImportedOwner(ctx, { kind: "todos", collection: "todos", docId: todoId, ownerId: ownerId, title }))
+    ) {
+      ownersFilled++;
+      continue;
+    }
     if (!isNew && ctx.existingRows === "keep") {
       unchanged++;
       ctx.preview.add({
@@ -229,6 +240,7 @@ export async function importTodos(
   if (stale) details.push(`${stale} completed before ${ctx.completedSince}`);
   if (noOwner) details.push(`${noOwner} imported as No Owner`);
   if (unchanged) details.push(`${unchanged} already here, left as they are`);
+  if (ownersFilled) details.push(`${ownersFilled} already here without an owner — owner filled in`);
   if (recurring.size > 0) {
     const list = [...recurring].map(([key, n]) => (n > 1 ? `${key} ×${n}` : key));
     warnings.push(

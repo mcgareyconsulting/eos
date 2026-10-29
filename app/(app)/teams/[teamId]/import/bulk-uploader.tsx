@@ -38,6 +38,17 @@ const MAX_BYTES = 950 * 1024;
 // Re-preview this long after the last change (option, override, untick).
 const PREVIEW_DEBOUNCE_MS = 500;
 
+/**
+ * What the Team picker carries to the next team's Import page. Switching
+ * teams navigates (the page loads that team's members), which remounts this
+ * component; a client-side navigation keeps this module — and the dropped
+ * File objects — alive, so the files and checkboxes ride along. Aliases and
+ * the unmatched-owner choice name members of the old team, so they don't.
+ */
+const carry: { current: { files: File[]; includeArchived: boolean; createOwners: boolean } | null } = {
+  current: null,
+};
+
 type MemberOption = { user_id: string; full_name: string };
 type OwnerAliasRow = { csvName: string; memberId: string };
 
@@ -72,11 +83,15 @@ export function BulkUploader({
   const router = useRouter();
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(() => carry.current?.files ?? []);
   const [pickError, setPickError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [createOwners, setCreateOwners] = useState(false);
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const [createOwners, setCreateOwners] = useState(() => carry.current?.createOwners ?? false);
+  const [includeArchived, setIncludeArchived] = useState(() => carry.current?.includeArchived ?? false);
+  // Read once on mount (above), then dropped so a later visit starts clean.
+  useEffect(() => {
+    carry.current = null;
+  }, []);
   const [fallbackOwnerId, setFallbackOwnerId] = useState("");
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
     { csvName: "", memberId: "" },
@@ -185,7 +200,10 @@ export function BulkUploader({
             <span className="font-medium text-zinc-900 dark:text-zinc-100">Team</span>
             <select
               value={teamId}
-              onChange={(e) => router.push(`/teams/${e.target.value}/import`)}
+              onChange={(e) => {
+                carry.current = files.length > 0 ? { files, includeArchived, createOwners } : null;
+                router.push(`/teams/${e.target.value}/import`);
+              }}
               disabled={importableTeams.length < 2}
               className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
             >

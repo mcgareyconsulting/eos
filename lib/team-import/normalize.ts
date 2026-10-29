@@ -63,6 +63,43 @@ export function archivedAtFrom(row: Record<string, string>, headers: string[]) {
     : FieldValue.serverTimestamp();
 }
 
+/**
+ * Natural-key suffix for a row from an archived export. Archive history
+ * repeats titles — a weekly to-do, a rock carried into the next quarter — and
+ * live ids are title-based, so every repeat would collapse into one record.
+ * The row's own dates tell the repeats apart and stay stable across
+ * re-imports. Live rows never get this, so their ids (and the "already on the
+ * team" match against earlier imports) are unchanged.
+ */
+export function archiveKey(row: Record<string, string>, headers: string[]): string {
+  const d = (...names: string[]) => parseDateOnly(cell(row, headers, ...names)) ?? "";
+  return [
+    "archived",
+    d("Created Date", "Created On", "Created"),
+    d("Archived Date", "Archived On", "Archived"),
+    d("Due Date", "Due"),
+    d("Completed On", "Completed", "Resolved On"),
+  ].join("|");
+}
+
+/**
+ * archived_at for a NEW row. From an archived export every row is archived,
+ * dated by its Archived Date — or, for exports without that column (ninety's
+ * archived milestones), its Completed On, then Due Date, then import time.
+ */
+export function archivedAtFor(
+  row: Record<string, string>,
+  headers: string[],
+  fromArchive: boolean,
+) {
+  if (!fromArchive) return archivedAtFrom(row, headers);
+  const on =
+    parseDateOnly(cell(row, headers, "Archived Date", "Archived On", "Archived")) ??
+    parseDateOnly(cell(row, headers, "Completed On", "Completed", "Resolved On")) ??
+    parseDateOnly(cell(row, headers, "Due Date", "Due"));
+  return on ? Timestamp.fromDate(new Date(`${on}T00:00:00`)) : FieldValue.serverTimestamp();
+}
+
 export function normalizeIssueType(raw: string, sheetName?: string): "short" | "long" {
   const s = (raw || sheetName || "").trim().toLowerCase();
   if (/^long/.test(s) || s.includes("long-term") || s.includes("long term")) {

@@ -15,6 +15,13 @@ export class Writer {
   private batch: WriteBatch;
   private pending = 0;
   written = 0;
+  private paths = new Set<string>();
+  /**
+   * Writes that landed on a doc this run had already written — two rows in
+   * the upload sharing one record, the later one winning. Counted in dry
+   * runs too, so the preview can warn before anything is lost.
+   */
+  collisions = 0;
 
   constructor(
     private db: Firestore,
@@ -33,6 +40,9 @@ export class Writer {
 
   async set(path: [string, string], data: DocumentData) {
     this.written++;
+    const key = `${path[0]}/${path[1]}`;
+    if (this.paths.has(key)) this.collisions++;
+    else this.paths.add(key);
     if (this.dryRun) return;
     let row = this.actorUid ? { ...data, ...stamp(this.actorUid) } : data;
     if (this.importRunId) row = { ...row, import_run_id: this.importRunId };

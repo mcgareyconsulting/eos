@@ -51,6 +51,8 @@ export type ImportReport = {
   rows: PreviewRow[];
   /** Rows beyond the cap, not listed. */
   previewTruncated: number;
+  /** Rows that landed on a record an earlier row in the same upload wrote. */
+  collisions: number;
 };
 
 /**
@@ -67,6 +69,8 @@ export type BulkGridTable = {
   detected: ImportKind | null;
   /** Why — "has “Rock Name”", "sheet name “Short Term Issues”"… */
   reason: string;
+  /** From an archived export: every row imports archived. */
+  archived: boolean;
   /** What it is being imported as (override, or detected). null = left out. */
   kind: ImportKind | null;
   /** The file's headers, minus Link (ninety.io links — nothing to check). */

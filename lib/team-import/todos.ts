@@ -11,7 +11,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   isRecurring,
@@ -32,6 +33,8 @@ export async function importTodos(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     completedSince: string | null;
     unmatchedOwner: "skip" | "no-owner";
     preview: PreviewCollector;
@@ -82,7 +85,7 @@ export async function importTodos(
       continue;
     }
 
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "todos",
@@ -137,7 +140,7 @@ export async function importTodos(
       ? "private"
       : "team";
 
-    const todoId = importDocId("todo", ctx.teamId, title);
+    const todoId = importDocId("todo", ctx.teamId, ctx.archive ? `${title}|${archiveKey(row, table.headers)}` : title);
     const isNew = !ctx.existingIds.has(todoId);
 
     if (!isNew && ctx.existingRows === "keep") {
@@ -185,7 +188,7 @@ export async function importTodos(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });

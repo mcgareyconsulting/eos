@@ -9,7 +9,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   normalizeHeadlineKind,
@@ -26,6 +27,8 @@ export async function importHeadlines(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     rockTeam?: string;
     preview: PreviewCollector;
     existingRows: "keep" | "update";
@@ -48,7 +51,7 @@ export async function importHeadlines(
       skipped++;
       continue;
     }
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "headlines",
@@ -137,7 +140,11 @@ export async function importHeadlines(
       }
     }
 
-    const headlineId = importDocId("headline", ctx.teamId, `${kind}|${title}`);
+    const headlineId = importDocId(
+      "headline",
+      ctx.teamId,
+      ctx.archive ? `${kind}|${title}|${archiveKey(row, table.headers)}` : `${kind}|${title}`,
+    );
     const isNew = !ctx.existingIds.has(headlineId);
 
     if (!isNew && ctx.existingRows === "keep") {
@@ -166,7 +173,7 @@ export async function importHeadlines(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });

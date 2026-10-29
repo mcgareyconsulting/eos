@@ -10,7 +10,8 @@ import {
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
 import {
-  archivedAtFrom,
+  archivedAtFor,
+  archiveKey,
   createdAtFrom,
   isArchived,
   isOtherTeam,
@@ -33,6 +34,8 @@ export async function importIssues(
     owners: OwnerResolver;
     existingIds: Set<string>;
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     completedSince: string | null;
     sheetName?: string;
     unmatchedOwner: "skip" | "no-owner";
@@ -86,7 +89,7 @@ export async function importIssues(
       continue;
     }
 
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "issues",
@@ -141,7 +144,11 @@ export async function importIssues(
     const priority = normalizeIssuePriority(cell(row, table.headers, "Priority"));
     const resolved = status === "solved" || status === "dropped";
 
-    const issueId = importDocId("issue", ctx.teamId, `${type}|${title}`);
+    const issueId = importDocId(
+      "issue",
+      ctx.teamId,
+      ctx.archive ? `${type}|${title}|${archiveKey(row, table.headers)}` : `${type}|${title}`,
+    );
     const isNew = !ctx.existingIds.has(issueId);
 
     if (!isNew && ctx.existingRows === "keep") {
@@ -211,7 +218,7 @@ export async function importIssues(
       source_link: importedLink(cell(row, table.headers, "Link", "URL")),
       import_source: "csv",
       ...(isNew
-        ? { archived_at: archivedAtFrom(row, table.headers) }
+        ? { archived_at: archivedAtFor(row, table.headers, !!ctx.archive) }
         : {}),
       ...(isNew ? { created_at: createdAtFrom(row, table.headers) } : {}),
     });

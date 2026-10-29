@@ -14,7 +14,7 @@ import {
 } from "../csv-import";
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFrom, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
+import { archivedAtFor, archiveKey, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { withUnmatchedOwnerNote } from "./owners";
 
@@ -29,6 +29,8 @@ export async function importRocks(
     existingRows: "keep" | "update";
     unmatchedOwner: "skip" | "no-owner";
     includeArchived: boolean;
+    /** Rows come from an archived export — see TeamImportInputs.archive. */
+    archive?: boolean;
     preview: PreviewCollector;
   },
 ): Promise<{ stats: KindStats; rockIdByTitle: Map<string, string> }> {
@@ -91,7 +93,7 @@ export async function importRocks(
     // Rocks had no archived filter at all, while the Import page told users
     // archived rows are skipped by default — true for every other kind but
     // not this one.
-    if (!ctx.includeArchived && isArchived(row, table.headers)) {
+    if (!ctx.archive && !ctx.includeArchived && isArchived(row, table.headers)) {
       archived++;
       ctx.preview.add({
         kind: "rocks",
@@ -163,7 +165,7 @@ export async function importRocks(
 
     if (cell(row, table.headers, "Attachment Names", "Attachments")) attachments++;
 
-    const rockId = importDocId("rock", ctx.teamId, title);
+    const rockId = importDocId("rock", ctx.teamId, ctx.archive ? `${title}|${archiveKey(row, table.headers)}` : title);
     const isNew = !ctx.existingIds.has(rockId);
 
     // Leave the stored rock alone, but still map it so this file's
@@ -206,7 +208,7 @@ export async function importRocks(
       import_source: "csv",
       ...(isNew
         ? {
-            archived_at: archivedAtFrom(row, table.headers),
+            archived_at: archivedAtFor(row, table.headers, !!ctx.archive),
             created_at: createdDate
               ? Timestamp.fromDate(new Date(`${createdDate}T00:00:00`))
               : FieldValue.serverTimestamp(),

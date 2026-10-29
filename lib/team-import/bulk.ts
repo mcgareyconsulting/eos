@@ -32,6 +32,8 @@ export type SourceTable = {
   table: CsvTable;
   detected: ImportKind | null;
   reason: string;
+  /** From one of ninety's archived exports — see isArchiveTable. */
+  archived: boolean;
 };
 
 
@@ -134,10 +136,31 @@ export function readBulkTables(
         continue;
       }
       const { kind, reason } = classifyTable(table.headers, sh.name, f.name, asOf);
-      tables.push({ id, file: f.name, sheet: sh.name, table, detected: kind, reason });
+      tables.push({
+        id,
+        file: f.name,
+        sheet: sh.name,
+        table,
+        detected: kind,
+        reason,
+        archived: isArchiveTable(table, sh.name, f.name),
+      });
     }
   }
   return { tables, notices };
+}
+
+/**
+ * ninety exports archived items as separate files with the live columns
+ * (plus Archived Date). Spotted by name — file or sheet — or by every row
+ * carrying an Archived Date. The name is what catches archived milestones:
+ * that export has no Archived Date column, but it ships inside the archived
+ * rocks workbook.
+ */
+export function isArchiveTable(table: CsvTable, sheetName: string | null, fileName: string): boolean {
+  if (/archiv/i.test(sheetName ?? "") || /archiv/i.test(fileName)) return true;
+  const col = table.headers.find((h) => normalizeKey(h) === "archived date");
+  return !!col && table.rows.length > 0 && table.rows.every((r) => (r[col] ?? "").trim() !== "");
 }
 
 function headerSet(headers: string[]): Set<string> {
@@ -215,13 +238,16 @@ export function assembleBulkInputs(
   exclude: Set<string> = new Set(),
 ): { inputs: TeamImportInputs; refs: WeakMap<object, { table: string; row: number }> } {
   const refs = new WeakMap<object, { table: string; row: number }>();
-  const merged = new Map<"scorecard" | "rocks" | "milestones" | "todos", CsvTable>();
-  const issues: (CsvTable & { sheetName?: string })[] = [];
-  const headlines: (CsvTable & { sheetName?: string })[] = [];
+  const live = newBucket();
+  const archive = newBucket();
 
   for (const src of tables) {
     const kind = kinds.has(src.id) ? kinds.get(src.id)! : src.detected;
     if (!kind) continue;
+    // Archived scorecard export: columns not seen yet, so it isn't imported
+    // (toGridTables marks the tab) rather than landing as live measurables.
+    if (src.archived && kind === "scorecard") continue;
+    const { merged, issues, headlines } = src.archived ? archive : live;
     const rows = src.table.rows.filter((row, i) => {
       if (exclude.has(rowKey(src.id, i))) return false;
       refs.set(row, { table: src.id, row: i });
@@ -246,11 +272,31 @@ export function assembleBulkInputs(
     );
   }
 
-  const inputs: TeamImportInputs = {};
-  for (const [kind, table] of merged) inputs[kind] = { table };
-  if (issues.length > 0) inputs.issues = { tables: issues };
-  if (headlines.length > 0) inputs.headlines = { tables: headlines };
+  const inputs = bucketInputs(live);
+  const archived = bucketInputs(archive);
+  if (Object.keys(archived).length > 0) {
+    delete archived.scorecard;
+    inputs.archive = archived;
+  }
   return { inputs, refs };
+}
+
+type Bucket = {
+  merged: Map<"scorecard" | "rocks" | "milestones" | "todos", CsvTable>;
+  issues: (CsvTable & { sheetName?: string })[];
+  headlines: (CsvTable & { sheetName?: string })[];
+};
+
+function newBucket(): Bucket {
+  return { merged: new Map(), issues: [], headlines: [] };
+}
+
+function bucketInputs(b: Bucket): TeamImportInputs {
+  const inputs: TeamImportInputs = {};
+  for (const [kind, table] of b.merged) inputs[kind] = { table };
+  if (b.issues.length > 0) inputs.issues = { tables: b.issues };
+  if (b.headlines.length > 0) inputs.headlines = { tables: b.headlines };
+  return inputs;
 }
 
 /**
@@ -358,7 +404,9 @@ export function toGridTables(
   asOf: Date = new Date(),
 ): BulkGridTable[] {
   return tables.map((src) => {
-    const kind = kinds.has(src.id) ? kinds.get(src.id)! : src.detected;
+    const chosen = kinds.has(src.id) ? kinds.get(src.id)! : src.detected;
+    // Mirrors assembleBulkInputs: an archived scorecard is left out for now.
+    const kind = src.archived && chosen === "scorecard" ? null : chosen;
     const read = new Set((kind ? READ_COLUMNS[kind] : []).map(normalizeKey));
     // Link is masked: ninety's points back into ninety (dropped on import),
     // so the column is noise when checking the data.
@@ -385,7 +433,11 @@ export function toGridTables(
       file: src.file,
       sheet: src.sheet,
       detected: src.detected,
-      reason: src.reason,
+      reason:
+        src.archived && kind === "scorecard"
+          ? "Archived scorecard — not imported yet (its columns haven't been mapped)"
+          : src.reason,
+      archived: src.archived,
       kind,
       headers,
       used,

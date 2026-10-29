@@ -9,6 +9,7 @@ import {
   readBulkTables,
   rowKey,
   finishImportRun,
+  isArchiveTable,
   runTeamImport,
   sha256,
   startImportRun,
@@ -440,5 +441,138 @@ describe("import_runs record", () => {
     await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true }, []);
     assert.equal(db.docsIn("todos").length, 0);
     assert.equal(db.docsIn("import_runs").length, 0);
+  });
+});
+
+// ninety exports archived items as separate files with the live columns
+// (+ Archived Date; milestones have none). Client sample, 2026-10-29.
+describe("archived exports", () => {
+  const ARCHIVED_ROCKS = `${EXPORT_HEADERS.rocks}|Archived Date`.split("|");
+  const arow = (cells: Record<string, string>) => ARCHIVED_ROCKS.map((h) => cells[h] ?? "");
+  const csv = (rows: string[][]) => rows.map((r) => r.join(",")).join("\n");
+
+  test("spotted by file or sheet name, or by every row having an Archived Date", () => {
+    const t = (rows: string[][]) => ({ headers: rows[0], rows: rows.slice(1).map((r) => Object.fromEntries(rows[0].map((h, i) => [h, r[i]]))) });
+    const plain = t([["Title", "Archived Date"], ["a", "2026-01-02"], ["b", ""]]);
+    assert.equal(isArchiveTable(plain, null, "To-Dos.csv"), false, "only some rows archived = a live export");
+    assert.equal(isArchiveTable(plain, null, "Archived To-Dos.csv"), true);
+    assert.equal(isArchiveTable(plain, "Archived Milestones", "x.xlsx"), true);
+    assert.equal(isArchiveTable(t([["Title", "Archived Date"], ["a", "2026-01-02"]]), null, "x.csv"), true);
+  });
+
+  function zip() {
+    const live = makeXlsx([
+      { name: "Rocks", rows: [hdr("rocks"), rowOf("rocks", { Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q4 2026" })] },
+      { name: "Milestones", rows: [hdr("milestones"), rowOf("milestones", { Owner: "Sarah Chen", Title: "Post job", "Rock Name": "Hire analyst" })] },
+    ]);
+    const archived = makeXlsx([
+      {
+        name: "Rocks",
+        rows: [
+          ARCHIVED_ROCKS,
+          // The same rock carried over two earlier quarters.
+          arow({ Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q2 2026", "Due Date": "2026-06-30", "Created Date": "2026-04-01", "Archived Date": "2026-07-02" }),
+          arow({ Owner: "Sarah Chen", Title: "Hire analyst", Level: "Individual", Quarter: "Q3 2026", "Due Date": "2026-09-30", "Created Date": "2026-07-01", "Archived Date": "2026-10-01" }),
+        ],
+      },
+      {
+        name: "Milestones",
+        rows: [hdr("milestones"), rowOf("milestones", { Owner: "Sarah Chen", Title: "Screen resumes", "Rock Name": "Hire analyst", "Completed On": "2026-05-15" })],
+      },
+    ]);
+    const todoHdr = `${EXPORT_HEADERS.todos}`.split("|");
+    const todo = (cells: Record<string, string>) => todoHdr.map((h) => cells[h] ?? "");
+    return makeZip([
+      { name: "Rocks.xlsx", data: live },
+      { name: "Archived Rocks.xlsx", data: archived },
+      { name: "To-Dos.csv", data: csv([todoHdr, todo({ Owner: "Sarah Chen", Title: "Send weekly report" })]) },
+      {
+        name: "Archived To-Dos.csv",
+        data: csv([
+          todoHdr,
+          todo({ Owner: "Sarah Chen", Title: "Send weekly report", "Created Date": "2026-09-01", "Archived Date": "2026-09-08" }),
+          todo({ Owner: "Sarah Chen", Title: "Send weekly report", "Created Date": "2026-09-08", "Archived Date": "2026-09-15" }),
+        ]),
+      },
+    ]);
+  }
+
+  async function run() {
+    const { files } = expandUploads([{ name: "ninety.zip", bytes: zip() }]);
+    const { tables } = readBulkTables(files, AS_OF);
+    const { inputs } = assembleBulkInputs(tables, new Map());
+    const db = new FakeFirestore();
+    // includeArchived stays off: archived *files* don't need the checkbox.
+    const report = await runTeamImport(db.asFirestore(), "t1", inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    return { tables, report, db };
+  }
+
+  test("tabs are flagged archived by file name — milestones included", async () => {
+    const { tables } = await run();
+    assert.deepEqual(
+      tables.map((t) => [t.id, t.archived]),
+      [
+        ["Rocks.xlsx › Rocks", false],
+        ["Rocks.xlsx › Milestones", false],
+        ["Archived Rocks.xlsx › Rocks", true],
+        ["Archived Rocks.xlsx › Milestones", true],
+        ["To-Dos.csv", false],
+        ["Archived To-Dos.csv", true],
+      ],
+    );
+  });
+
+  test("repeated titles stay separate records; live and archived never share one", async () => {
+    const { db, report } = await run();
+    const rocks = db.docsIn("rocks");
+    assert.equal(rocks.length, 3, "live + two archived quarters");
+    assert.equal(rocks.filter((d) => d.data.archived_at).length, 2);
+    const todos = db.docsIn("todos").filter((d) => !d.data.source_rock_id);
+    assert.equal(todos.length, 3, "live + two archived weeks");
+    assert.equal(todos.filter((d) => d.data.archived_at).length, 2);
+    assert.equal(report.collisions, 0);
+    assert.ok(report.kinds.some((k) => k.label === "rocks (archived)"));
+  });
+
+  test("archived milestones land archived, on an archived rock — not the live one", async () => {
+    const { db } = await run();
+    const liveRock = db.docsIn("rocks").find((d) => !d.data.archived_at)!;
+    const archivedRockIds = new Set(db.docsIn("rocks").filter((d) => d.data.archived_at).map((d) => d.id));
+    const ms = Object.fromEntries(
+      db.docsIn("todos").filter((d) => d.data.source_rock_id).map((d) => [d.data.title, d.data]),
+    );
+    assert.equal(ms["Post job"].source_rock_id, liveRock.id);
+    assert.equal(ms["Post job"].archived_at, null);
+    assert.ok(archivedRockIds.has(String(ms["Screen resumes"].source_rock_id)));
+    assert.ok(ms["Screen resumes"].archived_at, "dated from Completed On — the export has no Archived Date");
+  });
+
+  test("re-importing the same archive adds nothing", async () => {
+    const { db } = await run();
+    const { files } = expandUploads([{ name: "ninety.zip", bytes: zip() }]);
+    const { tables } = readBulkTables(files, AS_OF);
+    const again = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    assert.equal(again.writes, 0);
+  });
+
+  test("rows that would still share a record are counted", async () => {
+    const todoHdr = `${EXPORT_HEADERS.todos}`.split("|");
+    const same = todoHdr.map((h) => ({ Owner: "Sarah Chen", Title: "Dup", "Archived Date": "2026-09-08" } as Record<string, string>)[h] ?? "");
+    const { tables } = readBulkTables([{ name: "Archived To-Dos.csv", bytes: Buffer.from(csv([todoHdr, same, same])) }], AS_OF);
+    const report = await runTeamImport(new FakeFirestore().asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { dryRun: true, asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    assert.equal(report.collisions, 1);
+  });
+
+  test("an archived scorecard is left out until its columns are mapped", () => {
+    const sc = [hdr("scorecard"), rowOf("scorecard", { Title: "Loans", Goal: "5", "Oct 26 - Nov 1": "4" })];
+    const { tables } = readBulkTables([{ name: "Archived Scorecard.csv", bytes: Buffer.from(csv(sc)) }], AS_OF);
+    assert.deepEqual(assembleBulkInputs(tables, new Map()).inputs, {});
+    assert.equal(toGridTables(tables, new Map(), AS_OF)[0].kind, null);
   });
 });

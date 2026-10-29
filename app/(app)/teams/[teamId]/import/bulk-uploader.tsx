@@ -526,9 +526,17 @@ function ResultView({
 
       {(report.kinds.some((k) => k.warnings.length > 0) ||
         report.unresolvedOwners.length > 0 ||
+        report.collisions > 0 ||
         notices.length > 0) && (
         <div className="space-y-1 text-xs text-amber-700 dark:text-amber-300">
           {report.kinds.flatMap((k, i) => k.warnings.map((w, j) => <p key={`${i}-${j}`}>⚠ {w}</p>))}
+          {report.collisions > 0 && (
+            <p>
+              ⚠ {report.collisions} row{report.collisions === 1 ? "" : "s"} share a record with
+              an earlier row in this upload (same title — and, in archived files, same dates).
+              Only the last of each is kept.
+            </p>
+          )}
           {report.unresolvedOwners.length > 0 && (
             <p>⚠ Owners not on the team: {report.unresolvedOwners.join(", ")}</p>
           )}
@@ -576,7 +584,10 @@ function ResultView({
                   : "border-transparent bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700",
               )}
             >
-              <span>{t.kind ? KIND_LABELS[t.kind] : "Left out"}</span>
+              <span>
+                {t.kind ? KIND_LABELS[t.kind] : "Left out"}
+                {t.archived ? " (archived)" : ""}
+              </span>
               <span className="max-w-[12rem] truncate font-normal text-zinc-500">
                 {t.sheet ?? t.file.split("/").pop()}
               </span>
@@ -698,6 +709,11 @@ function SheetGrid({
             ? `Detected ${KIND_LABELS[table.detected]} — ${table.reason}`
             : table.reason}
         </span>
+        {table.archived && table.kind && (
+          <span className="rounded bg-zinc-200 px-1.5 py-0.5 font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+            Archived export — every row lands in the Archived view
+          </span>
+        )}
         {updating && (
           <span className="inline-flex items-center gap-1 text-zinc-500">
             <Loader2 className="h-3 w-3 animate-spin" />

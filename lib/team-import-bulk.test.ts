@@ -611,3 +611,51 @@ describe("repeating to-dos warning", () => {
     assert.deepEqual(w, []);
   });
 });
+
+describe("Cascading Messages tab (regular + archived headline workbooks)", () => {
+  const H = `${EXPORT_HEADERS.headlines}`.split("|");
+  const hl = (cells: Record<string, string>) => H.map((h) => cells[h] ?? "");
+  const book = () =>
+    makeXlsx([
+      { name: "Headlines", rows: [H, hl({ Type: "Customer", From: "Ops", Owner: "Sarah Chen", Title: "Big win" })] },
+      // Type says Employee; the tab is the authority.
+      { name: "Cascading Messages", rows: [H, hl({ Type: "Employee", From: "Leadership", Owner: "Sarah Chen", Title: "Policy update" })] },
+    ]);
+
+  test("cascading tab lands cascading; the archived workbook's copy lands archived and separate", async () => {
+    const { files } = expandUploads([
+      {
+        name: "ninety.zip",
+        bytes: makeZip([
+          { name: "Headlines.xlsx", data: book() },
+          { name: "Archived Headlines.xlsx", data: book() },
+        ]),
+      },
+    ]);
+    const { tables } = readBulkTables(files, AS_OF);
+    assert.deepEqual(
+      tables.map((t) => [t.sheet, t.detected, t.archived]),
+      [
+        ["Headlines", "headlines", false],
+        ["Cascading Messages", "headlines", false],
+        ["Headlines", "headlines", true],
+        ["Cascading Messages", "headlines", true],
+      ],
+    );
+    const db = new FakeFirestore();
+    const report = await runTeamImport(db.asFirestore(), "t1", assembleBulkInputs(tables, new Map()).inputs, { asOf: AS_OF }, [
+      { user_id: "u1", names: ["Sarah Chen"] },
+    ]);
+    const rows = db
+      .docsIn("headlines")
+      .map((d) => [d.data.title, d.data.kind ?? d.data.type, d.data.archived_at ? "archived" : "live"])
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    assert.deepEqual(rows, [
+      ["Big win", "customer", "archived"],
+      ["Big win", "customer", "live"],
+      ["Policy update", "cascading", "archived"],
+      ["Policy update", "cascading", "live"],
+    ]);
+    assert.equal(report.collisions, 0);
+  });
+});

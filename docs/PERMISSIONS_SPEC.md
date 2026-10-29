@@ -271,13 +271,17 @@ complete it and comment (section 3.3).
 ## 4. Team pages and the Home page
 
 A team page (Rocks page or L10) shows the view of the team. It does not show
-the view of the person who reads the page.
+the view of the person who reads the page — with one exception (2026-10-29):
+the Rocks page also lists the rocks shared with the reader personally
+(audience persons), under "Shared by {owner}". The reader's teammates do not
+get those rows, and the L10 never shows them.
 
 | Item | What the team page shows |
 |---|---|
 | The rocks of the team | The full rock |
-| Rocks with this team in the audience | The full rock, in the "Shared by" section |
-| The block of each member | Each milestone that the member owns on a rock of a different team. The rock must not be private. The block shows the title, owner and team of the rock, and the milestone. |
+| Rocks with this team in the audience | The full rock. The owner's own section when the owner is on this roster (with a "from {team}" chip); otherwise the "Shared by {owner}" section at the bottom. |
+| Rocks with the reader in the audience (Rocks page only) | The full rock, in the "Shared by {owner}" section, for that reader only. |
+| The block of each member | An "Other milestones" bucket at the bottom of the member's section: each milestone that the member owns on a rock of a different team, by name. The rock must not be private. The rock's title, owner and team are a tooltip, not a row. |
 | Private rocks of other teams | Nothing |
 
 - A block is read-only. It shows the milestone. It does not give access.
@@ -293,8 +297,10 @@ the view of the person who reads the page.
   not also show in a block on that team, because the full rock already
   shows each milestone. (Changed 2026-10-14. Before, the duplicate was
   permitted.)
-- A block row has the same style as a rock row. It is collapsed by
-  default. Open it to see the milestones.
+- A block is one "Other milestones" bucket per member, at the bottom of
+  their section, listing the milestones by name with their due dates.
+  (Changed 2026-10-29. Before, each rock made its own collapsed headline
+  row in the member's section.)
 - The Home page shows the view of one person. It shows all full rocks that
   the person can see, and all items that the person owns.
 

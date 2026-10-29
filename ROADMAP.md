@@ -915,6 +915,8 @@ deactivate acts on).
 **Trail**
 - 2026-08-10 · note · src P1-2 — deleting an Auth user re-keys uid and orphans memberships
 - 2026-08-18 · request · src onboarding-2026-08-18 — deactivate blocks login, retains data, gray-out owned items
+- 2026-10-29 · decision · src daniel — deactivated people are hidden from the Directory by default (admin "Show N deactivated" toggle keeps Reactivate reachable); no in-app hard delete — the audit trail keeps their name either way
+- 2026-10-29 · shipped · src daniel — admin **Delete team** (Directory header): removes the team doc + roster, logs `team_deleted`; the team's data stays under the old id (purge = `pnpm team:delete`)
 
 ## Workstream 3 — Product (client feedback, Passes 13–21)
 
@@ -1134,6 +1136,23 @@ shared into ESD. Privacy stays hard on non-shared team data (P2-7).
 - 2026-08-19 · build · src session-2026-08-19 — guest Rocks + L10 list shared-in rocks ("Shared by {First Last}"); picker = all org teams (share-down); guest read-only; todo/status rules follow the shared rock. Diagnose: writer was fine, read surface was missing.
 - 2026-09-16 · decision · src session-2026-09-16 — daniel: placement by owner-on-roster (owner section + "from {team}" chip, else "Shared by"); access by viewer's parent-team membership, not the team being viewed; "parent team" is the word. Milestone-driven visibility (roster-owned milestones by default, per-rock off switch) agreed as the next build.
 - 2026-09-16 · build · src session-2026-09-16 — `rockAccessFor` + `partitionSharedRocks` in lib/rocks-share.ts; Rocks tab + L10 merge owner-on-roster shared rocks into the owner's section and give parent-team members full affordances from the guest page (row rendered as the parent team); rock actions revalidate guest pages.
+
+**2026-10-29 · daniel's sharing reframe (branch `claude/peaceful-curie-m92br9`):**
+- **Other milestones.** A member's milestones on other teams' rocks no longer
+  make one collapsed headline row per rock in their section; they pool into
+  one "Other milestones" bucket at the bottom of the section, by name (rock
+  title + team as a tooltip). Rocks page and L10 (`OtherMilestonesRow`,
+  `splitBlockEntries`). Spec §4 updated.
+- **Shared with a person.** A rock in whose `audience_user_ids` the viewer
+  sits now shows on the viewer's own Rocks page under "Shared by {owner}" as
+  the full row (description included) — before, a person-level share
+  surfaced only on Home, which has no description or detail. Teammates do
+  not get the row; the L10 never shows it (`loadRocksSharedWithUser`).
+- **Audience pane** is two columns — Your team (parent roster, always whole
+  rock) | Other teams (checklist) — with People underneath.
+- **Default stays "no audience", not the Private flag.** Private also
+  forbids outside milestone assignees, which the Other-milestones flow
+  needs; the summary line now reads "Only {team}" for the default state.
 
 ### N21 · Headlines add-form → button (match the other tabs)
 *W3 · shipped · due — · deps — · owner daniel · src session-2026-08-12 · upd 2026-08-26*

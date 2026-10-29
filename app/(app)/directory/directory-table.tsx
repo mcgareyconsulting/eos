@@ -8,7 +8,12 @@ import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { isLeaderOf, type Viewer } from "@/lib/access/types";
-import { AddPersonButton, NewTeamButton, PersonRowMenu } from "./directory-admin";
+import {
+  AddPersonButton,
+  DeleteTeamButton,
+  NewTeamButton,
+  PersonRowMenu,
+} from "./directory-admin";
 import { LeaderAddButton, RemoveFromTeamButton, RenameTeamButton } from "./directory-leader";
 
 const ACCESS_LABEL: Record<DirectoryPerson["access"], string> = {
@@ -50,6 +55,10 @@ export function DirectoryTable({
   // Empty set = no filter. Both are OR within the filter, AND across them.
   const [access, setAccess] = useState<Set<string>>(() => new Set());
   const [team, setTeam] = useState<Set<string>>(() => new Set());
+  // Deactivated people (admins are the only ones sent them) stay out of the
+  // list unless asked for: they exist so owned work keeps a name and so an
+  // admin can reactivate them, not as colleagues anyone can reach.
+  const [showDeactivated, setShowDeactivated] = useState(false);
   // One banner for whatever admin action last succeeded; errors stay inside
   // the modal that produced them.
   const [notice, setNotice] = useState<string | null>(null);
@@ -71,9 +80,18 @@ export function DirectoryTable({
   // Admins use the row menu; the leader controls are for non-admin leaders.
   const showLeaderTools = !isAdmin && ledTeams.length > 0;
 
+  const deactivatedCount = useMemo(
+    () => people.filter((p) => p.deactivated).length,
+    [people],
+  );
+  const active = useMemo(
+    () => (showDeactivated ? people : people.filter((p) => !p.deactivated)),
+    [people, showDeactivated],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return people.filter((p) => {
+    return active.filter((p) => {
       if (access.size > 0 && !access.has(p.access)) return false;
       if (team.size > 0) {
         const onOne = p.teams.some((t) => team.has(t.id));
@@ -86,7 +104,7 @@ export function DirectoryTable({
         .toLowerCase()
         .includes(q);
     });
-  }, [people, query, access, team]);
+  }, [active, query, access, team]);
 
   const filtering = query.trim() !== "" || access.size > 0 || team.size > 0;
 
@@ -107,6 +125,7 @@ export function DirectoryTable({
             Import seed file
           </Link>
           <RenameTeamButton teams={teams} onDone={setNotice} />
+          <DeleteTeamButton teams={teams} onDone={setNotice} />
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
         </div>
@@ -154,9 +173,22 @@ export function DirectoryTable({
         />
       </div>
 
-      <p className="text-xs text-zinc-500">
-        {filtering ? `${filtered.length} of ${people.length} people` : `${people.length} people`}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+        <p>
+          {filtering ? `${filtered.length} of ${active.length} people` : `${active.length} people`}
+        </p>
+        {isAdmin && deactivatedCount > 0 && (
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showDeactivated}
+              onChange={(e) => setShowDeactivated(e.target.checked)}
+              className="h-3.5 w-3.5 accent-hpb-blue dark:accent-hpb-gold"
+            />
+            Show {deactivatedCount} deactivated
+          </label>
+        )}
+      </div>
 
       {/* No overflow clipping here: the row menus pop out below their cell,
           and a fixed-layout table never exceeds the card width anyway. */}
@@ -190,7 +222,7 @@ export function DirectoryTable({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={isAdmin ? 6 : 5} className="px-3 py-6 text-center text-zinc-500">
-                  {people.length === 0
+                  {active.length === 0
                     ? "Nobody here yet."
                     : "Nobody matches these filters."}
                 </td>

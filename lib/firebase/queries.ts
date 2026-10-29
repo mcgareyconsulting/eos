@@ -181,3 +181,22 @@ export async function loadAssignedRocks(
     ),
   };
 }
+
+/**
+ * Rocks shared with one PERSON (`audience_user_ids`), as opposed to a team:
+ * the viewer sees the full rock, their teammates do not. The Rocks page lists
+ * them for that viewer under "Shared by {owner}" (spec §3.3; Daniel,
+ * 2026-10-29). Unfiltered by status, archive or team — the caller drops the
+ * page's own team's rocks and anything already on the page.
+ */
+export async function loadRocksSharedWithUser(
+  db: Firestore,
+  uid: string,
+): Promise<QueryDocumentSnapshot[]> {
+  if (!uid) return [];
+  const snap = await db
+    .collection("rocks")
+    .where("audience_user_ids", "array-contains", uid)
+    .get();
+  return snap.docs;
+}

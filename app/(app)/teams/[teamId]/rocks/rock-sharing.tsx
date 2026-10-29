@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Lock, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,7 @@ export function AudienceSummary({
             </>
           ) : extra.length === 0 ? (
             <>
-              <span className="font-semibold">{parentTeamName}</span>
+              Only <span className="font-semibold">{parentTeamName}</span>
             </>
           ) : (
             <>
@@ -167,11 +168,17 @@ function PrivateSwitch({
  * The audience pane. Edits the rock modal's draft in place — "Done" only
  * closes it; the rock's Save is still the one commit. Read-only unless
  * `canManage`.
+ *
+ * Layout (Daniel, 2026-10-29): two columns on top — YOUR TEAM (the parent
+ * team and its roster, who always have the whole rock) on the left, OTHER
+ * TEAMS (a checklist; ticked = in the audience) on the right — and PEOPLE
+ * underneath (individual persons in the audience, from anywhere in the org).
  */
 export function AudiencePane({
   open,
   onClose,
   parentTeamName,
+  parentMembers = [],
   teamOptions,
   personOptions,
   audienceTeamIds,
@@ -185,6 +192,8 @@ export function AudiencePane({
   open: boolean;
   onClose: () => void;
   parentTeamName: string;
+  /** The parent team's roster — listed under "Your team", read-only. */
+  parentMembers?: Option[];
   /** Every team that may be in the audience (the org, minus the parent). */
   teamOptions: Option[];
   /** Everyone in the directory; null while it loads. */
@@ -197,7 +206,6 @@ export function AudiencePane({
   onTeamsChange: (next: string[]) => void;
   onUsersChange: (next: string[]) => void;
 }) {
-  const teamName = new Map(teamOptions.map((t) => [t.id, t.name]));
   const personName = new Map((personOptions ?? []).map((p) => [p.id, p.name]));
   const editable = canManage && !isPrivate;
   // Keep pick order stable: survivors first, new ones after.
@@ -205,6 +213,24 @@ export function AudiencePane({
     ...prev.filter((id) => next.has(id)),
     ...[...next].filter((id) => !prev.includes(id)),
   ];
+  const teams = [...teamOptions].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const roster = [...parentMembers].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const [teamQuery, setTeamQuery] = useState("");
+  const shownTeams = teamQuery.trim()
+    ? teams.filter((t) => t.name.toLowerCase().includes(teamQuery.trim().toLowerCase()))
+    : teams;
+
+  function toggleTeam(id: string) {
+    if (audienceTeamIds.includes(id)) {
+      onTeamsChange(audienceTeamIds.filter((x) => x !== id));
+    } else {
+      onTeamsChange([...audienceTeamIds, id]);
+    }
+  }
 
   return (
     <ModalShell open={open} onClose={onClose} ariaLabel="Audience" size="2xl" portal>
@@ -212,7 +238,7 @@ export function AudiencePane({
       <ModalBody className="space-y-5">
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-zinc-50 px-3 py-2.5 text-[12px] sm:grid-cols-[auto_1fr] dark:bg-zinc-800/50">
           <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
-            Audience (teams and persons)
+            Audience (teams and people)
           </dt>
           <dd className="text-zinc-500">
             Sees and edits the whole rock. Cannot delete it or change the
@@ -222,7 +248,8 @@ export function AudiencePane({
             Assigned a milestone
           </dt>
           <dd className="text-zinc-500">
-            Sees only their milestone and the rock&apos;s title, owner and team.
+            Sees only their milestone by name, under Other milestones on
+            their team&apos;s Rocks page, plus the rock&apos;s title, owner and team.
           </dd>
           <dt className="font-semibold text-zinc-800 dark:text-zinc-200">
             <Lock className="-mt-0.5 inline h-3 w-3" aria-hidden /> Private
@@ -237,38 +264,102 @@ export function AudiencePane({
           </p>
         )}
 
-        <AudienceList
-          title="Teams"
-          head={{ name: parentTeamName, tag: "Parent team · whole rock" }}
-          ids={audienceTeamIds}
-          nameOf={(id) => teamName.get(id) ?? "Unknown team"}
-          editable={editable}
-          picker={
-            <MultiSelect
-              disabled={!editable}
-              label="Teams"
-              triggerText="Add teams…"
-              options={teamOptions.map((t) => ({ value: t.id, label: t.name }))}
-              value={new Set(audienceTeamIds)}
-              onChange={(next) => onTeamsChange(merge(audienceTeamIds, next))}
-              searchable
-              portal
-              className="w-48"
-            />
-          }
-          onRemove={(id) => onTeamsChange(audienceTeamIds.filter((x) => x !== id))}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Left: the parent team — always the whole rock, nothing to pick. */}
+          <section>
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <h3 className="text-[13px] font-semibold">Your team</h3>
+              <span className="text-[11.5px] text-zinc-500">Whole rock · always</span>
+            </div>
+            <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+              <li className="flex items-center gap-3 bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
+                <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+                  {parentTeamName}
+                </span>
+                <span className="shrink-0 text-[12px] text-zinc-500">Parent team</span>
+              </li>
+              {roster.map((m) => (
+                <li key={m.id} className="px-3 py-1.5 text-[12.5px] text-zinc-700 dark:text-zinc-300">
+                  {m.name}
+                </li>
+              ))}
+              {roster.length === 0 && (
+                <li className="px-3 py-2 text-[12.5px] text-zinc-400">No members yet</li>
+              )}
+            </ul>
+          </section>
 
+          {/* Right: every other team, ticked when in the audience. */}
+          <section>
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <h3 className="text-[13px] font-semibold">Other teams</h3>
+              <span className="text-[11.5px] text-zinc-500">
+                {audienceTeamIds.length === 0
+                  ? "None share it"
+                  : `${audienceTeamIds.length} share${audienceTeamIds.length === 1 ? "s" : ""} it`}
+              </span>
+            </div>
+            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+              {teams.length > 8 && (
+                <input
+                  value={teamQuery}
+                  onChange={(e) => setTeamQuery(e.target.value)}
+                  placeholder="Find a team…"
+                  aria-label="Find a team"
+                  className="w-full border-b border-zinc-200 bg-transparent px-3 py-1.5 text-[12.5px] focus:outline-none dark:border-zinc-800"
+                />
+              )}
+              <ul className="max-h-64 divide-y divide-zinc-200 overflow-y-auto dark:divide-zinc-800">
+                {shownTeams.map((t) => {
+                  const on = audienceTeamIds.includes(t.id);
+                  return (
+                    <li key={t.id}>
+                      <label
+                        className={cn(
+                          "flex items-center gap-2.5 px-3 py-1.5 text-[12.5px]",
+                          editable
+                            ? "cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                            : "text-zinc-500",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          disabled={!editable}
+                          onChange={() => toggleTeam(t.id)}
+                          className="h-3.5 w-3.5 accent-hpb-blue disabled:cursor-not-allowed dark:accent-hpb-gold"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        {on && (
+                          <span className="shrink-0 text-[11.5px] text-zinc-500">Whole rock</span>
+                        )}
+                      </label>
+                    </li>
+                  );
+                })}
+                {shownTeams.length === 0 && (
+                  <li className="px-3 py-2 text-[12.5px] text-zinc-400">
+                    {teams.length === 0 ? "No other teams" : "No team matches"}
+                  </li>
+                )}
+              </ul>
+            </div>
+          </section>
+        </div>
+
+        {/* Below: individual people, from any team. Their teammates do not
+            see the rock through them. */}
         <AudienceList
-          title="Persons"
+          title="People"
+          hint="Each person sees the whole rock on their own Rocks page and Home. Their teammates do not."
           ids={audienceUserIds}
           nameOf={(id) => personName.get(id) ?? "Someone"}
           editable={editable}
           picker={
             <MultiSelect
               disabled={!editable || !personOptions}
-              label="Persons"
-              triggerText={personOptions ? "Add persons…" : "Loading…"}
+              label="People"
+              triggerText={personOptions ? "Add people…" : "Loading…"}
               options={(personOptions ?? []).map((p) => ({
                 value: p.id,
                 label: p.name,
@@ -287,8 +378,9 @@ export function AudiencePane({
           <section>
             <h3 className="text-[13px] font-semibold">Only their milestone</h3>
             <p className="mb-2 mt-0.5 text-[12px] text-zinc-500">
-              Assignees outside {parentTeamName} and the audience. Add them to
-              the audience to give them the whole rock.
+              Assignees outside {parentTeamName} and the audience. They see
+              their milestone under Other milestones; add them to the audience
+              to give them the whole rock.
             </p>
             <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
               {headlinePeople.map((p) => (
@@ -323,7 +415,7 @@ export function AudiencePane({
 
 function AudienceList({
   title,
-  head,
+  hint,
   ids,
   nameOf,
   editable,
@@ -331,7 +423,7 @@ function AudienceList({
   onRemove,
 }: {
   title: string;
-  head?: { name: string; tag: string };
+  hint?: string;
   ids: string[];
   nameOf: (id: string) => string;
   editable: boolean;
@@ -346,15 +438,8 @@ function AudienceList({
         <h3 className="text-[13px] font-semibold">{title}</h3>
         {editable && picker}
       </div>
+      {hint && <p className="-mt-1 mb-2 text-[12px] text-zinc-500">{hint}</p>}
       <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-        {head && (
-          <li className="flex items-center gap-3 px-3 py-2">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-              {head.name}
-            </span>
-            <span className="shrink-0 text-[12px] text-zinc-500">{head.tag}</span>
-          </li>
-        )}
         {ids.map((id) => (
           <li key={id} className="flex items-center gap-3 px-3 py-2">
             <span className="min-w-0 flex-1 truncate text-[13px]">{nameOf(id)}</span>
@@ -371,7 +456,7 @@ function AudienceList({
             )}
           </li>
         ))}
-        {!head && ids.length === 0 && (
+        {ids.length === 0 && (
           <li className="px-3 py-2 text-[12.5px] text-zinc-400">None</li>
         )}
       </ul>

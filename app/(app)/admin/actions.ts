@@ -9,6 +9,11 @@ import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
 import { deactivatePerson, reactivatePerson } from "@/lib/firebase/deactivate";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
 import { syncUserTeamIds } from "@/lib/firebase/membership";
+import {
+  deleteTeamCore,
+  teamDataSummary,
+  type TeamDataSummary,
+} from "@/lib/firebase/team-delete";
 import { stamp, stampBeforeDelete } from "@/lib/audit-stamp";
 import { recordAccessChange, type AccessChangeInput } from "@/lib/access-audit";
 import type { AdminResult, DeleteResult } from "./action-types";
@@ -463,6 +468,39 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
       message: leaderUid
         ? `“${name}” created with its leader.`
         : `“${name}” created with no leader yet. Edit someone in the Directory to make them its leader.`,
+    };
+  } catch (err) {
+    return { ok: false, error: message(err) };
+  }
+}
+
+/**
+ * What deleting a team would remove and what it would leave behind, for the
+ * confirm dialog (lib/firebase/team-delete.ts). Null when the team is gone.
+ */
+export async function describeOrgTeam(teamId: string): Promise<TeamDataSummary | null> {
+  const { db } = await requireAdmin();
+  if (!teamId) return null;
+  return teamDataSummary(db, teamId);
+}
+
+/**
+ * Delete a team: its name and its roster. The team's rocks, to-dos, issues,
+ * headlines, measurables and meetings are NOT deleted — they stay in the
+ * database under the old team id, unreachable in the app (`pnpm team:delete`
+ * purges them). Irreversible; the dialog has the admin type the name.
+ */
+export async function deleteOrgTeam(teamId: string): Promise<AdminResult> {
+  const { db, uid: actorUid } = await requireAdmin();
+  if (!teamId) return { ok: false, error: "No team given" };
+  try {
+    const r = await deleteTeamCore(db, teamId, actorUid);
+    // The team sits in every sidebar and switcher, not just the Directory.
+    revalidatePath("/", "layout");
+    revalidateOrg();
+    return {
+      ok: true,
+      message: `Deleted “${r.name}” and removed ${r.membersRemoved} member${r.membersRemoved === 1 ? "" : "s"} from it.`,
     };
   } catch (err) {
     return { ok: false, error: message(err) };

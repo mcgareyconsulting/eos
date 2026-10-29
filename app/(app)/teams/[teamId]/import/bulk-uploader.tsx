@@ -35,7 +35,7 @@ const ACCEPT = /\.(zip|xlsx|csv|tsv)$/i;
 // here too: past the limit Next rejects the request before the action runs,
 // with an error that means nothing to the person importing.
 const MAX_BYTES = 950 * 1024;
-// Re-preview this long after the last change (option, override, untick).
+// Re-preview this long after the last change (option, untick).
 const PREVIEW_DEBOUNCE_MS = 500;
 
 /**
@@ -60,7 +60,6 @@ const KIND_LABELS: Record<ImportKind, string> = {
   headlines: "Headlines",
   scorecard: "Scorecard",
 };
-const KIND_ORDER: ImportKind[] = ["rocks", "milestones", "todos", "issues", "headlines", "scorecard"];
 
 /** Same shape as rowKey() in lib/team-import/bulk.ts (server-only module). */
 const rowKey = (tableId: string, row: number) => `${tableId}#${row}`;
@@ -96,8 +95,6 @@ export function BulkUploader({
   const [aliases, setAliases] = useState<OwnerAliasRow[]>(() => [
     { csvName: "", memberId: "" },
   ]);
-  // Per-tab type override; "" = leave the tab out.
-  const [kindOverrides, setKindOverrides] = useState<Record<string, ImportKind | "">>({});
   const [exclude, setExclude] = useState<Set<string>>(() => new Set());
   const [result, setResult] = useState<BulkImportResult | null>(null);
   // The buildForm (i.e. the exact files + options) the current result came
@@ -120,11 +117,10 @@ export function BulkUploader({
         const mid = a.memberId.trim();
         if (csv && mid) fd.append("ownerAlias", `${csv}=${mid}`);
       }
-      fd.set("kinds", JSON.stringify(kindOverrides));
       fd.set("exclude", JSON.stringify([...exclude]));
       return fd;
     },
-    [files, canCreateOwners, createOwners, includeArchived, fallbackOwnerId, aliases, kindOverrides, exclude],
+    [files, canCreateOwners, createOwners, includeArchived, fallbackOwnerId, aliases, exclude],
   );
 
   const run = useCallback(
@@ -172,9 +168,8 @@ export function BulkUploader({
       return;
     }
     setFiles(next);
-    // New files mean new sheets: old row ticks and overrides no longer line up.
+    // New files mean new sheets: old row ticks no longer line up.
     setExclude(new Set());
-    setKindOverrides({});
   }, [files]);
 
   const clearAll = () => {
@@ -182,7 +177,6 @@ export function BulkUploader({
     setFiles([]);
     setResult(null);
     setExclude(new Set());
-    setKindOverrides({});
     setResultFor(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -461,8 +455,6 @@ export function BulkUploader({
           result={preview}
           exclude={exclude}
           setExclude={setExclude}
-          kindOverrides={kindOverrides}
-          setKindOverride={(id, kind) => setKindOverrides((prev) => ({ ...prev, [id]: kind }))}
           updating={stale}
         />
       )}
@@ -491,15 +483,11 @@ function ResultView({
   result,
   exclude,
   setExclude,
-  kindOverrides,
-  setKindOverride,
   updating,
 }: {
   result: Extract<BulkImportResult, { ok: true }>;
   exclude: Set<string>;
   setExclude: (fn: (prev: Set<string>) => Set<string>) => void;
-  kindOverrides: Record<string, ImportKind | "">;
-  setKindOverride: (tableId: string, kind: ImportKind | "") => void;
   /** A newer preview is on its way — say so, but keep the grid usable. */
   updating: boolean;
 }) {
@@ -578,8 +566,6 @@ function ResultView({
           verdicts={verdicts}
           exclude={exclude}
           setExclude={setExclude}
-          override={kindOverrides[table.id]}
-          setOverride={(k) => setKindOverride(table.id, k)}
           applied={!report.dryRun}
           updating={updating}
         />
@@ -676,8 +662,6 @@ function SheetGrid({
   verdicts,
   exclude,
   setExclude,
-  override,
-  setOverride,
   applied,
   updating,
 }: {
@@ -685,8 +669,6 @@ function SheetGrid({
   verdicts: Map<string, PreviewRow>;
   exclude: Set<string>;
   setExclude: (fn: (prev: Set<string>) => Set<string>) => void;
-  override: ImportKind | "" | undefined;
-  setOverride: (kind: ImportKind | "") => void;
   applied: boolean;
   updating: boolean;
 }) {
@@ -702,26 +684,10 @@ function SheetGrid({
   });
   const shown = onlyProblems ? rows.filter((x) => x.problem) : rows;
   const allTicked = shown.every((x) => !x.excluded);
-  const selectValue = override ?? table.kind ?? "";
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        <label className="flex items-center gap-1.5">
-          <span className="font-medium text-zinc-800 dark:text-zinc-200">Import as</span>
-          <select
-            value={selectValue}
-            onChange={(e) => setOverride(e.target.value as ImportKind | "")}
-            className="rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-950"
-          >
-            {KIND_ORDER.map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABELS[k]}
-              </option>
-            ))}
-            <option value="">Leave out</option>
-          </select>
-        </label>
         <span className="text-zinc-500">
           {table.detected
             ? `Detected ${KIND_LABELS[table.detected]} — ${table.reason}`

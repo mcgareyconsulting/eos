@@ -24,15 +24,6 @@ import { SKIP_ROWS, type BulkImportResult } from "./import-types";
 const MAX_BYTES = 950 * 1024;
 const MAX_EXCLUDED = 50_000;
 
-const KINDS: readonly ImportKind[] = [
-  "scorecard",
-  "rocks",
-  "milestones",
-  "todos",
-  "issues",
-  "headlines",
-];
-
 function revalidateTeam(teamId: string) {
   revalidatePath(`/teams/${teamId}/rocks`);
   revalidatePath(`/teams/${teamId}/todos`);
@@ -55,30 +46,6 @@ function parseJson(raw: FormDataEntryValue | null): unknown {
   }
 }
 
-/** `kinds` field: { [tableId]: ImportKind | "" } — "" leaves the tab out. */
-function parseKinds(
-  raw: FormDataEntryValue | null,
-): Map<string, ImportKind | null> {
-  const out = new Map<string, ImportKind | null>();
-  const obj = parseJson(raw);
-  if (obj === undefined) return out;
-  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
-    throw new Error(
-      "Malformed import request — reload the page and try again.",
-    );
-  }
-  for (const [id, v] of Object.entries(obj)) {
-    if (v === "") out.set(id, null);
-    else if (
-      typeof v === "string" &&
-      (KINDS as readonly string[]).includes(v)
-    ) {
-      out.set(id, v as ImportKind);
-    }
-  }
-  return out;
-}
-
 function parseExclude(raw: FormDataEntryValue | null): Set<string> {
   const arr = parseJson(raw);
   if (arr === undefined) return new Set();
@@ -99,7 +66,6 @@ function parseExclude(raw: FormDataEntryValue | null): Set<string> {
  * Form fields:
  *   - file: File (repeatable) — .zip / .xlsx / .csv / .tsv
  *   - dryRun: "1" | "0"
- *   - kinds: JSON { [tableId]: kind | "" } — per-tab type overrides
  *   - exclude: JSON string[] of `${tableId}#${row}` — rows the user unticked
  *   - createOwners: "1" | "0"   (admin only)
  *   - includeArchived: "1" | "0"
@@ -146,7 +112,10 @@ export async function importTeamBundle(
     const createOwners = isAdmin && formData.get("createOwners") === "1";
     const includeArchived = formData.get("includeArchived") === "1";
     const fallbackRaw = String(formData.get("fallbackOwnerId") ?? "").trim();
-    const kinds = parseKinds(formData.get("kinds"));
+    // Each tab is imported as what its columns say it is. There is no
+    // client override: re-typing a tab (rocks read as to-dos) is a footgun
+    // with no use now that detection matches every ninety export.
+    const kinds = new Map<string, ImportKind | null>();
     const exclude = parseExclude(formData.get("exclude"));
 
     // Unmatched owners import as No Owner by default — losing rows silently is

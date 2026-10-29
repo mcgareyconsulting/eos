@@ -207,7 +207,7 @@ export function classifyTable(
     const kind = kindFromName(name);
     if (kind) return { kind, reason: `${label} name “${name}”` };
   }
-  return { kind: null, reason: "Columns don't match a known export — pick a type" };
+  return { kind: null, reason: "Columns don't match a known ninety export — not imported" };
 }
 
 function kindFromName(name: string): ImportKind | null {

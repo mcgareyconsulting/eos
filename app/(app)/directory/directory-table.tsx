@@ -9,7 +9,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { isLeaderOf, type Viewer } from "@/lib/access/types";
 import { AddPersonButton, NewTeamButton, PersonRowMenu } from "./directory-admin";
-import { LeaderAddButton, RemoveFromTeamButton } from "./directory-leader";
+import { LeaderAddButton, RemoveFromTeamButton, RenameTeamButton } from "./directory-leader";
 
 const ACCESS_LABEL: Record<DirectoryPerson["access"], string> = {
   admin: "Admin",
@@ -106,6 +106,7 @@ export function DirectoryTable({
             <Upload className="h-4 w-4" />
             Import seed file
           </Link>
+          <RenameTeamButton teams={teams} onDone={setNotice} />
           <NewTeamButton people={people} onDone={setNotice} />
           <AddPersonButton teams={teams} onDone={setNotice} />
         </div>
@@ -113,6 +114,7 @@ export function DirectoryTable({
 
       {showLeaderTools && (
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <RenameTeamButton teams={ledTeams} onDone={setNotice} />
           <LeaderAddButton ledTeams={ledTeams} people={people} onDone={setNotice} />
         </div>
       )}

@@ -13,6 +13,7 @@ import {
   getOrgAdmins,
   requireRosterOwner,
   OWNER_NOT_ON_ROSTER,
+  teamNameTaken,
 } from "./teams";
 
 // requireFirebaseUser()'s shape, trimmed to what teams.ts reads.
@@ -276,6 +277,23 @@ describe("requireRosterOwner", () => {
       requireRosterOwner("t1", "departed", { keep: "u2" }, setup()),
       new Error(OWNER_NOT_ON_ROSTER),
     );
+  });
+});
+
+describe("teamNameTaken", () => {
+  test("matches another team ignoring case and punctuation", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "t1", "Information Technology");
+    seedTeam(db, "t2", "IT.");
+    assert.equal(await teamNameTaken(db.asFirestore(), "it"), true);
+    assert.equal(await teamNameTaken(db.asFirestore(), "Finance"), false);
+  });
+
+  test("a team's own name is not a collision when renaming it", async () => {
+    const db = new FakeFirestore();
+    seedTeam(db, "t1", "IT");
+    assert.equal(await teamNameTaken(db.asFirestore(), "it", "t1"), false);
+    assert.equal(await teamNameTaken(db.asFirestore(), "it", "t2"), true);
   });
 });
 

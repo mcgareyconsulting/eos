@@ -5,6 +5,7 @@ import { requireFirebaseUser } from "./auth";
 import { getAdminAuth } from "./admin";
 import { adminViewDocId, recordAdminView } from "@/lib/access-audit";
 import { checkTeamAccess } from "./team-access";
+import { normalizeKey } from "@/lib/csv-import";
 
 // Test-only seam: every export below resolves its user/auth dependency
 // through this (defaulted) bag instead of calling requireFirebaseUser /
@@ -227,6 +228,24 @@ export async function requireRosterOwner(
 }
 
 export type OrgAdmin = { uid: string; name: string; email: string | null };
+
+/**
+ * Names that differ only in case or punctuation are the same team here. The
+ * seed import matches teams by name, so a near-duplicate would split one team
+ * into two on the next import.
+ */
+export async function teamNameTaken(
+  db: Firestore,
+  name: string,
+  exceptTeamId?: string,
+): Promise<boolean> {
+  const key = normalizeKey(name);
+  const snap = await db.collection("teams").get();
+  return snap.docs.some(
+    (d) =>
+      d.id !== exceptTeamId && normalizeKey((d.data()?.name as string) ?? "") === key,
+  );
+}
 
 /** Soft directory: every in-domain user may read team names. */
 export const getOrgTeams = cache(

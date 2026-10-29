@@ -3,11 +3,13 @@
 // Leader-only roster controls for the Directory (spec 2.2): add an existing
 // directory person to a team the viewer leads, remove a person from one. No
 // accounts are created and roles are not changed here; both are admin-only.
+// Renaming a team is leader-or-admin, so admins get that button too.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Loader2, UserPlus, X } from "lucide-react";
+import { AlertCircle, Loader2, Pencil, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   ModalBody,
   ModalFooter,
@@ -17,6 +19,7 @@ import {
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import type { DirectoryPerson } from "@/lib/firebase/directory";
 import { addTeamMember, removeTeamMember } from "./roster-actions";
+import { renameTeam } from "./team-actions";
 
 type Team = { id: string; name: string };
 
@@ -154,6 +157,141 @@ function AddToTeamModal({
           Add
         </Button>
       </ModalFooter>
+    </ModalShell>
+  );
+}
+
+/** Rename a team the viewer leads (every team, for an admin). */
+export function RenameTeamButton({
+  teams,
+  onDone,
+}: {
+  teams: Team[];
+  onDone: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (teams.length === 0) return null;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        <Pencil className="h-4 w-4" />
+        Rename team
+      </Button>
+      {open && (
+        <RenameTeamModal
+          teams={teams}
+          onClose={() => setOpen(false)}
+          onDone={onDone}
+        />
+      )}
+    </>
+  );
+}
+
+function RenameTeamModal({
+  teams,
+  onClose,
+  onDone,
+}: {
+  teams: Team[];
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const sorted = [...teams].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const [teamId, setTeamId] = useState(sorted[0].id);
+  const [name, setName] = useState(sorted[0].name);
+
+  const teamOptions: SelectOption[] = sorted.map((t) => ({ value: t.id, label: t.name }));
+
+  function submit() {
+    if (!name.trim()) {
+      setError("Team name is required");
+      return;
+    }
+    setError(null);
+    start(async () => {
+      const result = await renameTeam(teamId, name);
+      if (result.ok) {
+        onDone(result.message);
+        router.refresh();
+        onClose();
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <ModalShell open onClose={onClose} ariaLabel="Rename team" size="md" portal>
+      <ModalHeader title="Rename team" onClose={onClose} />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <ModalBody className="space-y-4">
+          {sorted.length > 1 && (
+            <div>
+              <label
+                htmlFor="rename-team-which"
+                className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400"
+              >
+                Team
+              </label>
+              <SelectMenu
+                id="rename-team-which"
+                options={teamOptions}
+                value={teamId}
+                onChange={(v) => {
+                  setTeamId(v);
+                  setName(sorted.find((t) => t.id === v)?.name ?? "");
+                  setError(null);
+                }}
+              />
+            </div>
+          )}
+          <div>
+            <label
+              htmlFor="rename-team-name"
+              className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400"
+            >
+              New name
+            </label>
+            <Input
+              id="rename-team-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              The team keeps its people, rocks, to-dos and meetings — only the
+              name changes.
+            </p>
+          </div>
+          {error && (
+            <p className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-inset ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-900">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </p>
+          )}
+        </ModalBody>
+        <ModalFooter className="px-4 pb-4">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Rename
+          </Button>
+        </ModalFooter>
+      </form>
     </ModalShell>
   );
 }

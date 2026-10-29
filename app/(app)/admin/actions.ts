@@ -3,9 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth } from "@/lib/firebase/admin";
-import { requireAdmin } from "@/lib/firebase/teams";
+import { requireAdmin, teamNameTaken } from "@/lib/firebase/teams";
 import { setFeedbackAccess } from "@/lib/firebase/feedback-access";
-import { normalizeKey } from "@/lib/csv-import";
 import { assertAnotherAdminRemains } from "@/lib/firebase/admin-guard";
 import { deactivatePerson, reactivatePerson } from "@/lib/firebase/deactivate";
 import { assertInviteEmail, ensureAuthUser } from "@/lib/team-invite";
@@ -402,20 +401,6 @@ export async function reactivateOrgPerson(uid: string): Promise<AdminResult> {
 // Teams
 // ---------------------------------------------------------------------------
 
-/** Names that differ only in case or punctuation are the same team here. */
-async function nameTaken(
-  db: Awaited<ReturnType<typeof requireAdmin>>["db"],
-  name: string,
-  exceptTeamId?: string,
-): Promise<boolean> {
-  const key = normalizeKey(name);
-  const snap = await db.collection("teams").get();
-  return snap.docs.some(
-    (d) =>
-      d.id !== exceptTeamId && normalizeKey((d.data()?.name as string) ?? "") === key,
-  );
-}
-
 /**
  * Create a team, optionally with a leader picked from the directory. The seed
  * import produces leaderless teams too, so leaderless is allowed here — the
@@ -429,7 +414,7 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
   if (!name) return { ok: false, error: "Team name is required" };
 
   try {
-    if (await nameTaken(db, name)) {
+    if (await teamNameTaken(db, name)) {
       return { ok: false, error: `A team named “${name}” already exists.` };
     }
     if (leaderUid) {
@@ -479,39 +464,6 @@ export async function createOrgTeam(formData: FormData): Promise<AdminResult> {
         ? `“${name}” created with its leader.`
         : `“${name}” created with no leader yet. Edit someone in the Directory to make them its leader.`,
     };
-  } catch (err) {
-    return { ok: false, error: message(err) };
-  }
-}
-
-/**
- * Rename a team. The seed import matches teams by name, so renaming one to a
- * name the next seed file does not use means that file will create a second
- * team beside it — hence the collision check and nothing more clever.
- */
-export async function renameOrgTeam(formData: FormData): Promise<AdminResult> {
-  const { db, uid: actorUid } = await requireAdmin();
-
-  const teamId = String(formData.get("team_id") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
-  if (!teamId) return { ok: false, error: "No team given" };
-  if (!name) return { ok: false, error: "Team name is required" };
-
-  try {
-    const ref = db.collection("teams").doc(teamId);
-    const snap = await ref.get();
-    if (!snap.exists) return { ok: false, error: "That team no longer exists" };
-
-    const current = (snap.data()?.name as string) ?? "";
-    if (current === name) return { ok: true, message: "Name unchanged." };
-
-    if (await nameTaken(db, name, teamId)) {
-      return { ok: false, error: `A team named “${name}” already exists.` };
-    }
-
-    await ref.update({ name, ...stamp(actorUid) });
-    revalidateOrg();
-    return { ok: true, message: `Renamed to “${name}”.` };
   } catch (err) {
     return { ok: false, error: message(err) };
   }

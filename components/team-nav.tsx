@@ -8,7 +8,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { SIDEBAR_ICON, SidebarLink } from "@/components/sidebar-link";
+import { SidebarLink } from "@/components/sidebar-link";
+import { SIDEBAR_ICON } from "@/components/sidebar-icon";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,

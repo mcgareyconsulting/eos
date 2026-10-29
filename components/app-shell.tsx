@@ -7,7 +7,8 @@ import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
 import { SessionKeeper } from "@/components/session-keeper";
 import { NotificationsNavLink } from "@/components/notifications-nav-link";
-import { SIDEBAR_ICON, SidebarLink } from "@/components/sidebar-link";
+import { SidebarLink } from "@/components/sidebar-link";
+import { SIDEBAR_ICON } from "@/components/sidebar-icon";
 import { TeamNav, type ShellTeam } from "@/components/team-nav";
 import { initials } from "@/lib/user-name";
 

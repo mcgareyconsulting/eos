@@ -12,9 +12,6 @@ export function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Classes for the icon passed to SidebarLink (its color comes from the link). */
-export const SIDEBAR_ICON = "h-4 w-4 shrink-0 group-data-[sidebar-collapsed]/shell:size-5";
-
 /**
  * Sidebar row (app shell + team nav). The current page's icon takes the brand
  * color. `icon` is an element, not a component: the app shell is a server

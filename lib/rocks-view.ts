@@ -181,3 +181,25 @@ export function buildRockSections<E extends SectionableRock>(
 
   return groups;
 }
+
+/**
+ * A section's rows, split for rendering: the full rocks in their sorted
+ * order, and every milestone its block entries carried, pooled into ONE
+ * "Other milestones" list at the bottom of the section (Daniel, 2026-10-29:
+ * a member's milestones on other teams' rocks show by name only — no rock
+ * headline row per rock).
+ */
+export function splitBlockEntries<E, M>(
+  rows: readonly (E | { __block: { milestones: readonly M[] } })[],
+): { full: E[]; other: M[] } {
+  const full: E[] = [];
+  const other: M[] = [];
+  for (const r of rows) {
+    if (r !== null && typeof r === "object" && "__block" in r) {
+      other.push(...(r as { __block: { milestones: readonly M[] } }).__block.milestones);
+    } else {
+      full.push(r as E);
+    }
+  }
+  return { full, other };
+}

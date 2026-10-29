@@ -11,7 +11,6 @@ import {
   formatDateOnly,
   relativeDueLabel,
 } from "@/lib/dates";
-import type { RockHeadline } from "@/lib/access/rock";
 import { StatusPill, StatusPopover } from "./status-popover";
 import { RockDetailTrigger } from "./rock-detail-modal";
 import { EditRockButton, RockModal } from "./rock-modal";
@@ -407,152 +406,112 @@ function FromTeamChip({ name }: { name: string }) {
   );
 }
 
+/** A milestone listed in a member's "Other milestones" bucket. */
+export type OtherMilestone = MilestoneSerialized & {
+  /** The rock it hangs off — a tooltip only; the row shows the name. */
+  rock_title?: string;
+  from_team_name?: string;
+};
+
 /**
- * One entry in a member's block (spec §4): a milestone they own on another
- * team's rock. Shows ONLY the rock's headline (title, owner, team) and the
- * milestone(s) — no status, due date, description or thread, and no way in
- * to the rock. Read-only; the milestone's own assignee may tick it.
+ * The bucket at the bottom of a member's section (spec §4, 2026-10-29):
+ * every milestone they own on another team's non-private rock, by name —
+ * no rock headline, status, description or thread, and no way in to the
+ * rock. Read-only; the milestone's own assignee may tick it. The rock's
+ * title and team sit in a tooltip, which is all of the headline a block
+ * view grants.
  *
- * Same shell as RockRow (rail, chevron, title line, owner line, fixed-width
- * columns) so a block sits in a section without looking like a different
- * kind of thing; what differs is behaviour, not style. The rail is neutral
- * and the due/status/actions slots stay empty because the headline carries
- * none of that. Collapsed by default, like every other row.
+ * Same shell as RockRow (rail, title column, fixed-width columns) so the
+ * bucket sits in a section without looking like a different kind of thing;
+ * the rail is neutral because the rows carry no rock status.
  */
-export function RockBlockRow({
+export function OtherMilestonesRow({
   viewTeamId,
-  headline,
-  ownerName,
-  fromTeamName,
   milestones,
   currentUserId,
 }: {
   /** The page's team — the assignee's tick runs from here. */
   viewTeamId: string;
-  headline: RockHeadline;
-  ownerName: string;
-  fromTeamName: string;
-  milestones: MilestoneSerialized[];
+  milestones: OtherMilestone[];
   currentUserId: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const timeZone = useTimeZone();
   const now = new Date();
-  const displayOwner = ownerName || "Unassigned";
+  if (milestones.length === 0) return null;
+  const open = milestones.filter((m) => !m.completed).length;
 
   return (
-    <div className="group flex items-stretch">
+    <div className="flex items-stretch bg-zinc-50/60 dark:bg-zinc-800/20">
       <div className="w-[3px] shrink-0 bg-zinc-200 dark:bg-zinc-700" aria-hidden />
 
       <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setExpanded((e) => !e)}
-            aria-expanded={expanded}
-            aria-label={expanded ? "Collapse milestones" : "Expand milestones"}
-            className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            <ChevronRight
-              className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")}
-            />
-          </button>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold">
-                {headline.title}
-              </span>
-              <FromTeamChip name={fromTeamName} />
-            </div>
-
-            <div className="mt-0.5 flex items-center gap-2.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
-              <span className="truncate">{displayOwner}</span>
-              {milestones.length > 0 ? (
-                <>
-                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
-                  <MilestoneProgress
-                    milestones={milestones}
-                    barClass="bg-zinc-400 dark:bg-zinc-500"
-                  />
-                </>
-              ) : null}
-            </div>
+          <span className="w-5 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1 text-[10.5px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+            Other milestones
+            <span className="font-bold text-zinc-400">
+              {" "}
+              ({open} open)
+            </span>
           </div>
-
-          {/* Empty twins of RockRow's due, status and action slots: the
-              headline has none of these, but the title and owner columns
-              must line up with the full rocks around it. */}
-          <div className="w-24 shrink-0" aria-hidden />
-          <div className="w-28 shrink-0" aria-hidden />
-          <div className="w-[73px] shrink-0" aria-hidden />
         </div>
 
-        {expanded && (
-          <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
-            <ul className="px-1.5 py-1.5">
-              {milestones.map((m) => {
-                const mine = m.owner_id === currentUserId;
-                return (
-                  <li key={m.id}>
-                    <label
+        <ul className="ml-[25px] mt-1.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-white px-1.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
+          {milestones.map((m) => {
+            const mine = m.owner_id === currentUserId;
+            const hint = [m.rock_title, m.from_team_name ? `from ${m.from_team_name}` : null]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <li key={m.id}>
+                <label
+                  title={hint || undefined}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
+                    mine && "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                  )}
+                >
+                  {mine ? (
+                    <TodoCheckbox
+                      teamId={viewTeamId}
+                      todoId={m.id}
+                      completed={m.completed}
+                      appearance="milestone"
+                    />
+                  ) : (
+                    <span
                       className={cn(
-                        "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
-                        mine && "cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-800",
+                        "inline-block h-4 w-4 shrink-0 rounded-sm border",
+                        m.completed
+                          ? "border-hpb-green bg-hpb-green"
+                          : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
                       )}
-                    >
-                      {mine ? (
-                        <TodoCheckbox
-                          teamId={viewTeamId}
-                          todoId={m.id}
-                          completed={m.completed}
-                          appearance="milestone"
-                        />
-                      ) : (
-                        <span
-                          className={cn(
-                            "inline-block h-4 w-4 shrink-0 rounded-sm border",
-                            m.completed
-                              ? "border-hpb-green bg-hpb-green"
-                              : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
-                          )}
-                          aria-hidden
-                        />
-                      )}
-                      <span
-                        className={cn(
-                          "min-w-0 flex-1 truncate text-[13px]",
-                          m.completed
-                            ? "text-zinc-400 dark:text-zinc-500"
-                            : "font-medium text-zinc-800 dark:text-zinc-200",
-                        )}
-                      >
-                        {m.title}
-                      </span>
-                      <span className="shrink-0 text-[11.5px] text-zinc-400">
-                        {m.owner_label ?? (m.owner_id ? "—" : "Unassigned")}
-                      </span>
-                      <span
-                        className={cn(
-                          "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
-                          dueToneClass(
-                            m.due_date,
-                            m.completed,
-                            now,
-                            undefined,
-                            timeZone,
-                          ),
-                        )}
-                      >
-                        {dueDateShort(m.due_date, m.completed, now, timeZone)}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                      aria-hidden
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[13px]",
+                      m.completed
+                        ? "text-zinc-400 dark:text-zinc-500"
+                        : "font-medium text-zinc-800 dark:text-zinc-200",
+                    )}
+                  >
+                    {m.title}
+                  </span>
+                  <span
+                    className={cn(
+                      "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
+                      dueToneClass(m.due_date, m.completed, now, undefined, timeZone),
+                    )}
+                  >
+                    {dueDateShort(m.due_date, m.completed, now, timeZone)}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );

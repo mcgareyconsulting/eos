@@ -26,7 +26,8 @@ export type AccessChangeKind =
   | "leader_role"
   | "admin_role"
   | "feedback_tracker"
-  | "deactivation";
+  | "deactivation"
+  | "team_deleted";
 
 export type AccessChangeInput = {
   kind: AccessChangeKind;

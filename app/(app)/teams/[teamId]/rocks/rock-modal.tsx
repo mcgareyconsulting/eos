@@ -983,6 +983,7 @@ export function RockModal({
           open={paneOpen}
           onClose={() => setPaneOpen(false)}
           parentTeamName={teamName ?? "This team"}
+          parentMembers={members.map((m) => ({ id: m.user_id, name: m.full_name }))}
           teamOptions={shareTeams}
           personOptions={
             orgPeople

@@ -15,6 +15,7 @@ import { getUserTeamsFirebase } from "@/lib/firebase/auth";
 import {
   loadAssignedRocks,
   loadMilestonesForRocks,
+  loadRocksSharedWithUser,
   loadTeamRocks,
   loadUsersById,
 } from "@/lib/firebase/queries";
@@ -37,11 +38,12 @@ import {
   buildRockSections,
   mapFullRock,
   sortRocks,
+  splitBlockEntries,
   type FullRock,
 } from "@/lib/rocks-view";
 import { viewerOf } from "@/lib/access/types";
 import { NewRockButton } from "./rock-modal";
-import { RockBlockRow, RockRow } from "./rock-row";
+import { OtherMilestonesRow, RockRow, type OtherMilestone } from "./rock-row";
 import type { MilestoneSerialized } from "./milestone-checklist";
 import type { StatusUpdateSerialized } from "./status-history";
 import { type TodoDoc } from "@/lib/firestore-types";
@@ -73,7 +75,7 @@ type BlockEntry = {
   __block: {
     rowKey: string;
     headline: RockHeadline;
-    milestones: MilestoneSerialized[];
+    milestones: OtherMilestone[];
   };
 };
 
@@ -109,8 +111,9 @@ export default async function RocksPage({
   const eoq = toDateString(endOfQuarter());
 
   // Fetch rocks, todos (milestones), and status history in parallel.
-  const [teamRocks, todosSnap, statusSnap] = await Promise.all([
+  const [teamRocks, personalSnaps, todosSnap, statusSnap] = await Promise.all([
     loadTeamRocks(db, teamId),
+    loadRocksSharedWithUser(db, uid),
     db.collection("todos").where("team_id", "==", teamId).get(),
     db
       .collection("rock_status_updates")
@@ -135,11 +138,33 @@ export default async function RocksPage({
   // — they archive on the parent team, not here. Owner on this roster →
   // their own section (with a "from {team}" chip); otherwise → "Shared by
   // {owner}" at the bottom.
-  const sharedRocksRaw = teamRocks.shared
+  const teamSharedRaw = teamRocks.shared
     .map((d) => mapFullRock(d.id, d.data()))
     .filter((r) => isAudienceTeam(r, teamId) && r.archived_at == null);
-  const { ownerOnRoster: sharedIntoSections, sharedBy: sharedRocksBelow } =
-    partitionSharedRocks(sharedRocksRaw, rosterIds);
+  const { ownerOnRoster: sharedIntoSections, sharedBy: teamSharedBelow } =
+    partitionSharedRocks(teamSharedRaw, rosterIds);
+
+  // Rocks shared with the VIEWER personally (audience_user_ids): the full
+  // rock, for this reader only — the page is rendered per viewer, and the
+  // rest of the roster never gets these rows. Always "Shared by {owner}"
+  // at the bottom, never merged into a member's section, because they are
+  // not the team's. Skips the team's own rocks and the team-audience ones
+  // already placed above; drops anything the viewer may no longer see.
+  const onPage = new Set([
+    ...teamRocks.own.map((d) => d.id),
+    ...teamSharedRaw.map((r) => r.id),
+  ]);
+  const personalSharedRaw = personalSnaps
+    .filter((d) => !onPage.has(d.id))
+    .map((d) => mapFullRock(d.id, d.data()))
+    .filter(
+      (r) =>
+        r.team_id !== teamId &&
+        r.archived_at == null &&
+        rockAccess.canSee(r, viewer),
+    );
+  const sharedRocksRaw = [...teamSharedRaw, ...personalSharedRaw];
+  const sharedRocksBelow = [...teamSharedBelow, ...personalSharedRaw];
 
   // The audience edits a rock against its PARENT team (the owner must be on
   // that roster), so the modal needs the parent's people.
@@ -247,7 +272,13 @@ export default async function RocksPage({
           __block: {
             rowKey: `${d.id}:${carrierId}`,
             headline,
-            milestones: list.map((m) => serializeMilestone(m.id, m)).sort(byDue),
+            milestones: list
+              .map((m) => ({
+                ...serializeMilestone(m.id, m),
+                rock_title: headline.title,
+                from_team_name: teamNameById.get(headline.team_id) ?? "another team",
+              }))
+              .sort(byDue),
           },
         });
       }
@@ -421,37 +452,35 @@ export default async function RocksPage({
             })),
           ].map((g) => (
             <RockSection key={g.key} title={g.title} count={g.rocks.length}>
-              {g.rocks.map((r) => {
-                if ("__block" in r) {
-                  const b = r.__block;
-                  return (
-                    <RockBlockRow
-                      key={b.rowKey}
+              {(() => {
+                // Full rocks first, then one "Other milestones" bucket for
+                // every block the section carried (lib/rocks-view.ts).
+                const { full, other } = splitBlockEntries<FullRock, OtherMilestone>(
+                  g.rocks as (FullRock | BlockEntry)[],
+                );
+                return (
+                  <>
+                    {full.map((r) => (
+                      <RockRow
+                        key={r.id}
+                        {...rowProps(r)}
+                        userId={uid}
+                        rock={r}
+                        ownerName={ownerName(r.owner_id)}
+                        milestones={milestonesByRock.get(r.id) ?? []}
+                        defaultDue={eoq}
+                        statusHistory={statusByRock.get(r.id) ?? []}
+                        currentUserId={uid}
+                      />
+                    ))}
+                    <OtherMilestonesRow
                       viewTeamId={teamId}
-                      headline={b.headline}
-                      ownerName={ownerName(b.headline.owner_id)}
-                      fromTeamName={
-                        teamNameById.get(b.headline.team_id) ?? "another team"
-                      }
-                      milestones={b.milestones}
+                      milestones={other}
                       currentUserId={uid}
                     />
-                  );
-                }
-                return (
-                  <RockRow
-                    key={r.id}
-                    {...rowProps(r)}
-                    userId={uid}
-                    rock={r}
-                    ownerName={ownerName(r.owner_id)}
-                    milestones={milestonesByRock.get(r.id) ?? []}
-                    defaultDue={eoq}
-                    statusHistory={statusByRock.get(r.id) ?? []}
-                    currentUserId={uid}
-                  />
+                  </>
                 );
-              })}
+              })()}
             </RockSection>
           ))}
         </>

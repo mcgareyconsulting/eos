@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { SidebarLink } from "@/components/sidebar-link";
+import { SIDEBAR_ICON, SidebarLink } from "@/components/sidebar-link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
@@ -440,7 +440,7 @@ export function TeamNav({
           <SidebarLink
             key={item.section}
             href={item.section === "directory" ? "/directory" : `${teamPath}/${item.section}`}
-            icon={item.icon}
+            icon={<item.icon className={SIDEBAR_ICON} />}
             label={item.label}
           />
         ))}

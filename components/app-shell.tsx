@@ -7,7 +7,7 @@ import { EnvBanner } from "@/components/env-badge";
 import { LiveAuthBanner } from "@/components/live-auth-banner";
 import { SessionKeeper } from "@/components/session-keeper";
 import { NotificationsNavLink } from "@/components/notifications-nav-link";
-import { SidebarLink } from "@/components/sidebar-link";
+import { SIDEBAR_ICON, SidebarLink } from "@/components/sidebar-link";
 import { TeamNav, type ShellTeam } from "@/components/team-nav";
 import { initials } from "@/lib/user-name";
 
@@ -75,11 +75,15 @@ export function AppShell({
 
           <div className="flex-1 overflow-y-auto">
             <nav className="space-y-0.5 px-2 py-3">
-              <SidebarLink href="/home" icon={Home} label="Home" />
+              <SidebarLink href="/home" icon={<Home className={SIDEBAR_ICON} />} label="Home" />
               <NotificationsNavLink initialUnread={unreadNotifications} />
               {/* The tracker's access list only (ROADMAP N73); the page 404s anyone else. */}
               {showFeedback && (
-                <SidebarLink href="/admin/feedback" icon={MessageSquareText} label="Feedback" />
+                <SidebarLink
+                  href="/admin/feedback"
+                  icon={<MessageSquareText className={SIDEBAR_ICON} />}
+                  label="Feedback"
+                />
               )}
             </nav>
 

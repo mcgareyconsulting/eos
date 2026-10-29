@@ -12,14 +12,22 @@ export function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Sidebar row (app shell + team nav). The current page's icon takes the brand color. */
+/** Classes for the icon passed to SidebarLink (its color comes from the link). */
+export const SIDEBAR_ICON = "h-4 w-4 shrink-0 group-data-[sidebar-collapsed]/shell:size-5";
+
+/**
+ * Sidebar row (app shell + team nav). The current page's icon takes the brand
+ * color. `icon` is an element, not a component: the app shell is a server
+ * component and can't hand a function to this client one. Lucide icons draw
+ * in currentColor, so the wrapper span colors them.
+ */
 export function SidebarLink({
   href,
-  icon: Icon,
+  icon,
   label,
 }: {
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ReactNode;
   label: string;
 }) {
   const active = isActivePath(usePathname() ?? "", href);
@@ -33,12 +41,15 @@ export function SidebarLink({
         active && "bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100",
       )}
     >
-      <Icon
+      <span
+        aria-hidden
         className={cn(
-          "h-4 w-4 shrink-0 group-data-[sidebar-collapsed]/shell:size-5",
+          "inline-flex shrink-0",
           active ? "text-hpb-blue dark:text-hpb-gold" : "text-zinc-600 dark:text-zinc-400",
         )}
-      />
+      >
+        {icon}
+      </span>
       <span className="group-data-[sidebar-collapsed]/shell:hidden">{label}</span>
     </Link>
   );

@@ -517,7 +517,10 @@ export default async function HomePage() {
     company: companyRocks,
     mine: myRocks,
     departmental: departmentalRocks,
-  } = splitHomeRocksByType(rockItems);
+  } = splitHomeRocksByType(rockItems, {
+    uid: user.id,
+    hasMyMilestone: (r) => mineById.get(r.id) === true,
+  });
 
   // Personal scorecard: metrics I own on teams I can open.
   const myMetrics: MetricRow[] = myMetricsSnap.docs
@@ -631,8 +634,12 @@ export default async function HomePage() {
               tell which rocks are actually theirs. Split by kind down the
               Company > Department > owner ladder, so a department rock the
               viewer owns still sits with the department's and a Company rock
-              leads regardless. Any section is dropped entirely when empty
-              rather than showing an empty-state three times. */}
+              leads regardless. "My Rocks" is the viewer's own individual
+              rocks plus any they hold a milestone on; a colleague's
+              individual rock that is merely shared in is left off Home
+              (splitHomeRocksByType's `shared`). Any section is dropped
+              entirely when empty rather than showing an empty-state three
+              times. */}
           <div className="space-y-4">
             {companyRocks.length > 0 && (
               <BoardColumn
@@ -659,6 +666,7 @@ export default async function HomePage() {
                 <HomeRocksList rocks={departmentalRocks} userId={user.id} />
               </BoardColumn>
             )}
+
             {rockItems.length === 0 && (
               <BoardColumn scroll title="Rocks" count={0} flush>
                 <HomeRocksList rocks={[]} userId={user.id} />

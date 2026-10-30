@@ -378,6 +378,24 @@ describe("splitHomeRocksByType (N34)", () => {
     );
   });
 
+  test("with a viewer: someone else's shared individual rock is shared, not mine", () => {
+    // A colleague's individual rocks, shared with the viewer's team, were
+    // listed under the viewer's "My Rocks" (2026-10-30).
+    const board = [
+      { id: "own", owner_id: "u-me", rock_type: "individual" },
+      { id: "theirs", owner_id: "u-them", rock_type: "individual" },
+      { id: "theirs-with-my-milestone", owner_id: "u-them", rock_type: "individual" },
+      { id: "dept", owner_id: "u-them", rock_type: "department" },
+    ];
+    const { mine, shared, departmental } = splitHomeRocksByType(board, {
+      uid: "u-me",
+      hasMyMilestone: (r) => r.id === "theirs-with-my-milestone",
+    });
+    assert.deepEqual(mine.map((r) => r.id), ["own", "theirs-with-my-milestone"]);
+    assert.deepEqual(shared.map((r) => r.id), ["theirs"]);
+    assert.deepEqual(departmental.map((r) => r.id), ["dept"]);
+  });
+
   test("an empty board yields three empty sections, not undefined", () => {
     const { company, mine, departmental } = splitHomeRocksByType([]);
     assert.deepEqual(company, []);

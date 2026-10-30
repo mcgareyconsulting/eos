@@ -37,6 +37,8 @@ export type PreviewRow = {
   detail: string[];
   /** Why it was skipped, or what is notable about it. */
   note?: string;
+  /** Set when skipped because the file's Team column names another team. */
+  otherTeam?: string;
   /** Which file row this came from — set on bulk imports only. */
   ref?: { table: string; row: number };
 };

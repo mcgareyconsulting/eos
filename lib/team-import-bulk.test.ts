@@ -17,6 +17,7 @@ import {
   toGridTables,
 } from "./team-import";
 import { readZip } from "./xlsx";
+import { isOtherTeam } from "./team-import/normalize";
 import { importDocId } from "./csv-import";
 
 // A team's ninety export, column for column (client sample, 2026-10-29).
@@ -181,7 +182,7 @@ describe("bulk import end to end", () => {
     const issues = makeXlsx([
       {
         name: "Short Term Issues",
-        rows: [hdr("issues"), rowOf("issues", { Owner: "Sarah Chen", Title: "Printer down", Team: "Ops" })],
+        rows: [hdr("issues"), rowOf("issues", { Owner: "Sarah Chen", Title: "Printer down", Team: "Ops", Who: "sarah  chen" })],
       },
       {
         name: "Long Term Issues",
@@ -274,6 +275,24 @@ describe("bulk import end to end", () => {
     assert.ok(report.kinds.some((k) => k.warnings.some((w) => /Who value/.test(w))));
   });
 
+  test("rows for other teams are skipped and tagged with that team", async () => {
+    const { report } = await run();
+    const tagged = report.rows.filter((r) => r.otherTeam);
+    assert.deepEqual(
+      tagged.map((r) => `${r.kind}:${r.otherTeam}`).sort(),
+      ["issues:Lending", "todos:Lending"],
+    );
+    assert.ok(tagged.every((r) => r.action === "skip"));
+  });
+
+  test("a Who that names the Owner gets no note and no warning", async () => {
+    const { db, report } = await run();
+    const printer = db.docsIn("issues").find((d) => d.data.title === "Printer down");
+    assert.doesNotMatch(String(printer?.data.description), /Who:/);
+    const whoWarnings = report.kinds.flatMap((k) => k.warnings.filter((w) => /Who value/.test(w)));
+    assert.ok(whoWarnings.every((w) => /^1 issue/.test(w)));
+  });
+
   test("every preview row points back at its file row", async () => {
     const { report } = await run();
     const ref = report.rows.find((r) => r.title === "Core migration")?.ref;
@@ -363,6 +382,13 @@ describe("teamFilterFor (one Team picker drives the Department filter)", () => {
     const got = teamFilterFor(todos("Lending", "Retail"), new Map(), "Ops");
     assert.equal(got.rockTeam, "Ops");
     assert.match(got.notice?.message ?? "", /Lending, Retail — none is Ops/);
+  });
+
+  test("a \"Team\" suffix doesn't stop the match (Transformation Team ↔ Transformation)", () => {
+    const tables = todos("EOS Leadership Team", "Transformation", "Transformation", "EOS Leadership Team");
+    assert.deepEqual(teamFilterFor(tables, new Map(), "Transformation Team"), { rockTeam: "Transformation Team" });
+    assert.ok(isOtherTeam("EOS Leadership Team", "Transformation Team"));
+    assert.ok(!isOtherTeam("Transformation", "Transformation Team"));
   });
 
   test("a tab left out doesn't count", () => {

@@ -19,6 +19,7 @@ import {
 } from "../csv-import";
 import type { BulkGridTable, BulkNotice, ImportKind } from "../team-import-types";
 import { readXlsx, readZip } from "../xlsx";
+import { teamKey } from "./normalize";
 import type { TeamImportInputs } from "./run";
 
 export type UploadFile = { name: string; bytes: Buffer };
@@ -320,10 +321,10 @@ export function teamFilterFor(
     if (!kind || kind === "scorecard" || kind === "milestones") continue;
     for (const row of src.table.rows) {
       const v = cell(row, src.table.headers, "Team", "Department", "Dept", "Department Name");
-      if (v) values.set(normalizeKey(v), v);
+      if (v && !values.has(teamKey(v))) values.set(teamKey(v), v);
     }
   }
-  if (values.has(normalizeKey(teamName))) return { rockTeam: teamName };
+  if (values.has(teamKey(teamName))) return { rockTeam: teamName };
   if (values.size <= 1) return {};
   return {
     rockTeam: teamName,

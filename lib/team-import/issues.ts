@@ -4,6 +4,7 @@ import {
   importedLink,
   importDocId,
   normalizeDescription,
+  normalizePersonKey,
   parseDateOnly,
   type CsvTable,
 } from "../csv-import";
@@ -76,7 +77,7 @@ export async function importIssues(
     if (isOtherTeam(rowTeam, ctx.rockTeam)) {
       skipped++;
       otherTeam++;
-      ctx.preview.add({ kind: "issues", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
+      ctx.preview.add({ kind: "issues", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam), otherTeam: rowTeam });
       continue;
     }
 
@@ -181,8 +182,10 @@ export async function importIssues(
     // ninety's Who column: blank in every export seen so far, and its meaning
     // (assignee? raised-by?) is unconfirmed. Keep a value as text rather than
     // guess at assigned_by, which carries follow/notification semantics.
+    // Who naming the Owner adds nothing, so it gets no note and no warning.
     const who = cell(row, table.headers, "Who");
-    if (who) {
+    const ownerCell = cell(row, table.headers, "Owner", "Owner Name", "Accountable", "Assignee");
+    if (who && normalizePersonKey(who) !== normalizePersonKey(ownerCell)) {
       description = withWhoNote(description, who);
       withWho++;
       if (

@@ -469,6 +469,44 @@ export function BulkUploader({
   );
 }
 
+/**
+ * Rows the file assigns to another team (its Team column). They are skipped,
+ * not imported anywhere — said up front so nobody assumes they landed.
+ */
+function OtherTeamsBanner({ rows }: { rows: PreviewRow[] }) {
+  const byTeam = new Map<string, Map<ImportKind, number>>();
+  let total = 0;
+  for (const r of rows) {
+    if (!r.otherTeam) continue;
+    const kinds = byTeam.get(r.otherTeam) ?? new Map<ImportKind, number>();
+    kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
+    byTeam.set(r.otherTeam, kinds);
+    total++;
+  }
+  if (total === 0) return null;
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <div>
+        <p className="font-medium">
+          {total} record{total === 1 ? " is" : "s are"} for other teams and will not be imported
+        </p>
+        <ul className="mt-1 space-y-0.5 text-xs">
+          {[...byTeam].map(([team, kinds]) => (
+            <li key={team}>
+              <span className="font-medium">{team}:</span>{" "}
+              {[...kinds].map(([k, n]) => `${n} ${KIND_LABELS[k]}`).join(", ")}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-xs">
+          They&apos;re marked skipped in the grid. Import them from that team&apos;s Import page.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function countPlanned(report: ImportReport): number {
   return report.kinds.reduce((n, k) => n + k.imported, 0);
 }
@@ -536,6 +574,8 @@ function ResultView({
           </ul>
         </div>
       </div>
+
+      <OtherTeamsBanner rows={report.rows} />
 
       {(report.kinds.some((k) => k.warnings.length > 0) ||
         report.unresolvedOwners.length > 0 ||

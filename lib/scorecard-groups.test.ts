@@ -1,6 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  collapsedByDefault,
   compareGroups,
   groupDocId,
   groupNameKey,
@@ -248,5 +249,18 @@ describe("orderGroupNames — cadence default", () => {
       orderGroupNames(["Monthly", "Compliance"], [compliance], "weekly"),
       ["Compliance", "Monthly"],
     );
+  });
+});
+
+describe("collapsedByDefault", () => {
+  test("a small group on a small scorecard opens expanded", () => {
+    assert.equal(collapsedByDefault(3, 5), false);
+  });
+  test("a group with more than five measurables opens collapsed", () => {
+    assert.equal(collapsedByDefault(1, 6), true);
+  });
+  test("more than five groups collapses every group, however small", () => {
+    assert.equal(collapsedByDefault(6, 1), true);
+    assert.equal(collapsedByDefault(5, 1), false);
   });
 });

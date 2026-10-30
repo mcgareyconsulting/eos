@@ -25,7 +25,8 @@ import {
   DEPARTMENT_SECTION_TITLE,
   rockBucket,
 } from "../../rocks/rock-type";
-import { RockBlockRow, RockRow } from "../../rocks/rock-row";
+import { OtherMilestonesRow, RockRow, type OtherMilestone } from "../../rocks/rock-row";
+import { splitBlockEntries } from "@/lib/rocks-view";
 import { type MilestoneSerialized } from "../../rocks/milestone-checklist";
 import { type StatusUpdateSerialized } from "../../rocks/status-history";
 import { EntityViewToggle } from "@/components/entity-view-tabs";
@@ -60,7 +61,8 @@ type TodoDoc = WithId<
 
 /** One entry in a member's block (spec §4; lib/rocks-share.ts
  *  blockMilestones): another team's rock headline and that member's
- *  milestones on it. Never more of the rock than the headline. */
+ *  milestones on it. Never more of the rock than the headline. Rendered
+ *  pooled, by milestone name, in the member's "Other milestones" bucket. */
 export type BlockRow = {
   headline: RockHeadline;
   carrierId: string;
@@ -378,6 +380,22 @@ export function SegmentRocks({
           due_date: null,
           __block: b,
         }));
+  // The bucket shows names only; the rock's title and team ride as a tooltip.
+  const otherMilestonesOf = (rows: (RockDoc | BlockEntry)[]) => {
+    const { full, other } = splitBlockEntries<RockDoc, TodoDoc>(rows);
+    const blocks = rows.filter((r): r is BlockEntry => "__block" in r);
+    const hintFor = new Map<string, { rock_title: string; from_team_name: string }>();
+    for (const b of blocks) {
+      for (const m of b.__block.milestones) {
+        hintFor.set(m.id, {
+          rock_title: b.__block.headline.title,
+          from_team_name: teamNameById.get(b.__block.headline.team_id) ?? "another team",
+        });
+      }
+    }
+    const pooled: OtherMilestone[] = other.map((m) => ({ ...toMilestone(m), ...hintFor.get(m.id) }));
+    return { full, other: pooled };
+  };
   const groups = groupRocksForL10<RockDoc | BlockEntry>(
     [...homeVisible, ...sharedIntoSections, ...blockEntries],
     (r) => (r.team_id === teamId && !("__block" in r) ? rockBucket(r) : "owner"),
@@ -492,41 +510,33 @@ export function SegmentRocks({
             )}
           </header>
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {g.rocks.map((r) => {
-              if ("__block" in r) {
-                const b = r.__block;
-                return (
-                  <RockBlockRow
-                    key={`${b.headline.id}:${b.carrierId}`}
+            {(() => {
+              const { full, other } = otherMilestonesOf(g.rocks);
+              return (
+                <>
+                  {full.map((r) => (
+                    <RockRow
+                      key={r.id}
+                      {...rowProps(r)}
+                      userId={userId}
+                      rock={r}
+                      ownerName={
+                        ownerLabel(r.owner_id, (id) => nameById.get(id))
+                      }
+                      milestones={milestonesByRock.get(r.id) ?? []}
+                      defaultDue={defaultDue}
+                      statusHistory={statusByRock.get(r.id) ?? []}
+                      currentUserId={userId}
+                    />
+                  ))}
+                  <OtherMilestonesRow
                     viewTeamId={teamId}
-                    headline={b.headline}
-                    ownerName={ownerLabel(b.headline.owner_id, (id) =>
-                      nameById.get(id),
-                    )}
-                    fromTeamName={
-                      teamNameById.get(b.headline.team_id) ?? "another team"
-                    }
-                    milestones={b.milestones.map(toMilestone)}
+                    milestones={other}
                     currentUserId={userId}
                   />
-                );
-              }
-              return (
-                <RockRow
-                  key={r.id}
-                  {...rowProps(r)}
-                  userId={userId}
-                  rock={r}
-                  ownerName={
-                    ownerLabel(r.owner_id, (id) => nameById.get(id))
-                  }
-                  milestones={milestonesByRock.get(r.id) ?? []}
-                  defaultDue={defaultDue}
-                  statusHistory={statusByRock.get(r.id) ?? []}
-                  currentUserId={userId}
-                />
+                </>
               );
-            })}
+            })()}
           </div>
         </section>
       ))}

@@ -215,23 +215,22 @@ describe("shouldShowHomeRock", () => {
     );
   });
 
-  test("hides done rocks", () => {
+  test("shows done rocks until they are archived", () => {
+    const opts = { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true };
+    assert.equal(shouldShowHomeRock(rock({ id: "r6", owner_id: me, status: "done" }), opts), true);
     assert.equal(
-      shouldShowHomeRock(rock({ id: "r6", owner_id: me, status: "done" }), {
-        uid: me,
-        myTeamIds: myTeams,
-        hasMyOpenMilestone: false, fullAccess: true,
-      }),
+      shouldShowHomeRock(rock({ id: "r7", owner_id: me, status: "done", archived_at: {} }), opts),
       false,
     );
   });
 });
 
 describe("isHomeRockActive", () => {
-  test("only on_track and off_track without archive", () => {
+  test("on_track, off_track and done, never archived or cancelled", () => {
     assert.equal(isHomeRockActive(rock({ id: "a", status: "on_track" })), true);
     assert.equal(isHomeRockActive(rock({ id: "b", status: "off_track" })), true);
-    assert.equal(isHomeRockActive(rock({ id: "c", status: "done" })), false);
+    assert.equal(isHomeRockActive(rock({ id: "c", status: "done" })), true);
+    assert.equal(isHomeRockActive(rock({ id: "e", status: "cancelled" })), false);
     assert.equal(
       isHomeRockActive(rock({ id: "d", status: "on_track", archived_at: {} })),
       false,
@@ -376,6 +375,24 @@ describe("splitHomeRocksByType (N34)", () => {
       mine.map((r) => r.id),
       ["a", "c", "e"],
     );
+  });
+
+  test("with a viewer: someone else's shared individual rock is shared, not mine", () => {
+    // A colleague's individual rocks, shared with the viewer's team, were
+    // listed under the viewer's "My Rocks" (2026-10-30).
+    const board = [
+      { id: "own", owner_id: "u-me", rock_type: "individual" },
+      { id: "theirs", owner_id: "u-them", rock_type: "individual" },
+      { id: "theirs-with-my-milestone", owner_id: "u-them", rock_type: "individual" },
+      { id: "dept", owner_id: "u-them", rock_type: "department" },
+    ];
+    const { mine, shared, departmental } = splitHomeRocksByType(board, {
+      uid: "u-me",
+      hasMyMilestone: (r) => r.id === "theirs-with-my-milestone",
+    });
+    assert.deepEqual(mine.map((r) => r.id), ["own", "theirs-with-my-milestone"]);
+    assert.deepEqual(shared.map((r) => r.id), ["theirs"]);
+    assert.deepEqual(departmental.map((r) => r.id), ["dept"]);
   });
 
   test("an empty board yields three empty sections, not undefined", () => {

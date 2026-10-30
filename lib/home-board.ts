@@ -155,11 +155,16 @@ export function homeMilestonesFor<T extends { owner_id: string | null }>(
   return [];
 }
 
-/** Active rocks only — no done / cancelled / archived. */
+/**
+ * Rocks Home lists: on track, off track and done — a finished rock stays in
+ * view until it is archived, which is what takes it off Home. Cancelled and
+ * archived rocks never show.
+ */
+export const HOME_ROCK_STATUSES = ["on_track", "off_track", "done"] as const;
+
 export function isHomeRockActive(rock: HomeRockLike): boolean {
   if (rock.archived_at != null && rock.archived_at !== undefined) return false;
-  const status = String(rock.status ?? "");
-  return status === "on_track" || status === "off_track";
+  return (HOME_ROCK_STATUSES as readonly string[]).includes(String(rock.status ?? ""));
 }
 
 /**
@@ -196,10 +201,16 @@ export function byDueDateAsc<T extends { due_date: string | null }>(
  * department or the company — all are worth showing, but as labelled
  * sections rather than one pile.
  *
- * Split by kind, not by who the viewer is: a department rock the viewer
- * happens to own is still the department's rock, and that is the distinction
- * being asked for. Everything else — owned, shared in, or reached through a
- * milestone assigned to the viewer — is theirs.
+ * Split by kind first: a department rock the viewer happens to own is still
+ * the department's rock. Individual rocks then split by whose they are:
+ * "mine" is the viewer's own and any they hold a milestone on; someone else's
+ * individual rock that reached Home only because it is shared with the
+ * viewer or their team goes to `shared`, which Home does not render. Without that split, a colleague who shares
+ * their rocks with a team appears under every member's "My Rocks" (reported
+ * in prod, 2026-10-30).
+ *
+ * Callers that omit `viewer` get the old split — every individual rock in
+ * `mine` and `shared` empty.
  *
  * Uses the same placement ladder as Rocks / L10 (lib/rock-bucket.ts), which
  * means callers must pass `owner_id`: a legacy rock with no owner counts as
@@ -208,15 +219,22 @@ export function byDueDateAsc<T extends { due_date: string | null }>(
  */
 export function splitHomeRocksByType<T extends BucketableRock>(
   rocks: T[],
-): { company: T[]; mine: T[]; departmental: T[] } {
+  viewer?: {
+    uid: string;
+    /** The viewer holds an open milestone on this rock. */
+    hasMyMilestone?: (rock: T) => boolean;
+  },
+): { company: T[]; mine: T[]; shared: T[]; departmental: T[] } {
   const company: T[] = [];
   const mine: T[] = [];
+  const shared: T[] = [];
   const departmental: T[] = [];
   for (const r of rocks) {
     const bucket = rockBucket(r);
     if (bucket === "company") company.push(r);
     else if (bucket === "department") departmental.push(r);
-    else mine.push(r);
+    else if (!viewer || r.owner_id === viewer.uid || viewer.hasMyMilestone?.(r)) mine.push(r);
+    else shared.push(r);
   }
-  return { company, mine, departmental };
+  return { company, mine, shared, departmental };
 }

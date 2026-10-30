@@ -19,6 +19,7 @@ import {
   selectMilestonesForRocks,
   shouldShowHomeRock,
   splitHomeRocksByType,
+  HOME_ROCK_STATUSES,
   todoVisibilityLabel,
 } from "@/lib/home-board";
 import {
@@ -163,12 +164,12 @@ export default async function HomePage() {
             .get(),
         ),
       ),
-      // Rocks: `team_id in` × `status in [2 values]` would multiply to 2× the
-      // chunk size in disjunctions (over the 30 cap at 16+ teams), so run one
+      // Rocks: `team_id in` × `status in [3 values]` would multiply to 3× the
+      // chunk size in disjunctions (over the 30 cap at 11+ teams), so run one
       // query per (chunk, status) pair instead.
       Promise.all(
         teamChunks.flatMap((ids) =>
-          ["on_track", "off_track"].map((status) =>
+          HOME_ROCK_STATUSES.map((status) =>
             db
               .collection("rocks")
               .where("team_id", "in", ids)
@@ -517,7 +518,10 @@ export default async function HomePage() {
     company: companyRocks,
     mine: myRocks,
     departmental: departmentalRocks,
-  } = splitHomeRocksByType(rockItems);
+  } = splitHomeRocksByType(rockItems, {
+    uid: user.id,
+    hasMyMilestone: (r) => mineById.get(r.id) === true,
+  });
 
   // Personal scorecard: metrics I own on teams I can open.
   const myMetrics: MetricRow[] = myMetricsSnap.docs
@@ -631,8 +635,12 @@ export default async function HomePage() {
               tell which rocks are actually theirs. Split by kind down the
               Company > Department > owner ladder, so a department rock the
               viewer owns still sits with the department's and a Company rock
-              leads regardless. Any section is dropped entirely when empty
-              rather than showing an empty-state three times. */}
+              leads regardless. "My Rocks" is the viewer's own individual
+              rocks plus any they hold a milestone on; a colleague's
+              individual rock that is merely shared in is left off Home
+              (splitHomeRocksByType's `shared`). Any section is dropped
+              entirely when empty rather than showing an empty-state three
+              times. */}
           <div className="space-y-4">
             {companyRocks.length > 0 && (
               <BoardColumn
@@ -659,6 +667,7 @@ export default async function HomePage() {
                 <HomeRocksList rocks={departmentalRocks} userId={user.id} />
               </BoardColumn>
             )}
+
             {rockItems.length === 0 && (
               <BoardColumn scroll title="Rocks" count={0} flush>
                 <HomeRocksList rocks={[]} userId={user.id} />

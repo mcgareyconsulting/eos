@@ -37,6 +37,7 @@ import {
   TodoColumn,
   openDoneCount,
 } from "../../todos/board-layout";
+import { LimitedRows } from "../../todos/limited-rows";
 import {
   TodoListRow,
   type TodoListItem,
@@ -524,23 +525,25 @@ export function SegmentTodos({
                     remount a row as it's checked off and collapse it. No
                     "Done" divider: the green check reads as done and the
                     heading counts them (as on the To-Dos page). */}
-                {[...g.open, ...g.done].map((t) => (
-                  <TodoListRow
-                    key={t.id}
-                    teamId={teamId}
-                    todo={toListItem(t)}
-                    ownerName={
-                      g.key === OUTSIDE_GROUP_KEY
-                        ? ownerLabel(t.owner_id, nameOf)
-                        : g.title
-                    }
-                    members={members}
-                    userId={userId}
-                    // The outside block mixes owners: name each row's.
-                    hideOwner={g.key !== OUTSIDE_GROUP_KEY}
-                    surface="meeting"
-                  />
-                ))}
+                <LimitedRows>
+                  {[...g.open, ...g.done].map((t) => (
+                    <TodoListRow
+                      key={t.id}
+                      teamId={teamId}
+                      todo={toListItem(t)}
+                      ownerName={
+                        g.key === OUTSIDE_GROUP_KEY
+                          ? ownerLabel(t.owner_id, nameOf)
+                          : g.title
+                      }
+                      members={members}
+                      userId={userId}
+                      // The outside block mixes owners: name each row's.
+                      hideOwner={g.key !== OUTSIDE_GROUP_KEY}
+                      surface="meeting"
+                    />
+                  ))}
+                </LimitedRows>
               </OwnerSection>
             ))}
           </TodoColumn>
@@ -563,17 +566,19 @@ export function SegmentTodos({
             ) : (
               milestoneGroups.map((g) => (
                 <OwnerSection key={g.key} title={g.title} count={`${g.items.length}`}>
-                  {g.items.map((m) => (
-                    <MilestoneTodoRow
-                      key={m.id}
-                      teamId={teamId}
-                      milestone={m}
-                      ownerName={g.title}
-                      hideOwner
-                      userId={userId}
-                      members={members}
-                    />
-                  ))}
+                  <LimitedRows noun="milestones">
+                    {g.items.map((m) => (
+                      <MilestoneTodoRow
+                        key={m.id}
+                        teamId={teamId}
+                        milestone={m}
+                        ownerName={g.title}
+                        hideOwner
+                        userId={userId}
+                        members={members}
+                      />
+                    ))}
+                  </LimitedRows>
                 </OwnerSection>
               ))
             )}

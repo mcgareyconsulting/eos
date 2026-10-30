@@ -31,6 +31,7 @@ import {
   TodoColumn,
   openDoneCount,
 } from "./board-layout";
+import { LimitedRows } from "./limited-rows";
 import { MilestoneTodoRow, type MilestoneTodoItem } from "./milestone-todo-row";
 import { TodoListRow, type TodoListItem } from "./todo-list-row";
 import { usePersonNames } from "./use-person-names";
@@ -633,21 +634,23 @@ export function TodosBoard({
                     sibling list and remount the row, collapsing it.
                     No "Done" divider: the row's green check already
                     reads as done, and the owner header above counts them. */}
-                {[...g.open, ...g.done].map((t) => (
-                  <TodoListRow
-                    key={t.id}
-                    teamId={teamId}
-                    todo={t}
-                    ownerName={
-                      g.key === OUTSIDE_GROUP_KEY ? ownerName(t.owner_id) : g.title
-                    }
-                    members={members}
-                    userId={userId}
-                    focused={t.id === focusTodoId}
-                    // The outside block mixes owners: name each row's.
-                    hideOwner={g.key !== OUTSIDE_GROUP_KEY}
-                  />
-                ))}
+                <LimitedRows>
+                  {[...g.open, ...g.done].map((t) => (
+                    <TodoListRow
+                      key={t.id}
+                      teamId={teamId}
+                      todo={t}
+                      ownerName={
+                        g.key === OUTSIDE_GROUP_KEY ? ownerName(t.owner_id) : g.title
+                      }
+                      members={members}
+                      userId={userId}
+                      focused={t.id === focusTodoId}
+                      // The outside block mixes owners: name each row's.
+                      hideOwner={g.key !== OUTSIDE_GROUP_KEY}
+                    />
+                  ))}
+                </LimitedRows>
               </OwnerSection>
             ))}
           </TodoColumn>
@@ -671,15 +674,17 @@ export function TodosBoard({
             ) : (
               milestoneGroups.map((g) => (
                 <OwnerSection key={g.key} title={g.title} count={`${g.items.length}`}>
-                  {g.items.map((m) => (
-                    <MilestoneTodoRow
-                      key={m.id}
-                      teamId={teamId}
-                      milestone={m}
-                      ownerName={g.title}
-                      hideOwner
-                    />
-                  ))}
+                  <LimitedRows noun="milestones">
+                    {g.items.map((m) => (
+                      <MilestoneTodoRow
+                        key={m.id}
+                        teamId={teamId}
+                        milestone={m}
+                        ownerName={g.title}
+                        hideOwner
+                      />
+                    ))}
+                  </LimitedRows>
                 </OwnerSection>
               ))
             )}

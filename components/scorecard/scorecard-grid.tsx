@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { ValueCell } from "@/app/(app)/teams/[teamId]/scorecard/value-cell";
 import {
+  collapsedByDefault,
   groupNameKey,
   orderGroupNames,
   type ScorecardGroup,
@@ -209,18 +210,19 @@ export function ScorecardGrid({
       return next;
     });
 
-  // Which groups are collapsed. Same contract as the row panels above: local,
-  // so a reload comes back fully expanded. Keyed by section key rather than
-  // index, so collapsing "Risk & Compliance" survives a filter that reorders
-  // or removes the groups around it.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
-    new Set(),
+  // Which groups the reader has toggled, on top of the default
+  // (lib/scorecard-groups.ts collapsedByDefault: a group with more than five
+  // measurables, or every group once there are more than five groups, opens
+  // collapsed). Local, so a reload comes back to the defaults. Keyed by
+  // section key rather than index, so toggling "Risk & Compliance" survives
+  // a filter that reorders or removes the groups around it.
+  const [groupOverrides, setGroupOverrides] = useState<Map<string, boolean>>(
+    new Map(),
   );
-  const toggleGroup = (key: string) =>
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+  const toggleGroup = (key: string, collapsedNow: boolean) =>
+    setGroupOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(key, !collapsedNow);
       return next;
     });
 
@@ -539,6 +541,8 @@ export function ScorecardGrid({
     }
     return out;
   }, [ungrouped, metricGroups]);
+  // Real (named) groups only: the unheaded ungrouped block never collapses.
+  const groupCount = sections.filter((s) => s.name !== null).length;
 
   const renderHead = () => (
     <thead>
@@ -678,7 +682,10 @@ export function ScorecardGrid({
             // handle to put a chevron on, and hiding it would leave nothing on
             // screen to bring it back.
             const collapsible = section.name !== null;
-            const collapsed = collapsible && collapsedGroups.has(section.key);
+            const collapsed =
+              collapsible &&
+              (groupOverrides.get(section.key) ??
+                collapsedByDefault(groupCount, section.items.length));
             return (
               <section
                 key={section.key}
@@ -689,7 +696,7 @@ export function ScorecardGrid({
                   <h3 id={headingId} className="mb-1.5">
                     <button
                       type="button"
-                      onClick={() => toggleGroup(section.key)}
+                      onClick={() => toggleGroup(section.key, collapsed)}
                       aria-expanded={!collapsed}
                       className="flex w-max items-center gap-2 rounded border-l-[3px] border-hpb-blue py-0.5 pl-2 pr-2 text-[13px] font-semibold uppercase tracking-wide text-zinc-700 hover:bg-zinc-100 dark:border-hpb-gold dark:text-zinc-200 dark:hover:bg-zinc-800"
                     >

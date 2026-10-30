@@ -182,3 +182,15 @@ export function reorderGroup(
       return before?.sort_order !== row.sort_order;
     });
 }
+
+/**
+ * Groups and rows a scorecard shows open before it starts collapsed
+ * (Daniel, 2026-10-30): a group with more than this many measurables opens
+ * collapsed, and once a team has more than this many groups every group
+ * opens collapsed. The reader expands what they are reviewing.
+ */
+export const GROUP_COLLAPSE_THRESHOLD = 5;
+
+export function collapsedByDefault(groupCount: number, metricCount: number): boolean {
+  return groupCount > GROUP_COLLAPSE_THRESHOLD || metricCount > GROUP_COLLAPSE_THRESHOLD;
+}

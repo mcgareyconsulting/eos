@@ -213,8 +213,13 @@ export function AudiencePane({
     ...prev.filter((id) => next.has(id)),
     ...[...next].filter((id) => !prev.includes(id)),
   ];
-  const teams = [...teamOptions].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  // Teams already in the audience first, then the rest, each run A–Z — the
+  // shared ones are what a leader opens this pane to check.
+  const inAudience = new Set(audienceTeamIds);
+  const teams = [...teamOptions].sort(
+    (a, b) =>
+      Number(inAudience.has(b.id)) - Number(inAudience.has(a.id)) ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
   const roster = [...parentMembers].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),

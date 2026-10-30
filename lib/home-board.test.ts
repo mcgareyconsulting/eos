@@ -215,23 +215,22 @@ describe("shouldShowHomeRock", () => {
     );
   });
 
-  test("hides done rocks", () => {
+  test("shows done rocks until they are archived", () => {
+    const opts = { uid: me, myTeamIds: myTeams, hasMyOpenMilestone: false, fullAccess: true };
+    assert.equal(shouldShowHomeRock(rock({ id: "r6", owner_id: me, status: "done" }), opts), true);
     assert.equal(
-      shouldShowHomeRock(rock({ id: "r6", owner_id: me, status: "done" }), {
-        uid: me,
-        myTeamIds: myTeams,
-        hasMyOpenMilestone: false, fullAccess: true,
-      }),
+      shouldShowHomeRock(rock({ id: "r7", owner_id: me, status: "done", archived_at: {} }), opts),
       false,
     );
   });
 });
 
 describe("isHomeRockActive", () => {
-  test("only on_track and off_track without archive", () => {
+  test("on_track, off_track and done, never archived or cancelled", () => {
     assert.equal(isHomeRockActive(rock({ id: "a", status: "on_track" })), true);
     assert.equal(isHomeRockActive(rock({ id: "b", status: "off_track" })), true);
-    assert.equal(isHomeRockActive(rock({ id: "c", status: "done" })), false);
+    assert.equal(isHomeRockActive(rock({ id: "c", status: "done" })), true);
+    assert.equal(isHomeRockActive(rock({ id: "e", status: "cancelled" })), false);
     assert.equal(
       isHomeRockActive(rock({ id: "d", status: "on_track", archived_at: {} })),
       false,

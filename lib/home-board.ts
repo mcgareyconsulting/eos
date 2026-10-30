@@ -155,11 +155,16 @@ export function homeMilestonesFor<T extends { owner_id: string | null }>(
   return [];
 }
 
-/** Active rocks only — no done / cancelled / archived. */
+/**
+ * Rocks Home lists: on track, off track and done — a finished rock stays in
+ * view until it is archived, which is what takes it off Home. Cancelled and
+ * archived rocks never show.
+ */
+export const HOME_ROCK_STATUSES = ["on_track", "off_track", "done"] as const;
+
 export function isHomeRockActive(rock: HomeRockLike): boolean {
   if (rock.archived_at != null && rock.archived_at !== undefined) return false;
-  const status = String(rock.status ?? "");
-  return status === "on_track" || status === "off_track";
+  return (HOME_ROCK_STATUSES as readonly string[]).includes(String(rock.status ?? ""));
 }
 
 /**

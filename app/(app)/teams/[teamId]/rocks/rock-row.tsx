@@ -300,98 +300,98 @@ export function RockRow({
         </div>
 
         {expanded && (
-          <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
-            <dl className="flex flex-wrap border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              <Fact label="Owner">{displayOwner}</Fact>
-              <Fact label="Quarter">{rock.quarter || "—"}</Fact>
-              <Fact label="Due">
-                <span className="tabular-nums">
-                  {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
-                </span>{" "}
-                <span
-                  className={cn(
-                    "font-normal",
-                    dueToneClass(
+            <div className="ml-[25px] mt-2.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30">
+              <dl className="flex flex-wrap border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                <Fact label="Owner">{displayOwner}</Fact>
+                <Fact label="Quarter">{rock.quarter || "—"}</Fact>
+                <Fact label="Due">
+                  <span className="tabular-nums">
+                    {rock.due_date ? formatDateOnly(rock.due_date) : "—"}
+                  </span>{" "}
+                  <span
+                    className={cn(
+                      "font-normal",
+                      dueToneClass(
+                        rock.due_date,
+                        status === "done",
+                        now,
+                        undefined,
+                        timeZone,
+                      ),
+                    )}
+                  >
+                    {relativeDueLabel(
                       rock.due_date,
-                      status === "done",
                       now,
-                      undefined,
+                      status === "done",
                       timeZone,
-                    ),
-                  )}
-                >
-                  {relativeDueLabel(
-                    rock.due_date,
-                    now,
-                    status === "done",
-                    timeZone,
-                  )}
-                </span>
-              </Fact>
-              <Fact label="Milestones" last>
-                {milestones.length === 0
-                  ? "None"
-                  : `${doneCount} of ${milestones.length} done`}
-              </Fact>
-            </dl>
+                    )}
+                  </span>
+                </Fact>
+                <Fact label="Milestones" last>
+                  {milestones.length === 0
+                    ? "None"
+                    : `${doneCount} of ${milestones.length} done`}
+                </Fact>
+              </dl>
 
-            <div className="space-y-2.5 px-3.5 py-3">
-              {hasDescription &&
-                (hasRichMarkup(rock.description) ? (
-                  <div className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                      Description
-                    </span>
-                    <RichText value={rock.description} className="mt-0.5" />
+              <div className="space-y-2.5 px-3.5 py-3">
+                {hasDescription &&
+                  (hasRichMarkup(rock.description) ? (
+                    <div className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                        Description
+                      </span>
+                      <RichText value={rock.description} className="mt-0.5" />
+                    </div>
+                  ) : (
+                    <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      <span className="font-bold text-zinc-700 dark:text-zinc-300">
+                        Description:{" "}
+                      </span>
+                      {rock.description}
+                    </p>
+                  ))}
+
+                {latestNote?.comment && (
+                  <div className="rounded-r-lg border-l-[3px] border-status-amber bg-[rgba(240,180,41,.10)] px-3 py-2 dark:bg-[rgba(240,180,41,.16)]">
+                    <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#8a5a10] dark:text-status-amber">
+                      Latest status note
+                    </div>
+                    <p className="mt-0.5 text-[12.5px] leading-snug text-zinc-700 dark:text-zinc-300">
+                      {latestNote.comment}
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-[12.5px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    <span className="font-bold text-zinc-700 dark:text-zinc-300">
-                      Description:{" "}
-                    </span>
-                    {rock.description}
-                  </p>
-                ))}
+                )}
 
-              {latestNote?.comment && (
-                <div className="rounded-r-lg border-l-[3px] border-status-amber bg-[rgba(240,180,41,.10)] px-3 py-2 dark:bg-[rgba(240,180,41,.16)]">
-                  <div className="text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#8a5a10] dark:text-status-amber">
-                    Latest status note
-                  </div>
-                  <p className="mt-0.5 text-[12.5px] leading-snug text-zinc-700 dark:text-zinc-300">
-                    {latestNote.comment}
-                  </p>
-                </div>
-              )}
-
-              <MilestoneChecklist
-                teamId={actTeamId}
-                members={members}
-                milestones={milestones}
-                readOnly={!canEdit}
-                currentUserId={currentUserId}
-                userId={userId}
-              />
-
-              <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
-                {canEdit && <AddMilestoneLink {...modalProps} />}
-                <RockDetailTrigger
+                <MilestoneChecklist
                   teamId={actTeamId}
-                  userId={userId}
                   members={members}
-                  rock={rock}
-                  ownerName={displayOwner}
-                  milestones={detailMilestones}
-                  statusHistory={statusHistory}
+                  milestones={milestones}
                   readOnly={!canEdit}
-                  sourceTeamName={fromTeamName}
-                  className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                >
-                  Full detail &amp; activity →
-                </RockDetailTrigger>
+                  currentUserId={currentUserId}
+                  userId={userId}
+                />
+
+                <div className="flex items-center gap-4 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+                  {canEdit && <AddMilestoneLink {...modalProps} />}
+                  <RockDetailTrigger
+                    teamId={actTeamId}
+                    userId={userId}
+                    members={members}
+                    rock={rock}
+                    ownerName={displayOwner}
+                    milestones={detailMilestones}
+                    statusHistory={statusHistory}
+                    readOnly={!canEdit}
+                    sourceTeamName={fromTeamName}
+                    className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  >
+                    Full detail &amp; activity →
+                  </RockDetailTrigger>
+                </div>
               </div>
             </div>
-          </div>
         )}
       </div>
     </div>
@@ -435,6 +435,9 @@ export function OtherMilestonesRow({
   milestones: OtherMilestone[];
   currentUserId: string;
 }) {
+  // Collapsed by default, like every other row in the section (Daniel,
+  // 2026-10-30): the header carries the count, the chevron opens the names.
+  const [expanded, setExpanded] = useState(false);
   const timeZone = useTimeZone();
   const now = new Date();
   if (milestones.length === 0) return null;
@@ -446,72 +449,90 @@ export function OtherMilestonesRow({
 
       <div className="min-w-0 flex-1 py-2.5 pl-3 pr-4">
         <div className="flex items-center gap-3">
-          <span className="w-5 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1 text-[10.5px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 dark:text-zinc-400">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse other milestones" : "Expand other milestones"}
+            className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <ChevronRight
+              className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="min-w-0 flex-1 text-left text-[10.5px] font-extrabold uppercase tracking-[0.07em] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
             Other milestones
             <span className="font-bold text-zinc-400">
               {" "}
-              ({open} open)
+              ({open} open{open !== milestones.length ? ` of ${milestones.length}` : ""})
             </span>
-          </div>
+          </button>
         </div>
 
-        <ul className="ml-[25px] mt-1.5 overflow-hidden rounded-[10px] border border-zinc-200 bg-white px-1.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
-          {milestones.map((m) => {
-            const mine = m.owner_id === currentUserId;
-            const hint = [m.rock_title, m.from_team_name ? `from ${m.from_team_name}` : null]
-              .filter(Boolean)
-              .join(" · ");
-            return (
-              <li key={m.id}>
-                <label
-                  title={hint || undefined}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
-                    mine && "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800",
-                  )}
-                >
-                  {mine ? (
-                    <TodoCheckbox
-                      teamId={viewTeamId}
-                      todoId={m.id}
-                      completed={m.completed}
-                      appearance="milestone"
-                    />
-                  ) : (
+        {expanded && (
+          // Five rows (~28px each) before it scrolls, so a long list of
+          // cross-team milestones never pushes the section's own rocks away.
+          <ul className="ml-[25px] mt-2.5 max-h-[150px] overflow-y-auto rounded-[10px] border border-zinc-200 bg-white px-1.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
+            {milestones.map((m) => {
+              const mine = m.owner_id === currentUserId;
+              const hint = [m.rock_title, m.from_team_name ? `from ${m.from_team_name}` : null]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li key={m.id}>
+                  <label
+                    title={hint || undefined}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-[7px] px-2 py-1",
+                      mine && "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                    )}
+                  >
+                    {mine ? (
+                      <TodoCheckbox
+                        teamId={viewTeamId}
+                        todoId={m.id}
+                        completed={m.completed}
+                        appearance="milestone"
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 shrink-0 rounded-sm border",
+                          m.completed
+                            ? "border-hpb-green bg-hpb-green"
+                            : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+                        )}
+                        aria-hidden
+                      />
+                    )}
                     <span
                       className={cn(
-                        "inline-block h-4 w-4 shrink-0 rounded-sm border",
+                        "min-w-0 flex-1 truncate text-[13px]",
                         m.completed
-                          ? "border-hpb-green bg-hpb-green"
-                          : "border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900",
+                          ? "text-zinc-400 dark:text-zinc-500"
+                          : "font-medium text-zinc-800 dark:text-zinc-200",
                       )}
-                      aria-hidden
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[13px]",
-                      m.completed
-                        ? "text-zinc-400 dark:text-zinc-500"
-                        : "font-medium text-zinc-800 dark:text-zinc-200",
-                    )}
-                  >
-                    {m.title}
-                  </span>
-                  <span
-                    className={cn(
-                      "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
-                      dueToneClass(m.due_date, m.completed, now, undefined, timeZone),
-                    )}
-                  >
-                    {dueDateShort(m.due_date, m.completed, now, timeZone)}
-                  </span>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
+                    >
+                      {m.title}
+                    </span>
+                    <span
+                      className={cn(
+                        "w-14 shrink-0 text-right text-[11.5px] tabular-nums",
+                        dueToneClass(m.due_date, m.completed, now, undefined, timeZone),
+                      )}
+                    >
+                      {dueDateShort(m.due_date, m.completed, now, timeZone)}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );

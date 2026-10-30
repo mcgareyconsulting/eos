@@ -77,7 +77,7 @@ export async function importIssues(
     if (isOtherTeam(rowTeam, ctx.rockTeam)) {
       skipped++;
       otherTeam++;
-      ctx.preview.add({ kind: "issues", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
+      ctx.preview.add({ kind: "issues", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam), otherTeam: rowTeam });
       continue;
     }
 

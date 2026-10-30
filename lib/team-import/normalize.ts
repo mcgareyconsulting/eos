@@ -202,8 +202,17 @@ export function rowTeamOf(row: Record<string, string>, headers: string[]): strin
  * True when the Department filter is set and this row names another
  * department. A blank Team cell passes: team-scoped exports leave it empty.
  */
+/**
+ * Team names compared loosely: case, punctuation and a "Team"/"Department"
+ * word don't count, so the app's "Transformation Team" is ninety's
+ * "Transformation". The rest of the name still has to match exactly.
+ */
+export function teamKey(name: string): string {
+  return normalizeKey(name).replace(/\b(team|department|dept)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export function isOtherTeam(rowTeam: string, filter: string | undefined): boolean {
-  return !!filter && !!rowTeam && normalizeKey(rowTeam) !== normalizeKey(filter);
+  return !!filter && !!rowTeam && teamKey(rowTeam) !== teamKey(filter);
 }
 
 export function otherTeamNote(rowTeam: string): string {

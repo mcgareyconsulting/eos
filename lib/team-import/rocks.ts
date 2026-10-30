@@ -14,7 +14,7 @@ import {
 } from "../csv-import";
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
 import type { KindStats } from "../team-import-types";
-import { archivedAtFor, archiveKey, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel } from "./normalize";
+import { archivedAtFor, archiveKey, isArchived, otherTeamNote, rejectOverLength, rockTypeLabel, teamKey } from "./normalize";
 import type { OwnerResolver, PreviewCollector, Writer } from "./owners";
 import { fillImportedOwner, withUnmatchedOwnerNote, type Ownerless } from "./owners";
 
@@ -67,7 +67,7 @@ export async function importRocks(
       "Department Name",
     );
     if (rowTeam) teamValues.add(rowTeam);
-    if (ctx.rockTeam && normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)) {
+    if (ctx.rockTeam && teamKey(rowTeam) !== teamKey(ctx.rockTeam)) {
       skipped++;
       ctx.preview.add({
         kind: "rocks",
@@ -76,6 +76,7 @@ export async function importRocks(
         owner: "—",
         detail: [],
         note: rowTeam ? otherTeamNote(rowTeam) : "No Team value — the Department filter needs one",
+        otherTeam: rowTeam || undefined,
       });
       continue;
     }

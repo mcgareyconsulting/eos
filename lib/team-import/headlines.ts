@@ -3,7 +3,6 @@ import {
   importedLink,
   importDocId,
   normalizeDescription,
-  normalizeKey,
   type CsvTable,
 } from "../csv-import";
 import { LONG_TEXT_MAX, TITLE_MAX } from "../text-limits";
@@ -14,6 +13,7 @@ import {
   createdAtFrom,
   isArchived,
   normalizeHeadlineKind,
+  isOtherTeam,
   otherTeamNote,
   rejectOverLength,
 } from "./normalize";
@@ -76,13 +76,9 @@ export async function importHeadlines(
       "Dept",
       "Department Name",
     );
-    if (
-      ctx.rockTeam &&
-      rowTeam &&
-      normalizeKey(rowTeam) !== normalizeKey(ctx.rockTeam)
-    ) {
+    if (isOtherTeam(rowTeam, ctx.rockTeam)) {
       skipped++;
-      ctx.preview.add({ kind: "headlines", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam) });
+      ctx.preview.add({ kind: "headlines", action: "skip", title, owner: "—", detail: [], note: otherTeamNote(rowTeam), otherTeam: rowTeam });
       continue;
     }
 

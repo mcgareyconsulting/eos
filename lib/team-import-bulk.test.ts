@@ -181,7 +181,7 @@ describe("bulk import end to end", () => {
     const issues = makeXlsx([
       {
         name: "Short Term Issues",
-        rows: [hdr("issues"), rowOf("issues", { Owner: "Sarah Chen", Title: "Printer down", Team: "Ops" })],
+        rows: [hdr("issues"), rowOf("issues", { Owner: "Sarah Chen", Title: "Printer down", Team: "Ops", Who: "sarah  chen" })],
       },
       {
         name: "Long Term Issues",
@@ -272,6 +272,14 @@ describe("bulk import end to end", () => {
     const core = db.docsIn("issues").find((d) => d.data.title === "Core migration");
     assert.match(String(core?.data.description), /Who: Pat Lee/);
     assert.ok(report.kinds.some((k) => k.warnings.some((w) => /Who value/.test(w))));
+  });
+
+  test("a Who that names the Owner gets no note and no warning", async () => {
+    const { db, report } = await run();
+    const printer = db.docsIn("issues").find((d) => d.data.title === "Printer down");
+    assert.doesNotMatch(String(printer?.data.description), /Who:/);
+    const whoWarnings = report.kinds.flatMap((k) => k.warnings.filter((w) => /Who value/.test(w)));
+    assert.ok(whoWarnings.every((w) => /^1 issue/.test(w)));
   });
 
   test("every preview row points back at its file row", async () => {

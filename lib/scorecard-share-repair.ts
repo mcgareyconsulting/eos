@@ -34,7 +34,8 @@ export type EntriesByMetric = Map<string, Map<string, number | null>>;
 export type RepairStatus =
   | "repair" // unambiguous, values agree — --apply acts on these
   | "already-tracked" // the share exists; only the unowned copy is left
-  | "values-differ" // same name and owner, different numbers — check by hand
+  | "values-differ" // a week where both hold a number and the numbers differ — check by hand
+  | "app-original" // the owned original was made in the app — never touched here
   | "ambiguous" // more than one owned measurable could be it
   | "no-match"; // nothing owned elsewhere by that name — the owner queue
 
@@ -46,13 +47,24 @@ export type RepairPlan = {
   match: RepairMetric | null;
   /** Owned candidates considered (for ambiguous rows). */
   candidates: RepairMetric[];
+  /** Weeks both hold a number for. */
   weeksCompared: number;
+  /** …of which the numbers differ — the only thing that holds a copy back. */
   weeksDiffering: string[];
-  /** Weeks only the unowned copy has — kept on it when it is archived. */
+  /** Weeks the copy has a number for and the original doesn't. */
   weeksOnlyOnCopy: number;
 };
 
 const IMPORTED_OWNER = /^Imported owner:\s*(.+)$/m;
+
+/**
+ * Came from a ninety import rather than being made in the app. Either signal
+ * is enough: every import path writes `import_source: "csv"` and an
+ * `imp-<kind>-…` id (importDocId); the app's create writes neither.
+ */
+export function isImported(m: { id: string; import_source?: string | null }): boolean {
+  return m.import_source === "csv" || m.id.startsWith("imp-metric-");
+}
 
 export function importedOwnerOf(description: string | null | undefined): string | null {
   const m = IMPORTED_OWNER.exec(description ?? "");
@@ -105,18 +117,23 @@ export function planShareRepairs(
     const weeksDiffering: string[] = [];
     let weeksCompared = 0;
     let weeksOnlyOnCopy = 0;
+    // A blank on either side is a missed update, not a disagreement: only a
+    // week where both hold a number, and the numbers differ, holds it back.
     for (const [week, value] of mine) {
-      if (!theirs.has(week)) {
-        if (value != null) weeksOnlyOnCopy++;
+      if (value == null) continue;
+      const original = theirs.get(week) ?? null;
+      if (original == null) {
+        weeksOnlyOnCopy++;
         continue;
       }
       weeksCompared++;
-      if ((theirs.get(week) ?? null) !== (value ?? null)) weeksDiffering.push(week);
+      if (original !== value) weeksDiffering.push(week);
     }
     weeksDiffering.sort();
 
-    const status: RepairStatus =
-      weeksDiffering.length > 0
+    const status: RepairStatus = !isImported(match)
+      ? "app-original"
+      : weeksDiffering.length > 0
         ? "values-differ"
         : (match.shared_team_ids ?? []).includes(u.team_id)
           ? "already-tracked"
@@ -161,7 +178,7 @@ export function groupByParent(
     const conflicts = new Set<string>();
     for (const c of g.copies) {
       for (const [week, value] of entries.get(c.unowned.id) ?? new Map()) {
-        if (value == null || theirs.has(week)) continue;
+        if (value == null || theirs.get(week) != null) continue;
         const prior = g.addWeeks.get(week);
         if (prior !== undefined && prior !== value) conflicts.add(week);
         g.addWeeks.set(week, value);

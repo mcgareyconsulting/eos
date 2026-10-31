@@ -9,6 +9,14 @@
 //   3. deletes the copies and their values (now on the parent).
 // Pairing rules: lib/scorecard-share-repair.ts.
 //
+// Held back, nothing written: a week where the copy and the original both
+// hold a number and the numbers differ (a blank on either side is a missed
+// update, not a disagreement); an original made in the app (never touched —
+// left for the final check); several possible originals; copies disagreeing
+// on a week the original lacks.
+//
+// Bulk: --apply --yes merges everything ready in one run.
+//
 // Dry-run by default: prints one line per measurable — parent, owner, the
 // teams it will be shared to — and everything left for a person to decide.
 //
@@ -65,6 +73,7 @@ function args() {
 
 const CHECK: Partial<Record<RepairPlan["status"], string>> = {
   "values-differ": "CHECK — numbers differ from the original",
+  "app-original": "LEFT ALONE — the original was made in the app",
   ambiguous: "CHECK — several owned measurables by this name",
   "no-match": "NO MATCH — nothing owned elsewhere (owner queue)",
 };
@@ -225,23 +234,34 @@ async function main() {
     const copyTeams = g.copies.map((c) => c.unowned.team_id);
 
     // 1–2: weeks first, then the share — the copies are only deleted once
-    // the parent carries everything they held.
-    const batch = db.batch();
-    for (const [week, value] of g.addWeeks) {
-      batch.set(db.collection("scorecard_entries").doc(`${g.parent.id}__${week}`), {
-        metric_id: g.parent.id,
-        week_start_date: week,
-        value,
-        note: null,
-        import_source: "csv",
-        created_at: FieldValue.serverTimestamp(),
-        ...stamp(actor),
-      });
+    // the parent carries everything they held. Entries merge, like the app's
+    // own setEntry, so a blank entry already there keeps its other fields.
+    const weeks = [...g.addWeeks];
+    for (let i = 0; i < weeks.length; i += 400) {
+      const batch = db.batch();
+      for (const [week, value] of weeks.slice(i, i + 400)) {
+        batch.set(
+          db.collection("scorecard_entries").doc(`${g.parent.id}__${week}`),
+          {
+            metric_id: g.parent.id,
+            week_start_date: week,
+            value,
+            note: null,
+            created_at: FieldValue.serverTimestamp(),
+            ...stamp(actor),
+          },
+          { merge: true },
+        );
+      }
+      await batch.commit();
     }
+    const batch = db.batch();
+    // A team already tracking the parent keeps its section.
+    const newTeams = g.copies.filter((c) => !before.includes(c.unowned.team_id));
     batch.update(parentRef, {
       is_public: true,
       shared_team_ids: FieldValue.arrayUnion(...copyTeams),
-      ...Object.fromEntries(g.copies.map((c) => [`shared_groups.${c.unowned.team_id}`, c.unowned.group ?? null])),
+      ...Object.fromEntries(newTeams.map((c) => [`shared_groups.${c.unowned.team_id}`, c.unowned.group ?? null])),
       ...stamp(actor),
     });
     await batch.commit();

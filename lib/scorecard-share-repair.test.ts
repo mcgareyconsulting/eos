@@ -15,7 +15,7 @@ const weeks = (...pairs: [string, number | null][]) => new Map(pairs);
 
 describe("planShareRepairs", () => {
   const unowned = metric({ id: "u", team_id: "transformation", description: "Monthly.\n\nImported owner: Pat Lee", group: "Lending" });
-  const patsOwn = metric({ id: "p", team_id: "esd", owner_id: "pat" });
+  const patsOwn = metric({ id: "p", team_id: "esd", owner_id: "pat", import_source: "csv" });
 
   test("reads the imported owner note", () => {
     assert.equal(importedOwnerOf(unowned.description), "Pat Lee");
@@ -41,14 +41,29 @@ describe("planShareRepairs", () => {
     assert.deepEqual(plan.weeksDiffering, ["2026-10-05"]);
   });
 
+  test("a copy that just stopped being updated is a repair, not a discrepancy", () => {
+    const [plan] = planShareRepairs([unowned, patsOwn], new Map([
+      ["u", weeks(["2026-10-05", 4], ["2026-10-12", null])],
+      ["p", weeks(["2026-10-05", 4], ["2026-10-12", 7])],
+    ]), nameOf);
+    assert.equal(plan.status, "repair");
+    assert.deepEqual(plan.weeksDiffering, []);
+  });
+
+  test("an original made in the app is left alone", () => {
+    const appMade = metric({ id: "app", team_id: "esd", owner_id: "pat" });
+    const [plan] = planShareRepairs([unowned, appMade], new Map(), nameOf);
+    assert.equal(plan.status, "app-original");
+  });
+
   test("a same-named measurable owned by someone else is not a match", () => {
-    const samsOwn = metric({ id: "s", team_id: "retail", owner_id: "sam" });
+    const samsOwn = metric({ id: "s", team_id: "retail", owner_id: "sam", import_source: "csv" });
     const [plan] = planShareRepairs([unowned, samsOwn], new Map(), nameOf);
     assert.equal(plan.status, "no-match");
   });
 
   test("two owned copies → ambiguous", () => {
-    const again = metric({ id: "p2", team_id: "retail", owner_id: "pat" });
+    const again = metric({ id: "p2", team_id: "retail", owner_id: "pat", import_source: "csv" });
     const [plan] = planShareRepairs([unowned, patsOwn, again], new Map(), nameOf);
     assert.equal(plan.status, "ambiguous");
     assert.equal(plan.candidates.length, 2);
@@ -67,7 +82,7 @@ describe("planShareRepairs", () => {
 });
 
 describe("groupByParent", () => {
-  const parent = metric({ id: "p", team_id: "esd", owner_id: "pat" });
+  const parent = metric({ id: "p", team_id: "esd", owner_id: "pat", import_source: "csv" });
   const copyA = metric({ id: "a", team_id: "transformation" });
   const copyB = metric({ id: "b", team_id: "lending" });
 

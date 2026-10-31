@@ -10,7 +10,9 @@
 
 import { normalizeKey, normalizePersonKey } from "./csv-import";
 import { explainDifferences, type DiffExplanation, type Point } from "./scorecard-diff";
-import { importedOwnerOf, type RepairMetric } from "./scorecard-share-repair";
+import { importedOwnerOf, isImported, type RepairMetric } from "./scorecard-share-repair";
+
+export { isImported };
 
 export type Category =
   /** Owned, and the only measurable by this name for this owner. */
@@ -62,15 +64,6 @@ function latest(points: Map<string, Point> | undefined): string {
   let last = "";
   for (const [w, p] of points ?? []) if (p.value != null && w > last) last = w;
   return last;
-}
-
-/**
- * Came from a ninety import rather than being made in the app. Either signal
- * is enough: every import path writes `import_source: "csv"` and an
- * `imp-<kind>-…` id (importDocId); the app's create writes neither.
- */
-export function isImported(m: { id: string; import_source?: string | null }): boolean {
-  return m.import_source === "csv" || m.id.startsWith("imp-metric-");
 }
 
 /**

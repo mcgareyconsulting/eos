@@ -9,12 +9,20 @@
 //
 //   --out <file>  where the workbook goes (default ~/Desktop/scorecard-audit-<date>.xlsx)
 //
+// Where an owner has a measurable made in the app, that is the original and
+// imported copies are checked against it (lib/scorecard-audit.ts).
+//
 // Tabs:
-//   Summary          — counts per category, sync verdict and flag
-//   People           — one row per person who owns a measurable or an original
-//   Truly unassigned — no owner and the name exists nowhere else
-//   Out of sync      — copies/duplicates whose numbers differ from their original
-//   Measurables      — every active measurable
+//   Summary             — counts per gap, category, sync verdict and flag
+//   Gaps                — every measurable needing a decision, with the gap named
+//   App vs import       — imported copies of a measurable made in the app
+//   Leftover duplicates — imported same-owner copies the merge held back
+//   No Owner            — every measurable without an owner
+//   Truly unassigned    — no owner and the name exists nowhere else
+//   Conflicts           — copies whose numbers differ in ways nothing explains
+//   Out of sync         — copies whose numbers differ from their original
+//   People              — one row per person who owns a measurable or an original
+//   Measurables         — every active measurable
 
 import "./lib/load-target"; // first: sets up env before anything reads it
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -131,11 +139,34 @@ async function main() {
       team(a.metric.team_id).localeCompare(team(b.metric.team_id)),
   );
 
+  // The gap a row represents, if any — one label, most pressing first.
+  type Row = (typeof rows)[number];
+  const gapOf = (r: Row): string => {
+    const m = r.metric;
+    if (r.category === "truly-unassigned") return "Truly unassigned";
+    if (!m.owner_id) return r.category === "copy-of-original" ? "No Owner copy of an owned measurable" : "No Owner";
+    if (r.diff?.verdict === "conflict") return "Conflicting numbers";
+    if (r.original && !isImported(r.original) && isImported(m)) return "Imported copy of an app measurable";
+    if (r.category === "owned-duplicate") return "Leftover duplicate";
+    if (!memberships.get(m.owner_id)?.has(m.team_id)) return "Owner not on team";
+    return "";
+  };
+  const GAPS = [
+    "Truly unassigned",
+    "No Owner",
+    "No Owner copy of an owned measurable",
+    "Conflicting numbers",
+    "Imported copy of an app measurable",
+    "Leftover duplicate",
+    "Owner not on team",
+  ];
+
   const guess = originalGuess(rows, entries);
   const measurableRows = rows.map((r) => {
     const m = r.metric;
     const owner = m.owner_id;
     return {
+      gap: gapOf(r),
       category: CATEGORY_TEXT[r.category],
       source: isImported(m) ? "Imported" : "Created in app",
       measurable: m.name,
@@ -189,7 +220,13 @@ async function main() {
     ["Scorecard audit", new Date().toISOString().slice(0, 16).replace("T", " ")],
     [],
     ["Active measurables", rows.length],
+    ["Made in the app", rows.filter((r) => !isImported(r.metric)).length],
+    ["Imported", rows.filter((r) => isImported(r.metric)).length],
     ["People", people.length],
+    [],
+    ["Gap", "Measurables"],
+    ...GAPS.map((g): Cell[] => [g, measurableRows.filter((x) => x.gap === g).length]),
+    ["No gap", measurableRows.filter((x) => !x.gap).length],
     [],
     ["Category", "Measurables"],
     ...ORDER.map((c): Cell[] => [CATEGORY_TEXT[c], count(c)]),
@@ -206,19 +243,52 @@ async function main() {
     out,
     writeXlsx([
       { name: "Summary", rows: summary, widths: [52, 18] },
-      { name: "People", rows: table(peopleRows, "No one owns a measurable.") },
+      {
+        name: "Gaps",
+        rows: table(
+          measurableRows
+            .filter((x) => x.gap)
+            .sort((a, b) => GAPS.indexOf(a.gap) - GAPS.indexOf(b.gap) || String(a.measurable).localeCompare(String(b.measurable))),
+          "No gaps.",
+        ),
+      },
+      {
+        name: "App vs import",
+        rows: table(
+          measurableRows.filter((_, i) => rows[i].original && !isImported(rows[i].original!) && isImported(rows[i].metric)),
+          "None.",
+        ),
+      },
+      {
+        name: "Leftover duplicates",
+        rows: table(
+          measurableRows.filter(
+            (_, i) => rows[i].category === "owned-duplicate" && isImported(rows[i].metric) && isImported(rows[i].original!),
+          ),
+          "None.",
+        ),
+      },
+      { name: "No Owner", rows: table(measurableRows.filter((_, i) => !rows[i].metric.owner_id), "None.") },
       {
         name: "Truly unassigned",
         rows: table(measurableRows.filter((_, i) => rows[i].category === "truly-unassigned"), "None."),
       },
       {
+        name: "Conflicts",
+        rows: table(measurableRows.filter((_, i) => rows[i].diff?.verdict === "conflict"), "None."),
+      },
+      {
         name: "Out of sync",
         rows: table(measurableRows.filter((_, i) => (rows[i].diff?.diffs.length ?? 0) > 0), "None."),
       },
+      { name: "People", rows: table(peopleRows, "No one owns a measurable.") },
       { name: "Measurables", rows: table(measurableRows, "No active measurables.") },
     ]),
   );
   console.log(`\n${rows.length} active measurables, ${people.length} people\n`);
+  console.log("  Gaps:");
+  for (const g of GAPS) console.log(`    ${g}: ${measurableRows.filter((x) => x.gap === g).length}`);
+  console.log("");
   for (const c of ORDER) console.log(`  ${CATEGORY_TEXT[c]}: ${count(c)}`);
   console.log(
     `\n  Should-match pairs: ${diffed.length} — in sync ${diffed.filter((r) => r.diff!.verdict === "agree").length}, lack of updates ${

@@ -119,7 +119,10 @@ export function auditScorecards(input: {
     const byOwner = new Map<string, RepairMetric[]>();
     for (const m of owned) byOwner.set(m.owner_id!, [...(byOwner.get(m.owner_id!) ?? []), m]);
     for (const [owner, list] of byOwner) {
-      const original = pickOriginal(list, memberships.get(owner) ?? new Set(), entries);
+      // A measurable made in the app is the original whenever there is one —
+      // imported copies are what gets checked against it, never the reverse.
+      const madeInApp = list.filter((m) => !isImported(m));
+      const original = pickOriginal(madeInApp.length ? madeInApp : list, memberships.get(owner) ?? new Set(), entries);
       originalOf.set(owner, original);
       rows.push({ metric: original, category: "original", original: null, diff: null });
       for (const dup of list.filter((m) => m !== original)) {

@@ -84,3 +84,18 @@ describe("originalGuess", () => {
     assert.equal(originalGuess(rows, new Map(entries)).get("a")?.id, "b");
   });
 });
+
+describe("auditScorecards — app-made originals", () => {
+  test("a measurable made in the app is the original over imported copies, even with older numbers", () => {
+    const { rows } = run(
+      [
+        m({ id: "app", team_id: "tr", owner_id: "katy" }),
+        m({ id: "imp-metric-esd", team_id: "esd", owner_id: "katy", import_source: "csv" }),
+      ],
+      [["app", pts(1)], ["imp-metric-esd", pts(1, 2, 3)]],
+      [["katy", ["esd"]]],
+    );
+    assert.equal(rows.find((r) => r.category === "original")?.metric.id, "app");
+    assert.equal(rows.find((r) => r.category === "owned-duplicate")?.original?.id, "app");
+  });
+});

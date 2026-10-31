@@ -20,6 +20,8 @@ export type RepairMetric = {
   owner_id: string | null;
   description?: string | null;
   group?: string | null;
+  unit?: string | null;
+  interval?: string | null;
   is_public?: boolean | null;
   shared_team_ids?: string[] | null;
   archived_at?: unknown;

@@ -26,6 +26,7 @@
     "home:rocks-why": "tsx scripts/home-rocks-why.ts",
     "person:scorecards": "tsx scripts/person-scorecards.ts",
     "scorecard:audit": "tsx scripts/scorecard-audit.ts",
+    "scorecard:merge-duplicates": "tsx scripts/scorecard-merge-duplicates.ts",
     "users:backfill-team-ids": "tsx scripts/backfill-team-ids.ts",
     "issues:backfill-comment-counts": "tsx scripts/backfill-issue-comment-counts.ts",
     "feedback:import": "tsx scripts/import-feedback-seed.ts",

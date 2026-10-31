@@ -32,6 +32,7 @@ import { writeXlsx, type Cell } from "./lib/xlsx-writer";
 import { getAdminDb } from "../lib/firebase/admin";
 import { auditScorecards, isImported, originalGuess, type Category } from "../lib/scorecard-audit";
 import { summarizeCauses, type Point } from "../lib/scorecard-diff";
+import { normalizePersonKey } from "../lib/csv-import";
 import { importedOwnerOf, type RepairMetric } from "../lib/scorecard-share-repair";
 
 const CATEGORY_TEXT: Record<Category, string> = {
@@ -161,12 +162,83 @@ async function main() {
     "Owner not on team",
   ];
 
+  // Plain-language reason and next step for a flagged row.
+  const uidByName = new Map<string, string>();
+  for (const [uid, u] of users) uidByName.set(normalizePersonKey(u.name), uid);
+  const weeksText = (r: Row) => {
+    const d = (r.diff?.diffs ?? []).filter((x) => x.original != null && x.copy != null);
+    if (d.length === 0) return "";
+    const shown = d.slice(0, 4).map((x) => `${x.week}: ${x.original} on the original vs ${x.copy} here`).join("; ");
+    return ` Numbers differ in ${d.length} week(s) — ${shown}${d.length > 4 ? "; …" : ""}.`;
+  };
+  const explain = (r: Row, gap: string): { why: string; next: string } => {
+    const m = r.metric;
+    const where = team(m.team_id);
+    const o = r.original;
+    const fromNinety = importedOwnerOf(m.description);
+    switch (gap) {
+      case "Truly unassigned": {
+        let who = "ninety had no owner for it.";
+        let next = `Assign an owner on ${where}'s scorecard — or delete it if ${where} no longer tracks it.`;
+        if (fromNinety) {
+          const uid = uidByName.get(normalizePersonKey(fromNinety));
+          if (!uid) {
+            who = `ninety's owner was ${fromNinety}, who has no Pulse account.`;
+            next = `Add ${fromNinety} to Pulse and to ${where}, then assign them — or assign someone else.`;
+          } else if (!memberships.get(uid)?.has(m.team_id)) {
+            who = `ninety's owner was ${fromNinety}, who is in Pulse but not on ${where}.`;
+            next = `Add ${fromNinety} to ${where} and assign them — or assign someone already on ${where}.`;
+          } else {
+            who = `ninety's owner was ${fromNinety}, who is on ${where} — the import didn't match the name.`;
+            next = `Assign ${fromNinety} on ${where}'s scorecard.`;
+          }
+        }
+        return { why: `No owner, and no other measurable in Pulse has this name. ${who}`, next };
+      }
+      case "No Owner copy of an owned measurable":
+        return {
+          why: `No owner on ${where}; the original is ${nameOf(o!.owner_id!)}'s on ${team(o!.team_id)}.${weeksText(r) || " " + (r.diff ? VERDICT_TEXT[r.diff.verdict] : "") + "."}`,
+          next: r.diff?.verdict === "conflict"
+            ? `Check which numbers are right. If the original's: pnpm scorecard:share-repair --target prod --only "${m.name}" --keep-original-numbers --apply --yes --actor <uid>. If this copy's: fix the original's weeks first, then run it without --keep-original-numbers.`
+            : `pnpm scorecard:share-repair --target prod --only "${m.name}" --apply --yes --actor <uid>`,
+        };
+      case "Conflicting numbers":
+        return {
+          why: `${m.owner_id ? `${nameOf(m.owner_id)} owns this on ${where}` : `No owner on ${where}`}; the original is on ${team(o!.team_id)}.${weeksText(r)}`,
+          next: r.category === "owned-duplicate"
+            ? `Check which numbers are right. If the original's: pnpm scorecard:merge-duplicates --target prod --only "${m.name}" --keep-original-numbers --apply --yes --actor <uid>.`
+            : `Check which numbers are right, then repair or merge it.`,
+        };
+      case "Imported copy of an app measurable":
+        return {
+          why: `Imported copy of ${nameOf(o!.owner_id!)}'s measurable made in the app on ${team(o!.team_id)}. ${r.diff ? VERDICT_TEXT[r.diff.verdict] : ""}.${weeksText(r)}`,
+          next: `Left for cutover: the owner keeps the app version; delete this imported copy, or have ${team(m.team_id)} track the app one.`,
+        };
+      case "Leftover duplicate":
+        return {
+          why: `${nameOf(m.owner_id!)} owns this on ${where} and on ${team(o!.team_id)}; the merge held it back.${weeksText(r)}`,
+          next: `pnpm scorecard:merge-duplicates --target prod --only "${m.name}" (the dry run says why it's held).`,
+        };
+      case "Owner not on team":
+        return {
+          why: `${nameOf(m.owner_id!)} owns it but isn't on ${where}'s roster.`,
+          next: `Add ${nameOf(m.owner_id!)} to ${where}, or move ownership to someone on ${where}.`,
+        };
+      case "No Owner":
+        return { why: `No owner on ${where}. ${CATEGORY_TEXT[r.category]}.`, next: `Assign an owner on ${where}'s scorecard.` };
+      default:
+        return { why: "", next: "" };
+    }
+  };
+
   const guess = originalGuess(rows, entries);
   const measurableRows = rows.map((r) => {
     const m = r.metric;
     const owner = m.owner_id;
     return {
       gap: gapOf(r),
+      why_flagged: explain(r, gapOf(r)).why,
+      next_step: explain(r, gapOf(r)).next,
       category: CATEGORY_TEXT[r.category],
       source: isImported(m) ? "Imported" : "Created in app",
       measurable: m.name,
@@ -289,6 +361,18 @@ async function main() {
   console.log("  Gaps:");
   for (const g of GAPS) console.log(`    ${g}: ${measurableRows.filter((x) => x.gap === g).length}`);
   console.log("");
+  // The unified list: every flagged measurable, why, and what to do.
+  const flaggedRows = measurableRows
+    .filter((x) => x.gap)
+    .sort((a, b) => GAPS.indexOf(a.gap) - GAPS.indexOf(b.gap) || String(a.measurable).localeCompare(String(b.measurable)));
+  if (flaggedRows.length) {
+    console.log(`  Flagged measurables (${flaggedRows.length}):\n`);
+    for (const x of flaggedRows) {
+      console.log(`  [${x.gap}] ${x.measurable} — ${x.team}${x.owner !== "No Owner" ? ` (${x.owner})` : ""}`);
+      console.log(`      Why:  ${x.why_flagged}`);
+      console.log(`      Next: ${x.next_step}\n`);
+    }
+  }
   for (const c of ORDER) console.log(`  ${CATEGORY_TEXT[c]}: ${count(c)}`);
   console.log(
     `\n  Should-match pairs: ${diffed.length} — in sync ${diffed.filter((r) => r.diff!.verdict === "agree").length}, lack of updates ${

@@ -64,6 +64,33 @@ function latest(points: Map<string, Point> | undefined): string {
   return last;
 }
 
+/**
+ * Came from a ninety import rather than being made in the app. Either signal
+ * is enough: every import path writes `import_source: "csv"` and an
+ * `imp-<kind>-…` id (importDocId); the app's create writes neither.
+ */
+export function isImported(m: { id: string; import_source?: string | null }): boolean {
+  return m.import_source === "csv" || m.id.startsWith("imp-metric-");
+}
+
+/**
+ * Of one owner's same-named measurables, the one to keep: on a team the
+ * owner is a member of first, then the one with the most recent number, then
+ * a fixed tie-break so reruns agree.
+ */
+export function pickOriginal(
+  list: RepairMetric[],
+  ownerTeams: Set<string>,
+  entries: Map<string, Map<string, Point>>,
+): RepairMetric {
+  return [...list].sort(
+    (a, b) =>
+      Number(ownerTeams.has(b.team_id)) - Number(ownerTeams.has(a.team_id)) ||
+      latest(entries.get(b.id)).localeCompare(latest(entries.get(a.id))) ||
+      a.id.localeCompare(b.id),
+  )[0];
+}
+
 export function auditScorecards(input: {
   metrics: RepairMetric[];
   entries: Map<string, Map<string, Point>>;
@@ -92,17 +119,11 @@ export function auditScorecards(input: {
     const byOwner = new Map<string, RepairMetric[]>();
     for (const m of owned) byOwner.set(m.owner_id!, [...(byOwner.get(m.owner_id!) ?? []), m]);
     for (const [owner, list] of byOwner) {
-      const teams = memberships.get(owner) ?? new Set();
-      const ranked = [...list].sort(
-        (a, b) =>
-          Number(teams.has(b.team_id)) - Number(teams.has(a.team_id)) ||
-          latest(entries.get(b.id)).localeCompare(latest(entries.get(a.id))) ||
-          a.id.localeCompare(b.id),
-      );
-      originalOf.set(owner, ranked[0]);
-      rows.push({ metric: ranked[0], category: "original", original: null, diff: null });
-      for (const dup of ranked.slice(1)) {
-        rows.push({ metric: dup, category: "owned-duplicate", original: ranked[0], diff: diff(ranked[0], dup) });
+      const original = pickOriginal(list, memberships.get(owner) ?? new Set(), entries);
+      originalOf.set(owner, original);
+      rows.push({ metric: original, category: "original", original: null, diff: null });
+      for (const dup of list.filter((m) => m !== original)) {
+        rows.push({ metric: dup, category: "owned-duplicate", original, diff: diff(original, dup) });
       }
     }
 

@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { writeXlsx, type Cell } from "./lib/xlsx-writer";
 import { getAdminDb } from "../lib/firebase/admin";
-import { auditScorecards, originalGuess, type Category } from "../lib/scorecard-audit";
+import { auditScorecards, isImported, originalGuess, type Category } from "../lib/scorecard-audit";
 import { summarizeCauses, type Point } from "../lib/scorecard-diff";
 import { importedOwnerOf, type RepairMetric } from "../lib/scorecard-share-repair";
 
@@ -137,6 +137,7 @@ async function main() {
     const owner = m.owner_id;
     return {
       category: CATEGORY_TEXT[r.category],
+      source: isImported(m) ? "Imported" : "Created in app",
       measurable: m.name,
       team: team(m.team_id),
       owner: owner ? nameOf(owner) : "No Owner",
@@ -153,6 +154,7 @@ async function main() {
         return g ? team(g.team_id) : "";
       })(),
       original_owner: r.original ? nameOf(r.original.owner_id!) : "",
+      original_source: r.original ? (isImported(r.original) ? "Imported" : "Created in app") : "",
       original_last_value_period: r.original ? lastOf(r.original.id) : "",
       sync: r.diff ? VERDICT_TEXT[r.diff.verdict] : "",
       periods_differing: r.diff?.diffs.length ?? "",

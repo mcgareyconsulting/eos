@@ -26,59 +26,76 @@ function setup(metrics: Seed[], values: Record<string, Record<string, number | n
     const id = e.data.metric_id as string;
     entries.set(id, (entries.get(id) ?? new Map()).set(e.data.week_start_date as string, { value: e.data.value as number | null }));
   }
-  const { rows } = auditScorecards({
-    metrics: all,
-    entries,
-    memberships: new Map(Object.entries(member).map(([u, t]) => [u, new Set(t)])),
-    nameOf: (u) => u,
-  });
-  return { db, rows, entries };
+  const memberships = new Map(Object.entries(member).map(([u, t]) => [u, new Set(t)]));
+  const { rows } = auditScorecards({ metrics: all, entries, memberships, nameOf: (u) => u });
+  return { db, rows, entries, memberships };
 }
 
 describe("planDuplicateMerges", () => {
   test("weeks only the duplicate has are filled onto the original", () => {
-    const { rows, entries } = setup(
+    const { rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1, [W2]: 2 }, tr: { [W1]: 1, [W3]: 3 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     assert.equal(plan.original.id, "esd");
     assert.equal(plan.status, "ready");
     assert.deepEqual([...plan.fill].map(([w, f]) => [w, f.value]), [[W3, 3]]);
   });
 
   test("different numbers for the same week hold the plan back, unless the original's win", () => {
-    const { rows, entries } = setup(
+    const { rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 9 } },
       { katy: ["ESD"] },
     );
-    assert.equal(planDuplicateMerges(rows, entries)[0].status, "differs");
-    assert.equal(planDuplicateMerges(rows, entries, { keepOriginalNumbers: true })[0].status, "ready");
+    assert.equal(planDuplicateMerges(rows, entries, memberships)[0].status, "differs");
+    assert.equal(planDuplicateMerges(rows, entries, memberships, { keepOriginalNumbers: true })[0].status, "ready");
   });
 
   test("two duplicates filling the same missing week differently → fill conflict, even with the original winning", () => {
-    const { rows, entries } = setup(
+    const { rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }, { id: "ln", team_id: "LN" }],
       { esd: {}, tr: { [W1]: 4 }, ln: { [W1]: 5 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries, { keepOriginalNumbers: true });
+    const [plan] = planDuplicateMerges(rows, entries, memberships, { keepOriginalNumbers: true });
     assert.equal(plan.status, "fill-conflict");
     assert.deepEqual(plan.fillConflicts, [W1]);
   });
 });
 
-describe("planDuplicateMerges — app-created duplicates", () => {
-  test("a duplicate made in the app is held back unless asked for", () => {
-    const { rows, entries } = setup(
-      [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR", import_source: null }],
-      { esd: { [W1]: 1 }, tr: { [W1]: 1 } },
+describe("planDuplicateMerges — measurables made in the app are never touched", () => {
+  test("an app-made copy is left alone; the original is picked among the imported ones", async () => {
+    const { db, rows, entries, memberships } = setup(
+      [
+        { id: "app1", team_id: "ESD", import_source: null },
+        { id: "imp-metric-tr", team_id: "TR", import_source: null },
+        { id: "ln", team_id: "LN" },
+      ],
+      { app1: { [W1]: 1, [W3]: 3 }, "imp-metric-tr": { [W1]: 1, [W2]: 2 }, ln: { [W1]: 1 } },
       { katy: ["ESD"] },
     );
-    assert.equal(planDuplicateMerges(rows, entries)[0].status, "app-created");
-    assert.equal(planDuplicateMerges(rows, entries, { includeAppCreated: true })[0].status, "ready");
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
+    // The app copy is on Katy's own team, but it's not a candidate.
+    assert.equal(plan.original.id, "imp-metric-tr", "imp- id counts as imported");
+    assert.deepEqual(plan.duplicates.map((d) => d.id), ["ln"]);
+    assert.deepEqual(plan.leftAlone.map((d) => d.id), ["app1"]);
+
+    const before = structuredClone(db.raw("scorecard_metrics/app1"));
+    assert.ok((await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid")).ok);
+    assert.deepEqual(db.raw("scorecard_metrics/app1"), before, "app measurable untouched");
+    assert.equal(db.docsIn("scorecard_entries").filter((e) => e.data.metric_id === "app1").length, 2);
+  });
+
+  test("an app original with a single imported copy → nothing to merge this pass", () => {
+    const { rows, entries, memberships } = setup(
+      [{ id: "app1", team_id: "ESD", import_source: null }, { id: "tr", team_id: "TR" }],
+      {},
+      { katy: ["ESD"] },
+    );
+    assert.deepEqual(planDuplicateMerges(rows, entries, memberships), []);
   });
 });
 
@@ -89,30 +106,30 @@ describe("planDuplicateMerges — different measurables under a loose name match
       [{ unit: "currency" }, /unit/],
       [{ interval: "monthly" }, /interval/],
     ] as const) {
-      const { rows, entries } = setup(
+      const { rows, entries, memberships } = setup(
         [{ id: "esd", team_id: "ESD", name: "NPS", unit: "number" }, { id: "tr", team_id: "TR", ...{ name: "NPS", unit: "number" as string | null, interval: null as string | null }, ...dup }],
         {},
         { katy: ["ESD"] },
       );
-      const [plan] = planDuplicateMerges(rows, entries, { keepOriginalNumbers: true, includeAppCreated: true });
+      const [plan] = planDuplicateMerges(rows, entries, memberships, { keepOriginalNumbers: true });
       assert.equal(plan.status, "mismatch");
       assert.match(plan.mismatches.join(), expect);
     }
   });
 
   test("case and spacing alone are the same name", () => {
-    const { rows, entries } = setup(
+    const { rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD", name: "Loans  Closed" }, { id: "tr", team_id: "TR", name: "loans closed" }],
       {},
       { katy: ["ESD"] },
     );
-    assert.equal(planDuplicateMerges(rows, entries)[0].status, "ready");
+    assert.equal(planDuplicateMerges(rows, entries, memberships)[0].status, "ready");
   });
 });
 
 describe("applyDuplicateMerge", () => {
   test("one record left: original shared to the duplicate's team and its trackers, duplicate and its values gone", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [
         { id: "esd", team_id: "ESD", group: "Data", is_public: false, follower_ids: ["boss"] },
         {
@@ -128,7 +145,7 @@ describe("applyDuplicateMerge", () => {
       { esd: { [W1]: 1 }, tr: { [W1]: 1, [W2]: 2 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.deepEqual(result.problems, []);
     assert.ok(result.ok);
@@ -157,12 +174,12 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a week filled on the original after the plan, disagreeing with the duplicate, refuses the merge", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 1, [W2]: 2 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     db.seed("scorecard_entries", `esd__${W2}`, { metric_id: "esd", week_start_date: W2, value: 7 });
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.equal(result.ok, false);
@@ -172,12 +189,12 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a number entered on the duplicate after the plan is copied over, not lost", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 1 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     db.seed("scorecard_entries", `tr__${W3}`, { metric_id: "tr", week_start_date: W3, value: 8 });
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.ok(result.ok, result.problems.join());
@@ -185,12 +202,12 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a number entered on the duplicate after the plan that disagrees refuses the merge", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: {} },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     db.seed("scorecard_entries", `tr__${W1}`, { metric_id: "tr", week_start_date: W1, value: 5 });
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.equal(result.ok, false);
@@ -198,12 +215,12 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a same-team duplicate with no trackers doesn't make a private original public", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "a", team_id: "ESD", is_public: false }, { id: "b", team_id: "ESD" }],
       { a: { [W1]: 1 }, b: { [W1]: 1 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.ok(result.ok, result.problems.join());
     const kept = db.raw(`scorecard_metrics/${plan.original.id}`)!;
@@ -212,23 +229,23 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a stale section key for a team not yet tracking is replaced by the duplicate's section", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD", shared_groups: { TR: "Old" } }, { id: "tr", team_id: "TR", group: "Lending" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 1 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     assert.ok((await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid")).ok);
     assert.deepEqual(db.raw("scorecard_metrics/esd")?.shared_groups, { TR: "Lending" });
   });
 
   test("refuses when the duplicate's owner changed since the plan", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 1 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     await db.asFirestore().collection("scorecard_metrics").doc("tr").update({ owner_id: "someone-else" });
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.equal(result.ok, false);
@@ -237,12 +254,12 @@ describe("applyDuplicateMerge", () => {
   });
 
   test("a plan that isn't ready is never applied", async () => {
-    const { db, rows, entries } = setup(
+    const { db, rows, entries, memberships } = setup(
       [{ id: "esd", team_id: "ESD" }, { id: "tr", team_id: "TR" }],
       { esd: { [W1]: 1 }, tr: { [W1]: 9 } },
       { katy: ["ESD"] },
     );
-    const [plan] = planDuplicateMerges(rows, entries);
+    const [plan] = planDuplicateMerges(rows, entries, memberships);
     const result = await applyDuplicateMerge(db.asFirestore(), plan, "admin-uid");
     assert.equal(result.ok, false);
     assert.ok(db.raw("scorecard_metrics/tr"));

@@ -1,9 +1,12 @@
-// Compress same-owner duplicates: the scorecard audit's "Duplicate of own
-// original on another team" rows. Each duplicate's team ends up tracking the
-// original (shared, one owner, one set of numbers) and the duplicate is
-// deleted. Rules: lib/scorecard-duplicate-merge.ts; which copy is the
-// original: lib/scorecard-audit.ts (the one on a team the owner is on, then
-// the one with the most recent number).
+// Compress same-owner imported duplicates: the scorecard audit's "Duplicate
+// of own original on another team" rows. Each duplicate's team ends up
+// tracking the original (shared, one owner, one set of numbers) and the
+// duplicate is deleted. Rules: lib/scorecard-duplicate-merge.ts.
+//
+// Only imported measurables are touched. One made in the app is never
+// deleted, written to or used as the original — it's listed as left alone,
+// for the check after this pass. The original is picked among the imported
+// copies: the one on a team the owner is on, then the most recent number.
 //
 // Dry run by default — prints every original, the teams it will be shared
 // to, the weeks it gains, and anything held back.
@@ -22,8 +25,6 @@
 //   --keep-original-numbers
 //                          also merge where a duplicate's numbers differ; the
 //                          original's numbers win
-//   --include-app-created  also delete duplicates made in the app (default:
-//                          imported ones only)
 //   --apply                write — asks y/n/q before each measurable
 //   --yes                  don't ask
 //   --actor <uid>          stamped as updated_by / deleted_by (required with --apply)
@@ -32,7 +33,7 @@ import "./lib/load-target"; // first: sets up env before anything reads it
 import { createInterface } from "node:readline/promises";
 import { getAdminDb } from "../lib/firebase/admin";
 import { normalizeKey, normalizePersonKey } from "../lib/csv-import";
-import { auditScorecards } from "../lib/scorecard-audit";
+import { auditScorecards, isImported } from "../lib/scorecard-audit";
 import type { Point } from "../lib/scorecard-diff";
 import { applyDuplicateMerge, planDuplicateMerges, type MergePlan } from "../lib/scorecard-duplicate-merge";
 import type { RepairMetric } from "../lib/scorecard-share-repair";
@@ -50,7 +51,6 @@ function args() {
     team: value("--team"),
     only,
     keepOriginal: argv.includes("--keep-original-numbers"),
-    includeAppCreated: argv.includes("--include-app-created"),
     apply: argv.includes("--apply"),
     yes: argv.includes("--yes"),
     actor: value("--actor"),
@@ -104,9 +104,8 @@ async function main() {
   }
 
   const { rows } = auditScorecards({ metrics, entries, memberships, nameOf });
-  let plans = planDuplicateMerges(rows, entries, {
+  let plans = planDuplicateMerges(rows, entries, memberships, {
     keepOriginalNumbers: opts.keepOriginal,
-    includeAppCreated: opts.includeAppCreated,
   });
 
   if (opts.owner) {
@@ -148,6 +147,9 @@ async function main() {
       if (p.disagreements.length > 8) console.log(`      … ${p.disagreements.length - 8} more`);
     }
     if (p.fillConflicts.length) console.log(`    copies disagree on weeks the original lacks: ${p.fillConflicts.join(", ")}`);
+    if (p.leftAlone.length) {
+      console.log(`    left alone (made in the app): ${p.leftAlone.map((m) => team(m.team_id)).join(", ")}`);
+    }
   };
 
   const ready = plans.filter((p) => p.status === "ready");
@@ -161,15 +163,27 @@ async function main() {
         `\n[${
           p.status === "differs"
             ? "numbers differ — re-run with --keep-original-numbers to keep the original's"
-            : p.status === "app-created"
-              ? "a duplicate was made in the app, not imported — re-run with --include-app-created to merge it"
-              : p.status === "mismatch"
+            : p.status === "mismatch"
                 ? `may be different measurables — ${p.mismatches.join("; ")}`
                 : "copies disagree — fix by hand"
         }]`,
       );
       describe(p);
     }
+  }
+
+  // App-made measurables that share an owner and name with an imported one:
+  // untouched this pass, for the check after it.
+  const ownerSets = new Map<string, RepairMetric[]>();
+  for (const r of rows) {
+    const key = r.category === "original" ? r.metric.id : r.category === "owned-duplicate" ? r.original!.id : null;
+    if (key) ownerSets.set(key, [...(ownerSets.get(key) ?? []), r.metric]);
+  }
+  const appWithCopies = [...ownerSets.values()]
+    .filter((set) => set.length > 1 && set.some(isImported))
+    .reduce((n, set) => n + set.filter((m) => !isImported(m)).length, 0);
+  if (appWithCopies) {
+    console.log(`\n${appWithCopies} measurable(s) made in the app share an owner and name with imported ones — left alone, for the final check.`);
   }
 
   if (!opts.apply) {

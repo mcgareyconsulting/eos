@@ -1,10 +1,15 @@
-// Fold same-owner duplicates into their original. ninety exported a shared
+// Fold same-owner imported duplicates into one. ninety exported a shared
 // measurable once per team, and where the owner was on the roster of more
 // than one of those teams the import gave every copy that owner — the
 // "Duplicate of own original on another team" rows of the scorecard audit.
 //
-// For each original (lib/scorecard-audit.ts picks it: the copy on a team the
-// owner is on, then the one with the most recent number):
+// **Only imported measurables are touched** (isImported). A measurable made
+// in the app is never deleted, never written to and never chosen as the
+// original: owners update their own at cutover, and a later check compares
+// what's left. So the original here is picked among the imported copies
+// alone (pickOriginal: the copy on a team the owner is on, then the one with
+// the most recent number), and app-made copies of the same name are reported
+// as left alone. For each original:
 //   1. weeks a duplicate has and the original lacks are written onto the
 //      original;
 //   2. every duplicate's team tracks the original, in the section that team
@@ -18,9 +23,6 @@
 //   - "mismatch": the names differ beyond case and spacing ("NPS %" vs
 //     "NPS"), or the unit or interval differs — the audit groups names
 //     loosely, so these may be different measurables;
-//   - "app-created": a duplicate wasn't imported (`import_source` ≠ "csv")
-//     — a same-named measurable made in the app on a second team may be
-//     deliberate; `includeAppCreated` lets them through;
 //   - "fill-conflict": two duplicates hold different numbers for a week the
 //     original lacks;
 //   - "differs": a duplicate and the original hold different numbers for the
@@ -33,13 +35,13 @@ import type { Firestore } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { recordAccessChange } from "./access-audit";
 import { stamp, stampBeforeDelete } from "./audit-stamp";
-import type { AuditRow } from "./scorecard-audit";
+import { isImported, pickOriginal, type AuditRow } from "./scorecard-audit";
 import type { Point } from "./scorecard-diff";
 import type { RepairMetric } from "./scorecard-share-repair";
 
 export type Disagreement = { duplicateId: string; week: string; original: number; duplicate: number };
 
-export type MergeStatus = "ready" | "mismatch" | "app-created" | "fill-conflict" | "differs";
+export type MergeStatus = "ready" | "mismatch" | "fill-conflict" | "differs";
 
 export type MergePlan = {
   original: RepairMetric;
@@ -54,6 +56,8 @@ export type MergePlan = {
   mismatches: string[];
   /** The original's numbers win over a duplicate's for the same week. */
   keepOriginalNumbers: boolean;
+  /** Same owner and name, made in the app: reported, never touched. */
+  leftAlone: RepairMetric[];
   status: MergeStatus;
 };
 
@@ -85,11 +89,10 @@ function compareValues(original: Values, duplicates: { id: string; values: Value
 }
 
 function statusOf(
-  p: Pick<MergePlan, "mismatches" | "duplicates" | "fillConflicts" | "disagreements">,
-  opts: { keepOriginalNumbers?: boolean; includeAppCreated?: boolean },
+  p: Pick<MergePlan, "mismatches" | "fillConflicts" | "disagreements">,
+  opts: { keepOriginalNumbers?: boolean },
 ): MergeStatus {
   if (p.mismatches.length) return "mismatch";
-  if (!opts.includeAppCreated && p.duplicates.some((d) => d.import_source !== "csv")) return "app-created";
   if (p.fillConflicts.length) return "fill-conflict";
   if (p.disagreements.length && !opts.keepOriginalNumbers) return "differs";
   return "ready";
@@ -98,18 +101,26 @@ function statusOf(
 export function planDuplicateMerges(
   rows: AuditRow[],
   entries: Map<string, Values>,
-  opts: { keepOriginalNumbers?: boolean; includeAppCreated?: boolean } = {},
+  /** uid → team ids they are a member of (for picking the original). */
+  memberships: Map<string, Set<string>>,
+  opts: { keepOriginalNumbers?: boolean } = {},
 ): MergePlan[] {
-  const byOriginal = new Map<string, { original: RepairMetric; duplicates: RepairMetric[] }>();
+  // Each audit set: an owner's same-named measurables (original + duplicates).
+  const sets = new Map<string, RepairMetric[]>();
   for (const r of rows) {
     if (r.category !== "owned-duplicate" || !r.original) continue;
-    const g = byOriginal.get(r.original.id) ?? { original: r.original, duplicates: [] };
-    g.duplicates.push(r.metric);
-    byOriginal.set(r.original.id, g);
+    const set = sets.get(r.original.id) ?? [r.original];
+    set.push(r.metric);
+    sets.set(r.original.id, set);
   }
 
   const plans: MergePlan[] = [];
-  for (const { original, duplicates } of byOriginal.values()) {
+  for (const set of sets.values()) {
+    const imported = set.filter(isImported);
+    const leftAlone = set.filter((m) => !isImported(m));
+    if (imported.length < 2) continue; // nothing imported to fold together
+    const original = pickOriginal(imported, memberships.get(imported[0].owner_id!) ?? new Set(), entries);
+    const duplicates = imported.filter((m) => m !== original);
     const mismatches: string[] = [];
     for (const d of duplicates) {
       if (exactName(d.name) !== exactName(original.name)) mismatches.push(`name "${d.name}" vs "${original.name}"`);
@@ -122,7 +133,7 @@ export function planDuplicateMerges(
       entries.get(original.id) ?? new Map(),
       duplicates.map((d) => ({ id: d.id, values: entries.get(d.id) ?? new Map() })),
     );
-    const base = { original, duplicates, ...values, mismatches, keepOriginalNumbers: !!opts.keepOriginalNumbers };
+    const base = { original, duplicates, ...values, mismatches, keepOriginalNumbers: !!opts.keepOriginalNumbers, leftAlone };
     plans.push({ ...base, status: statusOf(base, opts) });
   }
   return plans.sort((a, b) => a.original.name.localeCompare(b.original.name));
@@ -161,6 +172,9 @@ export async function applyDuplicateMerge(db: Firestore, plan: MergePlan, actorU
   const [oSnap, ...dSnaps] = await db.getAll(metrics.doc(plan.original.id), ...plan.duplicates.map((d) => metrics.doc(d.id)));
   const o = oSnap.data() as MetricDoc | undefined;
   const problems: string[] = [];
+  if (!isImported(plan.original) || plan.duplicates.some((d) => !isImported(d))) {
+    return refused(["a measurable in the plan was made in the app — those are never touched"]);
+  }
   if (!o) problems.push("original no longer exists");
   else if (o.archived_at != null) problems.push("original is archived");
   else if (o.owner_id !== plan.original.owner_id) problems.push("original's owner changed");
